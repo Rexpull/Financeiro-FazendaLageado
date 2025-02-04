@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+.logoSidebar{
+    width: 100%; 
+    padding-bottom: 15px;
+    border-bottom: 1px solid lightgray;
+}
+
+.sidebar{
+    box-shadow: -1px 0px 7px grey !important;
+    width: 260px !important;
+}
+
+.sidebar .nav .sub-menu{
+    border-radius: 12px;
+    color: #353333 !important;
+    font-weight: 600 !important;
+    font-size: 18px !important;
+    white-space: nowrap;
+    line-height: 25px;
+    position: relative;
+    text-decoration: none;
+    transition: all .4s ease-in-out;
+    z-index: 2;
+    padding: 9px 20px;
+    padding-right: 15px !important;
+    gap: 15px;
+}
+
+.sidebar .nav .sub-menu .sub-menu-text{
+    gap: 15px;
+}
+
+.sidebar .nav .sub-menu.expanded {
+    color: #FA500C !important;
+    background-color: #FFFFFF !important;
+    box-shadow: inset .3em 0 0 0 #FA500C, 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar .nav .div-subMenu-item{
+    background: white !important;
+    border-radius: 0 0 6px 6px;
+    box-shadow:  0 2px 4px rgba(0, 0, 0, 0.2);
+    margin-top: -5px;
+    padding-top: 10px;
+}
+
+.sidebar .nav .div-subMenu-item > a > li{
+    padding-left: 15px;
+
+}
+
+.sidebar .sub-menu-text > svg{
+    margin-top: 3px;
+}
+
+.sidebar .nav .sub-menu.expand > a, 
+.sidebar .nav .sub-menu:focus,
+ .sidebar .nav  .sub-menu:hover {
+    background: #FA500C;
+    color: white !important;
+}
+
+.sidebar .nav .sub-menu:focus, 
+.sidebar .nav .sub-menu:hover {
+    background-color: white!important;
+    box-shadow: inset 17.3em 0 0 0 #FA500C !important;
+    color: white !important;
+}
+
+.navBar-header{
+    position: absolute;
+    top: 0;
+    right: 5px;
+    z-index: 10;
+}

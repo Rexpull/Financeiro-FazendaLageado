@@ -1,0 +1,6 @@
+name = "financeiro-fazendalageado"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "financeiro_db"
+database_id = "4172e157-80f8-4994-af1a-5c139d0b6389" 
