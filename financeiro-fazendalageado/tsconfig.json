@@ -46,5 +46,5 @@
 
 	},
 	"exclude": ["test"],
-	"include": ["worker-configuration.d.ts", "src/**/*.ts", "src/routes.jsx"]
+	"include": ["worker-configuration.d.ts", "src/**/*.ts", "src/routes/sidebar.jsx"]
 }

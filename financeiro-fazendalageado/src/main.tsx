@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import AppRoutes from "./routes";
+import AppRoutes from "./routes/sidebar";
 import "./css/index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

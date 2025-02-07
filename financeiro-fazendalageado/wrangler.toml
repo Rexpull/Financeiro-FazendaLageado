@@ -1,6 +1,8 @@
 name = "financeiro-fazendalageado"
+main = "src/index.ts"
+compatibility_date = "2024-02-06"
 
 [[d1_databases]]
-binding = "DB"
+binding = "DB" # Esse nome deve ser igual ao usado no código
 database_name = "financeiro_db"
-database_id = "4172e157-80f8-4994-af1a-5c139d0b6389" 
+database_id = "4172e157-80f8-4994-af1a-5c139d0b6389"

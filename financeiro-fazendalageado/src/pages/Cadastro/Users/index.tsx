@@ -1,6 +1,6 @@
 import React from "react";
-import Sidebar from "../../components/Sidebar";
-import UserForm from "../../components/UserForm";
+import Sidebar from "../../../components/Sidebar";
+import UserForm from "../../../components/UserForm";
 
 const Users = () => {
   return (
