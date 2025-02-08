@@ -93,6 +93,42 @@ const BancoTable: React.FC = () => {
     }
   };
 
+
+  // Mapeamento fixo de cores para bancos conhecidos
+  const bancoColors: Record<string, string> = {
+    "Nubank": "#ffacf1", // Lilás claro
+    "Banco do Brasil": "#ffef5a", // Amarelo claro
+    "Sicredi": "#a0ff99", // Verde claro
+    "Sicoob": "#a0ff99", // Verde claro
+    "Bradesco": "#ffa6a6", // Rosa bebê
+    "Santander": "#ffa6a6", // Azul claro
+    "Itaú": "#ffc083", // Pêssego claro
+    "Caixa Econômica": "#a3cfff", // Azul lavanda
+  };
+
+  // Lista de cores suaves para os bancos não cadastrados
+  const pastelColors = [
+    "#FFDEE9", "#FFDAC1", "#FCF6BD", "#D0F4DE",
+    "#C4E8FF", "#D4A5A5", "#E2C2C6", "#C1C8E4",
+    "#FAD2E1", "#BEE1E6"
+  ];
+
+  // Função para obter cor associada ao banco, ou gerar aleatória se não estiver mapeado
+  const getBancoColor = (nome: string): string => {
+    return bancoColors[nome] || pastelColors[nome.length % pastelColors.length];
+  };
+
+  // Função para obter a abreviação do banco
+  const getBancoAbreviacao = (nome: string): string => {
+    const words = nome.trim().split(" ");
+
+    if (words.length === 1) {
+      return `${words[0][0].toUpperCase()}${words[0].slice(-1).toLowerCase()}`;
+    } else {
+      return `${words[0][0].toUpperCase()}${words[1][0].toUpperCase()}`;
+    }
+  };
+
    // 🔹 Excluir banco com modal de confirmação
    const handleDeleteConfirm = async () => {
     if (deleteBancoId === null) return;
@@ -169,7 +205,15 @@ const BancoTable: React.FC = () => {
                         currentItems.map((banco) => (
                           <tr key={banco.id} className="border-b">
                             <td className="p-2 text-center">{banco.id}</td>
-                            <td className="p-2 text-left">{banco.nome}</td>
+                            <td className="p-2 text-left flex items-center gap-2">
+                              <span
+                                className="w-8 h-8 flex items-center justify-center rounded-full text-sm text-gray-900 font-semibold shadow-sm"
+                                style={{ backgroundColor: getBancoColor(banco.nome) }}
+                              >
+                                {getBancoAbreviacao(banco.nome)}
+                              </span>
+                              {banco.nome}
+                            </td>
                             <td className="p-2 text-center">{banco.codigo}</td>
                             <td className="p-2 text-right pr-5">
                               <button

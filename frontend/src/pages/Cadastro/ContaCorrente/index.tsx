@@ -1,12 +1,13 @@
 import React from "react";
-import Sidebar from "../../../components/Sidebar";
 import UserForm from "../../../components/UserForm";
+import BreadCrumb from "../../../components/BreadCrumb";
+import ListConta from "./ListConta";
+
 const Users = () => {
   return (
     <div >
-      
-      <h1 className="text-2xl font-bold mb-5">Cadastro de Conta Corrente</h1>
-      <UserForm />
+      <BreadCrumb grupo="Cadastro" pagina="Conta Corrente" />
+      <ListConta />
     </div>
   );
 };
