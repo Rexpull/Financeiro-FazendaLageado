@@ -42,3 +42,21 @@ export const excluirConta = async (id: number): Promise<void> => {
     throw error;
   }
 };
+
+export const atualizarStatusConta = async (id: number, novoStatus: boolean): Promise<void> => {
+  try {
+    const res = await fetch(`${API_URL}/api/contas/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ativo: novoStatus }),
+    });
+
+    if (!res.ok) throw new Error("Erro ao atualizar status da conta");
+
+    toast.success(`Conta ${novoStatus ? "ativada" : "inativada"} com sucesso!`);
+  } catch (error) {
+    toast.error("Erro ao atualizar status da conta!");
+    throw error;
+  }
+};
+

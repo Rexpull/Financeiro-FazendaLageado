@@ -1,5 +1,5 @@
 import { handleRequest as handleBancoRequest } from "./routes/SetupRoutes";
-import { handleRequest as handleContaCorrenteRequest } from "./routes/handleRequestContaCorrente";
+import { handleRequest as handleContaCorrenteRequest } from "./routes/handleContaCorrente";
 
 export default {
   async fetch(req: Request, env: any, ctx: ExecutionContext): Promise<Response> {

@@ -2,38 +2,44 @@ import React, { useState } from "react";
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faSave, faExclamationCircle } from "@fortawesome/free-solid-svg-icons";
-import { Banco } from "../../../../../backend/src/models/Banco";
+import { PlanoConta } from "../../../../../backend/src/models/PlanoConta";
 
 Modal.setAppElement("#root"); // 🔹 Corrige o erro de acessibilidade do modal
 
-interface BancoModalProps {
+interface PlanoContaModalProps {
   isOpen: boolean;
   onClose: () => void;
-  bancoData: Banco;
+  planoData: PlanoConta;
   handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleSave: () => void;
   isSaving: boolean;
 }
 
-const BancoModal: React.FC<BancoModalProps> = ({
+const BancoModal: React.FC<PlanoContaModalProps> = ({
   isOpen,
   onClose,
-  bancoData,
+  planoData,
   handleInputChange,
   handleSave,
   isSaving,
 }) => {
-  const [errors, setErrors] = useState<{ nome?: string; codigo?: string }>({});
+  const [errors, setErrors] = useState<{ descricao?: string; nivel?: string; tipo?: string; idReferente?: string }>({});
 
   // 🔹 Validação antes de salvar
   const validateAndSave = () => {
-    const newErrors: { nome?: string; codigo?: string } = {};
+    const newErrors: { descricao?: string; nivel?: string; tipo?: string; idReferente?: string } = {};
 
-    if (!bancoData.nome.trim()) {
-      newErrors.nome = "O nome é obrigatório!";
+    if (!planoData.descricao.trim()) {
+      newErrors.descricao = "A descrição é obrigatória!";
     }
-    if (!bancoData.codigo.trim()) {
-      newErrors.codigo = "O código é obrigatório!";
+    if (!planoData.nivel) {
+      newErrors.nivel = "O nível é obrigatório!";
+    }
+    if (!planoData.tipo) {
+      newErrors.tipo = "O tipo é obrigatório!";
+    }
+    if (!planoData.idReferente) {
+      newErrors.idReferente = "O referente é obrigatório!";
     }
 
     setErrors(newErrors);
@@ -42,7 +48,6 @@ const BancoModal: React.FC<BancoModalProps> = ({
       handleSave();
     }
   };
-
   return (
     <Modal
       isOpen={isOpen}

@@ -1,13 +1,13 @@
 import React from "react";
-import Sidebar from "../../../components/Sidebar";
-import UserForm from "../../../components/UserForm";
-const Users = () => {
+import Table from "./Table";
+import BreadCrumb from "../../../components/BreadCrumb";
+const PlanoContas = () => {
   return (
-    <div >
-      <h1 className="text-2xl font-bold mb-5">Cadastro de Plano de Contas</h1>
-      <UserForm />
+    <div>
+        <BreadCrumb grupo="Cadastro" pagina="Plano de Contas" />
+        <Table />
     </div>
   );
 };
 
-export default Users;
+export default PlanoContas;
