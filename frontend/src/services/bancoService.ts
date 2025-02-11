@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css"; // ✅ Garante que os estilos estão carregados
 
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
+const API_URL = import.meta.env.VITE_API_URL ;
 
 export const listarBancos = async (): Promise<Banco[]> => {
   try {
@@ -12,6 +12,8 @@ export const listarBancos = async (): Promise<Banco[]> => {
     return await res.json();
   } catch (error) {
     console.error("Erro ao listar bancos:", error);
+    console.log("APIurl: " + API_URL);
+    
     toast.error("Erro ao listar bancos!");
     throw error;
   }
