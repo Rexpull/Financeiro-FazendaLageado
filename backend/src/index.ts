@@ -7,6 +7,7 @@ export default {
     const url = new URL(req.url);
     const pathname = url.pathname;
 
+    
     if (pathname.startsWith("/api/bancos")) {
       return handleBancoRequest(req, env.DB);
     } else if (pathname.startsWith("/api/contas")) {

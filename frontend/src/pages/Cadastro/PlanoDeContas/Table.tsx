@@ -3,7 +3,7 @@ import Modal from "react-modal";
 import DialogModal from "../../../components/DialogModal";
 import CrudModal from "./CrudModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faSortUp, faSortDown } from '@fortawesome/free-solid-svg-icons';
 import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta, atualizarStatusConta } from "../../../services/planoContasService";
 import { PlanoConta } from "../../../../../backend/src/models/PlanoConta";
 
@@ -17,7 +17,12 @@ const PlanoContasTable: React.FC = () => {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [deletePlanoId, setDeletePlanoId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [ocultarInativos, setOcultarInativos] = useState(false);
 
+    // 🔹 Estado para ordenação
+    const [sortColumn, setSortColumn] = useState<string | null>(null);
+    const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  
   // 🔹 Paginação
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(15);
@@ -40,18 +45,41 @@ const PlanoContasTable: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!searchTerm) {
-      setFilteredPlanos(planos);
-    } else {
-      const filtered = planos.filter(
+    let filtered = [...planos];
+
+    // 🔹 Filtro de busca
+    if (searchTerm) {
+      filtered = filtered.filter(
         (plano) =>
           plano.descricao.toLowerCase().includes(searchTerm.toLowerCase()) ||
           plano.hierarquia.includes(searchTerm)
       );
-      setFilteredPlanos(filtered);
     }
-    setCurrentPage(1);
-  }, [searchTerm, planos]);
+
+    // 🔹 Filtro de "Ocultar Inativos"
+    if (ocultarInativos) {
+      filtered = filtered.filter((plano) => !plano.inativo);
+    }
+
+    // 🔹 Aplica ordenação
+    if (sortColumn) {
+      filtered.sort((a, b) => {
+        let valA = a[sortColumn as keyof PlanoConta];
+        let valB = b[sortColumn as keyof PlanoConta];
+
+        if (typeof valA === "string") valA = valA.toLowerCase();
+        if (typeof valB === "string") valB = valB.toLowerCase();
+
+        if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+        if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    setFilteredPlanos(filtered);
+    setCurrentPage(1); // Reinicia a página ao alterar os filtros
+  }, [searchTerm, ocultarInativos, planos, sortColumn, sortDirection]);
+
 
   const openModal = (plano?: PlanoConta) => {
     setPlanoData(plano || { id: 0, nivel: 1, hierarquia: "", descricao: "", inativo: false, tipo: "custeio", idReferente: null });
@@ -100,7 +128,7 @@ const PlanoContasTable: React.FC = () => {
         await atualizarStatusConta(id, novoStatus);
         setPlanos((prev) =>
           prev.map((plano) =>
-            plano.id === id ? { ...plano, ativo: novoStatus } : plano
+            plano.id === id ? { ...plano, inativo: novoStatus } : plano
           )
         );
       } catch (error) {
@@ -108,6 +136,11 @@ const PlanoContasTable: React.FC = () => {
       }
     };
 
+
+    const handleSort = (column: string) => {
+      setSortColumn(column);
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    };
 
    // 🔹 Paginação: calcular registros exibidos
    const indexOfLastItem = currentPage * itemsPerPage;
@@ -119,7 +152,20 @@ const PlanoContasTable: React.FC = () => {
   return (
     <div>
 
-        <div className="flex justify-end items-center gap-5 mb-4">
+        <div className="flex justify-between items-end gap-5 mb-4">
+          <div className="relative w-auto whitespace-nowrap">
+
+            <label className="flex items-center text-gray-600 font-medium mr-2 cursor-pointer">
+              Ocultar Inativos:
+              <input
+                type="checkbox"
+                className="ml-2 cursor-pointer" style={{marginTop: '0.1rem'}}
+                checked={ocultarInativos}
+                onChange={() => setOcultarInativos(!ocultarInativos)}
+              />
+            </label>
+          </div>
+          <div className="flex justify-end items-center gap-5 w-full">
             <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center " style={{ paddingLeft: '0.75rem', color: '#666666'}}>
                     <FontAwesomeIcon icon={faSearch} />
@@ -127,6 +173,7 @@ const PlanoContasTable: React.FC = () => {
                 <input
                 type="text"
                 className="border border-gray-400 p-2 pl-10 pr-4 rounded w-full hover:border-gray-500 focus:outline-none focus:border-blue-500"
+                style={{width: '300px'}}
                 placeholder="Filtrar por hierarquia ou descrição"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -138,6 +185,7 @@ const PlanoContasTable: React.FC = () => {
             >
                 Adicionar Plano de Contas <FontAwesomeIcon icon={faPlus} className="ml-3 font-bold" />
             </button>
+          </div>
       </div>
         <div className="bg-gray-50 shadow-md rounded-lg overflow-hidden border border-gray-200">
         {isLoading ? (
@@ -148,13 +196,23 @@ const PlanoContasTable: React.FC = () => {
             <>
                 <table className="w-full border-collapse"> 
                     <thead>
+                    
                         <tr className="bg-gray-200">
-                            <th className="p-2 ">Nivel</th>
-                            <th className="p-2 text-left">Hierarquia</th>
-                            <th className="p-2 text-left">Descrição</th>
-                            <th className="p-2">Tipo</th>
-                            <th className="p-2 text-right">Status</th>
-                            <th className="p-2 pr-11 text-right">Ações</th>
+                          {["nivel", "hierarquia", "descricao", "tipo"].map((column) => (
+                            <th
+                              key={column}
+                              className="p-2 cursor-pointer"
+                              onClick={() => handleSort(column)}
+                            >
+                              {column.charAt(0).toUpperCase() + column.slice(1)}
+                              {sortColumn === column && (
+                                <FontAwesomeIcon icon={sortDirection === "asc" ? faSortUp : faSortDown} className="ml-1" />
+                              )}
+                            </th>
+                          ))}
+
+                          <th className="p-2 text-right">Status</th>
+                          <th className="p-2 pr-11 text-right">Ações</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -266,7 +324,7 @@ const PlanoContasTable: React.FC = () => {
         onConfirm={handleDeleteConfirm}
         title="Atenção"
         type="warn"
-        message="Tem certeza que deseja excluir este banco?"
+        message="Tem certeza que deseja excluir este Plano de Conta?"
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />

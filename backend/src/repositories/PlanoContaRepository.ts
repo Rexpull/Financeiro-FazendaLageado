@@ -103,12 +103,12 @@ export class PlanoContaRepository {
         ).run();
     }
 
-    async updateStatus(id: number, ativo: boolean): Promise<void> {
+    async updateStatus(id: number, inativo: boolean): Promise<void> {
         await this.db.prepare(`
             UPDATE planoContas 
-            SET ativo = ? 
+            SET inativo = ? 
             WHERE id = ?
-        `).bind(ativo ? 1 : 0, id).run();
+        `).bind(inativo ? 1 : 0, id).run();
     }
 
 
