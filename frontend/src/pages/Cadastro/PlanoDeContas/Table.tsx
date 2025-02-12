@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from "react";
 import Modal from "react-modal";
 import DialogModal from "../../../components/DialogModal";
+import CrudModal from "./CrudModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
-import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta } from "../../../services/planoContasService";
+import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta, atualizarStatusConta } from "../../../services/planoContasService";
 import { PlanoConta } from "../../../../../backend/src/models/PlanoConta";
 
 const PlanoContasTable: React.FC = () => {
   const [planos, setPlanos] = useState<PlanoConta[]>([]);
   const [filteredPlanos, setFilteredPlanos] = useState<PlanoConta[]>([]);
   const [modalIsOpen, setModalIsOpen] = useState(false);
-  const [planoData, setPlanoData] = useState<PlanoConta>({ id: 0, nivel: 1, hierarquia: "", descricao: "", inativo: false, tipo: "", idReferente: null });
+  const [planoData, setPlanoData] = useState<PlanoConta>({ id: 0, nivel: 1, hierarquia: "", descricao: "", inativo: false, tipo: "custeio", idReferente: null });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -53,7 +54,7 @@ const PlanoContasTable: React.FC = () => {
   }, [searchTerm, planos]);
 
   const openModal = (plano?: PlanoConta) => {
-    setPlanoData(plano || { id: 0, nivel: 1, hierarquia: "", descricao: "", inativo: false, tipo: "", idReferente: null });
+    setPlanoData(plano || { id: 0, nivel: 1, hierarquia: "", descricao: "", inativo: false, tipo: "custeio", idReferente: null });
     setModalIsOpen(true);
   };
 
@@ -70,6 +71,7 @@ const PlanoContasTable: React.FC = () => {
         setPlanos((prev) => [...prev, planoSalvo]);
       }
       setModalIsOpen(false);
+      fetchPlanos();
     } catch (error) {
       console.error("Erro ao salvar plano de contas:", error);
     } finally {
@@ -92,6 +94,19 @@ const PlanoContasTable: React.FC = () => {
     setDeletePlanoId(id);
     setConfirmModalOpen(true);
   };
+
+  const handleStatusChange = async (id: number, novoStatus: boolean) => {
+      try {
+        await atualizarStatusConta(id, novoStatus);
+        setPlanos((prev) =>
+          prev.map((plano) =>
+            plano.id === id ? { ...plano, ativo: novoStatus } : plano
+          )
+        );
+      } catch (error) {
+        console.error("Erro ao atualizar status do plano de contas:", error);
+      }
+    };
 
 
    // 🔹 Paginação: calcular registros exibidos
@@ -134,11 +149,11 @@ const PlanoContasTable: React.FC = () => {
                 <table className="w-full border-collapse"> 
                     <thead>
                         <tr className="bg-gray-200">
-                            <th className="p-2">Hierarquia</th>
-                            <th className="p-2 text-left">Nivel</th>
-                            <th className="p-2">Descrição</th>
+                            <th className="p-2 ">Nivel</th>
+                            <th className="p-2 text-left">Hierarquia</th>
+                            <th className="p-2 text-left">Descrição</th>
                             <th className="p-2">Tipo</th>
-                            <th className="p-2">Status</th>
+                            <th className="p-2 text-right">Status</th>
                             <th className="p-2 pr-11 text-right">Ações</th>
                         </tr>
                     </thead>
@@ -152,13 +167,24 @@ const PlanoContasTable: React.FC = () => {
                       ) : (
                         currentItems.map((planoC) => (
                           <tr key={planoC.id} className="border-b">
-                            <td className="p-2 text-center">{planoC.hierarquia}</td>
-                            <td className="p-2 text-left flex items-center gap-2">
+                            <td className="p-2 text-center">
                               {planoC.nivel}
                             </td>
-                            <td className="p-2 text-center">{planoC.descricao}</td>
-                            <td className="p-2 text-center">{planoC.tipo}</td>
-                            <td className="p-2 text-center">{planoC.inativo}</td>
+                            <td className="p-2 text-left">{planoC.hierarquia}</td>
+                            
+                            <td className="p-2 text-left">{planoC.descricao}</td>
+                            <td className="p-2 text-center capitalize">{planoC.tipo.toLowerCase()}</td>
+                            <td className="p-2 text-right">
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="sr-only peer"
+                                  checked={!planoC.inativo}
+                                  onChange={() => handleStatusChange(planoC.id, !planoC.inativo)}
+                                />
+                                <div className="w-9 h-5 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                              </label>
+                            </td>
 
                             <td className="p-2 text-right pr-5">
                               <button
@@ -224,7 +250,15 @@ const PlanoContasTable: React.FC = () => {
 
         )}
         </div>
-    
+      <CrudModal
+        isOpen={modalIsOpen}
+        onClose={() => setModalIsOpen(false)}
+        planoData={planoData}
+        handleInputChange={(e) => setPlanoData({ ...planoData, [e.target.name]: e.target.value })}
+        handleSave={handleSave}
+        isSaving={isSaving}
+        planos={planos}
+      />
 
       <DialogModal
         isOpen={confirmModalOpen}

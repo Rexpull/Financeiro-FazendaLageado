@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiUsers, FiDatabase, FiBarChart2, FiMenu, FiX, FiChevronDown, FiChevronRight  } from "react-icons/fi";
-import { RiUserFill, RiDatabaseFill, RiBarChartFill, RiMenuFill, RiCloseFill, RiArrowDownSFill, RiArrowRightSFill } from "react-icons/ri";
+import {  RiBarChartFill, RiSettings3Fill} from "react-icons/ri";
 import { IoMdNotificationsOutline } from "react-icons/io";
 import { FaUserCircle } from "react-icons/fa";
 import { Link, useLocation, useNavigate  } from 'react-router-dom';
@@ -26,6 +26,8 @@ const Sidebar = () => {
     { path: "/cadastro/plano-de-contas", label: "Plano de Contas" },
     { path: "/financeiro/conciliacao-bancaria", label: "Conciliação Bancária" },
     { path: "/financeiro/fluxo-de-caixa", label: "Fluxo de Caixa" },
+    { path: "/parametros", label: "Parâmetros" },
+
   ];
 
 
@@ -181,6 +183,13 @@ const Sidebar = () => {
                 </Link>
               </ul>
             </li>
+
+            {/* Parametros */}
+            <Link to="/parametros">
+              <li className={`flex items-center gap-2 mt-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu single-menu ${isActive('/parametros')}`}>
+                <RiSettings3Fill /> Parâmetros
+              </li>
+            </Link>
           </ul>
         </nav>
       </div>

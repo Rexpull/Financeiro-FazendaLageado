@@ -1,7 +1,7 @@
 import { ContaCorrente } from "../../../backend/src/models/ContaCorrente";
 import { toast } from "react-toastify";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
+const API_URL = import.meta.env.VITE_API_URL;
 
 export const listarContas = async (): Promise<ContaCorrente[]> => {
   try {

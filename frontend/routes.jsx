@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import MainLayout from "./MainLayout"; // 🔹 Importa o layout principal
 import Dashboard from "./src/pages/Dashboard";
+import Parametros from "./src/pages/Parametros";
 import Users from "./src/pages/Cadastro/Users";
 import Pessoa from "./src/pages/Cadastro/Pessoa";
 import Banco from "./src/pages/Cadastro/Banco";
@@ -24,6 +25,8 @@ function AppRoutes() {
           <Route path="cadastro/plano-de-contas" element={<PlanoDeContas />} />
           <Route path="financeiro/conciliacao-bancaria" element={<ConciliacaoBancaria />} />
           <Route path="financeiro/fluxo-de-caixa" element={<FluxoDeCaixa />} />
+          <Route path="parametros" element={<Parametros />} />
+
         </Route>
       </Routes>
     </BrowserRouter>

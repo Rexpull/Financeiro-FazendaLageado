@@ -1,5 +1,6 @@
 import { PlanoContaRepository } from "../repositories/PlanoContaRepository";
 import { PlanoConta } from "../models/PlanoConta";
+import { toast } from "react-toastify";
 
 export class PlanoContaController {
     private planoRepository: PlanoContaRepository;
@@ -25,57 +26,76 @@ export class PlanoContaController {
 
         try {
             // 🔹 Listar todos os planos de contas
-            if (method === "GET" && pathname === "/api/plano-contas") {
+            if (method === "GET" && pathname === "/api/planoContas") {
                 const planos = await this.planoRepository.getAll();
                 return new Response(JSON.stringify(planos), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // 🔹 Criar um novo plano de contas
-            if (method === "POST" && pathname === "/api/plano-contas") {
-                const body: PlanoConta = await req.json();
-
-                if (!body.descricao || !body.tipo) {
-                    return new Response(JSON.stringify({ error: "Campos obrigatórios não preenchidos!" }), {
-                        status: 400,
-                        headers: corsHeaders,
-                    });
+            if (method === "POST" && pathname === "/api/planoContas") {
+                try {
+                    const body: PlanoConta = await req.json();
+            
+                    if (!body.descricao || !body.nivel || !body.tipo) {
+                        return new Response(JSON.stringify({ error: "Campos obrigatórios não preenchidos!" }), { status: 400, headers: corsHeaders });
+                    }
+            
+                    console.log("📥 Recebendo dados do frontend:", body); // 👀 LOG NO BACKEND
+            
+                    // 🔹 Chama a criação do plano de contas
+                    const id = await this.planoRepository.create(body);
+            
+                    return new Response(JSON.stringify({ id, message: "Plano de contas criado com sucesso!" }), { status: 201, headers: corsHeaders });
+            
+                } catch (error) {
+                    if ((error as Error).message.includes("UNIQUE constraint failed")) {
+                        toast.error("Já existe um plano de contas com esta descrição.");
+                        return new Response(JSON.stringify({ error: "Já existe um plano de contas com esta descrição." }), { status: 400, headers: corsHeaders });
+                    }
+                    return new Response(JSON.stringify({ error: "Erro ao criar plano de contas", details: (error as Error).message }), { status: 500, headers: corsHeaders });
                 }
-
-                const id = await this.planoRepository.create(body);
-                return new Response(JSON.stringify({ id, message: "Plano de contas criado com sucesso!" }), {
-                    status: 201,
-                    headers: corsHeaders,
-                });
             }
+            
+
 
             // 🔹 Atualizar um plano de contas
-            if (method === "PUT" && pathname.startsWith("/api/plano-contas/")) {
-                const id = parseInt(pathname.split("/")[3]);
-                const body: PlanoConta = await req.json();
+            if (method === "PUT" && pathname.startsWith("/api/planoContas/")) {
+                try {
+                    const id = parseInt(pathname.split("/")[3]);
+                    const body: PlanoConta = await req.json();
 
-                if (!id || isNaN(id)) {
-                    return new Response(JSON.stringify({ error: "ID inválido!" }), {
-                        status: 400,
+                    
+                    if (!id || isNaN(id)) {
+                        return new Response(JSON.stringify({ error: "ID inválido!" }), {
+                            status: 400,
+                            headers: corsHeaders,
+                        });
+                    }
+
+                    if (!body.descricao || !body.tipo) {
+                        return new Response(JSON.stringify({ error: "Campos obrigatórios não preenchidos!" }), {
+                            status: 400,
+                            headers: corsHeaders,
+                        });
+                    }
+
+                    await this.planoRepository.update(id, body);
+                    return new Response(JSON.stringify({ message: "Plano de contas atualizado com sucesso!" }), {
+                        status: 200,
                         headers: corsHeaders,
                     });
                 }
-
-                if (!body.descricao || !body.tipo) {
-                    return new Response(JSON.stringify({ error: "Campos obrigatórios não preenchidos!" }), {
-                        status: 400,
-                        headers: corsHeaders,
-                    });
+                catch (error) {
+                    if ((error as Error).message.includes("UNIQUE constraint failed")) {
+                        toast.error("Já existe um plano de contas com esta descrição.");
+                        return new Response(JSON.stringify({ error: "Já existe um plano de contas com esta descrição." }), { status: 400, headers: corsHeaders });
+                    }
+                    return new Response(JSON.stringify({ error: "Erro ao criar plano de contas", details: (error as Error).message }), { status: 500, headers: corsHeaders });
                 }
-
-                await this.planoRepository.update(id, body);
-                return new Response(JSON.stringify({ message: "Plano de contas atualizado com sucesso!" }), {
-                    status: 200,
-                    headers: corsHeaders,
-                });
             }
 
             // 🔹 Atualizar status (Ativar/Inativar)
-            if (method === "PATCH" && pathname.startsWith("/api/plano-contas/") && pathname.endsWith("/status")) {
+            if (method === "PATCH" && pathname.startsWith("/api/planoContas/") && pathname.endsWith("/status")) {
                 const id = parseInt(pathname.split("/")[3]);
                 const body: PlanoConta = await req.json();
 
@@ -101,7 +121,7 @@ export class PlanoContaController {
             }
 
             // 🔹 Excluir plano de contas (com restrição de hierarquia)
-            if (method === "DELETE" && pathname.startsWith("/api/plano-contas/")) {
+            if (method === "DELETE" && pathname.startsWith("/api/planoContas/")) {
                 const id = parseInt(pathname.split("/")[3]);
 
                 if (!id || isNaN(id)) {
