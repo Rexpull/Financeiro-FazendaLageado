@@ -1,11 +1,12 @@
 import React from "react";
-import Sidebar from "../../../components/Sidebar";
-import UserForm from "../../../components/UserForm";
+// import Table from "./Tabl";
+import BreadCrumb from "../../../components/BreadCrumb";
+
 const Users = () => {
   return (
-    <div >
-      <h1 className="text-2xl font-bold mb-5">Cadastro de Pessoa</h1>
-      <UserForm />
+    <div>
+        <BreadCrumb grupo="Cadastro" pagina="Pessoa" />
+        {/* <Table /> */}
     </div>
   );
 };

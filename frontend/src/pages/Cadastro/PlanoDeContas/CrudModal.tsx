@@ -127,16 +127,11 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
 
           {/* 🔹 Nível */}
           <div className="relative">
-            <div className="flex justify-between">
+            <div >
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Nível <span className="text-red-500">*</span>
               </label>
-              <a
-                  className="ml-2 font-bolder text-blue-500 hover:text-blue-800 cursor-pointer"
-                  target={"_blank"} href="/parametros"
-                >
-                <FontAwesomeIcon icon={faPlus} />
-              </a>
+        
             </div>
             
             <div className="flex items-center">
@@ -197,7 +192,7 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
                   setShowSuggestions(true);
                 }}
                 onFocus={() => setShowSuggestions(true)}
-                disabled={planoData.nivel === 1}
+                disabled={planoData.nivel == 1}
               />
               {showSuggestions && filteredPlanos.length > 0 && (
                 <ul className="absolute bg-white border w-full shadow-lg rounded mt-1">

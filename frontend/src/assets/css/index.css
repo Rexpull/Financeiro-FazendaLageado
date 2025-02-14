@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    --select-border: #777;
+    --select-focus: blue;
+    --select-arrow: var(--select-border);
+  }
+
 /* Logo da Sidebar */
 .logoSidebar {
     width: 100%;
@@ -161,5 +167,10 @@
 button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+input:disabled,
+select:disabled {
+    cursor: not-allowed;
+    background-color: #eee;
 }
 
