@@ -9,7 +9,7 @@ export class ParametroRepository {
 
     async getAll(): Promise<Parametro[]> {
         const { results } = await this.db.prepare(`
-            SELECT * FROM parametro
+            SELECT * FROM parametros
         `).all();
 
         return results.map(result => ({
@@ -21,7 +21,7 @@ export class ParametroRepository {
 
     async update(parametro: Parametro): Promise<void> {
         await this.db.prepare(`
-            UPDATE parametro 
+            UPDATE parametros 
             SET idPlanoTransferenciaEntreContas = ?, 
                 idPlanoEntradaFinanciamentos = ?, 
                 idPlanoPagamentoFinanciamentos = ?

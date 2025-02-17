@@ -12,10 +12,34 @@ const ParametroPage = () => {
     const [showSuggestions, setShowSuggestions] = useState({ transferencia: false, entrada: false, pagamento: false });
 
     useEffect(() => {
-        listarParametros().then((data) => setParametros(data[0] || null));
-        listarPlanoContas().then(setPlanos);
+      // 🔹 Primeiro, carrega os planos de contas
+      listarPlanoContas().then(setPlanos);
+
+      // 🔹 Em seguida, carrega os parâmetros
+      listarParametros().then((data) => {
+          const parametrosData = data[0] || null;
+          setParametros(parametrosData);
+      });
     }, []);
 
+    // 🔹 Atualiza os campos de busca quando os planos de contas forem carregados
+    useEffect(() => {
+        if (parametros && planos.length > 0) {
+            setSearch({
+                transferencia: getPlanoDescricao(parametros.idPlanoTransferenciaEntreContas),
+                entrada: getPlanoDescricao(parametros.idPlanoEntradaFinanciamentos),
+                pagamento: getPlanoDescricao(parametros.idPlanoPagamentoFinanciamentos),
+            });
+        }
+    }, [planos, parametros]);
+
+    // 🔹 Retorna a descrição do plano com base no ID
+    const getPlanoDescricao = (id?: number) => {
+        if (!id || planos.length === 0) return "";
+        const plano = planos.find((p) => p.id === id);
+        return plano ? `${plano.descricao}` : "";
+    };
+    
     // 🔹 Atualiza os parâmetros automaticamente no banco de dados
     const updateParametro = async (field: keyof Parametro, value: number) => {
         if (!parametros) return;
@@ -25,11 +49,23 @@ const ParametroPage = () => {
     };
 
     // 🔹 Filtra planos de contas nível 3 conforme tipo e busca
-    const filterPlanos = (tipo: string, searchTerm: string) =>
-        planos
+    const filterPlanos = (tipo: string, searchTerm: string) =>{
+
+        if(searchTerm && searchTerm === "R"){
+          searchTerm = "001"; // Receita
+        } else if (searchTerm && searchTerm === "D"){
+          searchTerm = "002";  // Despesa
+        } else if (searchTerm && searchTerm === "T"){
+          searchTerm = "003";  // Transferência
+        } else {
+          searchTerm = "003"; // Transferência
+        }
+
+        return planos
             .filter((plano) => plano.nivel === 3 && plano.tipo === tipo)
-            .filter((plano) => plano.descricao.toLowerCase().includes(searchTerm.toLowerCase()))
+            .filter((plano) => plano.hierarquia.toLowerCase().startsWith(searchTerm.toLowerCase()))
             .slice(0, 10);
+    };
 
     return (
         <div>
@@ -55,7 +91,7 @@ const ParametroPage = () => {
                             />
                             {showSuggestions.transferencia && (
                                 <ul className="absolute bg-white  rounded w-full shadow-lg max-w-md mt-1 z-10">
-                                    {filterPlanos("custeio", search.transferencia).map((plano) => (
+                                    {filterPlanos("custeio", "T").map((plano) => (
                                         <li
                                             key={plano.id}
                                             className="p-2 hover:bg-gray-100 cursor-pointer"
@@ -95,8 +131,8 @@ const ParametroPage = () => {
                                 onFocus={() => setShowSuggestions({ ...showSuggestions, entrada: true })}
                             />
                             {showSuggestions.entrada && (
-                                <ul className="absolute bg-white border rounded w-full shadow-lg max-w-md mt-1 z-10">
-                                    {filterPlanos("custeio", search.entrada).map((plano) => (
+                                <ul className="absolute bg-white rounded w-full shadow-lg max-w-md mt-1 z-10">
+                                    {filterPlanos("custeio", "R").map((plano) => (
                                         <li
                                             key={plano.id}
                                             className="p-2 hover:bg-gray-100 cursor-pointer"
@@ -134,8 +170,8 @@ const ParametroPage = () => {
                                 onFocus={() => setShowSuggestions({ ...showSuggestions, pagamento: true })}
                             />
                             {showSuggestions.pagamento && (
-                                <ul className="absolute bg-white border rounded w-full shadow-lg max-w-md mt-1 z-10">
-                                    {filterPlanos("investimento", search.pagamento).map((plano) => (
+                                <ul className="absolute bg-white rounded w-full shadow-lg max-w-md mt-1 z-10">
+                                    {filterPlanos("custeio", "D").map((plano) => (
                                         <li
                                             key={plano.id}
                                             className="p-2 hover:bg-gray-100 cursor-pointer"
