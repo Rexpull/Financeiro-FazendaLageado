@@ -23,7 +23,7 @@
 /* Sidebar */
 .sidebar {
     box-shadow: -1px 0px 5px grey !important;
-    width: 260px !important;
+    width: 240px !important;
 
     .nav {
         .sub-menu {
@@ -177,6 +177,11 @@ input:disabled,
 select:disabled {
     cursor: not-allowed;
     background-color: #eee;
+}
+
+
+.h-10 {
+    height: 2.50rem;
 }
 
 .loading-text{

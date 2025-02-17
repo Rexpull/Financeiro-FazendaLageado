@@ -4,8 +4,30 @@ import { faSearch, faPlus, faEllipsisV, faUniversity, faChevronCircleDown, faChe
 import { listarContas, salvarConta, excluirConta, atualizarStatusConta  } from "../../../services/contaCorrenteService";
 import ContaCorrenteModal from "./ContaCorrenteModal"; // Importando o Modal
 import DialogModal from "../../../components/DialogModal"
-
 import { ContaCorrente } from "../../../../../backend/src/models/ContaCorrente";
+
+// Importando as imagens dos bancos
+import bancoBrasil from "../../../assets/img/icon-Bancos/banco-brasil.svg";
+import santander from "../../assets/img/icon-Bancos/santander.svg";
+import caixa from "../../assets/img/icon-Bancos/caixa.svg";
+import bradesco from "../../assets/img/icon-Bancos/bradesco.svg";
+import itau from "../../assets/img/icon-Bancos/itau.svg";
+import inter from "../../assets/img/icon-Bancos/inter.svg";
+import sicredi from "../../assets/img/icon-Bancos/sicredi.svg";
+import sicoob from "../../assets/img/icon-Bancos/sicoob.svg";
+import safra from "../../assets/img/icon-Bancos/safra.svg";
+import nubank from "../../assets/img/icon-Bancos/nubank.svg";
+import original from "../../assets/img/icon-Bancos/original.svg";
+import bancoBrasilia from "../../assets/img/icon-Bancos/banco-brasilia.svg";
+import banrisul from "../../assets/img/icon-Bancos/banrisul.svg";
+import citiBank from "../../assets/img/icon-Bancos/citi-bank.svg";
+import hsbc from "../../assets/img/icon-Bancos/hsbc.svg";
+import banestes from "../../assets/img/icon-Bancos/banestes.svg";
+import bancoAmazonia from "../../assets/img/icon-Bancos/banco-amazonia.svg";
+import bancoNordeste from "../../assets/img/icon-Bancos/banco-nordeste.svg";
+import bankBoston from "../../assets/img/icon-Bancos/bank-boston.svg";
+import defaultIcon from "../../assets/img/icon-Bancos/default.svg";
+
 
 const ListConta: React.FC = () => {
   const [contas, setContas] = useState<ContaCorrente[]>([]);
@@ -71,26 +93,27 @@ const ListConta: React.FC = () => {
   }, [searchTerm, contas, sortOption]);
 
   const BancoLogos: { [key: string]: string } = {
-    "001": "/frontend/src/assets/img/icon-Bancos/banco-brasil.svg",
-    "033": "/frontend/src/assets/img/icon-Bancos/santander.svg",
-    "104": "/frontend/src/assets/img/icon-Bancos/caixa.svg",
-    "237": "/frontend/src/assets/img/icon-Bancos/bradesco.svg",
-    "341": "/frontend/src/assets/img/icon-Bancos/itau.svg",
-    "077": "/frontend/src/assets/img/icon-Bancos/inter.svg",
-    "748" : "/frontend/src/assets/img/icon-Bancos/sicredi.svg",
-    "756": "/frontend/src/assets/img/icon-Bancos/sicoob.svg",
-    "422": "/frontend/src/assets/img/icon-Bancos/safra.svg",
-    "260": "/frontend/src/assets/img/icon-Bancos/nubank.svg",
-    "212": "/frontend/src/assets/img/icon-Bancos/original.svg",
-    "070": "/frontend/src/assets/img/icon-Bancos/banco-brasilia.svg",
-    "389": "/frontend/src/assets/img/icon-Bancos/banrisul.svg",
-    "745": "/frontend/src/assets/img/icon-Bancos/citi-bank.svg",
-    "399": "/frontend/src/assets/img/icon-Bancos/hsbc.svg",
-    "021": "/frontend/src/assets/img/icon-Bancos/banestes.svg",
-    "085": "/frontend/src/assets/img/icon-Bancos/banco-amazonia.svg",
-    "003": "/frontend/src/assets/img/icon-Bancos/banco-nordeste.svg",
-    "318": "/frontend/src/assets/img/icon-Bancos/bank-boston.svg",
+    "001": bancoBrasil,
+    "033": santander,
+    "104": caixa,
+    "237": bradesco,
+    "341": itau,
+    "077": inter,
+    "748": sicredi,
+    "756": sicoob,
+    "422": safra,
+    "260": nubank,
+    "212": original,
+    "070": bancoBrasilia,
+    "389": banrisul,
+    "745": citiBank,
+    "399": hsbc,
+    "021": banestes,
+    "085": bancoAmazonia,
+    "003": bancoNordeste,
+    "318": bankBoston,
   };
+
   
 
   // Abrir o modal para adicionar ou editar conta
@@ -101,7 +124,7 @@ const ListConta: React.FC = () => {
 
   // Função para obter a URL do logotipo do banco
   const getBancoLogo = (codigo: string): string => {
-    return BancoLogos[codigo] || "/frontend/src/assets/img/icon-Bancos/default.png"; // Se não encontrar, usa um ícone padrão
+    return BancoLogos[codigo] || defaultIcon; // Se não encontrar, usa um ícone padrão
   };
 
   const handleStatusChange = async (id: number, novoStatus: boolean) => {
@@ -333,7 +356,7 @@ const ListConta: React.FC = () => {
                     src={getBancoLogo(conta.bancoCodigo)}
                     alt={conta.bancoNome}
                     className="w-12 h-12 mb-2 object-contain"
-                    onError={(e) => (e.currentTarget.src = "/icon-Bancos/default.svg")} 
+                    onError={(e) => (e.currentTarget.src = defaultIcon)} 
                 />
 
                 <span className="text-lg font-bold">{conta.bancoNome.toUpperCase()}</span>

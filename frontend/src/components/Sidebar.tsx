@@ -69,7 +69,7 @@ const Sidebar = () => {
   return (
     <div className="flex ">
       {/* Sidebar */}
-      <div className={`sidebar bg-gray-100 h-screen p-3  w-85  sm:hidden lg:block`} style={{ display: isOpen ? "block" : "none", minHeight: '100vh', height:'100%' }}>
+      <div className={`sidebar bg-gray-100 h-screen p-3 sm:hidden lg:block`} style={{ display: isOpen ? "block" : "none", minHeight: '100vh', height:'100%'}}>
         {/* Logo */}
         <div className="flex items-center justify-between mt-1" style={{position: 'relative'}} >
           <img src={logoFazenda} alt="Logo sidebFazenda Lageado"  className="logoSidebar" />
