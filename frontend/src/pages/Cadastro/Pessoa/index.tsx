@@ -1,12 +1,12 @@
 import React from "react";
-// import Table from "./Tabl";
+import List from "./List";
 import BreadCrumb from "../../../components/BreadCrumb";
 
 const Users = () => {
   return (
     <div>
         <BreadCrumb grupo="Cadastro" pagina="Pessoa" />
-        {/* <Table /> */}
+        <List />
     </div>
   );
 };

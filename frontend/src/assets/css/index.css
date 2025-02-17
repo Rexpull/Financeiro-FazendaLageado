@@ -179,3 +179,10 @@ select:disabled {
     background-color: #eee;
 }
 
+.loading-text{
+    line-height: 1.5;
+    font-size: inherit;
+    font-weight: 600;
+    margin: 0 auto 16px;
+    font-size: 25px;
+}

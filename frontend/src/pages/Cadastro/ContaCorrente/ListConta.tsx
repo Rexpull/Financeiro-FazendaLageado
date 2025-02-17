@@ -258,7 +258,15 @@ const ListConta: React.FC = () => {
       {!isLoading && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {filteredContas.length === 0 ? (
-          <p className="text-gray-600 text-center col-span-full">Nenhuma conta encontrada!</p>
+        <div className="col-span-full flex flex-col items-center gap-2">
+          <img 
+          src="/frontend/src/assets/img/noData.svg"
+          alt="Sem dados"
+          className="object-contain" style={{width:"25em", height:"25em"}}/> 
+          <p className="text-gray-900 font-bold text-center col-span-full " style={{fontSize:"1.2em", marginTop: "-40px", marginBottom: "150px"}}>Nenhuma conta encontrada!</p>
+      </div>
+
+          
         ) : (
           filteredContas.map((conta) => (
             <div 
