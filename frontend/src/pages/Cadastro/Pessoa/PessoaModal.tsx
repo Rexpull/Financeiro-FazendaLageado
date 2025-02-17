@@ -40,9 +40,7 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
   }, [isOpen]);
 
   // 🔹 Função para formatar telefone automaticamente
-  const formatarTelefone = (value: string) => {
-    console.log("Tel: " + value.length);
-  
+  const formatarTelefone = (value: string) => {  
     value = value.replace(/\D/g, ""); // Remove tudo que não for número
 
     if (value.length <= 10) {
@@ -54,8 +52,6 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
 
   // 🔹 Máscara de CPF/CNPJ conforme tipo de pessoa
   const formatarDocumento = (tipo: string, value: string) => {
-    console.log("Doc:" + value.length);
-
     value = value.replace(/\D/g, "");
 
     if (tipo === "fisica") {
@@ -173,7 +169,7 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">CPF/CNPJ *</label>
+            <label className="block text-sm font-medium mb-1">CPF/CNPJ</label>
             <input
               type="text"
               name="cgcpf"
@@ -183,7 +179,7 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
               onChange={handleInputChangeWithLimit}
               disabled={isSaving}
             />
-            {errors.cgcpf && <p className="text-red-500 text-xs">{errors.cgcpf} {pessoaData.cgcpf?.trim().replace(/\D/g, "").length}</p>}
+            {errors.cgcpf && <p className="text-red-500 text-xs">{errors.cgcpf}</p>}
           </div>
         </div>
 

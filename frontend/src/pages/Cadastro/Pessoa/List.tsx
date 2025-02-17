@@ -176,7 +176,7 @@ const ListConta: React.FC = () => {
         <div className="flex justify-between items-end gap-5 mb-4 border-b pb-4">
             <div className="relative w-auto whitespace-nowrap">
                 <button 
-                className="bg-gray-200 font-bold h-11 px-4 pt-0 pb-0 flex items-center rounded hover:bg-gray-300"
+                className="bg-gray-200 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded hover:bg-gray-300"
                 >
                 Adicionar Filtro <FontAwesomeIcon icon={faPlus} className="ml-3" />
                 </button>
@@ -189,14 +189,14 @@ const ListConta: React.FC = () => {
                     </span>
                     <input
                         type="text"
-                        className="border border-gray-400 p-2 pl-10 pr-4 rounded w-auto min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
+                        className="border border-gray-400 h-10 py-2 pl-10 pr-4 rounded w-auto min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
                         placeholder="Pesquisar por Nome, CPF/CNPJ, Email ou Telefone"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
                 <button 
-                className="bg-primary text-white font-bold h-11 px-4 pt-0 pb-0 flex items-center rounded hover:bg-orange-400"
+                className="bg-primary text-white font-bold h-10 px-6 pt-0 pb-0 flex items-center rounded hover:bg-orange-400"
                 onClick={() => openModal()}
                 >
                 Nova Pessoa <FontAwesomeIcon icon={faPlus} className="ml-3" />
@@ -237,6 +237,44 @@ const ListConta: React.FC = () => {
                 <span className="text-xs font-semibold text-gray-600">{pessoa.ativo ? "Ativo" : "Inativo"}</span>
               </div>
 
+
+          {/* 🔹 Menu de ações */}
+               <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => (menuRefs.current[pessoa.id] = el)}>
+                  <FontAwesomeIcon
+                    icon={faEllipsisV}
+                    className="text-gray-600 w-8 mr-1 text-lg"
+                    onClick={() => setActiveMenu(activeMenu === pessoa.id ? null : pessoa.id)}
+                  />
+                  {activeMenu === pessoa.id && (
+                    <div 
+                      className="absolute right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
+                      onClick={(e) => e.stopPropagation()} 
+                    >
+                      <button
+                        className="block w-full text-left px-3 py-2 hover:bg-gray-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenu(null);
+                          setModalIsOpen(true);
+                          setPessoaData(pessoa);
+                        }}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        className="block w-full text-left px-3 py-2 text-red-500 hover:bg-gray-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenu(null);
+                          handleDelete(pessoa.id);
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  )}
+                </div>
+
               {/* 🔹 Nome e Avatar */}
               <div className="flex flex-col items-center mt-6">
                 <div className="bg-orange-300 w-12 h-12 flex items-center justify-center text-xl font-bold rounded-full">
@@ -245,7 +283,7 @@ const ListConta: React.FC = () => {
                 <span className="text-lg font-bold mt-2">{pessoa.nome}</span>
                 <p className="text-sm text-gray-600">{formatarDocumento(pessoa.tipo, pessoa.cgcpf ?? "") || "Sem CPF/CNPJ"}</p>
                 <p className="text-sm text-gray-600">{pessoa.email || "Sem Email"}</p>
-                <p className="text-sm text-gray-600">{formatarTelefone(pessoa.telefone ?? "") || "Sem Telefone"} {pessoa.telefone?.length}</p>
+                <p className="text-sm text-gray-600">{formatarTelefone(pessoa.telefone ?? "") || "Sem Telefone"}</p>
               </div>
             </div>
           ))

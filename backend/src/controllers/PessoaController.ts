@@ -15,7 +15,7 @@ export class PessoaController {
 
         const corsHeaders = {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type",
         };
 
@@ -46,6 +46,31 @@ export class PessoaController {
                 const id = parseInt(pathname.split("/")[3]);
                 await this.pessoaRepository.deleteById(id);
                 return new Response(JSON.stringify({ message: "Pessoa excluída com sucesso!" }), { status: 200, headers: corsHeaders });
+            }
+
+            if (method === "PATCH" && pathname.startsWith("/api/pessoa/") && pathname.endsWith("/status")) {
+                const id = parseInt(pathname.split("/")[3]);
+                const body: Pessoa = await req.json();
+
+                if (!id || isNaN(id)) {
+                    return new Response(JSON.stringify({ error: "ID inválido!" }), {
+                        status: 400,
+                        headers: corsHeaders,
+                    });
+                }
+
+                if (typeof body.ativo !== "boolean") {
+                    return new Response(JSON.stringify({ error: "O campo 'ativo' deve ser um booleano (true/false)!" }), {
+                        status: 400,
+                        headers: corsHeaders,
+                    });
+                }
+
+                await this.pessoaRepository.updateStatus(id, body.ativo);
+                return new Response(JSON.stringify({ message: `Pessoa ${body.ativo ? "ativada" : "inativada"} com sucesso!` }), {
+                    status: 200,
+                    headers: corsHeaders,
+                });
             }
 
             return new Response("Rota não encontrada", { status: 404, headers: corsHeaders });

@@ -20,7 +20,9 @@ export class PessoaRepository {
             telefone: result.telefone as string | undefined,
             email: result.email as string | undefined,
             observacao: result.observacao as string | undefined,
-            ativo: result.ativo === 1
+            ativo: result.ativo === 1,
+            fornecedor: result.fornecedor as boolean,
+            cliente: result.cliente as boolean
         }));
     }
 
@@ -39,7 +41,9 @@ export class PessoaRepository {
                 telefone: result.telefone as string | undefined,
                 email: result.email as string | undefined,
                 observacao: result.observacao as string | undefined,
-                ativo: result.ativo === 1
+                ativo: result.ativo === 1,
+                fornecedor: result.fornecedor as boolean,
+                cliente: result.cliente as boolean
             };
         }
         return null;
@@ -61,6 +65,14 @@ export class PessoaRepository {
             pessoa.ativo ? 1 : 0
         ).run();
         return meta.last_row_id;
+    }
+
+    async updateStatus(id: number, ativo: boolean): Promise<void> {
+        await this.db.prepare(`
+            UPDATE pessoa 
+            SET ativo = ? 
+            WHERE id = ?
+        `).bind(ativo ? 1 : 0, id).run();
     }
 
     async update(id: number, pessoa: Pessoa): Promise<void> {
