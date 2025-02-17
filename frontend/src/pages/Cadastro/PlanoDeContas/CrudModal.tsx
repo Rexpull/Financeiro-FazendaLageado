@@ -31,7 +31,7 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
 
   // 🔹 Remove "Referente" se o nível for "Nível 1"
   useEffect(() => {
-    if (planoData.nivel === 1) {
+    if (planoData.nivel == 1) {
       handleInputChange({ target: { name: "idReferente", value: "" } } as any);
       setSearchReferente("");
     } else {
@@ -42,7 +42,7 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
 
   // 🔹 Filtragem de planos de conta para pesquisa no campo "Referente"
   const filteredPlanos = planos
-    .filter((plano) => plano.nivel === planoData.nivel - 1) // 🔹 Filtra pelo nível anterior
+    .filter((plano) => plano.nivel == planoData.nivel - 1) // 🔹 Filtra pelo nível anterior
     .filter((plano) => 
       `${plano.hierarquia} | ${plano.descricao}`.toLowerCase().includes(searchReferente.toLowerCase())
     )
@@ -68,13 +68,13 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
     if (!planoData.tipo) {
       newErrors.tipo = "O tipo é obrigatório!";
     }
-    if (planoData.nivel !== 1 && !planoData.idReferente){
+    if (planoData.nivel != 1 && !planoData.idReferente){
       newErrors.idReferente = "O referente é obrigatório!";
     }
 
     setErrors(newErrors);
 
-    if (Object.keys(newErrors).length === 0) {
+    if (Object.keys(newErrors).length == 0) {
       console.log("📤 Enviando para API:", planoData);       
       handleSave();
 
