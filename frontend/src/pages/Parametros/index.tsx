@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { listarParametros, atualizarParametros } from "../../services/ParametroService";
+import { listarParametros, atualizarParametros } from "../../services/parametroService";
 import { listarPlanoContas } from "../../services/planoContasService";
 import { Parametro } from "../../../../backend/src/models/Parametro";
 import { PlanoConta } from "../../../../backend/src/models/PlanoConta";
