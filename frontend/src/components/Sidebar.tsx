@@ -9,6 +9,7 @@ import { faSearch } from '@fortawesome/free-solid-svg-icons';
 
 
 import logoFazenda from "../assets/img/logo-FazendaLageado.svg";
+import logoDefaultPerfil from "../assets/img/defaultPerfil-Man1.svg";
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(true);
@@ -205,7 +206,7 @@ const Sidebar = () => {
           {/* Notificações e Usuário */}
           <div className="flex items-center gap-4">
             <IoMdNotificationsOutline size={24}  />
-            <FaUserCircle size={28}  />
+            <img src={logoDefaultPerfil}  className="logoPerfil" />
           </div>
         </div>
       </div>
