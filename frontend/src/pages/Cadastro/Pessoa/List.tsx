@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef  } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faPlus, faEllipsisV, faUniversity, faChevronCircleDown, faChevronDown } from "@fortawesome/free-solid-svg-icons";
+import { faSearch, faPlus, faEllipsisV, faUniversity, faChevronCircleDown, faChevronDown, faUser, faQuestionCircle } from "@fortawesome/free-solid-svg-icons";
 import { listarPessoas, excluirPessoa, salvarPessoa, atualizarStatusPessoa } from "../../../services/pessoaService";
 import PessoaModal from "./PessoaModal";
 import DialogModal from "../../../components/DialogModal"
@@ -16,6 +16,7 @@ const ListConta: React.FC = () => {
 
   // Estado para controlar o modal
   const [modalIsOpen, setModalIsOpen] = useState(false);
+  const [filtroMenu, setFiltroMenu] = useState(false);
   const [pessoaData, setPessoaData] = useState<Pessoa | null>(null);
   const [activeMenu, setActiveMenu] = useState<number | null>(null);
   const menuRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
@@ -174,14 +175,24 @@ const ListConta: React.FC = () => {
     <div>
       {/* 🔹 Barra de busca e botão de adicionar */}
         <div className="flex justify-between items-end gap-5 mb-4 border-b pb-4">
-            <div className="relative w-auto whitespace-nowrap">
+          <div className="relative">
+              <div className="relative w-auto whitespace-nowrap">
                 <button 
                 className="bg-gray-200 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded hover:bg-gray-300"
+                onClick={() => setFiltroMenu(true)}
                 >
                 Adicionar Filtro <FontAwesomeIcon icon={faPlus} className="ml-3" />
                 </button>
+              </div>
+              {filtroMenu == true && (
+                <div 
+                  className="absolute right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
+                  onClick={(e) => e.stopPropagation()} 
+                >
+                  teste
+                                  </div>
+              )}
             </div>
-
             <div className="flex justify-end items-center gap-5 w-full">
                 <div className=" relative w-full max-w-md">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-600">
@@ -222,7 +233,7 @@ const ListConta: React.FC = () => {
             </div>
         ) : (
           filteredPessoas.map((pessoa) => (
-            <div key={pessoa.id} className="bg-white rounded-lg shadow-md p-4 border border-gray-200 relative hover:bg-gray-100">
+            <div key={pessoa.id} className="bg-white rounded-lg shadow-md p-4 pb-3 border border-gray-200 relative hover:bg-gray-100">
               {/* 🔹 Status ativo (Switch) */}
               <div className="absolute top-3 left-3 flex items-center gap-2">
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -280,10 +291,34 @@ const ListConta: React.FC = () => {
                 <div className="bg-orange-300 w-12 h-12 flex items-center justify-center text-xl font-bold rounded-full">
                   {pessoa.nome[0].toUpperCase()}
                 </div>
-                <span className="text-lg font-bold mt-2">{pessoa.nome}</span>
+                <span className="text-lg font-bold mt-2 " style={{textTransform: 'capitalize'}}>{pessoa.nome.toLowerCase()}</span>
                 <p className="text-sm text-gray-600">{formatarDocumento(pessoa.tipo, pessoa.cgcpf ?? "") || "Sem CPF/CNPJ"}</p>
                 <p className="text-sm text-gray-600">{pessoa.email || "Sem Email"}</p>
                 <p className="text-sm text-gray-600">{formatarTelefone(pessoa.telefone ?? "") || "Sem Telefone"}</p>
+
+                <hr className="w-full my-2"/>
+
+                <div className="flex justify-center gap-3 items-center">
+                  {pessoa.fornecedor == true &&(
+                    <div className="flex items-center gap-2 text-sm text-orange-400 py-1 px-2 font-bold bg-gray-100 rounded">
+                      <FontAwesomeIcon icon={faUniversity} />
+                      Fornecedor
+                    </div>
+                  )}
+                  {pessoa.cliente == true &&(
+                    <div className="flex items-center gap-2 text-sm text-orange-400 py-1 px-2 font-bold bg-gray-100 rounded">
+                      <FontAwesomeIcon icon={faUser} />
+                      Cliente
+                    </div>
+                  )}
+
+                {pessoa.cliente == false && pessoa.fornecedor == false &&(
+                    <div className="flex items-center gap-2 text-sm text-gray-400 py-1 px-2 font-bold bg-gray-100 rounded">
+                      <FontAwesomeIcon icon={faQuestionCircle} />
+                      Sem Registros
+                    </div>
+                )}
+                </div>    
               </div>
             </div>
           ))
