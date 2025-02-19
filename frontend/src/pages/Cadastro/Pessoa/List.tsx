@@ -190,7 +190,7 @@ const ListConta: React.FC = () => {
                   onClick={(e) => e.stopPropagation()} 
                 >
                   teste
-                                  </div>
+                </div>
               )}
             </div>
             <div className="flex justify-end items-center gap-5 w-full">
@@ -213,6 +213,15 @@ const ListConta: React.FC = () => {
                 Nova Pessoa <FontAwesomeIcon icon={faPlus} className="ml-3" />
                 </button>
             </div>
+        </div>
+
+        <div className="flex justify-between items-center w-full">
+          <div id="filtersActiveDiv"className="flex w-full justify-start items-center">
+              
+          </div>
+          <div>
+
+          </div>
         </div>
 
       {isLoading && 
