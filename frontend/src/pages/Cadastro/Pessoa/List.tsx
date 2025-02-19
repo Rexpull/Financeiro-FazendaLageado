@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef  } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faPlus, faEllipsisV, faUniversity, faChevronCircleDown, faChevronDown, faUser, faQuestionCircle } from "@fortawesome/free-solid-svg-icons";
+import { faSearch, faPlus, faEllipsisV, faUniversity, faTimes, faUser, faQuestionCircle, faUserCheck, faUsers } from "@fortawesome/free-solid-svg-icons";
 import { listarPessoas, excluirPessoa, salvarPessoa, atualizarStatusPessoa } from "../../../services/pessoaService";
 import PessoaModal from "./PessoaModal";
 import DialogModal from "../../../components/DialogModal"
@@ -20,15 +20,19 @@ const ListConta: React.FC = () => {
   const [pessoaData, setPessoaData] = useState<Pessoa | null>(null);
   const [activeMenu, setActiveMenu] = useState<number | null>(null);
   const menuRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+  const [filtrosAtivos, setFiltrosAtivos] = useState<{ tipo: string[]; status: string[] }>({
+    tipo: [ "Cliente", "Fornecedor"],
+    status: [ "Ativo", "Inativo"],
+  });
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [deletePessoaId, setDeletePessoaId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchContas();
+    fetchPessoas();
   }, []);
 
-  const fetchContas = async () => {
+  const fetchPessoas = async () => {
     setIsLoading(true);
 
     try {
@@ -44,17 +48,24 @@ const ListConta: React.FC = () => {
   };
 
   useEffect(() => {
-    let filtered = pessoas.filter((pessoa) =>
-      pessoa.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pessoa.cgcpf?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pessoa.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pessoa.telefone?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    let filtered = pessoas.filter((pessoa) => {
+      const matchSearch =
+        pessoa.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        pessoa.cgcpf?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        pessoa.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        pessoa.telefone?.toLowerCase().includes(searchTerm.toLowerCase());
 
+      const matchTipo =
+        filtrosAtivos.tipo.length === 0 || filtrosAtivos.tipo.includes(pessoa.cliente ? "Cliente" : "Fornecedor");
+
+      const matchStatus =
+        filtrosAtivos.status.length === 0 || filtrosAtivos.status.includes(pessoa.ativo ? "Ativo" : "Inativo");
+
+      return matchSearch && matchTipo && matchStatus;
+    });
 
     setFilteredPessoas(filtered);
-  }, [searchTerm, pessoas]);
-
+  }, [searchTerm, filtrosAtivos, pessoas]);
 
   // Abrir o modal para adicionar ou editar conta
   const openModal = (pessoa?: Pessoa) => {
@@ -140,7 +151,7 @@ const ListConta: React.FC = () => {
     
     try {
         await salvarPessoa(pessoaEnviada as Pessoa);
-        fetchContas();
+        fetchPessoas();
         closeModal();
     } catch (error) {
         console.error("❌ Erro ao salvar conta:", error);
@@ -170,6 +181,21 @@ const ListConta: React.FC = () => {
     }
   };
 
+  const toggleFiltro = (categoria: "tipo" | "status", valor: string) => {
+    setFiltrosAtivos((prev) => {
+      const atualizado = prev[categoria].includes(valor)
+        ? prev[categoria].filter((item) => item !== valor)
+        : [...prev[categoria], valor];
+      return { ...prev, [categoria]: atualizado };
+    });
+  };
+
+  const removerFiltro = (categoria: "tipo" | "status", valor: string) => {
+    setFiltrosAtivos((prev) => ({
+      ...prev,
+      [categoria]: prev[categoria].filter((item) => item !== valor),
+    }));
+  };
 
   return (
     <div>
@@ -179,17 +205,27 @@ const ListConta: React.FC = () => {
               <div className="relative w-auto whitespace-nowrap">
                 <button 
                 className="bg-gray-200 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded hover:bg-gray-300"
-                onClick={() => setFiltroMenu(true)}
+                onClick={() => setFiltroMenu(!filtroMenu)}
                 >
                 Adicionar Filtro <FontAwesomeIcon icon={faPlus} className="ml-3" />
                 </button>
               </div>
-              {filtroMenu == true && (
-                <div 
-                  className="absolute right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
-                  onClick={(e) => e.stopPropagation()} 
-                >
-                  teste
+              {filtroMenu && (
+                <div className="absolute bg-white shadow-md rounded-md border mt-2 z-10" style={{width: "11rem"}}>
+                  <p className="font-bold text-sm text-gray-800 mb-1 px-2 py-1 bg-gray-200"> <FontAwesomeIcon icon={faUsers}/>  Tipo</p>
+                  <label className="flex ml-3 items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={filtrosAtivos.tipo.includes("Cliente")} onChange={() => toggleFiltro("tipo", "Cliente")} /> Cliente
+                  </label>
+                  <label className="flex ml-3 items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={filtrosAtivos.tipo.includes("Fornecedor")} onChange={() => toggleFiltro("tipo", "Fornecedor")} /> Fornecedor
+                  </label>
+                  <p className="font-bold text-sm text-gray-800 mb-1 mt-1 px-2 py-1 bg-gray-200"><FontAwesomeIcon icon={faUserCheck}/> Status</p>
+                  <label className="flex ml-3 items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={filtrosAtivos.status.includes("Ativo")} onChange={() => toggleFiltro("status", "Ativo")} /> Ativo
+                  </label>
+                  <label className="flex ml-3 items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={filtrosAtivos.status.includes("Inativo")} onChange={() => toggleFiltro("status", "Inativo")} /> Inativo
+                  </label>
                 </div>
               )}
             </div>
@@ -215,14 +251,36 @@ const ListConta: React.FC = () => {
             </div>
         </div>
 
-        <div className="flex justify-between items-center w-full">
+        <div className="flex justify-between items-start w-full">
           <div id="filtersActiveDiv"className="flex w-full justify-start items-center">
-              
+            <div className="flex flex-wrap gap-2 mb-4">
+              {filtrosAtivos.tipo.map((tipo) => (
+                <div key={tipo} className="bg-white text-gray-800 px-3 py-1 font-medium border gap-2 rounded-md flex items-center">
+                  <span className="text-gray-500"> Tipo: </span> 
+                  <span className="font-bold"> {tipo} </span> 
+                  <FontAwesomeIcon icon={faTimes} className="ml-2 cursor-pointer" onClick={() => removerFiltro("tipo", tipo)} />
+                </div>
+              ))}
+              {filtrosAtivos.status.map((status) => (
+                <div key={status} className="bg-white text-gray-800 px-3 py-1 font-medium border gap-2 rounded-md flex items-center">
+                  <span className="text-gray-500"> Status: </span> 
+                  <span className="font-bold"> {status} </span> 
+                  <FontAwesomeIcon icon={faTimes} className="ml-2 cursor-pointer" onClick={() => removerFiltro("status", status)} />
+                </div>
+              ))}
+              {filtrosAtivos.tipo.length === 0 && filtrosAtivos.status.length === 0 && (  
+                <div className="bg-white text-gray-800 px-3 py-1 font-medium  gap-2 rounded-md flex items-center">
+                  <span className="text-gray-500"> Sem Filtros Ativos </span> 
+                </div>
+              )}
+            </div>
           </div>
-          <div>
-
+          <div className="flex items-center text-gray-600 whitespace-nowrap">
+            <span className="text-gray-500 font-medium">{filteredPessoas.length} Resultado(s)</span>
           </div>
         </div>
+
+
 
       {isLoading && 
         <div className="flex justify-center items-center h-64">
@@ -307,26 +365,26 @@ const ListConta: React.FC = () => {
 
                 <hr className="w-full my-2"/>
 
-                <div className="flex justify-center gap-3 items-center">
+                <div className="flex justify-center gap-3 items-center mt-1">
                   {pessoa.fornecedor == true &&(
-                    <div className="flex items-center gap-2 text-sm text-orange-400 py-1 px-2 font-bold bg-gray-100 rounded">
+                    <div className="flex items-center gap-2 text-sm text-orange-400 py-1 px-2 font-bold bg-gray-50 border rounded">
                       <FontAwesomeIcon icon={faUniversity} />
                       Fornecedor
                     </div>
                   )}
                   {pessoa.cliente == true &&(
-                    <div className="flex items-center gap-2 text-sm text-orange-400 py-1 px-2 font-bold bg-gray-100 rounded">
+                    <div className="flex items-center gap-2 text-sm text-orange-400 py-1 px-2 font-bold bg-gray-50 border rounded">
                       <FontAwesomeIcon icon={faUser} />
                       Cliente
                     </div>
                   )}
 
-                {pessoa.cliente == false && pessoa.fornecedor == false &&(
-                    <div className="flex items-center gap-2 text-sm text-gray-400 py-1 px-2 font-bold bg-gray-100 rounded">
-                      <FontAwesomeIcon icon={faQuestionCircle} />
-                      Sem Registros
-                    </div>
-                )}
+                  {pessoa.cliente == false && pessoa.fornecedor == false &&(
+                      <div className="flex items-center gap-2 text-sm text-gray-400 py-1 px-2 font-bold bg-gray-50 border rounded">
+                        <FontAwesomeIcon icon={faQuestionCircle} />
+                        Sem Registros
+                      </div>
+                  )}
                 </div>    
               </div>
             </div>
