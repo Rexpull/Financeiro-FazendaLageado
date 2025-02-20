@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-ro
 import MainLayout from "./MainLayout"; // 🔹 Importa o layout principal
 import Dashboard from "./src/pages/Dashboard";
 import Parametros from "./src/pages/Parametros";
-import Users from "./src/pages/Cadastro/Users";
+import Users from "./src/pages/Cadastro/Usuario";
 import Pessoa from "./src/pages/Cadastro/Pessoa";
 import Banco from "./src/pages/Cadastro/Banco";
 import ContaCorrente from "./src/pages/Cadastro/ContaCorrente";

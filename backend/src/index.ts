@@ -3,6 +3,7 @@ import { handleRequest as handleContaCorrenteRequest } from "./routes/handleCont
 import { handleRequest as handlePlanoContaRequest } from "./routes/handlePlanoConta";
 import { handleRequest as handleParametroRequest } from "./routes/handleParametro";
 import { handleRequest as handlePessoaRequest } from "./routes/handlePessoa";
+import { handleRequest as handleUsuarioRequest } from "./routes/handleUsuario";
 
 
 export default {
@@ -19,8 +20,10 @@ export default {
         return handlePlanoContaRequest(req, env.DB);
       case pathname.startsWith("/api/parametro"):
         return handleParametroRequest(req, env.DB);
-        case pathname.startsWith("/api/pessoa"):
+      case pathname.startsWith("/api/pessoa"):
         return handlePessoaRequest(req, env.DB);
+      case pathname.startsWith("/api/usuario"):
+        return handleUsuarioRequest(req, env.DB);
       default:
         return new Response("Rota não encontrada", { status: 404 });
   
