@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef  } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faPlus, faEllipsisV, faUniversity, faChevronCircleDown, faChevronDown } from "@fortawesome/free-solid-svg-icons";
+import { faSearch, faPlus, faEllipsisV, faUniversity, faChevronCircleDown, faChevronDown, faEdit, faTrash } from "@fortawesome/free-solid-svg-icons";
 import { listarContas, salvarConta, excluirConta, atualizarStatusConta  } from "../../../services/contaCorrenteService";
 import ContaCorrenteModal from "./ContaCorrenteModal"; // Importando o Modal
 import DialogModal from "../../../components/DialogModal"
@@ -322,7 +322,7 @@ const ListConta: React.FC = () => {
                   />
                   {activeMenu === conta.id && (
                     <div 
-                      className="absolute right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
+                      className="absolute font-medium right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
                       onClick={(e) => e.stopPropagation()} 
                     >
                       <button
@@ -334,6 +334,7 @@ const ListConta: React.FC = () => {
                           setContaData(conta);
                         }}
                       >
+                        <FontAwesomeIcon icon={faEdit} className="mr-2" />
                         Editar
                       </button>
                       <button
@@ -344,6 +345,7 @@ const ListConta: React.FC = () => {
                           handleDelete(conta.id);
                         }}
                       >
+                        <FontAwesomeIcon icon={faTrash} className="mr-2" />
                         Excluir
                       </button>
                     </div>

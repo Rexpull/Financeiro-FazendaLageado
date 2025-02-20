@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faSave, faSearch  } from "@fortawesome/free-solid-svg-icons";
@@ -30,9 +30,10 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
   const [search, setSearch] = useState({ receita: "", despesa: "" });
   const [showSuggestions, setShowSuggestions] = useState({ receita: false, despesa: false });
 
+  // 🔹 Criando referência para os campos
+  const receitaRef = useRef<HTMLDivElement>(null);
+  const despesaRef = useRef<HTMLDivElement>(null);
 
-
-  // 🔹 Buscar os bancos cadastrados quando o modal abrir
   useEffect(() => {
     if (isOpen) {
       listarPlanoContas().then(setPlanos);
@@ -87,6 +88,34 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
       .filter((plano) => plano.descricao.toLowerCase().includes(searchTerm.toLowerCase()))
       .slice(0, 10);
   };
+
+   // 🔹 Atualiza o campo com a seleção do usuário e esconde as sugestões
+   const selectPlano = (tipo: "receita" | "despesa", plano: PlanoConta) => {
+    setSearch({ ...search, [tipo]: plano.descricao });
+    setShowSuggestions({ ...showSuggestions, [tipo]: false });
+
+    // Atualiza os valores do formulário
+    const event = {
+      target: { name: tipo === "receita" ? "idReceita" : "idDespesa", value: plano.id }
+    } as React.ChangeEvent<HTMLInputElement>;
+    handleInputChange(event);
+  };
+
+  // 🔹 Fechar sugestões ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (receitaRef.current && !receitaRef.current.contains(event.target as Node)) {
+        setShowSuggestions((prev) => ({ ...prev, receita: false }));
+      }
+      if (despesaRef.current && !despesaRef.current.contains(event.target as Node)) {
+        setShowSuggestions((prev) => ({ ...prev, despesa: false }));
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
 
   // Validação antes de salvar
   const validateAndSave = () => {
@@ -187,42 +216,60 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
 
         {/* 🔹 Planos de Contas */}
         <div className="grid grid-cols-2 gap-4 mt-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Plano de Receita</label>
-            <select
-              name="idReceita"
+        <div ref={receitaRef} className="relative">
+          <label className="block text-sm font-medium mb-1">Plano de Receita</label>
+            <input
+              type="text"
               className="w-full p-2 border border-gray-300 rounded"
-              value={pessoaData.idReceita || ""}
-              onChange={handleInputChange}
-              disabled={isSaving}
-            >
-              <option value="">Selecione uma receita</option>
-              {filterPlanos("custeio", "R")
-                .map((plano) => (
-                  <option key={plano.id} value={plano.id}>
-                    {plano.descricao}
-                  </option>
+              placeholder="Plano de Receita (opcional)"
+              value={search.receita}
+              onChange={(e) => {
+                setSearch({ ...search, receita: e.target.value });
+                setShowSuggestions({ ...showSuggestions, receita: true });
+              }}
+              onFocus={() => setShowSuggestions({ ...showSuggestions, receita: true })}
+            />
+            {showSuggestions.receita && (
+              <ul className="absolute bg-white rounded w-full shadow-lg mt-1 z-10">
+                {filterPlanos("001", search.receita).map((plano) => (
+                  <li
+                    key={plano.id}
+                    className="p-2 hover:bg-gray-100 cursor-pointer"
+                    onClick={() => selectPlano("receita", plano)}
+                  >
+                    {plano.hierarquia} | {plano.descricao}
+                  </li>
                 ))}
-            </select>
+              </ul>
+            )}
           </div>
 
-          <div>
+          <div ref={despesaRef} className="relative">
             <label className="block text-sm font-medium mb-1">Plano de Despesa</label>
-            <select
-              name="idDespesa"
-              className="w-full p-2 border border-gray-300 rounded"
-              value={pessoaData.idDespesa || ""}
-              onChange={handleInputChange}
-              disabled={isSaving}
-            >
-              <option value="">Selecione uma despesa</option>
-              {filterPlanos("custeio", "D")
-                .map((plano) => (
-                  <option key={plano.id} value={plano.id}>
-                    {plano.descricao}
-                  </option>
-                ))}
-            </select>
+              <input
+                type="text"
+                className="w-full p-2 border border-gray-300 rounded"
+                placeholder="Plano de Despesa (opcional)"
+                value={search.despesa}
+                onChange={(e) => {
+                  setSearch({ ...search, despesa: e.target.value });
+                  setShowSuggestions({ ...showSuggestions, despesa: true });
+                }}
+                onFocus={() => setShowSuggestions({ ...showSuggestions, despesa: true })}
+              />
+              {showSuggestions.despesa && (
+                <ul className="absolute bg-white rounded w-full shadow-lg mt-1 z-10">
+                  {filterPlanos("002", search.despesa).map((plano) => (
+                    <li
+                      key={plano.id}
+                      className="p-2 hover:bg-gray-100 cursor-pointer"
+                      onClick={() => selectPlano("despesa", plano)}
+                    >
+                      {plano.hierarquia} | {plano.descricao}
+                    </li>
+                  ))}
+                </ul>
+              )}
           </div>
         </div>
 

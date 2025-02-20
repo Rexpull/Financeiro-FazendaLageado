@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef  } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faPlus, faEllipsisV, faUniversity, faTimes, faUser, faQuestionCircle, faUserCheck, faUsers } from "@fortawesome/free-solid-svg-icons";
+import { faSearch, faPlus, faEllipsisV, faUniversity, faTimes, faUser, faQuestionCircle, faUserCheck, faUsers, faPencil, faEdit, faDeleteLeft, faTrash } from "@fortawesome/free-solid-svg-icons";
 import { listarPessoas, excluirPessoa, salvarPessoa, atualizarStatusPessoa } from "../../../services/pessoaService";
 import PessoaModal from "./PessoaModal";
 import DialogModal from "../../../components/DialogModal"
@@ -21,7 +21,7 @@ const ListConta: React.FC = () => {
   const [activeMenu, setActiveMenu] = useState<number | null>(null);
   const menuRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const [filtrosAtivos, setFiltrosAtivos] = useState<{ tipo: string[]; status: string[] }>({
-    tipo: [ "Cliente", "Fornecedor"],
+    tipo: [ "Cliente", "Fornecedor", "Sem Registro"],
     status: [ "Ativo", "Inativo"],
   });
 
@@ -55,8 +55,12 @@ const ListConta: React.FC = () => {
         pessoa.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         pessoa.telefone?.toLowerCase().includes(searchTerm.toLowerCase());
 
+      
       const matchTipo =
-        filtrosAtivos.tipo.length === 0 || filtrosAtivos.tipo.includes(pessoa.cliente ? "Cliente" : "Fornecedor");
+        filtrosAtivos.tipo.length === 0 ||
+        filtrosAtivos.tipo.includes(
+          pessoa.cliente ? "Cliente" : pessoa.fornecedor ? "Fornecedor" : "Sem Registro"
+        );
 
       const matchStatus =
         filtrosAtivos.status.length === 0 || filtrosAtivos.status.includes(pessoa.ativo ? "Ativo" : "Inativo");
@@ -211,7 +215,7 @@ const ListConta: React.FC = () => {
                 </button>
               </div>
               {filtroMenu && (
-                <div className="absolute bg-white shadow-md rounded-md border mt-2 z-10" style={{width: "11rem"}}>
+                <div className="absolute bg-white shadow-md font-medium rounded-md border mt-2 pb-1  z-10" style={{width: "11rem"}}>
                   <p className="font-bold text-sm text-gray-800 mb-1 px-2 py-1 bg-gray-200"> <FontAwesomeIcon icon={faUsers}/>  Tipo</p>
                   <label className="flex ml-3 items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={filtrosAtivos.tipo.includes("Cliente")} onChange={() => toggleFiltro("tipo", "Cliente")} /> Cliente
@@ -219,6 +223,10 @@ const ListConta: React.FC = () => {
                   <label className="flex ml-3 items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={filtrosAtivos.tipo.includes("Fornecedor")} onChange={() => toggleFiltro("tipo", "Fornecedor")} /> Fornecedor
                   </label>
+                  <label className="flex ml-3 items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={filtrosAtivos.tipo.includes("Sem Registro")} onChange={() => toggleFiltro("tipo", "Sem Registro")} /> Sem Registro
+                  </label>
+    
                   <p className="font-bold text-sm text-gray-800 mb-1 mt-1 px-2 py-1 bg-gray-200"><FontAwesomeIcon icon={faUserCheck}/> Status</p>
                   <label className="flex ml-3 items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={filtrosAtivos.status.includes("Ativo")} onChange={() => toggleFiltro("status", "Ativo")} /> Ativo
@@ -325,7 +333,7 @@ const ListConta: React.FC = () => {
                   />
                   {activeMenu === pessoa.id && (
                     <div 
-                      className="absolute right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
+                      className="absolute font-medium right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
                       onClick={(e) => e.stopPropagation()} 
                     >
                       <button
@@ -337,6 +345,7 @@ const ListConta: React.FC = () => {
                           setPessoaData(pessoa);
                         }}
                       >
+                        <FontAwesomeIcon icon={faEdit} className="mr-2" />
                         Editar
                       </button>
                       <button
@@ -347,6 +356,7 @@ const ListConta: React.FC = () => {
                           handleDelete(pessoa.id);
                         }}
                       >
+                        <FontAwesomeIcon icon={faTrash} className="mr-2" />
                         Excluir
                       </button>
                     </div>
