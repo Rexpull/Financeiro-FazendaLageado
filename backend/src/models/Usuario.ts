@@ -5,8 +5,8 @@ export interface Usuario {
     email: string;
     senha: string;
     ativo: boolean;
-    cpfCnpj?: string;
+    cpf_cnpj?: string;
     telefone?: string;
-    fotoPerfil?: string; // Base64 da foto de perfil
-    dtCadastro: string;
+    foto_Perfil?: string; // Base64 da foto de perfil
+    dt_Cadastro: string;
 }

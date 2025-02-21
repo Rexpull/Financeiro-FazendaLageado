@@ -17,8 +17,22 @@ export const listarUsuarios = async (): Promise<Usuario[]> => {
 
 export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
     const { senha, ...rest } = usuario;
-    const senhaCriptografada = await bcrypt.hash(senha, 10);
-    usuario = { senha: senhaCriptografada, ...rest };
+
+    if (!senha) {
+        throw new Error("A senha é obrigatória!");
+    }
+
+    const usuarioValido = {
+        ...rest,
+        senha, 
+        ativo: usuario.ativo ?? true,
+        cpf_cnpj: usuario.cpf_cnpj ?? "",
+        telefone: usuario.telefone ?? "",
+        foto_Perfil: usuario.foto_Perfil ?? "",
+        dt_Cadastro: usuario.dt_Cadastro ?? new Date().toISOString().split("T")[0]
+    };
+
+    console.log("📤 Enviando para API:", usuarioValido);
 
     const method = usuario.id ? "PUT" : "POST";
     const url = usuario.id ? `${API_URL}/api/usuario/${usuario.id}` : `${API_URL}/api/usuario`;
@@ -26,7 +40,7 @@ export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
     const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(usuario),
+        body: JSON.stringify(usuarioValido),
     });
 
     if (!res.ok) throw new Error("Erro ao salvar usuário");
@@ -35,6 +49,7 @@ export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
 
     return await res.json();
 };
+
 
 export const excluirUsuario = async (id: number): Promise<void> => {
     try {

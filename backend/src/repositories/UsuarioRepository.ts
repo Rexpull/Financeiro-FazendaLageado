@@ -21,25 +21,36 @@ export class UsuarioRepository {
 
     async create(usuario: Usuario): Promise<number> {
         const stmt = await this.db.prepare(`
-            INSERT INTO usuario (nome, usuario, email, senha, ativo, cpfCnpj, telefone, fotoPerfil, dtCadastro)
+            INSERT INTO usuario (nome, usuario, email, senha, ativo, cpf_cnpj, telefone, foto_Perfil, dt_Cadastro)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
+    
+        // 🔹 Garante que os valores não sejam `undefined`
         await stmt.bind(
-            usuario.nome, usuario.usuario, usuario.email, usuario.senha,
-            usuario.ativo, usuario.cpfCnpj, usuario.telefone, usuario.fotoPerfil, usuario.dtCadastro
+            usuario.nome,
+            usuario.usuario,
+            usuario.email,
+            usuario.senha,
+            usuario.ativo ?? 1,
+            usuario.cpf_cnpj ?? null,
+            usuario.telefone ?? null,
+            usuario.foto_Perfil ?? null,
+            usuario.dt_Cadastro ?? new Date().toISOString().split("T")[0]
         ).run();
+    
         const { results } = await this.db.prepare("SELECT last_insert_rowid() as id").all();
         return results[0].id as number;
     }
+    
 
     async update(id: number, usuario: Usuario): Promise<void> {
         await this.db.prepare(`
             UPDATE usuario
-            SET nome = ?, usuario = ?, email = ?, ativo = ?, cpfCnpj = ?, telefone = ?, fotoPerfil = ?
+            SET nome = ?, usuario = ?, email = ?, ativo = ?, cpf_cnpj = ?, telefone = ?, foto_perfil = ?
             WHERE id = ?
         `).bind(
             usuario.nome, usuario.usuario, usuario.email,
-            usuario.ativo, usuario.cpfCnpj, usuario.telefone, usuario.fotoPerfil, id
+            usuario.ativo, usuario.cpf_cnpj, usuario.telefone, usuario.foto_Perfil, id
         ).run();
     }
 

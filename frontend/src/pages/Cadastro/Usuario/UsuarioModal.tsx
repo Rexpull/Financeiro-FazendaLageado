@@ -27,7 +27,7 @@ const UsuarioModal: React.FC<UsuarioModalProps> = ({
 }) => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [fotoPreview, setFotoPreview] = useState<string | null>(
-    usuarioData.fotoPerfil || null
+    usuarioData.foto_Perfil || null
   );
 
   // Validação antes de salvar
@@ -35,19 +35,17 @@ const UsuarioModal: React.FC<UsuarioModalProps> = ({
     const newErrors: { [key: string]: string } = {};
     if (!usuarioData.nome) newErrors.nome = "O nome é obrigatório!";
     if (!usuarioData.usuario) newErrors.usuario = "Usuário é obrigatório!";
-    if (usuarioData.telefone && usuarioData.telefone.trim().replace(/\D/g, "").length < 10) {
-        newErrors.telefone = "Telefone incompleto!";
-      }
-      if (usuarioData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(usuarioData.email)) {
-        newErrors.email = "E-mail inválido!";
-      }
+    
+    if (!usuarioData.email && (!usuarioData.email.includes(".com") || !usuarioData.email.includes("@"))) {
+      newErrors.email = "E-mail inválido!";
+    }
 
     if (!usuarioData.senha) newErrors.senha = "Senha é obrigatória!";
 
-    console.log("erros..." + newErrors);
+    console.log("erros: " + newErrors.length);
 
     setErrors(newErrors);
-    if (Object.keys(newErrors).length === 0) {
+    if (Object.keys(newErrors).length == 0) {
         console.log("Salvando...");
         
       handleSave();
@@ -62,7 +60,7 @@ const UsuarioModal: React.FC<UsuarioModalProps> = ({
       reader.onloadend = () => {
         setFotoPreview(reader.result as string);
         handleInputChange({
-          target: { name: "fotoPerfil", value: reader.result },
+          target: { name: "foto_Perfil", value: reader.result },
         } as unknown as React.ChangeEvent<HTMLInputElement>);
       };
       reader.readAsDataURL(file);
@@ -96,7 +94,7 @@ const formatarTelefone = (value: string) => {
         return; // Não permite mais de 11 dígitos
       }
   
-      if (name === "cpfCnpj" && value.replace(/\D/g, "").length > 11) {
+      if (name === "cpf_cnpj" && value.replace(/\D/g, "").length > 11) {
         return; // Não permite mais de 14 dígitos
       }
   
@@ -126,7 +124,7 @@ const formatarTelefone = (value: string) => {
       <div className="p-4 flex-1 overflow-y-auto">
         {/* Dados Gerais */}
         <p className="text-xs uppercase font-semibold text-gray-500 mb-2 pb-2 border-b cursor-default">
-          Dados Gerais
+          Dados Gerais {usuarioData.id}
         </p>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -148,7 +146,7 @@ const formatarTelefone = (value: string) => {
               name="cgcpf"
               className={`w-full p-2 border rounded ${errors.cgcpf ? "border-red-500" : "border-gray-300"}`}
               placeholder= "000.000.000-00"
-              value={formatarDocumento(usuarioData.cpfCnpj || "")}
+              value={formatarDocumento(usuarioData.cpf_cnpj || "")}
               onChange={handleInputChangeWithLimit}
               disabled={isSaving}
             />
@@ -220,11 +218,10 @@ const formatarTelefone = (value: string) => {
               onChange={handleInputChangeWithLimit}
               disabled={isSaving}
             />
-            {errors.telefone && <p className="text-red-500 text-xs">{errors.telefone}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label className="block text-sm font-medium mb-1">Email <span className="text-red-500">*</span></label>
             <input
               type="email"
               name="email"
@@ -233,7 +230,8 @@ const formatarTelefone = (value: string) => {
               value={usuarioData.email || ""}
               onChange={handleInputChange}
               disabled={isSaving}
-            />
+            />            
+            {errors.email && <p className="text-red-500 text-xs">{errors.email}</p>}
           </div>
         </div>
       </div>

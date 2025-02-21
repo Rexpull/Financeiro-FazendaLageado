@@ -46,7 +46,7 @@ const ListUsuario: React.FC = () => {
         usuario.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
         usuario.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         usuario.telefone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        usuario.cpfCnpj?.toLowerCase().includes(searchTerm.toLowerCase());
+        usuario.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchStatus =
         filtrosAtivos.status.length === 0 || filtrosAtivos.status.includes(usuario.ativo ? "Ativo" : "Inativo");
@@ -59,7 +59,7 @@ const ListUsuario: React.FC = () => {
 
   const openModal = (usuario?: Usuario) => {
     setUsuarioData(
-      usuario || { id: 0, nome: "", usuario: "", email: "", senha: "", ativo: true, fotoPerfil: "", dtCadastro: new Date().toISOString() }
+      usuario || { id: 0, nome: "", usuario: "", email: "", senha: "", ativo: true, foto_Perfil: "", dt_Cadastro: new Date().toISOString() }
     );
     setModalIsOpen(true);
   };
@@ -97,20 +97,20 @@ const ListUsuario: React.FC = () => {
   const handleSave = async () => {
       if (!usuarioData) return;
       setIsSaving(true);
-  
-  
-      console.log("📤 Enviando para API:", usuarioData);
-  
+    
       // 🔹 Criando objeto correto para evitar envio de campos desnecessários
     const usuarioEnviado: Partial<Usuario> = {
+        
         id: usuarioData.id,
         nome: usuarioData.nome,
+        cpf_cnpj: usuarioData.cpf_cnpj ? usuarioData.cpf_cnpj.replace(/\D/g, "") : "",
+        telefone: usuarioData.telefone ? usuarioData.telefone.replace(/\D/g, "") : "",
         usuario: usuarioData.usuario,
         email: usuarioData.email,
         senha: usuarioData.senha,
         ativo: usuarioData.ativo,
-        fotoPerfil: usuarioData.fotoPerfil,
-        dtCadastro: usuarioData.dtCadastro ? usuarioData.dtCadastro : new Date().toISOString(),
+        foto_Perfil: usuarioData.foto_Perfil,
+        dt_Cadastro: usuarioData.dt_Cadastro ? usuarioData.dt_Cadastro : new Date().toISOString(),
     };
       
       try {
@@ -213,7 +213,7 @@ const ListUsuario: React.FC = () => {
 
               {/* 🔹 Nome e Avatar */}
               <div className="flex flex-col items-center mt-6">
-                <img className="w-12 h-12 rounded-full object-cover" src={usuario.fotoPerfil || "/default-avatar.png"} alt="Foto de perfil" />
+                <img className="w-12 h-12 rounded-full object-cover" src={usuario.foto_Perfil || "/default-avatar.png"} alt="Foto de perfil" />
                 <span className="text-lg font-bold mt-2">{usuario.nome}</span>
                 <p className="text-sm text-gray-600">{usuario.email || "Sem Email"}</p>
               </div>
