@@ -203,7 +203,6 @@ const ListConta: React.FC = () => {
 
   return (
     <div>
-      {/* 🔹 Barra de busca e botão de adicionar */}
         <div className="flex justify-between items-end gap-5 mb-4 border-b pb-4">
           <div className="relative">
               <div className="relative w-auto whitespace-nowrap">

@@ -149,6 +149,15 @@ const ListUsuario: React.FC = () => {
     <div>
       {/* 🔹 Barra de busca e botão de adicionar */}
       <div className="flex justify-between items-center gap-5 mb-4 border-b pb-4">
+        <div className="flex items-center justify-start gap-5">
+          <div className="border bg-orange-100 shadow-sm rounded p-3">
+              <span>Total</span> <br/>
+              <span className="text-2xl font-bold text-orange-500">{usuarios.length}</span>
+
+              
+          </div>
+
+        </div>
         <div className="flex items-center gap-5 w-full">
           <div className="relative w-full max-w-md">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-600">
