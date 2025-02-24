@@ -5,7 +5,7 @@ import { IoMdNotificationsOutline } from "react-icons/io";
 import { FaUserCircle } from "react-icons/fa";
 import { Link, useLocation, useNavigate  } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch } from '@fortawesome/free-solid-svg-icons';
+import { faDoorOpen, faSearch, faUserEdit } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from "../pages/Login/AuthContext";
 
 
@@ -220,7 +220,7 @@ const Sidebar = () => {
           </button>
           {/* Notificações e Usuário */}
           <div className="flex items-center gap-4 relative">
-            <IoMdNotificationsOutline size={26} />
+            <IoMdNotificationsOutline size={26} style={{opacity:'0.30'}}/>
             <span>|</span>
 
             {/* Imagem do perfil que abre o menu */}
@@ -234,8 +234,11 @@ const Sidebar = () => {
             {menuAberto && (
               <div
                 ref={menuRef}
-                className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50"
-              >
+                className="absolute right-0 top-10 mt-2 w-44 bg-white font-medium border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50"
+              > 
+                <div className='block w-full text-lg text-left px-4 py-1 text-gray-900 border-b border-gray-400 bg-gray-200' style={{textTransform:'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                    {user?.nome.toLocaleLowerCase()}
+                </div>
                 <button
                   className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-gray-800"
                   onClick={() => {
@@ -243,12 +246,14 @@ const Sidebar = () => {
                     setMenuAberto(false);
                   }}
                 >
+                  <FontAwesomeIcon icon={faUserEdit} className='mr-2'/>
                   Meu Perfil
                 </button>
                 <button
-                  className="block w-full text-left px-4 py-2 text-red-500 hover:bg-gray-100"
+                  className="block w-full text-left px-4 py-2 border-t text-red-500 hover:bg-gray-100 " 
                   onClick={logout}
                 >
+                  <FontAwesomeIcon icon={faDoorOpen} className='mr-2'/>
                   Sair
                 </button>
               </div>

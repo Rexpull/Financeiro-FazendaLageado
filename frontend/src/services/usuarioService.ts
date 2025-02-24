@@ -18,12 +18,9 @@ export const listarUsuarios = async (): Promise<Usuario[]> => {
 export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
     const { senha, ...rest } = usuario;
 
-    const saltRounds = 10;
-     usuario.senha = await bcrypt.hash(usuario.senha, saltRounds);
-
     const usuarioValido = {
         ...rest,
-        senha,
+        senha: await bcrypt.hash(usuario.senha, 10),
         ativo: usuario.ativo ?? true,
         cpf_cnpj: usuario.cpf_cnpj ?? "",
         telefone: usuario.telefone ?? "",
