@@ -1,5 +1,6 @@
 import { Usuario } from "../../../backend/src/models/Usuario";
 import { toast } from "react-toastify";
+import bcrypt from "bcryptjs";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -17,10 +18,8 @@ export const listarUsuarios = async (): Promise<Usuario[]> => {
 export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
     const { senha, ...rest } = usuario;
 
-    if (!senha) {
-        toast.error("A senha é obrigatória!");
-        throw new Error("A senha é obrigatória!");
-    }
+    const saltRounds = 10;
+     usuario.senha = await bcrypt.hash(usuario.senha, saltRounds);
 
     const usuarioValido = {
         ...rest,

@@ -1,39 +1,69 @@
-// import bcrypt from "bcrypt";
-// import jwt from "jsonwebtoken";
-// import { SessionRepository } from "../repositories/SessionRepository";
-// import { Usuario } from "../models/Usuario";
+import bcrypt from "bcryptjs";
+import { SessionRepository } from "../repositories/SessionRepository";
+import { UserContext } from "../models/UserContext";
+import { SignJWT, jwtVerify } from "jose";
 
-// const JWT_SECRET = process.env.JWT_SECRET || "chave_secreta"; // Define um segredo seguro
+export class AuthController {
+  private sessionRepository: SessionRepository;
 
-// export class AuthController {
-//   private sessionRepository: SessionRepository;
+  constructor(sessionRepository: SessionRepository) {
+    this.sessionRepository = sessionRepository;
+  }
 
-//   constructor(sessionRepository: SessionRepository) {
-//     this.sessionRepository = SessionRepository;
-//   }
+  // 🔹 Login e criação de sessão
+  async login(email: string, senha: string, env: { JWT_SECRET: string }) {
+    console.log("🔍 Tentativa de login para:", email);
 
-//   // 🔹 Login do usuário
-//   async login(email: string, senha: string): Promise<{ token: string; user: Usuario } | null> {
-//     const usuario = await this.sessionRepository.getByEmail(email);
-//     if (!usuario) return null;
+    const userContext = await this.sessionRepository.getByEmail(email);
+    if (!userContext) {
+      console.log("❌ Usuário não encontrado:", email);
+      return null;
+    }
 
-//     // 🔹 Comparando a senha informada com a senha armazenada
-//     const senhaValida = await bcrypt.compare(senha, usuario.senha);
-//     if (!senhaValida) return null;
+    console.log("🔑 Senha armazenada no banco:", userContext.senha);
 
-//     // 🔹 Gerando um token JWT válido por 1 hora
-//     const token = jwt.sign({ id: usuario.id, email: usuario.email }, JWT_SECRET, { expiresIn: "1h" });
+    // 🔹 Comparação da senha digitada com a senha armazenada (bcrypt)
+    const senhaValida = await bcrypt.compare(senha, userContext.senha);
+    console.log("🔐 Resultado da comparação:", senhaValida);
 
-//     return { token, user: usuario };
-//   }
+    if (!senhaValida) {
+      console.log("❌ Senha incorreta para o e-mail:", email);
+      return null;
+    }
 
-//   // 🔹 Verifica sessão baseada no token
-//   async verifySession(token: string): Promise<Usuario | null> {
-//     try {
-//       const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-//       return await this.usuarioRepository.getById(decoded.id);
-//     } catch {
-//       return null;
-//     }
-//   }
-// }
+    // 🔹 Converte a chave JWT para TextEncoder
+    const secretKey = new TextEncoder().encode(env.JWT_SECRET);
+
+    // 🔹 Gera o token JWT
+    const token = await new SignJWT({ id: userContext.id, email: userContext.email })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("2h")
+      .sign(secretKey);
+
+    console.log("✅ Login bem-sucedido:", email);
+
+    // 🔹 Atualiza sessão no banco
+    await this.sessionRepository.updateSession(userContext.id, token);
+
+    // 🔹 Retorna apenas os dados necessários para o front
+    return { 
+      token, 
+      user: {
+        id: userContext.id,
+        nome: userContext.nome,
+        email: userContext.email
+      }
+    };
+  }
+
+  // 🔹 Verifica sessão baseada no token
+  async verifySession(token: string, env: { JWT_SECRET: string }): Promise<UserContext | null> {
+    try {
+      const secretKey = new TextEncoder().encode(env.JWT_SECRET);
+      const { payload } = await jwtVerify(token, secretKey);
+      return await this.sessionRepository.getByToken(token);
+    } catch {
+      return null;
+    }
+  }
+}

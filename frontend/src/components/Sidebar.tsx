@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FiUsers, FiDatabase, FiBarChart2, FiMenu, FiX, FiChevronDown, FiChevronRight  } from "react-icons/fi";
 import {  RiBarChartFill, RiSettings3Fill} from "react-icons/ri";
 import { IoMdNotificationsOutline } from "react-icons/io";
@@ -6,6 +6,7 @@ import { FaUserCircle } from "react-icons/fa";
 import { Link, useLocation, useNavigate  } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch } from '@fortawesome/free-solid-svg-icons';
+import { useAuth } from "../pages/Login/AuthContext";
 
 
 import logoFazenda from "../assets/img/logo-FazendaLageado.svg";
@@ -17,6 +18,21 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredRoutes, setFilteredRoutes] = useState<string[]>([]);
+  const [menuAberto, setMenuAberto] = useState(false);
+  const { user, logout } = useAuth(); // Obtém os dados do usuário e função de logout
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Fecha o menu se o usuário clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuAberto(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const routes = [
     { path: "/dashboard", label: "Dashboard" },
@@ -203,11 +219,42 @@ const Sidebar = () => {
             <FiMenu size={24} />
           </button>
           {/* Notificações e Usuário */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 relative">
             <IoMdNotificationsOutline size={26} />
             <span>|</span>
-            <img src={logoDefaultPerfil}  className="logoPerfil" />
+
+            {/* Imagem do perfil que abre o menu */}
+            <img
+              src={ logoDefaultPerfil} // Exibe a foto do usuário ou a padrão
+              className="logoPerfil cursor-pointer rounded-full w-10 h-10 object-cover"
+              onClick={() => setMenuAberto(!menuAberto)}
+            />
+
+            {/* Dropdown do Menu de Perfil */}
+            {menuAberto && (
+              <div
+                ref={menuRef}
+                className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50"
+              >
+                <button
+                  className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-gray-800"
+                  onClick={() => {
+                    navigate("/meu-perfil");
+                    setMenuAberto(false);
+                  }}
+                >
+                  Meu Perfil
+                </button>
+                <button
+                  className="block w-full text-left px-4 py-2 text-red-500 hover:bg-gray-100"
+                  onClick={logout}
+                >
+                  Sair
+                </button>
+              </div>
+            )}
           </div>
+      
         </div>
       </div>
     </div>
