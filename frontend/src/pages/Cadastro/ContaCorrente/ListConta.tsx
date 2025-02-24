@@ -67,30 +67,33 @@ const ListConta: React.FC = () => {
   };
 
   useEffect(() => {
+    console.log("searchTerm: " + searchTerm);
+  
     let filtered = contas.filter((conta) =>
-      conta.bancoNome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      conta.agencia.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      conta.numConta?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      conta.numCartao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      conta.responsavel.toLowerCase().includes(searchTerm.toLowerCase())
+      (conta.bancoNome?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (conta.agencia?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (conta.numConta?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (conta.numCartao?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (conta.responsavel?.toLowerCase() || "").includes(searchTerm.toLowerCase())
     );
-
+  
     switch (sortOption) {
       case "banco":
-        filtered = filtered.sort((a, b) => a.bancoNome.localeCompare(b.bancoNome));
+        filtered = filtered.sort((a, b) => (a.bancoNome || "").localeCompare(b.bancoNome || ""));
         break;
       case "responsavel":
-        filtered = filtered.sort((a, b) => a.responsavel.localeCompare(b.responsavel));
+        filtered = filtered.sort((a, b) => (a.responsavel || "").localeCompare(b.responsavel || ""));
         break;
       case "tipo":
-        filtered = filtered.sort((a, b) => a.tipo.localeCompare(b.tipo));
+        filtered = filtered.sort((a, b) => (a.tipo || "").localeCompare(b.tipo || ""));
         break;
       default:
         break;
     }
-
+  
     setFilteredContas(filtered);
   }, [searchTerm, contas, sortOption]);
+  
 
   const BancoLogos: { [key: string]: string } = {
     "001": bancoBrasil,
@@ -256,7 +259,7 @@ const ListConta: React.FC = () => {
                     </span>
                     <input
                         type="text"
-                        className="border border-gray-400 p-2 pl-10 pr-4 rounded w-auto min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
+                        className="border border-gray-400 p-2 pl-10 pr-4 rounded w-full min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
                         placeholder="Pesquisar por Banco, Agência, Conta ou Responsável"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}

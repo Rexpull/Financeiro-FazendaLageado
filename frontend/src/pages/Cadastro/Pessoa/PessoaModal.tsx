@@ -216,8 +216,8 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
 
         {/* 🔹 Planos de Contas */}
         <div className="grid grid-cols-2 gap-4 mt-4">
-        <div ref={receitaRef} className="relative">
-          <label className="block text-sm font-medium mb-1">Plano de Receita</label>
+          <div ref={receitaRef} className="relative">
+            <label className="block text-sm font-medium mb-1">Plano de Receita</label>
             <input
               type="text"
               className="w-full p-2 border border-gray-300 rounded"

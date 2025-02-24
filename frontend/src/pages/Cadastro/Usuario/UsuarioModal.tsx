@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTimes, faSave, faCamera } from "@fortawesome/free-solid-svg-icons";
+import { faTimes, faSave, faCamera, faKey, faCheck, faCheckCircle } from "@fortawesome/free-solid-svg-icons";
 import { Usuario } from "../../../../../backend/src/models/Usuario";
+import { enviarEmail } from "../../../services/EmailService"; // Implemente esta função
+import { FaRegCheckCircle } from "react-icons/fa";
+import defaultAvatar from "../../../assets/img/default-avatar.jpg";
 
 Modal.setAppElement("#root");
 
@@ -27,8 +30,13 @@ const UsuarioModal: React.FC<UsuarioModalProps> = ({
 }) => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [fotoPreview, setFotoPreview] = useState<string | null>(
-    usuarioData.foto_Perfil || null
+    usuarioData.foto_perfil || null
   );
+
+  const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacaoSenha, setConfirmacaoSenha] = useState("");
+  const [erroSenha, setErroSenha] = useState("");
 
   // Validação antes de salvar
   const validateAndSave = () => {
@@ -60,7 +68,7 @@ const UsuarioModal: React.FC<UsuarioModalProps> = ({
       reader.onloadend = () => {
         setFotoPreview(reader.result as string);
         handleInputChange({
-          target: { name: "foto_Perfil", value: reader.result },
+          target: { name: "foto_perfil", value: reader.result },
         } as unknown as React.ChangeEvent<HTMLInputElement>);
       };
       reader.readAsDataURL(file);
@@ -85,6 +93,28 @@ const formatarTelefone = (value: string) => {
    
     return value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
     
+  };
+
+  const salvarNovaSenha = async () => {
+    if (novaSenha.length < 6) {
+      setErroSenha("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (novaSenha !== confirmacaoSenha) {
+      setErroSenha("As senhas digitadas não coincidem.");
+      return;
+    }
+
+    // Atualizar a senha no estado do usuário
+    handleInputChange({
+      target: { name: "senha", value: novaSenha },
+    } as unknown as React.ChangeEvent<HTMLInputElement>);
+
+    // Fechar modal de senha
+    setModalSenhaAberto(false);
+    setNovaSenha("");
+    setConfirmacaoSenha("");
+    setErroSenha("");
   };
 
   const handleInputChangeWithLimit = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -124,7 +154,7 @@ const formatarTelefone = (value: string) => {
       <div className="p-4 flex-1 overflow-y-auto">
         {/* Dados Gerais */}
         <p className="text-xs uppercase font-semibold text-gray-500 mb-2 pb-2 border-b cursor-default">
-          Dados Gerais {usuarioData.id}
+          Dados Gerais
         </p>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -171,19 +201,51 @@ const formatarTelefone = (value: string) => {
             {errors.usuario && <p className="text-red-500 text-xs">{errors.usuario}</p>}
 
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Senha <span className="text-red-500">*</span></label>
-            <input
-              type="password"
-              name="senha"
-              className="w-full p-2 border rounded"
-              value={usuarioData.senha}
-              onChange={handleInputChange}
-              disabled={isSaving}
-            />
+          <div >
+            <label className="block text-sm font-medium mb-3">Senha {usuarioData.senha && (<FontAwesomeIcon icon={faCheck} className="text-green-700 ml-2" />)}</label>
+            <button
+              className="text-blue-500 text-md underline flex items-center "
+              onClick={() => setModalSenhaAberto(true)}
+            >
+              <FontAwesomeIcon icon={faKey} className="mr-2" />
+              {usuarioData.senha ? "Editar Senha existente" : "Criar nova Senha"}
+            </button>
             {errors.senha && <p className="text-red-500 text-xs">{errors.senha}</p>}
 
           </div>
+
+          {/* Modal para criação/edição de senha */}
+          <Modal
+            isOpen={modalSenhaAberto}
+            onRequestClose={() => setModalSenhaAberto(false)} 
+            className="bg-white rounded-lg shadow-lg w-[400px] p-6 flex flex-col z-100 absolute"
+            overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-100"
+
+            style={{ overlay: { backgroundColor: "rgba(0, 0, 0, 0.5)" } }}
+          >
+            <h3 className="text-lg font-semibold mb-4">Criar/Alterar Senha</h3>
+            <label className="block text-sm font-medium">Nova Senha</label>
+            <input
+              type="password"
+              className="w-full p-2 border rounded mt-1"
+              value={novaSenha}
+              onChange={(e) => setNovaSenha(e.target.value)}
+            />
+            <label className="block text-sm font-medium mt-3">Confirmar Senha</label>
+            <input
+              type="password"
+              className="w-full p-2 border rounded mt-1"
+              value={confirmacaoSenha}
+              onChange={(e) => setConfirmacaoSenha(e.target.value)}
+            />
+            {erroSenha && <p className="text-red-500 text-sm mt-2">{erroSenha}</p>}
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button className="px-4 py-2 bg-gray-300 rounded" onClick={() => setModalSenhaAberto(false)}>Cancelar</button>
+              <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={salvarNovaSenha}>Salvar</button>
+            </div>
+          </Modal>
+
         </div>
 
         {/* Foto do Perfil */}
@@ -193,18 +255,19 @@ const formatarTelefone = (value: string) => {
         <div className="flex items-center gap-4">
           <label className="cursor-pointer">
             <input type="file" className="hidden" onChange={handleFotoChange} />
-            <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
+            <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden hover:shadow-lg">
               {fotoPreview ? (
                 <img src={fotoPreview} alt="Perfil" className="w-full h-full object-cover" />
               ) : (
-                <FontAwesomeIcon icon={faCamera} size="2x" className="text-gray-500" />
+                <img src={defaultAvatar} alt="Perfil" className="w-full h-full object-cover border rounded-full" />
+
               )}
             </div>
           </label>
         </div>
 
 
-        <p className="text-xs uppercase font-semibold text-gray-500 mt-10 py-2 border-y cursor-default">INFORMAÇÕES ADICIONAIS</p>
+        <p className="text-xs uppercase font-semibold text-gray-500 mt-5 py-2 border-y cursor-default">INFORMAÇÕES ADICIONAIS</p>
 
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div >

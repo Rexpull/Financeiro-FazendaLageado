@@ -196,3 +196,7 @@ select:disabled {
     margin: 0 auto 16px;
     font-size: 25px;
 }
+
+.z-100{
+    z-index: 100 !important;
+}

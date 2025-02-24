@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { listarParametros, atualizarParametros } from "../../services/parametroService";
 import { listarPlanoContas } from "../../services/planoContasService";
 import { Parametro } from "../../../../backend/src/models/Parametro";
@@ -11,6 +11,10 @@ const ParametroPage = () => {
     const [search, setSearch] = useState({ transferencia: "", entrada: "", pagamento: "" });
     const [showSuggestions, setShowSuggestions] = useState({ transferencia: false, entrada: false, pagamento: false });
 
+     const transfContasRef = useRef<HTMLDivElement>(null);
+     const entradaFinanRef = useRef<HTMLDivElement>(null);
+     const pagamentoFinanRef = useRef<HTMLDivElement>(null);
+    
     useEffect(() => {
       // 🔹 Primeiro, carrega os planos de contas
       listarPlanoContas().then(setPlanos);
@@ -67,13 +71,30 @@ const ParametroPage = () => {
             .slice(0, 10);
     };
 
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+          if (transfContasRef.current && !transfContasRef.current.contains(event.target as Node)) {
+            setShowSuggestions((prev) => ({ ...prev, transferencia: false }));
+          }
+          if (pagamentoFinanRef.current && !pagamentoFinanRef.current.contains(event.target as Node)) {
+            setShowSuggestions((prev) => ({ ...prev, pagamento: false }));
+          }
+          if (entradaFinanRef.current && !entradaFinanRef.current.contains(event.target as Node)) {
+            setShowSuggestions((prev) => ({ ...prev, entrada: false }));
+          }
+        };
+    
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+      }, []);
+
     return (
         <div>
             <BreadCrumb grupo="Cadastro" pagina="Parâmetros" />
             <div className="flex flex-col justify-between items-start gap-5 mb-4">
                 {/* 🔹 Transferência entre Contas */}
                 <div className="flex flex-col gap-5 w-full">
-                    <div>
+                    <div ref={transfContasRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                             Plano de Contas Transferência entre Contas <span className="text-red-500">*</span>
                         </label>
@@ -114,7 +135,7 @@ const ParametroPage = () => {
 
                 {/* 🔹 Entrada de Financiamentos */}
                 <div className="flex flex-col gap-5 w-full">
-                    <div>
+                    <div ref={entradaFinanRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                             Plano de Contas Entradas de Financiamentos <span className="text-red-500">*</span>
                         </label>
@@ -153,7 +174,7 @@ const ParametroPage = () => {
 
                 {/* 🔹 Pagamentos de Financiamentos */}
                 <div className="flex flex-col gap-5 w-full">
-                    <div>
+                    <div ref={pagamentoFinanRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                             Plano de Contas Pagamentos de Financiamentos <span className="text-red-500">*</span>
                         </label>

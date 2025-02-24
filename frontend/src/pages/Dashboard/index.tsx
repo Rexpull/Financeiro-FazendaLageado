@@ -1,11 +1,12 @@
 import React from "react";
-import Sidebar from "../../components/Sidebar";
-import UserForm from "../../components/UserForm";
+import EmBreve from "../../components/EmBreve";
+import BreadCrumb from "../../components/BreadCrumb";
+
 const Users = () => {
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-5">DashBoard</h1>
-      <UserForm />
+      <BreadCrumb pagina="Dashboard" />
+      <EmBreve />
     </div>
   );
 };

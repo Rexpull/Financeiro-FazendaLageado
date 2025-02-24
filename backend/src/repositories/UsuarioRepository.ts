@@ -21,7 +21,7 @@ export class UsuarioRepository {
 
     async create(usuario: Usuario): Promise<number> {
         const stmt = await this.db.prepare(`
-            INSERT INTO usuario (nome, usuario, email, senha, ativo, cpf_cnpj, telefone, foto_Perfil, dt_Cadastro)
+            INSERT INTO usuario (nome, usuario, email, senha, ativo, cpf_cnpj, telefone, foto_perfil, dt_cadastro)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
     
@@ -34,8 +34,8 @@ export class UsuarioRepository {
             usuario.ativo ?? 1,
             usuario.cpf_cnpj ?? null,
             usuario.telefone ?? null,
-            usuario.foto_Perfil ?? null,
-            usuario.dt_Cadastro ?? new Date().toISOString().split("T")[0]
+            usuario.foto_perfil ?? null,
+            usuario.dt_cadastro ?? new Date().toISOString().split("T")[0]
         ).run();
     
         const { results } = await this.db.prepare("SELECT last_insert_rowid() as id").all();
@@ -50,7 +50,7 @@ export class UsuarioRepository {
             WHERE id = ?
         `).bind(
             usuario.nome, usuario.usuario, usuario.email,
-            usuario.ativo, usuario.cpf_cnpj, usuario.telefone, usuario.foto_Perfil, id
+            usuario.ativo, usuario.cpf_cnpj, usuario.telefone, usuario.foto_perfil, id
         ).run();
     }
 

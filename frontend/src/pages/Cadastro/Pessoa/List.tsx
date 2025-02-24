@@ -243,7 +243,7 @@ const ListConta: React.FC = () => {
                     </span>
                     <input
                         type="text"
-                        className="border border-gray-400 h-10 py-2 pl-10 pr-4 rounded w-auto min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
+                        className="border border-gray-400 h-10 py-2 pl-10 pr-4 rounded w-full min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
                         placeholder="Pesquisar por Nome, CPF/CNPJ, Email ou Telefone"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}

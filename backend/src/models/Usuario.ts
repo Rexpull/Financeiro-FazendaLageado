@@ -7,6 +7,6 @@ export interface Usuario {
     ativo: boolean;
     cpf_cnpj?: string;
     telefone?: string;
-    foto_Perfil?: string; // Base64 da foto de perfil
-    dt_Cadastro: string;
+    foto_perfil?: string; // Base64 da foto de perfil
+    dt_cadastro: string;
 }

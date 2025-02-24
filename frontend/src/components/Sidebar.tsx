@@ -202,10 +202,10 @@ const Sidebar = () => {
           <button className="lg:hidden" onClick={() => setIsOpen(true)}>
             <FiMenu size={24} />
           </button>
-
           {/* Notificações e Usuário */}
           <div className="flex items-center gap-4">
-            <IoMdNotificationsOutline size={24}  />
+            <IoMdNotificationsOutline size={26} />
+            <span>|</span>
             <img src={logoDefaultPerfil}  className="logoPerfil" />
           </div>
         </div>

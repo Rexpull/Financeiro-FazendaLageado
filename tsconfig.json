@@ -46,5 +46,5 @@
 
 	},
 	"exclude": ["../test"],
-	"include": ["worker-configuration.d.ts", "backend/src/**/*.ts", "frontend/routes.jsx", "../vite-env.d.ts", "../index.ts"]
+	"include": ["worker-configuration.d.ts", "backend/src/**/*.ts", "frontend/routes.jsx", "../vite-env.d.ts", "../index.ts", "frontend/src/services/EmailService.ts"]
 }

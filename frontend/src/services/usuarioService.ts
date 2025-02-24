@@ -1,6 +1,5 @@
 import { Usuario } from "../../../backend/src/models/Usuario";
 import { toast } from "react-toastify";
-import bcrypt from "bcryptjs";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -19,17 +18,18 @@ export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
     const { senha, ...rest } = usuario;
 
     if (!senha) {
+        toast.error("A senha é obrigatória!");
         throw new Error("A senha é obrigatória!");
     }
 
     const usuarioValido = {
         ...rest,
-        senha, 
+        senha,
         ativo: usuario.ativo ?? true,
         cpf_cnpj: usuario.cpf_cnpj ?? "",
         telefone: usuario.telefone ?? "",
-        foto_Perfil: usuario.foto_Perfil ?? "",
-        dt_Cadastro: usuario.dt_Cadastro ?? new Date().toISOString().split("T")[0]
+        foto_perfil: usuario.foto_perfil ?? "",
+        dt_cadastro: usuario.dt_cadastro ?? new Date().toISOString().split("T")[0],
     };
 
     console.log("📤 Enviando para API:", usuarioValido);
@@ -37,17 +37,32 @@ export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
     const method = usuario.id ? "PUT" : "POST";
     const url = usuario.id ? `${API_URL}/api/usuario/${usuario.id}` : `${API_URL}/api/usuario`;
 
-    const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(usuarioValido),
-    });
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(usuarioValido),
+        });
 
-    if (!res.ok) throw new Error("Erro ao salvar usuário");
+        const data = await res.json(); // Converte resposta para JSON
 
-    toast.success(usuario.id ? "Usuário atualizado com sucesso!" : "Usuário cadastrado com sucesso!");
+        if (!res.ok) {
+            throw new Error(data.error || "Erro desconhecido ao salvar usuário.");
+        }
 
-    return await res.json();
+        toast.success(data.message || (usuario.id ? "Usuário atualizado com sucesso!" : "Usuário cadastrado com sucesso!"));
+        return { ...usuarioValido, id: data.id };
+    } catch (error: any) {
+        console.error("❌ Erro ao salvar usuário:", error);
+
+        if (error.message.includes("Este e-mail já está cadastrado no sistema!")) {
+            toast.error("❌ Erro: Este e-mail já está cadastrado no sistema!");
+        } else {
+            toast.error(`❌ Erro ao salvar: ${error.message}`);
+        }
+
+        throw error;
+    }
 };
 
 

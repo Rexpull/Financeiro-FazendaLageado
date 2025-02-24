@@ -10,15 +10,20 @@ import ContaCorrente from "./src/pages/Cadastro/ContaCorrente";
 import PlanoDeContas from "./src/pages/Cadastro/PlanoDeContas";
 import ConciliacaoBancaria from "./src/pages/Financeiro/ConciliacaoBancaria";
 import FluxoDeCaixa from "./src/pages/Financeiro/FluxoDeCaixa";
+import Login from "./src/pages/Login/index";
+import ProtectedRoute from "./src/pages/Login/ProtectedRoute";
+import { AuthProvider } from "./src/pages/Login/AuthContext";
 
 import LoadingScreen from "./src/components/LoadingScreen";
 
 const AppRoutes = () => {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/*" element={<MainLayoutWithLoading />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/*" element={<MainLayoutWithLoading />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 };
@@ -47,17 +52,21 @@ const MainLayoutWithLoading = () => {
     <>
       {isLoading && <LoadingScreen />} 
       <Routes>
-        <Route path="/" element={<MainLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="cadastro/pessoa" element={<Pessoa />} />
-          <Route path="cadastro/usuario" element={<Users />} />
-          <Route path="cadastro/banco" element={<Banco />} />
-          <Route path="cadastro/conta-corrente" element={<ContaCorrente />} />
-          <Route path="cadastro/plano-de-contas" element={<PlanoDeContas />} />
-          <Route path="financeiro/conciliacao-bancaria" element={<ConciliacaoBancaria />} />
-          <Route path="financeiro/fluxo-de-caixa" element={<FluxoDeCaixa />} />
-          <Route path="parametros" element={<Parametros />} />
+        <Route path="/login" element={<Login />} />
+
+        <Route element={<ProtectedRoute />}>
+          <Route path="/" element={<MainLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="cadastro/pessoa" element={<Pessoa />} />
+            <Route path="cadastro/usuario" element={<Users />} />
+            <Route path="cadastro/banco" element={<Banco />} />
+            <Route path="cadastro/conta-corrente" element={<ContaCorrente />} />
+            <Route path="cadastro/plano-de-contas" element={<PlanoDeContas />} />
+            <Route path="financeiro/conciliacao-bancaria" element={<ConciliacaoBancaria />} />
+            <Route path="financeiro/fluxo-de-caixa" element={<FluxoDeCaixa />} />
+            <Route path="parametros" element={<Parametros />} />
+          </Route>
         </Route>
       </Routes>
     </>

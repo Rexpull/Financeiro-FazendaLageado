@@ -30,16 +30,69 @@ export class UsuarioController {
             }
 
             if (method === "POST" && pathname === "/api/usuario") {
-                const body: Usuario = await req.json();
-                const id = await this.usuarioRepository.create(body);
-                return new Response(JSON.stringify({ id, message: "Usuário cadastrado com sucesso!" }), { status: 201, headers: corsHeaders });
+                try {
+                    const body: Usuario = await req.json();
+                    const id = await this.usuarioRepository.create(body);
+                    return new Response(JSON.stringify({ id, message: "Usuário cadastrado com sucesso!" }), {
+                        status: 201,
+                        headers: corsHeaders,
+                    });
+                } catch (error) {
+                    console.error("❌ Erro ao cadastrar usuário:", error);
+            
+                    if ((error as Error).message.includes("UNIQUE constraint failed: usuario.email")) {
+                        return new Response(
+                            JSON.stringify({ error: "Este e-mail já está cadastrado no sistema!" }),
+                            { status: 400, headers: corsHeaders }
+                        );
+                    }
+            
+                    if ((error as Error).message.includes("UNIQUE constraint failed: usuario.usuario")) {
+                        return new Response(JSON.stringify({ error: "Este NOME de usuario já está cadastrado no sistema!" }), {
+                            status: 400,
+                            headers: corsHeaders,
+                        });
+                    }
+
+                    return new Response(
+                        JSON.stringify({ error: "Erro ao cadastrar usuário", details: (error as Error).message }),
+                        { status: 500, headers: corsHeaders }
+                    );
+                }
             }
+            
 
             if (method === "PUT" && pathname.startsWith("/api/usuario/")) {
-                const id = parseInt(pathname.split("/")[3]);
-                const body: Usuario = await req.json();
-                await this.usuarioRepository.update(id, body);
-                return new Response(JSON.stringify({ message: "Usuário atualizado com sucesso!" }), { status: 200, headers: corsHeaders });
+                try {
+                    const id = parseInt(pathname.split("/")[3]);
+                    const body: Usuario = await req.json();
+                    await this.usuarioRepository.update(id, body);
+                    return new Response(JSON.stringify({ message: "Usuário atualizado com sucesso!" }), {
+                        status: 200,
+                        headers: corsHeaders,
+                    });
+                } catch (error) {
+                    console.error("❌ Erro ao atualizar usuário:", error);
+            
+                    if ((error as Error).message.includes("UNIQUE constraint failed: usuario.email")) {
+                        return new Response(JSON.stringify({ error: "Este e-mail já está cadastrado no sistema!" }), {
+                            status: 400,
+                            headers: corsHeaders,
+                        });
+                    }
+
+                    if ((error as Error).message.includes("UNIQUE constraint failed: usuario.usuario")) {
+                        return new Response(JSON.stringify({ error: "Este NOME de usuario já está cadastrado no sistema!" }), {
+                            status: 400,
+                            headers: corsHeaders,
+                        });
+                    }
+            
+                    return new Response(JSON.stringify({ error: "Erro ao atualizar usuário", details: (error as Error).message }), {
+                        status: 500,
+                        headers: corsHeaders,
+                    });
+                }
             }
 
             if (method === "DELETE" && pathname.startsWith("/api/usuario/")) {
