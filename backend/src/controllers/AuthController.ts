@@ -51,7 +51,9 @@ export class AuthController {
       user: {
         id: userContext.id,
         nome: userContext.nome,
-        email: userContext.email
+        email: userContext.email,
+        foto_perfil: userContext.foto_perfil
+
       }
     };
   }

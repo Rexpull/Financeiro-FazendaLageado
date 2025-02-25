@@ -1,3 +1,4 @@
+import { log } from "console";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -5,6 +6,7 @@ interface AuthUser {
   id: number;
   nome: string;
   email: string;
+  foto_perfil: string;
   token: string;
 }
 
@@ -49,10 +51,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userData: AuthUser = { 
         id: user.id, 
         nome: user.nome, 
+        foto_perfil: user.foto_perfil,
         email: user.email, 
         token 
       };
-  
+      console.log("userData:" + userData.foto);
+      
       setUser(userData);
       localStorage.setItem("user", JSON.stringify(userData));
   

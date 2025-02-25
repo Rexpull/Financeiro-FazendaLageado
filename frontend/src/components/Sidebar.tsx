@@ -8,7 +8,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faDoorOpen, faSearch, faUserEdit } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from "../pages/Login/AuthContext";
 
-
 import logoFazenda from "../assets/img/logo-FazendaLageado.svg";
 import logoDefaultPerfil from "../assets/img/defaultPerfil-Man1.svg";
 
@@ -225,7 +224,7 @@ const Sidebar = () => {
 
             {/* Imagem do perfil que abre o menu */}
             <img
-              src={ logoDefaultPerfil} // Exibe a foto do usuário ou a padrão
+              src={ user?.foto_perfil ? user.foto_perfil : logoDefaultPerfil} // Exibe a foto do usuário ou a padrão
               className="logoPerfil cursor-pointer rounded-full w-10 h-10 object-cover"
               onClick={() => setMenuAberto(!menuAberto)}
             />
