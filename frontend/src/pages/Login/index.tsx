@@ -3,6 +3,7 @@ import { useAuth } from "./AuthContext";
 import artLogin from "../../assets/img/loginArt.svg"
 import logoFazenda from "../../assets/img/logo-FazendaLageado.svg";
 import dashedGreen from "../../assets/img/dashedArt-green.svg"
+import bgGrass from  "../../assets/img/loginBg-grass.jpg"
 
 const Login: React.FC = () => {
   const { login } = useAuth();

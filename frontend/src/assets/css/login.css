@@ -42,10 +42,11 @@
     width: 100%;
     height: 100%;
     border-radius: 20px;
-    background: url("/resources/img/LoginBg-min-red.png") no-repeat center center;
+    background: url("../../assets/img/loginBg-grass.jpg") no-repeat center center;
+
     /*background: url("/resources/img/bg-cortada.jpg") no-repeat center center;*/
     background-size: cover;
-    background-position-y: bottom;
+    /* background-position-y: bottom; */
     position: absolute;
     z-index: -1;
 }
