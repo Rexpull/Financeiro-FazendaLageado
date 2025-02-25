@@ -6,7 +6,8 @@
 
     box-shadow: 0 10px 40px #777777;
     height: 100%;
-    background: url("/resources/img/LoginArts/bgContainerLogin2-min.png") no-repeat center center;
+    background: #fff9f4;
+    
     background-size: cover;
     background-position-y: bottom;
     position: absolute;
@@ -41,9 +42,10 @@
 .background-image {
     width: 100%;
     height: 100%;
-    border-radius: 20px;
+    border-radius: 18px;
     background: url("../../assets/img/loginBg-grass.jpg") no-repeat center center;
-
+    background-color: rgba(0, 0, 0, 0.3); /* Add a dark overlay */
+    background-blend-mode: darken;
     /*background: url("/resources/img/bg-cortada.jpg") no-repeat center center;*/
     background-size: cover;
     /* background-position-y: bottom; */
@@ -219,7 +221,7 @@ input:-webkit-autofill:active{
     list-style: none;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, rgba(249,175,105,0.5) 21%, rgba(248, 138, 21, 0.5) 46%, rgb(234, 121, 29) 94%);
+    background: linear-gradient(90deg, rgba(122, 249, 105, 0.5) 21%, rgba(21, 248, 32, 0.5) 46%, rgb(21, 122, 1) 94%);
     animation: animate 25s linear infinite;
     bottom: -150px;
     filter: blur(8px);

@@ -1,38 +1,47 @@
-import React, { useState } from "react";
+import React, { use, useState } from "react";
 import { useAuth } from "./AuthContext";
 import artLogin from "../../assets/img/loginArt.svg"
 import logoFazenda from "../../assets/img/logo-FazendaLageado.svg";
 import dashedGreen from "../../assets/img/dashedArt-green.svg"
 import bgGrass from  "../../assets/img/loginBg-grass.jpg"
+import { log } from "console";
 
 const Login: React.FC = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     setErro("");
 
     const success = await login(email, senha);
+    console.log(success);
+    
     if (!success) {
+      console.log("setou");
+      
       setErro("E-mail ou senha inválidos");
     }
+    setIsLoading(false);
   };
 
   return (
     <div className="container-login" style={{ height: "100%" }}>
+
       <div className="content-login" style={{ maxHeight: "750px" }}>
         <div className="login-container-image" style={{ height: "100%" }}>
           <div className="login-div" style={{ height: "100%", width: "100%", borderRadius: "25px 0 0 25px" }}>
-            <div className="login-image-child" style={{ position: "relative" }}>
+            <div className="login-image-child" style={{ position: "relative", pointerEvents: 'none' }}>
               <div className="background-image" loading="lazy"></div>
-              <img src={artLogin} style={{ width: "32%", float: "left", zIndex: 2 }} className="LogoBg" />
+              <img src={artLogin} style={{ width: "65%", float: "left", zIndex: 2 }} className="LogoBg" />
               <div className="spanBg" style={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column", paddingTop: "30px" }}>
                 <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column" }}>
-                  <span className="font-nun spanBgTitle" style={{ zIndex: 2, fontWeight: 700, fontSize: "40px", color: "#FFFFFF" }}>Financeiro Lageado</span>
-                  <span className="font-nun spanBgSubTitle" style={{ zIndex: 2, fontWeight: 400, fontSize: "25px", color: "#FFFFFF" }}>Mais gestão para seu negócio</span>
+                  <span className="font-nun spanBgTitle text-center" style={{ zIndex: 2, fontWeight: 700, fontSize: "45px", color: "antiquewhite" }}>Financeiro Lageado</span>
+                  <span className="font-nun spanBgSubTitle" style={{ zIndex: 2, fontWeight: 400, fontSize: "25px", color: "antiquewhite" }}>Mais gestão para seu negócio</span>
                 </div>
               </div>
               <div className="area">
@@ -47,17 +56,17 @@ const Login: React.FC = () => {
             </div>
           </div>
         </div>
-        <div id="page-container" className="fade in" style={{ position: "relative" }}>
+        <div id="page-container" className="fade in" style={{ position: "relative",  overflowY: "hidden" }}>
           <div style={{ position: "absolute", top: 0, right: 0, borderRadius: "0 20px 0 0", overflow: "hidden" }}>
-            <img src={dashedGreen} alt="Bolha Vermelha" style={{ pointerEvents: "none", filter: "blur(3px)", width: "100px", transform: "translate(5px, -5px)" }} className="bubbleRed" />
+            <img src={dashedGreen} alt="Bolha Vermelha" style={{ pointerEvents: "none", width: "100px", transform: "translate(5px, -5px)" }} className="bubbleRed" />
           </div>
-          <img src={dashedGreen} alt="Bolha Roxa" style={{ pointerEvents: "none", filter: "blur(3px)", position: "absolute", bottom: 0, left: "-11%", width: "23%", float: "right" }} />
+          <img src={dashedGreen} alt="Bolha Roxa" style={{ pointerEvents: "none", position: "absolute", bottom: "-5%", left: "-11%", width: "23%", float: "right" }} />
           <div className="login-container-info">
             <div className="login login-v2 animated flipInX" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px", marginBottom: "55px" }} data-pageload-addclass="animated flipInX">
               <div className="login-header">
                 <div className="brand" style={{ display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
-                  <img src={logoFazenda} style={{ width: "20%", float: "left" }} className="logoFullMetre" />
-                  <span className="font-nun" style={{ marginTop: "20px", fontWeight: 700, fontSize: "40px", color: "#525252" }}>Login da sua conta</span>
+                  <img src={logoFazenda} style={{ width: "70%", float: "left", pointerEvents: 'none' }} className="logoFullMetre" />
+                  <span className="font-nun" style={{ marginTop: "20px", fontWeight: 700, fontSize: "40px", color: "#222222" }}>Login da sua conta</span>
                   <span className="font-nun" style={{ marginBottom: "15px", fontWeight: 400, fontSize: "18px", color: "#525252" }}>Que bom te ver por aqui, seja bem vindo!</span>
                 </div>
               </div>
@@ -86,13 +95,30 @@ const Login: React.FC = () => {
                     />
                   </div>
                   <div className="login-buttons">
-                    <button type="submit" className="btn btn-login btn-success btn-block btn-lg" id="btnEntrar">
-                      <span>Entrar</span>
+                    <button type="submit" className={`btn btn-login btn-success btn-block btn-lg text-center ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:bg-red-600"}`} id="btnEntrar" disabled={isLoading}>
+                      {!isLoading ? (
+                        <span>Entrar</span>
+                      ) : (
+                        <div style={{    display: 'flex',
+                              width: '100%',
+                              justifyContent: 'center',
+                              gap: '15px',
+                              alignItems: 'center',
+                              opacity: '0.5',}}>
+                          <div className="animate-spin h-4 w-4 border-t-2 border-white border-solid rounded-full"></div>
+                          <span>Entrando...</span>
+                        </div>
+                      )} 
+
+
                     </button>
                   </div>
-                  <div className="alert alert-danger font-nun" style={{ display: "none", marginTop: "15px", alignSelf: "center", justifyContent: "center" }}>
+                  {erro.includes("E-mail ou senha inválidos") && (
+                    <div className="alert alert-danger font-nun" style={{ marginTop: "15px", alignSelf: "center", justifyContent: "center" }}>
                     <strong style={{ color: "#ff4646" }}>Ops... Falha na autenticação, tente novamente</strong>
                   </div>
+                  )}
+                  
                 </form>
                 
               </div>

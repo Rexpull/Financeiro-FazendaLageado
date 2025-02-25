@@ -367,7 +367,7 @@ const ListConta: React.FC = () => {
                 <div className="bg-orange-300 w-12 h-12 flex items-center justify-center text-xl font-bold rounded-full">
                   {pessoa.nome[0].toUpperCase()}
                 </div>
-                <span className="text-lg font-bold mt-2 " style={{textTransform: 'capitalize'}}>{pessoa.nome.toLowerCase()}</span>
+                <span className="text-lg font-bold mt-2 text-center" style={{textTransform: 'capitalize'}}>{pessoa.nome.toLowerCase()}</span>
                 <p className="text-sm text-gray-600">{formatarDocumento(pessoa.tipo, pessoa.cgcpf ?? "") || "Sem CPF/CNPJ"}</p>
                 <p className="text-sm text-gray-600">{pessoa.email || "Sem Email"}</p>
                 <p className="text-sm text-gray-600">{formatarTelefone(pessoa.telefone ?? "") || "Sem Telefone"}</p>

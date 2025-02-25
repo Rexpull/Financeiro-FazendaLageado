@@ -21,7 +21,7 @@ const PlanoContasTable: React.FC = () => {
 
     // 🔹 Estado para ordenação
     const [sortColumn, setSortColumn] = useState<string | null>(null);
-    const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+    const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   
   // 🔹 Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -29,6 +29,7 @@ const PlanoContasTable: React.FC = () => {
 
   useEffect(() => {
     fetchPlanos();
+    handleSort("nivel");
   }, []);
 
   const fetchPlanos = async () => {
