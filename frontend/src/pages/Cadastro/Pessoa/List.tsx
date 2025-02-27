@@ -4,7 +4,7 @@ import { faSearch, faPlus, faEllipsisV, faUniversity, faTimes, faUser, faQuestio
 import { listarPessoas, excluirPessoa, salvarPessoa, atualizarStatusPessoa } from "../../../services/pessoaService";
 import PessoaModal from "./PessoaModal";
 import DialogModal from "../../../components/DialogModal"
-
+import noData from "/frontend/src/assets/img/noData.svg"
 import { Pessoa } from "../../../../../backend/src/models/Pessoa";
 
 const ListConta: React.FC = () => {
@@ -300,7 +300,7 @@ const ListConta: React.FC = () => {
         {filteredPessoas.length === 0 ? (
             <div className="col-span-full flex flex-col items-center gap-2">
                 <img 
-                src="/frontend/src/assets/img/noData.svg"
+                src={noData}
                 alt="Sem dados"
                 className="object-contain" style={{width:"25em", height:"25em"}}/> 
                 <p className="text-gray-900 font-bold text-center col-span-full " style={{fontSize:"1.2em", marginTop: "-40px", marginBottom: "150px"}}>Nenhuma pessoa encontrada!</p>

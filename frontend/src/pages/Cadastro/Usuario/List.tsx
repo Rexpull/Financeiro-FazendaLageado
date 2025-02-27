@@ -5,6 +5,7 @@ import { listarUsuarios, excluirUsuario, atualizarStatusUsuario, salvarUsuario }
 import UsuarioModal from "./UsuarioModal";
 import DialogModal from "../../../components/DialogModal";
 import { Usuario } from "../../../../../backend/src/models/Usuario";
+import noData from "/frontend/src/assets/img/noData.svg"
 
 import defaultAvatar from "../../../assets/img/default-avatar.jpg";
 import allUsers from "../../../assets/img/allUsers.svg";
@@ -257,7 +258,7 @@ const ListUsuario: React.FC = () => {
         {!isLoading && filteredUsuarios.length === 0 ? (
           <div className="col-span-full flex flex-col items-center gap-2">
             <img 
-            src="/frontend/src/assets/img/noData.svg"
+            src={noData}
             alt="Sem dados"
             className="object-contain" style={{width:"25em", height:"25em"}}/> 
             <p className="text-gray-900 font-bold text-center col-span-full " style={{fontSize:"1.2em", marginTop: "-40px", marginBottom: "150px"}}>Nenhum usuário encontrado!</p>

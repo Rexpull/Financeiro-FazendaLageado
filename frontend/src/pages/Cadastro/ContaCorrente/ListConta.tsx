@@ -5,6 +5,7 @@ import { listarContas, salvarConta, excluirConta, atualizarStatusConta  } from "
 import ContaCorrenteModal from "./ContaCorrenteModal"; // Importando o Modal
 import DialogModal from "../../../components/DialogModal"
 import { ContaCorrente } from "../../../../../backend/src/models/ContaCorrente";
+import noData from "/frontend/src/assets/img/noData.svg"
 
 // Importando as imagens dos bancos
 import bancoBrasil from "../../../assets/img/icon-Bancos/banco-brasil.svg";
@@ -286,7 +287,7 @@ const ListConta: React.FC = () => {
         {filteredContas.length === 0 ? (
         <div className="col-span-full flex flex-col items-center gap-2">
           <img 
-          src="/frontend/src/assets/img/noData.svg"
+          src={noData}
           alt="Sem dados"
           className="object-contain" style={{width:"25em", height:"25em"}}/> 
           <p className="text-gray-900 font-bold text-center col-span-full " style={{fontSize:"1.2em", marginTop: "-40px", marginBottom: "150px"}}>Nenhuma conta encontrada!</p>

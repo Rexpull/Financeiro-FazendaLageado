@@ -6,6 +6,7 @@ import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil } fr
 import { listarBancos, salvarBanco, excluirBanco } from "../../../services/bancoService";
 import BancoModal from "./BancoModal";
 import { Banco } from "../../../../../backend/src/models/Banco";
+import noData from "/frontend/src/assets/img/noData.svg"
 
 
 

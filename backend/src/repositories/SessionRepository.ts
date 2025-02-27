@@ -7,12 +7,13 @@ export class SessionRepository {
     this.db = db;
   }
 
-  // Obtém o usuário pelo email
-  async getByEmail(email: string): Promise<UserContext | null> {
-    const stmt = await this.db.prepare("SELECT * FROM usuario WHERE email = ?");
-    const { results } = await stmt.bind(email).all<UserContext>();
-    return results.length ? results[0] : null;
-  }
+    // Obtém o usuário pelo email ou nome de usuário
+    async getByEmailOrUsuario(identificador: string): Promise<UserContext | null> {
+      const stmt = await this.db.prepare("SELECT * FROM usuario WHERE email = ? OR usuario = ?");
+      const { results } = await stmt.bind(identificador, identificador).all<UserContext>();
+      return results.length ? results[0] : null;
+    }
+  
 
   // Atualiza o token do usuário na sessão
   async updateSession(id: number, token: string): Promise<void> {

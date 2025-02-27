@@ -11,12 +11,13 @@ export class AuthController {
   }
 
   // 🔹 Login e criação de sessão
-  async login(email: string, senha: string, env: { JWT_SECRET: string }) {
-    console.log("🔍 Tentativa de login para:", email);
+  async login(identificador: string, senha: string, env: { JWT_SECRET: string }) {
+    console.log("🔍 Tentativa de login para:", identificador);
 
-    const userContext = await this.sessionRepository.getByEmail(email);
+    // 🔹 Busca pelo email ou nome de usuário
+    const userContext = await this.sessionRepository.getByEmailOrUsuario(identificador);
     if (!userContext) {
-      console.log("❌ Usuário não encontrado:", email);
+      console.log("❌ Usuário não encontrado:", identificador);
       return null;
     }
 
@@ -27,7 +28,7 @@ export class AuthController {
     console.log("🔐 Resultado da comparação:", senhaValida);
 
     if (!senhaValida) {
-      console.log("❌ Senha incorreta para o e-mail:", email);
+      console.log("❌ Senha incorreta para:", identificador);
       return null;
     }
 
@@ -40,7 +41,7 @@ export class AuthController {
       .setExpirationTime("2h")
       .sign(secretKey);
 
-    console.log("✅ Login bem-sucedido:", email);
+    console.log("✅ Login bem-sucedido:", identificador);
 
     // 🔹 Atualiza sessão no banco
     await this.sessionRepository.updateSession(userContext.id, token);
@@ -52,8 +53,8 @@ export class AuthController {
         id: userContext.id,
         nome: userContext.nome,
         email: userContext.email,
+        usuario: userContext.usuario, // Agora retornamos o nome de usuário também
         foto_perfil: userContext.foto_perfil
-
       }
     };
   }

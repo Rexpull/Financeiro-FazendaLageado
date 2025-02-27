@@ -241,7 +241,7 @@ const Sidebar = () => {
                 <button
                   className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-gray-800"
                   onClick={() => {
-                    navigate("/meu-perfil");
+                    navigate("/cadastro/usuario");
                     setMenuAberto(false);
                   }}
                 >

@@ -24,7 +24,7 @@ const Login: React.FC = () => {
     if (!success) {
       console.log("setou");
       
-      setErro("E-mail ou senha inválidos");
+      setErro("Usuário/E-mail ou senha inválidos");
     }
     setIsLoading(false);
   };
@@ -73,10 +73,10 @@ const Login: React.FC = () => {
               <div className="login-content">
                 <form onSubmit={handleLogin} className="w-full">
                   <div className="form-group" style={{ display: "flex", flexDirection: "column", cursor: "text", marginBottom: "15px" }}>
-                    <span className="span-form">E-mail</span>
+                    <span className="span-form">Usuário / E-mail</span>
                     <input
                       type="text"
-                      placeholder="E-mail"
+                      placeholder="Usuário ou E-mail"
                       className="ui-inputfield ui-inputtext ui-widget ui-state-default ui-corner-all form-control form-login input-lg"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
