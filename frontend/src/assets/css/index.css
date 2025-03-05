@@ -150,6 +150,10 @@
     background-color: #FA500C ;
 }
 
+.bg-suport{
+    background-color: #fa770c ;
+}
+
 /* Header Navbar */
 .navBar-header {
     position: absolute;
