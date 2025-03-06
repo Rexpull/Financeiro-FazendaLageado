@@ -3,6 +3,8 @@ import Modal from "react-modal";
 import DialogModal from "../../../components/DialogModal";
 import CrudModal from "./CrudModal";
 import LancamentoManual from "./LancarManual";
+import ImportOFXModal from "./ImportOFXModal";
+import FiltroMovimentosModal from "./FiltroMovimentosModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive } from '@fortawesome/free-solid-svg-icons';
 import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta, atualizarStatusConta } from "../../../services/planoContasService";
@@ -12,6 +14,9 @@ const MovimentoBancarioTable: React.FC = () => {
   const [planos, setPlanos] = useState<MovimentoBancario[]>([]);
   const [filteredPlanos, setFilteredPlanos] = useState<MovimentoBancario[]>([]);
   const [modalIsOpen, setModalIsOpen] = useState(false);
+  const [modalImportOFXIsOpen, setModalImportOFXIsOpen] = useState(false);
+  const [modalFiltroMovimentosIsOpen, setModalFiltroMovimentosIsOpen] = useState(false);
+  
   const [movimentoData, setMovimentoData] = useState<MovimentoBancario>({
     id: 0,
     dtMovimento: new Date().toISOString(),
@@ -58,6 +63,16 @@ const MovimentoBancarioTable: React.FC = () => {
     setFilteredPlanos(filtered);
     setCurrentPage(1); // Reinicia a página ao alterar os filtros
   }, [planos]);
+
+  const handleImportFile = (file: File) => {
+    console.log("Arquivo importado:", file);
+    // Aqui você pode processar o arquivo OFX
+  };
+
+  const handleSearchFilters = (filters: { dataInicio: string; dataFim: string; status: string }) => {
+    console.log("Filtros aplicados:", filters);
+    // Aqui você pode fazer a requisição para buscar os movimentos filtrados
+  };
 
 
   const openModal = (movimento?: MovimentoBancario) => {
@@ -117,7 +132,12 @@ const MovimentoBancarioTable: React.FC = () => {
             teste
           </div>
           <div className="flex justify-end items-center gap-3 w-full">
-            
+            <button
+            className="bg-gray-200 text-black font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-gray-300"
+            onClick={() => setModalFiltroMovimentosIsOpen(true)}
+            >
+                Pesquisar <FontAwesomeIcon icon={faSearch} className="ml-3 font-bold" />
+            </button>
             <button
             className="bg-suport text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-400"
             onClick={() => openModal()}
@@ -126,7 +146,7 @@ const MovimentoBancarioTable: React.FC = () => {
             </button>
             <button
             className="bg-primary text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-500"
-            onClick={() => openModal()}
+            onClick={() => setModalImportOFXIsOpen(true)}
             >
                 Buscar OFX <FontAwesomeIcon icon={faFileArchive} className="ml-3 font-bold" />
             </button>
@@ -249,10 +269,20 @@ const MovimentoBancarioTable: React.FC = () => {
       <LancamentoManual
         isOpen={modalIsOpen}
         onClose={() => setModalIsOpen(false)}
-        movimentoData={movimentoData}
-        handleInputChange={(e) => setMovimentoData({ ...movimentoData, [e.target.name]: e.target.value })}
         handleSave={handleSave}
         isSaving={isSaving}
+      />
+
+      <ImportOFXModal
+        isOpen={modalImportOFXIsOpen}
+        onClose={() => setModalImportOFXIsOpen(false)}
+        handleImport={handleImportFile}
+      />
+
+      <FiltroMovimentosModal
+        isOpen={modalFiltroMovimentosIsOpen}
+        onClose={() => setModalFiltroMovimentosIsOpen(false)}
+        handleSearch={handleSearchFilters}
       />
 
       <DialogModal

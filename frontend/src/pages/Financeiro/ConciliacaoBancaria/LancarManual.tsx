@@ -122,7 +122,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         className={`flex-1 text-center text-lg py-2 font-semibold border-b ${
           tipoMovimento === "credito"
             ? "text-white bg-green-700 border-green-700"
-            : "text-gray-800 bg-white border-gray-300"
+            : "text-gray-800 bg-white border-gray-300 hover:bg-green-100 "
         }`}
         onClick={() => setTipoMovimento("credito")}
       >
@@ -132,7 +132,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         className={`flex-1 text-center text-lg py-2 font-semibold border-b ${
           tipoMovimento === "debito"
             ? "text-white bg-red-800 border-red-800"
-            : "text-gray-800 bg-white border-gray-300"
+            : "text-gray-800 bg-white border-gray-300 hover:bg-red-100"
         }`}
         onClick={() => setTipoMovimento("debito")}
       >
@@ -145,7 +145,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       <div className="grid grid-cols-2 gap-4">
         {/* Conta Corrente */}
         <div>
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Conta Corrente <span className="text-red-500">*</span>
           </label>
           <input
@@ -158,7 +158,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
         {/* Plano de Contas */}
         <div ref={planoRef} className="relative">
-          <label className="block text-sm font-medium text-gray-700">Plano de Contas <span className="text-red-500">*</span></label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Plano de Contas <span className="text-red-500">*</span></label>
           <div className="relative">
             <input
               type="text"
@@ -188,7 +188,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       {/* Valor e Data */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Valor {tipoMovimento === "credito" ? "do Crédito" : "do Débito"} R$ <span className="text-red-500">*</span>
           </label>
           <CurrencyInput
@@ -204,7 +204,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
           {errors.valor && <p className="text-red-500 text-xs">{errors.valor}</p>}
         </div>
         <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Data <span className="text-red-500">*</span>
             </label>
             <input
@@ -221,7 +221,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
       {/* Observação */}
       <div>
-        <label className="block text-sm font-medium text-gray-700">
+        <label className="block text-sm font-medium text-gray-700 mb-1">
           Descrição do Movimento <span className="text-red-500">*</span>
         </label>
         <input
@@ -233,6 +233,8 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
           onChange={handleInputChange}
           disabled={isSaving}
         />
+        {errors.descricao && <p className="text-red-500 text-xs">{errors.descricao}</p>}
+
       </div>
     </div>
 
