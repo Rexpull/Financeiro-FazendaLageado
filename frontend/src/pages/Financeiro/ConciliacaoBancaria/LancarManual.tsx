@@ -6,6 +6,10 @@ import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBa
 import CurrencyInput from "react-currency-input-field"; 
 import { PlanoConta } from "../../../../../backend/src/models/PlanoConta";
 import { listarPlanoContas } from "../../../services/planoContasService";
+import { listarBancos } from "../../../services/bancoService";
+import { listarPessoas } from "../../../services/pessoaService";
+import { listarParametros } from "../../../services/parametroService";
+
 
 Modal.setAppElement("#root"); // Evita erro de acessibilidade no modal
 
@@ -23,13 +27,27 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   isSaving
 }) => {
   const [tipoMovimento, setTipoMovimento] = useState<"credito" | "debito">("credito");
+  const [modalidadeMovimento, setModalidadeMovimento] = useState<"padrao" | "financiamento" >("padrao");
   const [planos, setPlanos] = useState<PlanoConta[]>([]);
+  const [bancos, setBancos] = useState<{id: number; nome: string}[]>([]);
+  const [pessoas, setPessoas] = useState<{id: number; nome: string}[]>([]);
+  const [parametros, setParametros] = useState<{ idPlanoEntradaFinanciamentos: number; idPlanoPagamentoFinanciamentos: number }>({
+    idPlanoEntradaFinanciamentos: 0,
+    idPlanoPagamentoFinanciamentos: 0,
+  });
   const [formData, setFormData] = useState({
     idPlanoContas: "",
     valor: "0,00",
     dataMovimento: new Date().toISOString().slice(0, 16),
     descricao: "",
+    numeroDocumento: "",
+    bancoSelecionado: null,
+    pessoaSelecionada: null,
   });
+  const [parcelado, setParcelado] = useState(false);
+  const [numParcelas, setNumParcelas] = useState(1);
+  const [parcelas, setParcelas] = useState<{ parcela: number; vencimento: string; valor: string }[]>([]);
+
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [searchPlano, setSearchPlano] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -37,9 +55,23 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      listarPlanoContas().then(setPlanos);
+      listarParametros().then((data) => {
+        const parametrosData = data[0] || { idPlanoEntradaFinanciamentos: 0, idPlanoPagamentoFinanciamentos: 0 };
+        setParametros(parametrosData);
+      });
     }
-  }, [isOpen]);
+    if (isOpen && modalidadeMovimento === "financiamento") {
+      listarBancos().then(setBancos);
+      listarPessoas().then(setPessoas);
+
+      const idPlano =
+        tipoMovimento === "credito"
+          ? parametros.idPlanoEntradaFinanciamentos
+          : parametros.idPlanoPagamentoFinanciamentos;
+
+      setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
+    }
+  }, [isOpen, modalidadeMovimento, tipoMovimento, parametros]);
 
   // 🔹 Filtrar apenas nível 3 e separar por tipo (Receita ou Despesa)
   const planosFiltrados = planos.filter((plano) =>
@@ -65,6 +97,15 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     if (!formData.dataMovimento) newErrors.dataMovimento = "Selecione uma data!";
     if (!formData.descricao.trim()) newErrors.descricao = "A descrição é obrigatória!";
 
+    if (modalidadeMovimento === "financiamento") {
+      if (!formData.numeroDocumento.trim()) newErrors.numeroDocumento = "Informe o número do documento!";
+      if (!formData.bancoSelecionado && !formData.pessoaSelecionada) {
+        newErrors.bancoPessoa = "Escolha um banco ou uma pessoa!";
+      }
+      if (formData.bancoSelecionado && formData.pessoaSelecionada) {
+        newErrors.bancoPessoa = "Escolha apenas um: Banco ou Pessoa!";
+      }
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -87,6 +128,25 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     setFormData((prev) => ({ ...prev, idPlanoContas: plano.id.toString() }));
     setShowSuggestions(false);
   };
+
+  const handleNumParcelasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value);
+    if (value >= 1) {
+      setNumParcelas(value);
+    }
+  };
+
+  useEffect(() => {
+    if (parcelado && parseFloat(formData.valor.replace(",", ".")) > 0) {
+      const valorParcela = (parseFloat(formData.valor.replace(",", ".")) / numParcelas).toFixed(2);
+      const novasParcelas = Array.from({ length: numParcelas }, (_, i) => ({
+        parcela: i + 1,
+        vencimento: new Date(new Date().setMonth(new Date().getMonth() + i)).toISOString().slice(0, 10),
+        valor: valorParcela,
+      }));
+      setParcelas(novasParcelas);
+    }
+  }, [parcelado, numParcelas, formData.valor]);
 
   // 🔹 Fecha a lista de sugestões ao clicar fora
   useEffect(() => {
@@ -140,104 +200,237 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       </button>
     </div>
 
+    
     {/* 🔹 Formulário */}
-    <div className="p-4 grid grid-cols-1 gap-4">
-      <div className="grid grid-cols-2 gap-4">
-        {/* Conta Corrente */}
+    <div className="flex align-center justify-center w-full">  
+      <div className="p-4 grid grid-cols-1 gap-4 w-full">
+        <div className="flex mb-3 w-full items-center justify-center ">
+          <div className="flex w-2/3 justify-center rounded-lg border overflow-hidden">
+            <button
+              className={`flex-1 text-center text-lg py-1 font-semibold  ${
+                modalidadeMovimento === "padrao"
+                  ? "text-white bg-orange-600 border-orange-600"
+                  : "text-gray-800 bg-white border-gray-300 hover:bg-orange-100 "
+              }`}
+              onClick={() => setModalidadeMovimento("padrao")}
+            >
+              Padrão 
+            </button>
+            <button
+              className={`flex-1 text-center text-lg py-1 font-semibold border-x ${
+                modalidadeMovimento === "financiamento"
+                  ? "text-white bg-orange-600 border-orange-600"
+                  : "text-gray-800 bg-white border-gray-300 hover:bg-orange-100"
+              }`}
+              onClick={() => setModalidadeMovimento("financiamento")}
+            >
+              Financiamento
+            </button>
+          </div>
+        </div>
+
+        {modalidadeMovimento === "financiamento" && (
+          <>
+            {/* Número do Documento */}
+            <div className="pt-1 grid grid-cols-2 gap-4 ">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Número do Documento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="numeroDocumento"
+                  className={`w-full p-2 border ${
+                    errors.numeroDocumento ? "border-red-500" : "border-gray-300"
+                  } rounded`}
+                  placeholder="Informe o número do documento"
+                  value={formData.numeroDocumento}
+                  onChange={handleInputChange}
+                />
+                {errors.numeroDocumento && <p className="text-red-500 text-xs">{errors.numeroDocumento}</p>}
+              </div>
+              {/* Switch Parcelado */}
+              <div className="flex items-center gap-2">
+                <span>Parcelado</span>
+                <input
+                  type="checkbox"
+                  className="toggle-switch"
+                  checked={parcelado}
+                  onChange={() => setParcelado(!parcelado)}
+                />
+              </div>
+            </div>
+            <div className="pt-1 grid grid-cols-2 gap-4 pb-5 border-b">
+        
+              {/* Banco */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Banco <span className="text-gray-500">(opcional)</span>
+                </label>
+                <select
+                  name="bancoSelecionado"
+                  className="w-full p-2 border border-gray-300 rounded"
+                  value={formData.bancoSelecionado}
+                  onChange={handleInputChange}
+                  disabled={!!formData.pessoaSelecionada}
+                >
+                  <option value="">Selecione um banco</option>
+                  {bancos.map((banco) => (
+                    <option key={banco.id} value={banco.id}>
+                      {banco.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pessoa */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Pessoa <span className="text-gray-500">(opcional)</span>
+                </label>
+                <select
+                  name="pessoaSelecionada"
+                  className="w-full p-2 border border-gray-300 rounded"
+                  value={formData.pessoaSelecionada}
+                  onChange={handleInputChange}
+                  disabled={!!formData.bancoSelecionado}
+                >
+                  <option value="">Selecione uma pessoa</option>
+                  {pessoas.map((pessoa) => (
+                    <option key={pessoa.id} value={pessoa.id}>
+                      {pessoa.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Validação de Banco/Pessoa */}
+              {errors.bancoPessoa && <p className="text-red-500 text-xs col-span-2">{errors.bancoPessoa}</p>}
+            </div>
+          </>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          {/* Conta Corrente */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Conta Corrente <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              className="w-full p-2 bg-gray-200 border border-gray-300 rounded cursor-not-allowed"
+              value="SICOOB | 107964 | Ronaldo"
+              disabled
+            />
+          </div>
+
+          {/* Plano de Contas */}
+          <div ref={planoRef} className="relative">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Plano de Contas <span className="text-red-500">*</span></label>
+            <div className="relative">
+              <input
+                type="text"
+                className={`w-full p-2 border ${errors.idPlanoContas ? "border-red-500" : "border-gray-300"} rounded`}
+                placeholder="Pesquisar plano de contas..."
+                value={searchPlano}
+                onChange={handleSearchPlano}
+              />
+              <FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
+            </div>
+            {showSuggestions && (
+              <ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
+                {planosFiltrados
+                  .filter((plano) => plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()))
+                  .slice(0, 10)
+                  .map((plano) => (
+                    <li key={plano.id} className="p-2 hover:bg-gray-100 cursor-pointer" onClick={() => selectPlano(plano)}>
+                      {plano.hierarquia} | {plano.descricao}
+                    </li>
+                  ))}
+              </ul>
+            )}
+            {errors.idPlanoContas && <p className="text-red-500 text-xs">{errors.idPlanoContas}</p>}
+          </div>
+        </div>
+
+        {/* Valor e Data */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Valor {tipoMovimento === "credito" ? "do Crédito" : "do Débito"} R$ <span className="text-red-500">*</span>
+            </label>
+            <CurrencyInput
+              name="valor"
+              className="w-full p-2 bg-white border border-gray-300 rounded"
+              placeholder="R$ 0,00"
+              decimalsLimit={2}
+              prefix="R$ "
+              value={formData.valor}
+              onValueChange={(value) => handleInputChange({ target: { name: "valor", value } } as any)}
+              disabled={isSaving}
+            />
+            {errors.valor && <p className="text-red-500 text-xs">{errors.valor}</p>}
+          </div>
+          <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Data <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="datetime-local"
+                name="dataMovimento"
+                className={`w-full p-2 bg-white border ${errors.dataMovimento ? "border-red-500" : "border-gray-300"} rounded`}
+                value={formData.dataMovimento}
+                onChange={handleInputChange}
+                disabled={isSaving}
+              />
+              {errors.dataMovimento && <p className="text-red-500 text-xs">{errors.dataMovimento}</p>}
+            </div>
+        </div>
+
+        {/* Observação */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Conta Corrente <span className="text-red-500">*</span>
+            Descrição do Movimento <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
-            className="w-full p-2 bg-gray-200 border border-gray-300 rounded cursor-not-allowed"
-            value="SICOOB | 107964 | Ronaldo"
-            disabled
-          />
-        </div>
-
-        {/* Plano de Contas */}
-        <div ref={planoRef} className="relative">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Plano de Contas <span className="text-red-500">*</span></label>
-          <div className="relative">
-            <input
-              type="text"
-              className={`w-full p-2 border ${errors.idPlanoContas ? "border-red-500" : "border-gray-300"} rounded`}
-              placeholder="Pesquisar plano de contas..."
-              value={searchPlano}
-              onChange={handleSearchPlano}
-            />
-            <FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
-          </div>
-          {showSuggestions && (
-            <ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
-              {planosFiltrados
-                .filter((plano) => plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()))
-                .slice(0, 10)
-                .map((plano) => (
-                  <li key={plano.id} className="p-2 hover:bg-gray-100 cursor-pointer" onClick={() => selectPlano(plano)}>
-                    {plano.hierarquia} | {plano.descricao}
-                  </li>
-                ))}
-            </ul>
-          )}
-          {errors.idPlanoContas && <p className="text-red-500 text-xs">{errors.idPlanoContas}</p>}
-        </div>
-      </div>
-
-      {/* Valor e Data */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Valor {tipoMovimento === "credito" ? "do Crédito" : "do Débito"} R$ <span className="text-red-500">*</span>
-          </label>
-          <CurrencyInput
-            name="valor"
+            name="descricao"
             className="w-full p-2 bg-white border border-gray-300 rounded"
-            placeholder="R$ 0,00"
-            decimalsLimit={2}
-            prefix="R$ "
-            value={formData.valor}
-            onValueChange={(value) => handleInputChange({ target: { name: "valor", value } } as any)}
+            placeholder="Digite uma descrição"
+            value={formData.descricao}
+            onChange={handleInputChange}
             disabled={isSaving}
           />
-          {errors.valor && <p className="text-red-500 text-xs">{errors.valor}</p>}
+          {errors.descricao && <p className="text-red-500 text-xs">{errors.descricao}</p>}
+
         </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Data <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="datetime-local"
-              name="dataMovimento"
-              className={`w-full p-2 bg-white border ${errors.dataMovimento ? "border-red-500" : "border-gray-300"} rounded`}
-              value={formData.dataMovimento}
-              onChange={handleInputChange}
-              disabled={isSaving}
-            />
-            {errors.dataMovimento && <p className="text-red-500 text-xs">{errors.dataMovimento}</p>}
-          </div>
       </div>
 
-      {/* Observação */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Descrição do Movimento <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          name="descricao"
-          className="w-full p-2 bg-white border border-gray-300 rounded"
-          placeholder="Digite uma descrição"
-          value={formData.descricao}
-          onChange={handleInputChange}
-          disabled={isSaving}
-        />
-        {errors.descricao && <p className="text-red-500 text-xs">{errors.descricao}</p>}
-
-      </div>
+      {/* 🔹 Parcelamento */}
+      {parcelado && modalidadeMovimento == "financiamento" && (
+        <div className="p-4 border-l mt-3">
+          <h3 className="text-lg font-semibold text-gray-800 mb-3">Parcelamento</h3>
+          <label>Número de Parcelas</label>
+          <input
+            type="number"
+            min="1"
+            value={numParcelas}
+            onChange={handleNumParcelasChange}
+            className="w-full p-2 border border-gray-300 rounded mb-3"
+          />
+          {/* Exibição das parcelas */}
+          <ul>
+            {parcelas.map((parcela) => (
+              <li key={parcela.parcela} className="flex justify-between border-b py-2">
+                <span>Parcela {parcela.parcela}/{numParcelas}</span>
+                <span>Vencimento: {parcela.vencimento}</span>
+                <span>R$ {parcela.valor}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
-
     {/* 🔹 Botão de Confirmar */}
     <div className="p-3 flex justify-end border-t mt-3">
       <button
