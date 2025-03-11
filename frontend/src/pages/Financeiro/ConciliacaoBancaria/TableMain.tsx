@@ -6,7 +6,7 @@ import LancamentoManual from "./LancarManual";
 import ImportOFXModal from "./ImportOFXModal";
 import FiltroMovimentosModal from "./FiltroMovimentosModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta, atualizarStatusConta } from "../../../services/planoContasService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
 
@@ -14,6 +14,7 @@ const MovimentoBancarioTable: React.FC = () => {
   const [planos, setPlanos] = useState<MovimentoBancario[]>([]);
   const [filteredPlanos, setFilteredPlanos] = useState<MovimentoBancario[]>([]);
   const [modalIsOpen, setModalIsOpen] = useState(false);
+  const [acoesMenu, setAcoesMenu] = useState(false);
   const [modalImportOFXIsOpen, setModalImportOFXIsOpen] = useState(false);
   const [modalFiltroMovimentosIsOpen, setModalFiltroMovimentosIsOpen] = useState(false);
   
@@ -128,8 +129,37 @@ const MovimentoBancarioTable: React.FC = () => {
 
         <div className="flex justify-between items-end gap-5 mb-4">
           <div className="relative w-auto whitespace-nowrap">
-
-            teste
+              <div className="relative w-auto whitespace-nowrap">
+                <button 
+                className="bg-gray-100  font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded-lg border border-gray-300 hover:bg-gray-300" style={{height: '32px !important'}}
+                onClick={() => setAcoesMenu(!acoesMenu)}
+                >
+                Ações <FontAwesomeIcon icon={faChevronDown} className="ml-3" />
+                </button>
+              </div>
+              {acoesMenu && (
+                <div className="absolute flex flex-col bg-white shadow-md font-medium rounded-md border p-1 mt-2 z-10" style={{width: "9rem"}}>
+                  <button>
+                    <p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
+                      <FontAwesomeIcon icon={faExchange} className="mr-2"/>
+                      Transferir
+                    </p>
+                  </button>
+                  <button>
+                    <p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
+                      <FontAwesomeIcon icon={faFilePdf} className="mr-2"/>
+                      Imprimir PDF
+                    </p>
+                  </button>
+                  <button>
+                    <p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100">
+                      <FontAwesomeIcon icon={faFileExcel} className="mr-2"/>
+                      Imprimir Excel
+                    </p>
+                  </button>
+                
+                </div>
+              )}            
           </div>
           <div className="flex justify-end items-center gap-3 w-full">
             <button
