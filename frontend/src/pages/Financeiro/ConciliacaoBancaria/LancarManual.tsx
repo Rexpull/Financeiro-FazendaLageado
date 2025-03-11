@@ -9,9 +9,17 @@ import { listarPlanoContas } from "../../../services/planoContasService";
 import { listarBancos } from "../../../services/bancoService";
 import { listarPessoas } from "../../../services/pessoaService";
 import { listarParametros } from "../../../services/parametroService";
+import { log } from "console";
 
 
 Modal.setAppElement("#root"); // Evita erro de acessibilidade no modal
+
+const cache = {
+  parametros: null,
+  planos: null,
+  bancos: null,
+  pessoas: null
+};
 
 interface LancamentoManualProps {
   isOpen: boolean;
@@ -54,15 +62,28 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   const planoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      listarParametros().then((data) => {
-        const parametrosData = data[0] || { idPlanoEntradaFinanciamentos: 0, idPlanoPagamentoFinanciamentos: 0 };
-        setParametros(parametrosData);
-      });
-    }
+    const fetchData = async () => {
+      try {
+        if (!cache.parametros) cache.parametros = await listarParametros().then((data) => data[0] || { idPlanoEntradaFinanciamentos: 0, idPlanoPagamentoFinanciamentos: 0 });
+        if (!cache.planos) cache.planos = await listarPlanoContas();
+        if (!cache.bancos) cache.bancos = await listarBancos();
+        if (!cache.pessoas) cache.pessoas = await listarPessoas();
+
+        setParametros(cache.parametros);
+        setPlanos(cache.planos);
+        setBancos(cache.bancos);
+        setPessoas(cache.pessoas);
+      } catch (error) {
+        console.error("Erro ao carregar dados:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
+  
+  useEffect(() => {
     if (isOpen && modalidadeMovimento === "financiamento") {
-      listarBancos().then(setBancos);
-      listarPessoas().then(setPessoas);
+      
 
       const idPlano =
         tipoMovimento === "credito"
@@ -70,8 +91,12 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
           : parametros.idPlanoPagamentoFinanciamentos;
 
       setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
+
+      const planoSelecionado = planos.find((plano) => plano.id === idPlano);
+      setSearchPlano(planoSelecionado ? `${planoSelecionado.descricao}` : "");
+
     }
-  }, [isOpen, modalidadeMovimento, tipoMovimento, parametros]);
+  }, [isOpen, modalidadeMovimento, tipoMovimento, parametros, planos]);
 
   // 🔹 Filtrar apenas nível 3 e separar por tipo (Receita ou Despesa)
   const planosFiltrados = planos.filter((plano) =>
@@ -234,7 +259,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
             {/* Número do Documento */}
             <div className="pt-1 grid grid-cols-2 gap-4 ">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Número do Documento <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -250,14 +275,14 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
                 {errors.numeroDocumento && <p className="text-red-500 text-xs">{errors.numeroDocumento}</p>}
               </div>
               {/* Switch Parcelado */}
-              <div className="flex items-center gap-2">
-                <span>Parcelado</span>
-                <input
-                  type="checkbox"
-                  className="toggle-switch"
-                  checked={parcelado}
-                  onChange={() => setParcelado(!parcelado)}
-                />
+              <div className="flex items-start flex-col gap-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Este movimento é parcelado?
+                </label>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={parcelado} onChange={() => setParcelado(!parcelado)} />
+                  <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                </label>
               </div>
             </div>
             <div className="pt-1 grid grid-cols-2 gap-4 pb-5 border-b">
@@ -334,10 +359,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
                 placeholder="Pesquisar plano de contas..."
                 value={searchPlano}
                 onChange={handleSearchPlano}
+                disabled={modalidadeMovimento === "financiamento"}
               />
               <FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
             </div>
-            {showSuggestions && (
+            {showSuggestions && modalidadeMovimento === "padrao" && (
               <ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
                 {planosFiltrados
                   .filter((plano) => plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()))
