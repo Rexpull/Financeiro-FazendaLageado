@@ -5,8 +5,9 @@ import CrudModal from "./CrudModal";
 import LancamentoManual from "./LancarManual";
 import ImportOFXModal from "./ImportOFXModal";
 import FiltroMovimentosModal from "./FiltroMovimentosModal";
+import SelectContaCorrente from "./SelectContaCorrente"
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank } from '@fortawesome/free-solid-svg-icons';
 import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta, atualizarStatusConta } from "../../../services/planoContasService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
 
@@ -17,7 +18,11 @@ const MovimentoBancarioTable: React.FC = () => {
   const [acoesMenu, setAcoesMenu] = useState(false);
   const [modalImportOFXIsOpen, setModalImportOFXIsOpen] = useState(false);
   const [modalFiltroMovimentosIsOpen, setModalFiltroMovimentosIsOpen] = useState(false);
-  
+	const [modalContaIsOpen, setModalContaIsOpen] = useState(false);
+	const [contaSelecionada, setContaSelecionada] = useState(() => {
+    const storedConta = localStorage.getItem("contaSelecionada");
+    return storedConta ? JSON.parse(storedConta) : null;
+  });
   const [movimentoData, setMovimentoData] = useState<MovimentoBancario>({
     id: 0,
     dtMovimento: new Date().toISOString(),
@@ -43,6 +48,18 @@ const MovimentoBancarioTable: React.FC = () => {
   useEffect(() => {
     fetchPlanos();
   }, []);
+
+	useEffect(() => {
+		if (!contaSelecionada) {
+			setModalContaIsOpen(true);
+		}
+	}, [contaSelecionada]);
+
+	const handleSelectConta = (conta) => {
+		setContaSelecionada(conta);
+		localStorage.setItem("contaSelecionada", JSON.stringify(conta));
+	};
+
 
   const fetchPlanos = async () => {
     setIsLoading(true);
@@ -122,44 +139,54 @@ const MovimentoBancarioTable: React.FC = () => {
    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
    const currentItems = filteredPlanos.slice(indexOfFirstItem, indexOfLastItem);
    const totalPages = Math.ceil(filteredPlanos.length / itemsPerPage);
- 
+
 
   return (
     <div>
 
         <div className="flex justify-between items-end gap-5 mb-4">
-          <div className="relative w-auto whitespace-nowrap">
-              <div className="relative w-auto whitespace-nowrap">
-                <button 
-                className="bg-gray-100  font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded-lg border border-gray-300 hover:bg-gray-300" style={{height: '32px !important'}}
-                onClick={() => setAcoesMenu(!acoesMenu)}
-                >
-                Ações <FontAwesomeIcon icon={faChevronDown} className="ml-3" />
-                </button>
-              </div>
-              {acoesMenu && (
-                <div className="absolute flex flex-col bg-white shadow-md font-medium rounded-md border p-1 mt-2 z-10" style={{width: "9rem"}}>
-                  <button>
-                    <p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
-                      <FontAwesomeIcon icon={faExchange} className="mr-2"/>
-                      Transferir
-                    </p>
-                  </button>
-                  <button>
-                    <p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
-                      <FontAwesomeIcon icon={faFilePdf} className="mr-2"/>
-                      Imprimir PDF
-                    </p>
-                  </button>
-                  <button>
-                    <p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100">
-                      <FontAwesomeIcon icon={faFileExcel} className="mr-2"/>
-                      Imprimir Excel
-                    </p>
-                  </button>
-                
-                </div>
-              )}            
+          <div className="flex items-end gap-3 relative w-auto whitespace-nowrap">
+							<div className="relative w-auto whitespace-nowrap">
+								<button className="bg-gray-50 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded-md border border-gray-300 hover:bg-gray-100"
+								onClick={() => setModalContaIsOpen(true)} >
+										{contaSelecionada ? `${contaSelecionada.numConta} - ${contaSelecionada.bancoNome} - ${contaSelecionada.responsavel}` : "Selecionar Conta"}
+
+										<FontAwesomeIcon style={{marginLeft: '10px'}} icon={faBank}/>
+								</button>
+							</div>
+							<div className="relative w-auto whitespace-nowrap">
+								<div className="relative w-auto whitespace-nowrap">
+									<button
+									className="bg-gray-50 font-bold h-8 px-4 pt-0 pb-0 flex items-center rounded-lg border border-gray-300 hover:bg-gray-100"
+									onClick={() => setAcoesMenu(!acoesMenu)}
+									>
+									Ações <FontAwesomeIcon icon={faChevronDown} className="ml-3" />
+									</button>
+								</div>
+								{acoesMenu && (
+									<div className="absolute flex flex-col bg-white shadow-md font-medium rounded-md border p-1 mt-2 z-10" style={{width: "9rem"}}>
+										<button>
+											<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
+												<FontAwesomeIcon icon={faExchange} className="mr-2"/>
+												Transferir
+											</p>
+										</button>
+										<button>
+											<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
+												<FontAwesomeIcon icon={faFilePdf} className="mr-2"/>
+												Imprimir PDF
+											</p>
+										</button>
+										<button>
+											<p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100">
+												<FontAwesomeIcon icon={faFileExcel} className="mr-2"/>
+												Imprimir Excel
+											</p>
+										</button>
+
+									</div>
+								)}
+							</div>
           </div>
           <div className="flex justify-end items-center gap-3 w-full">
             <button
@@ -189,11 +216,11 @@ const MovimentoBancarioTable: React.FC = () => {
             </div>
         ) : (
             <>
-                {/* <table className="w-full border-collapse"> 
+                {/* <table className="w-full border-collapse">
                     <thead>
-                    
+
                         <tr className="bg-gray-200">
-                          
+
                           <th className="p-2 text-center">Data do Movimento</th>
                           <th className="p-2 text-left">Histórico</th>
                           <th className="p-2 text-center">Plano Contas</th>
@@ -217,7 +244,7 @@ const MovimentoBancarioTable: React.FC = () => {
                               {planoC.nivel}
                             </td>
                             <td className="p-2 text-left">{planoC.hierarquia}</td>
-                            
+
                             <td className="p-2 text-left">{planoC.descricao}</td>
                             <td className="p-2 text-center capitalize">{planoC.tipo.toLowerCase()}</td>
                             <td className="p-2 text-right">
@@ -288,7 +315,7 @@ const MovimentoBancarioTable: React.FC = () => {
                             ))}
                         </select>
                     </div>
-                    
+
 
 
                 </div>
@@ -325,6 +352,12 @@ const MovimentoBancarioTable: React.FC = () => {
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />
+
+			<SelectContaCorrente
+				isOpen={modalContaIsOpen}
+				onClose={() => setModalContaIsOpen(false)}
+				onSelect={handleSelectConta}
+			/>
     </div>
   );
 };
