@@ -82,7 +82,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   }, []);
   
   useEffect(() => {
-    if (isOpen && modalidadeMovimento === "financiamento") {
+    if ( modalidadeMovimento === "financiamento") {
       
 
       const idPlano =
@@ -93,10 +93,10 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
 
       const planoSelecionado = planos.find((plano) => plano.id === idPlano);
-      setSearchPlano(planoSelecionado ? `${planoSelecionado.descricao}` : "");
+      setSearchPlano(planoSelecionado ? planoSelecionado.descricao : "");
 
     }
-  }, [isOpen, modalidadeMovimento, tipoMovimento, parametros, planos]);
+  }, [ modalidadeMovimento, tipoMovimento, parametros, planos]);
 
   // 🔹 Filtrar apenas nível 3 e separar por tipo (Receita ou Despesa)
   const planosFiltrados = planos.filter((plano) =>
@@ -147,18 +147,19 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     setShowSuggestions(true);
   };
 
-  // 🔹 Seleciona um plano da lista de sugestões
-  const selectPlano = (plano: PlanoConta) => {
-    setSearchPlano(`${plano.hierarquia} | ${plano.descricao}`);
-    setFormData((prev) => ({ ...prev, idPlanoContas: plano.id.toString() }));
-    setShowSuggestions(false);
+  const filterPlanos = (tipo: "Receita" | "Despesa", searchTerm: string) => {
+    return planos
+      .filter((plano) => plano.nivel === 3 && plano.tipo === tipo)
+      .filter((plano) => plano.descricao.toLowerCase().includes(searchTerm.toLowerCase()))
+      .slice(0, 10);
   };
 
-  const handleNumParcelasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value);
-    if (value >= 1) {
-      setNumParcelas(value);
-    }
+
+  // 🔹 Seleciona um plano da lista de sugestões
+  const selectPlano = (plano: { id: number; descricao: string }) => {
+    setSearchPlano(plano.descricao);
+    setFormData((prev) => ({ ...prev, idPlanoContas: plano.id.toString() }));
+    setShowSuggestions(false);
   };
 
   useEffect(() => {
@@ -190,7 +191,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     isOpen={isOpen}
     onRequestClose={() => {}} 
     shouldCloseOnOverlayClick={false} 
-    className="bg-white rounded-lg shadow-lg w-full max-w-[700px] mx-auto"
+    className={`bg-white rounded-lg shadow-lg w-full max-w-[${parcelado ? "800px" : "700px"}] mx-auto transition-all`}
     overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
   >
     {/* 🔹 Cabeçalho */}
@@ -350,29 +351,23 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
           </div>
 
           {/* Plano de Contas */}
-          <div ref={planoRef} className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Plano de Contas <span className="text-red-500">*</span></label>
-            <div className="relative">
-              <input
-                type="text"
-                className={`w-full p-2 border ${errors.idPlanoContas ? "border-red-500" : "border-gray-300"} rounded`}
-                placeholder="Pesquisar plano de contas..."
-                value={searchPlano}
-                onChange={handleSearchPlano}
-                disabled={modalidadeMovimento === "financiamento"}
-              />
-              <FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
-            </div>
+          <div ref={planoRef} className="relative p-4">
+            <label className="block text-sm font-medium text-gray-700">Plano de Contas <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              className="w-full p-2 border rounded"
+              placeholder="Pesquisar plano de contas..."
+              value={searchPlano}
+              onChange={handleSearchPlano}
+              disabled={modalidadeMovimento === "financiamento"}
+            />
             {showSuggestions && modalidadeMovimento === "padrao" && (
               <ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
-                {planosFiltrados
-                  .filter((plano) => plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()))
-                  .slice(0, 10)
-                  .map((plano) => (
-                    <li key={plano.id} className="p-2 hover:bg-gray-100 cursor-pointer" onClick={() => selectPlano(plano)}>
-                      {plano.hierarquia} | {plano.descricao}
-                    </li>
-                  ))}
+                {filterPlanos(tipoMovimento === "credito" ? "Receita" : "Despesa", searchPlano).map((plano) => (
+                  <li key={plano.id} className="p-2 hover:bg-gray-100 cursor-pointer" onClick={() => selectPlano(plano)}>
+                    {plano.descricao}
+                  </li>
+                ))}
               </ul>
             )}
             {errors.idPlanoContas && <p className="text-red-500 text-xs">{errors.idPlanoContas}</p>}
@@ -441,7 +436,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
             type="number"
             min="1"
             value={numParcelas}
-            onChange={handleNumParcelasChange}
+            onChange={(e) => setNumParcelas(parseInt(e.target.value))}
             className="w-full p-2 border border-gray-300 rounded mb-3"
           />
           {/* Exibição das parcelas */}

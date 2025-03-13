@@ -131,7 +131,7 @@ const MovimentoBancarioTable: React.FC = () => {
           <div className="relative w-auto whitespace-nowrap">
               <div className="relative w-auto whitespace-nowrap">
                 <button 
-                className="bg-gray-100  font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded-lg border border-gray-300 hover:bg-gray-300" style={{height: '32px !important'}}
+                className="bg-gray-100  font-bold h-8 px-4 pt-0 pb-0 flex items-center rounded-lg border border-gray-300 hover:bg-gray-200" style={{height: '32px !important'}}
                 onClick={() => setAcoesMenu(!acoesMenu)}
                 >
                 Ações <FontAwesomeIcon icon={faChevronDown} className="ml-3" />
