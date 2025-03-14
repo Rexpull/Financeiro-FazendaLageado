@@ -8,12 +8,13 @@ import FiltroMovimentosModal from "./FiltroMovimentosModal";
 import SelectContaCorrente from "./SelectContaCorrente"
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank } from '@fortawesome/free-solid-svg-icons';
-import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta, atualizarStatusConta } from "../../../services/planoContasService";
+import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario } from "../../../services/movimentoBancarioService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
+import { list } from "postcss";
 
 const MovimentoBancarioTable: React.FC = () => {
-  const [planos, setPlanos] = useState<MovimentoBancario[]>([]);
-  const [filteredPlanos, setFilteredPlanos] = useState<MovimentoBancario[]>([]);
+  const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
+  const [filteredMovimentos, setFilteredMovimentos] = useState<MovimentoBancario[]>([]);
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [acoesMenu, setAcoesMenu] = useState(false);
   const [modalImportOFXIsOpen, setModalImportOFXIsOpen] = useState(false);
@@ -39,14 +40,14 @@ const MovimentoBancarioTable: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
-  const [deletePlanoId, setDeletePlanoId] = useState<number | null>(null);
+  const [deleteMovimentoId, setDeleteMovimentoId] = useState<number | null>(null);
 
   // 🔹 Paginação
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(15);
 
   useEffect(() => {
-    fetchPlanos();
+    fetchMovimentos();
   }, []);
 
 	useEffect(() => {
@@ -61,26 +62,25 @@ const MovimentoBancarioTable: React.FC = () => {
 	};
 
 
-  const fetchPlanos = async () => {
+  const fetchMovimentos = async () => {
     setIsLoading(true);
     try {
-      const data = await listarPlanoContas();
-      // setPlanos(data);
-      // setFilteredPlanos(data);
+      const data = await listarMovimentosBancarios();
+			setMovimentos(data);
+      setFilteredMovimentos(data);
     } catch (error) {
-      console.error("Erro ao buscar planos de contas:", error);
+      console.error("Erro ao buscar Movimentos Bancários:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    let filtered = [...planos];
+    let filtered = [...movimentos];
 
-
-    setFilteredPlanos(filtered);
-    setCurrentPage(1); // Reinicia a página ao alterar os filtros
-  }, [planos]);
+    setFilteredMovimentos(filtered);
+    setCurrentPage(1);
+  }, [movimentos]);
 
   const handleImportFile = (file: File) => {
     console.log("Arquivo importado:", file);
@@ -100,45 +100,46 @@ const MovimentoBancarioTable: React.FC = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // if (movimentoData.id) {
-      //   await salvarPlanoConta(movimentoData);
-      //   setPlanos((prev) =>
-      //     prev.map((plano) => (plano.id === movimentoData.id ? movimentoData : plano))
-      //   );
-      // } else {
-      //   const planoSalvo = await salvarPlanoConta(planoData);
-      //   setPlanos((prev) => [...prev, planoSalvo]);
-      // }
+      if (movimentoData.id) {
+        await salvarMovimentoBancario(movimentoData);
+        setMovimentos((prev) =>
+					prev.map((movimento) => (movimento.id === movimentoData.id ? { ...movimentoData } : { ...movimento }))
+				);
+
+      } else {
+        const movimentoSalvo = await salvarMovimentoBancario(movimentoData);
+        setMovimentos((prev) => [...prev, movimentoSalvo]);
+      }
       setModalIsOpen(false);
-      fetchPlanos();
+      fetchMovimentos();
     } catch (error) {
-      console.error("Erro ao salvar plano de contas:", error);
+      console.error("Erro ao salvar movimento bancário:", error);
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteConfirm = async () => {
-    if (deletePlanoId === null) return;
+    if (deleteMovimentoId === null) return;
     try {
-      await excluirPlanoConta(deletePlanoId);
-      setPlanos((prev) => prev.filter((plano) => plano.id !== deletePlanoId));
+      await excluirMovimentoBancario(deleteMovimentoId);
+      setMovimentos((prev) => prev.filter((movimento) => movimento.id !== deleteMovimentoId));
       setConfirmModalOpen(false);
     } catch (error) {
-      console.error("Erro ao excluir plano de contas:", error);
+      console.error("Erro ao excluir movimento bancário:", error);
     }
   };
 
   const handleDelete = (id: number) => {
-    setDeletePlanoId(id);
+    setDeleteMovimentoId(id);
     setConfirmModalOpen(true);
   };
 
    // 🔹 Paginação: calcular registros exibidos
    const indexOfLastItem = currentPage * itemsPerPage;
    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-   const currentItems = filteredPlanos.slice(indexOfFirstItem, indexOfLastItem);
-   const totalPages = Math.ceil(filteredPlanos.length / itemsPerPage);
+   const currentItems = filteredMovimentos.slice(indexOfFirstItem, indexOfLastItem);
+   const totalPages = Math.ceil(filteredMovimentos.length / itemsPerPage);
 
 
   return (
@@ -172,13 +173,13 @@ const MovimentoBancarioTable: React.FC = () => {
 											</p>
 										</button>
 										<button>
-											<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
+											<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100" style={{opacity: '0.5'}}>
 												<FontAwesomeIcon icon={faFilePdf} className="mr-2"/>
 												Imprimir PDF
 											</p>
 										</button>
 										<button>
-											<p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100">
+											<p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100" style={{opacity: '0.5'}}>
 												<FontAwesomeIcon icon={faFileExcel} className="mr-2"/>
 												Imprimir Excel
 											</p>
@@ -216,12 +217,12 @@ const MovimentoBancarioTable: React.FC = () => {
             </div>
         ) : (
             <>
-                {/* <table className="w-full border-collapse">
+                <table className="w-full border-collapse">
                     <thead>
 
                         <tr className="bg-gray-200">
 
-                          <th className="p-2 text-center">Data do Movimento</th>
+                          <th className="p-2 text-left">Data do Movimento</th>
                           <th className="p-2 text-left">Histórico</th>
                           <th className="p-2 text-center">Plano Contas</th>
                           <th className="p-2 text-center">Valor R$</th>
@@ -238,37 +239,28 @@ const MovimentoBancarioTable: React.FC = () => {
                           </td>
                         </tr>
                       ) : (
-                        currentItems.map((planoC) => (
-                          <tr key={planoC.id} className="border-b">
-                            <td className="p-2 text-center">
-                              {planoC.nivel}
+                        currentItems.map((movBancario) => (
+                          <tr key={movBancario.id} className="border-b">
+                            <td className="p-2 text-left">
+                              {movBancario.dtMovimento}
                             </td>
-                            <td className="p-2 text-left">{planoC.hierarquia}</td>
+                            <td className="p-2 text-left">{movBancario.historico}</td>
 
-                            <td className="p-2 text-left">{planoC.descricao}</td>
-                            <td className="p-2 text-center capitalize">{planoC.tipo.toLowerCase()}</td>
-                            <td className="p-2 text-right">
-                              <label className="relative inline-flex items-center cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  className="sr-only peer"
-                                  checked={!planoC.inativo}
-                                  onChange={() => handleStatusChange(planoC.id, !planoC.inativo)}
-                                />
-                                <div className="w-9 h-5 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
-                              </label>
-                            </td>
+                            <td className="p-2 text-left">{movBancario.idPlanoContas}</td>
+                            <td className="p-2 text-center capitalize">{movBancario.valor}</td>
+														<td className="p-2 text-center capitalize">{movBancario.saldo}</td>
+														<td className="p-2 text-center capitalize">{movBancario.ideagro ? 'ativo' : 'Inativo'}</td>
 
                             <td className="p-2 text-right pr-5">
                               <button
                                 className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
-                                onClick={() => openModal(planoC)}
+                                onClick={() => openModal(movBancario)}
                               >
                                 <FontAwesomeIcon icon={faPencil} />
                               </button>
                               <button
                                 className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
-                                onClick={() => handleDelete(planoC.id)}
+                                onClick={() => handleDelete(movBancario.id)}
                               >
                                 <FontAwesomeIcon icon={faTrash} />
                               </button>
@@ -278,10 +270,10 @@ const MovimentoBancarioTable: React.FC = () => {
                       )}
                     </tbody>
 
-                </table> */}
+                </table>
                 {/* 🔹 Paginação */}
                 <div className="flex justify-center items-center my-2 mx-2">
-                <span className="text-gray-800 text-base w-auto whitespace-nowrap ml-2">{planos.length} <span className="text-sm">Registros</span></span>
+                <span className="text-gray-800 text-base w-auto whitespace-nowrap ml-2">{movimentos.length} <span className="text-sm">Registros</span></span>
 
 
                     <div className="flex items-center gap-2 w-full justify-end">
@@ -348,7 +340,7 @@ const MovimentoBancarioTable: React.FC = () => {
         onConfirm={handleDeleteConfirm}
         title="Atenção"
         type="warn"
-        message="Tem certeza que deseja excluir este Plano de Conta?"
+        message="Tem certeza que deseja excluir este Movimento Bancário?"
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />
