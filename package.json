@@ -39,6 +39,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.4.7",
+    "financeiro-fazendalageado": "file:",
     "form-data": "^4.0.2",
     "jose": "^6.0.6",
     "mailgun.js": "^11.1.0",
