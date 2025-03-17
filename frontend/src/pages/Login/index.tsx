@@ -19,11 +19,8 @@ const Login: React.FC = () => {
     setErro("");
 
     const success = await login(email, senha);
-    console.log(success);
     
-    if (!success) {
-      console.log("setou");
-      
+    if (!success) {      
       setErro("Usuário/E-mail ou senha inválidos");
     }
     setIsLoading(false);

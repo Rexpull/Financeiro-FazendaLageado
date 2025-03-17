@@ -216,3 +216,11 @@ select:disabled {
 .max-w-\[1000px\] {
     max-width: 1000px;
 }
+
+
+.totalDivider{
+    height: 55px;
+    width: 2px;
+    background: #bdbdbd  !important;
+    margin-top: 5px;
+}

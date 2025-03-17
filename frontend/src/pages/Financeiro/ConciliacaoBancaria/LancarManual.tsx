@@ -9,14 +9,11 @@ import { listarPlanoContas } from "../../../services/planoContasService";
 import { listarBancos } from "../../../services/bancoService";
 import { listarPessoas } from "../../../services/pessoaService";
 import { listarParametros } from "../../../services/parametroService";
-import { log } from "console";
 
-
-Modal.setAppElement("#root"); // Evita erro de acessibilidade no modal
+Modal.setAppElement("#root"); 
 
 const cache = {
   parametros: null,
-  planos: null,
   bancos: null,
   pessoas: null
 };
@@ -187,7 +184,6 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     }
   }, [parcelado, numParcelas, formData.valor]);
 
-  // 🔹 Fecha a lista de sugestões ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (planoRef.current && !planoRef.current.contains(event.target as Node)) {
@@ -204,7 +200,6 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 			setParcelado(false);
 		}
 	}
-
 
   return (
     <Modal
