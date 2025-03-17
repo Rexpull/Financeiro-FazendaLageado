@@ -63,6 +63,7 @@ const SelecionarContaModal: React.FC<ModalProps> = ({ isOpen, onClose, onSelect 
   const [contas, setContas] = useState([]);
   const [filteredContas, setFilteredContas] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [contaSelecionada, setContaSelecionada] = useState<any | null>(null);
 
   useEffect(() => {
     const fetchContas = async () => {
@@ -70,7 +71,13 @@ const SelecionarContaModal: React.FC<ModalProps> = ({ isOpen, onClose, onSelect 
       setContas(data);
       setFilteredContas(data);
     };
-    if (isOpen) fetchContas();
+    if (isOpen) {
+      fetchContas();
+      const storedConta = localStorage.getItem("contaSelecionada");
+      if (storedConta) {
+        setContaSelecionada(JSON.parse(storedConta));
+      }
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -84,6 +91,8 @@ const SelecionarContaModal: React.FC<ModalProps> = ({ isOpen, onClose, onSelect 
   }, [searchTerm, contas]);
 
   const handleSelectConta = (conta: any) => {
+    setContaSelecionada(conta);
+    localStorage.setItem("contaSelecionada", JSON.stringify(conta));
     onSelect(conta);
     onClose();
   };
@@ -120,7 +129,9 @@ const SelecionarContaModal: React.FC<ModalProps> = ({ isOpen, onClose, onSelect 
         {filteredContas.map((conta) => (
           <div
             key={conta.id}
-            className="flex flex-col items-center bg-gray-100 rounded-lg p-3 border cursor-pointer hover:bg-gray-200 transition"
+            className={`flex flex-col items-center bg-gray-100 rounded-lg p-3 border cursor-pointer transition ${
+              contaSelecionada && contaSelecionada.id === conta.id ? "border-orange-200 bg-orange-50 shadow-md hover:bg-orange-200" : "hover:bg-gray-200"
+            }`}
             onClick={() => handleSelectConta(conta)}
           >
             <img src={getBancoLogo(conta.bancoCodigo)} alt="Banco" className="w-10 h-10 mb-2" />

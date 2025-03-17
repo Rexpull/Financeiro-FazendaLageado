@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from "react";
-import Modal from "react-modal";
 import DialogModal from "../../../components/DialogModal";
-import CrudModal from "./CrudModal";
 import LancamentoManual from "./LancarManual";
 import ImportOFXModal from "./ImportOFXModal";
 import FiltroMovimentosModal from "./FiltroMovimentosModal";
@@ -10,7 +8,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank } from '@fortawesome/free-solid-svg-icons';
 import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario } from "../../../services/movimentoBancarioService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
-import { list } from "postcss";
+import { log } from "console";
+
 
 const MovimentoBancarioTable: React.FC = () => {
   const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
@@ -100,6 +99,7 @@ const MovimentoBancarioTable: React.FC = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      console.log("Movimento a ser salvo:", movimentoData);
       if (movimentoData.id) {
         await salvarMovimentoBancario(movimentoData);
         setMovimentos((prev) =>
