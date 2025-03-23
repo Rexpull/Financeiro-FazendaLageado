@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import DialogModal from "../../../components/DialogModal";
-import LancamentoManual from "./LancarManual";
-import ImportOFXModal from "./ImportOFXModal";
-import FiltroMovimentosModal from "./FiltroMovimentosModal";
-import SelectContaCorrente from "./SelectContaCorrente"
+import LancamentoManual from "./Modals/LancarManual";
+import ImportOFXModal from "./Modals/ImportOFXModal";
+import FiltroMovimentosModal from "./Modals/FiltroMovimentos";
+import SelectContaCorrente from "./Modals/SelectContaCorrente"
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank } from '@fortawesome/free-solid-svg-icons';
 import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario } from "../../../services/movimentoBancarioService";

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faSave, faCheck, faSearch } from "@fortawesome/free-solid-svg-icons";
-import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
+import { MovimentoBancario } from "../../../../../../backend/src/models/MovimentoBancario";
 import CurrencyInput from "react-currency-input-field";
-import { PlanoConta } from "../../../../../backend/src/models/PlanoConta";
-import { listarPlanoContas } from "../../../services/planoContasService";
-import { listarBancos } from "../../../services/bancoService";
-import { listarPessoas } from "../../../services/pessoaService";
-import { listarParametros } from "../../../services/parametroService";
+import { PlanoConta } from "../../../../../../backend/src/models/PlanoConta";
+import { listarPlanoContas } from "../../../../services/planoContasService";
+import { listarBancos } from "../../../../services/bancoService";
+import { listarPessoas } from "../../../../services/pessoaService";
+import { listarParametros } from "../../../../services/parametroService";
 
 Modal.setAppElement("#root"); 
 
@@ -124,8 +124,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 	const planosFiltrados = planos.filter((plano) => plano.nivel === 3);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
+  
 
   useEffect(() => {
 		if(modalidadeMovimento == "padrao"){

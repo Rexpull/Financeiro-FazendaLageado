@@ -2,9 +2,9 @@ import React, { useState, useEffect } from "react";
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faSave } from "@fortawesome/free-solid-svg-icons";
-import SelectContaCorrente from "./SelectContaCorrente";
-import ConciliacaoOFXModal from "./ConciliacaoOFX";
-import { parseOFXFile, MovimentoOFX, TotalizadoresOFX } from "../../../Utils/parseOfxFile";
+import SelectContaCorrente from "../Modals/SelectContaCorrente";
+import ConciliacaoOFXModal from "../ConciliacaoOFX";
+import { parseOFXFile, MovimentoOFX, TotalizadoresOFX } from "../../../../Utils/parseOfxFile";
 
 Modal.setAppElement("#root");
 

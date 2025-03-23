@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes } from "@fortawesome/free-solid-svg-icons";
-import { listarContas } from "../../../services/contaCorrenteService";
-import { getBancoLogo } from "../../../Utils/bancoUtils";
+import { listarContas } from "../../../../services/contaCorrenteService";
+import { getBancoLogo } from "../../../../Utils/bancoUtils";
 
 Modal.setAppElement("#root");
 
