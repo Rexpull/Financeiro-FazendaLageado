@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import DialogModal from "../../../components/DialogModal";
 import LancamentoManual from "./Modals/LancarManual";
 import ImportOFXModal from "./Modals/ImportOFXModal";
 import FiltroMovimentosModal from "./Modals/FiltroMovimentos";
-import SelectContaCorrente from "./Modals/SelectContaCorrente"
+import SelectContaCorrente from "./Modals/SelectContaCorrente";
+import Transferir from "./Modals/Transferir";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank, faEllipsisV } from '@fortawesome/free-solid-svg-icons';
 import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario } from "../../../services/movimentoBancarioService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
 import { log } from "console";
@@ -19,27 +20,18 @@ const MovimentoBancarioTable: React.FC = () => {
   const [modalImportOFXIsOpen, setModalImportOFXIsOpen] = useState(false);
   const [modalFiltroMovimentosIsOpen, setModalFiltroMovimentosIsOpen] = useState(false);
 	const [modalContaIsOpen, setModalContaIsOpen] = useState(false);
+	const [modalTransferirIsOpen, setModalTransferirIsOpen] = useState(false);
 	const [contaSelecionada, setContaSelecionada] = useState(() => {
     const storedConta = localStorage.getItem("contaSelecionada");
     return storedConta ? JSON.parse(storedConta) : null;
-  });
-  const [movimentoData, setMovimentoData] = useState<MovimentoBancario>({
-    id: 0,
-    dtMovimento: new Date().toISOString(),
-    historico: "",
-    idPlanoContas: 0,
-    idContaCorrente: 0,
-    valor: 0,
-    saldo: 0,
-    ideagro: false,
-    identificadorOfx: "",
-    criadoEm: new Date().toISOString(),
-    atualizadoEm: new Date().toISOString(),
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [deleteMovimentoId, setDeleteMovimentoId] = useState<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
+  const [planos, setPlanos] = useState<{id: number, descricao: string}[]>([]);
 
   // 🔹 Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -58,6 +50,13 @@ const MovimentoBancarioTable: React.FC = () => {
 	const handleSelectConta = (conta) => {
 		setContaSelecionada(conta);
 		localStorage.setItem("contaSelecionada", JSON.stringify(conta));
+    let contaAtt = localStorage.getItem("contaSelecionada");
+
+    const parsedConta = contaAtt ? JSON.parse(contaAtt) : null;
+    console.log(parsedConta);
+    console.log(movimentos);
+    setFilteredMovimentos(movimentos.filter(m => m.idContaCorrente === parsedConta?.id));
+
 	};
 
 
@@ -66,20 +65,16 @@ const MovimentoBancarioTable: React.FC = () => {
     try {
       const data = await listarMovimentosBancarios();
 			setMovimentos(data);
-      setFilteredMovimentos(data);
+      console.log(contaSelecionada)
+      const filtrados = data.filter(m => m.idContaCorrente === contaSelecionada?.id);
+      setFilteredMovimentos(filtrados);
+      setCurrentPage(1);
     } catch (error) {
       console.error("Erro ao buscar Movimentos Bancários:", error);
     } finally {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    let filtered = [...movimentos];
-
-    setFilteredMovimentos(filtered);
-    setCurrentPage(1);
-  }, [movimentos]);
 
   const handleImportFile = (file: File) => {
     console.log("Arquivo importado:", file);
@@ -91,25 +86,56 @@ const MovimentoBancarioTable: React.FC = () => {
     // Aqui você pode fazer a requisição para buscar os movimentos filtrados
   };
 
+  const handleTransferir = async () =>{
+    console.log("ajustar para transferir, saida da origem e entrada no destino")
+  }
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setAcoesMenu(false);
+      }
+    };
+  
+    if (acoesMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+  
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [acoesMenu]);
+  
 
   const openModal = (movimento?: MovimentoBancario) => {
     setModalIsOpen(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (formData: any) => {
     setIsSaving(true);
     try {
-      console.log("Movimento a ser salvo:", movimentoData);
-      if (movimentoData.id) {
-        await salvarMovimentoBancario(movimentoData);
-        setMovimentos((prev) =>
-					prev.map((movimento) => (movimento.id === movimentoData.id ? { ...movimentoData } : { ...movimento }))
-				);
+      const usuario = JSON.parse(localStorage.getItem("user") || "{}");
+      const movimentoCompleto = {
+        ...formData,
+        valor: parseFloat((formData.valor || "0").replace(",", ".")), // garantir número
+        dtMovimento: new Date(formData.dtMovimento).toISOString(),
+        idPlanoContas: parseInt(formData.idPlanoContas),
+        idContaCorrente: formData.idContaCorrente,
+        historico: formData.historico,
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+        idUsuario: usuario?.id,
+        identificadorOfx: formData.identificadorOfx || crypto.randomUUID(),
 
-      } else {
-        const movimentoSalvo = await salvarMovimentoBancario(movimentoData);
+      };
+      console.log("Movimento a ser salvo:", movimentoCompleto);
+
+
+      const movimentoSalvo = await salvarMovimentoBancario(movimentoCompleto);
+      if (movimentoSalvo !== undefined && movimentoSalvo !== null) {
         setMovimentos((prev) => [...prev, movimentoSalvo]);
       }
+
       setModalIsOpen(false);
       fetchMovimentos();
     } catch (error) {
@@ -135,6 +161,24 @@ const MovimentoBancarioTable: React.FC = () => {
     setConfirmModalOpen(true);
   };
 
+  const formatarData = (data: string) => {
+    return new Date(data).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+  };
+
+  const formatarMoeda = (valor: number) => {
+    return valor.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL"
+    });
+  };
+
    // 🔹 Paginação: calcular registros exibidos
    const indexOfLastItem = currentPage * itemsPerPage;
    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
@@ -146,48 +190,48 @@ const MovimentoBancarioTable: React.FC = () => {
     <div>
 
         <div className="flex justify-between items-end gap-5 mb-4">
-          <div className="flex items-end gap-3 relative w-auto whitespace-nowrap">
-							<div className="relative w-auto whitespace-nowrap">
-								<button className="bg-gray-50 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded-md border border-gray-300 hover:bg-gray-100"
-								onClick={() => setModalContaIsOpen(true)} >
-										{contaSelecionada ? `${contaSelecionada.numConta} - ${contaSelecionada.bancoNome} - ${contaSelecionada.responsavel}` : "Selecionar Conta"}
+          <div className="flex items-end gap-3 relative w-auto whitespace-nowrap" ref={menuRef}>
+            <div className="relative w-auto whitespace-nowrap">
+              <button className="bg-gray-50 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded-md border border-gray-300 hover:bg-gray-100"
+              onClick={() => setModalContaIsOpen(true)} >
+                {contaSelecionada ? `${contaSelecionada.numConta} - ${contaSelecionada.bancoNome} - ${contaSelecionada.responsavel}` : "Selecionar Conta"}
 
-										<FontAwesomeIcon style={{marginLeft: '10px'}} icon={faBank}/>
-								</button>
-							</div>
-							<div className="relative w-auto whitespace-nowrap">
-								<div className="relative w-auto whitespace-nowrap">
-									<button
-									className="bg-gray-50 font-bold h-8 px-4 pt-0 pb-0 flex items-center rounded-lg border border-gray-300 hover:bg-gray-100"
-									onClick={() => setAcoesMenu(!acoesMenu)}
-									>
-									Ações <FontAwesomeIcon icon={faChevronDown} className="ml-3" />
-									</button>
-								</div>
-								{acoesMenu && (
-									<div className="absolute flex flex-col bg-white shadow-md font-medium rounded-md border p-1 mt-2 z-10" style={{width: "9rem"}}>
-										<button>
-											<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
-												<FontAwesomeIcon icon={faExchange} className="mr-2"/>
-												Transferir
-											</p>
-										</button>
-										<button>
-											<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100" style={{opacity: '0.5'}}>
-												<FontAwesomeIcon icon={faFilePdf} className="mr-2"/>
-												Imprimir PDF
-											</p>
-										</button>
-										<button>
-											<p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100" style={{opacity: '0.5'}}>
-												<FontAwesomeIcon icon={faFileExcel} className="mr-2"/>
-												Imprimir Excel
-											</p>
-										</button>
+                <FontAwesomeIcon style={{marginLeft: '10px'}} icon={faBank}/>
+              </button>
+            </div>
+            <div className="relative w-auto whitespace-nowrap">
+              <div className="relative w-auto whitespace-nowrap">
+                <button
+                className="bg-gray-50 font-bold h-8 px-4 pt-0 pb-0 flex items-center rounded-lg border border-gray-300 hover:bg-gray-100"
+                onClick={() => setAcoesMenu(!acoesMenu)}
+                >
+                Ações <FontAwesomeIcon icon={faChevronDown} className="ml-3" />
+                </button>
+              </div>
+              {acoesMenu && (
+                <div className="absolute flex flex-col bg-white shadow-md font-medium rounded-md border p-1 mt-2 z-10" style={{width: "9rem"}}>
+                  <button onClick={()=>setModalTransferirIsOpen(true)}>
+                    <p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
+                      <FontAwesomeIcon icon={faExchange} className="mr-2"/>
+                      Transferir
+                    </p>
+                  </button>
+                  <button>
+                    <p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100" style={{opacity: '0.5'}}>
+                      <FontAwesomeIcon icon={faFilePdf} className="mr-2"/>
+                      Imprimir PDF
+                    </p>
+                  </button>
+                  <button>
+                    <p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100" style={{opacity: '0.5'}}>
+                      <FontAwesomeIcon icon={faFileExcel} className="mr-2"/>
+                      Imprimir Excel
+                    </p>
+                  </button>
 
-									</div>
-								)}
-							</div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end items-center gap-3 w-full">
             <button
@@ -241,30 +285,44 @@ const MovimentoBancarioTable: React.FC = () => {
                       ) : (
                         currentItems.map((movBancario) => (
                           <tr key={movBancario.id} className="border-b">
-                            <td className="p-2 text-left">
-                              {movBancario.dtMovimento}
-                            </td>
+                            <td className="p-2 text-left">{formatarData(movBancario.dtMovimento)}</td>
                             <td className="p-2 text-left">{movBancario.historico}</td>
 
-                            <td className="p-2 text-left">{movBancario.idPlanoContas}</td>
-                            <td className="p-2 text-center capitalize">{movBancario.valor}</td>
-														<td className="p-2 text-center capitalize">{movBancario.saldo}</td>
-														<td className="p-2 text-center capitalize">{movBancario.ideagro ? 'ativo' : 'Inativo'}</td>
-
-                            <td className="p-2 text-right pr-5">
-                              <button
-                                className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
-                                onClick={() => openModal(movBancario)}
-                              >
-                                <FontAwesomeIcon icon={faPencil} />
-                              </button>
-                              <button
-                                className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
-                                onClick={() => handleDelete(movBancario.id)}
-                              >
-                                <FontAwesomeIcon icon={faTrash} />
-                              </button>
+                            <td className="p-2 text-center cursor-pointer hover:underline" onClick={() => openModal(movBancario)}>
+                              {planos.find(p => p.id === movBancario.idPlanoContas)?.descricao || '---'}
                             </td>
+                            <td className={`p-2 text-center capitalize movBancario.valor >= 0 ? "text-green-600" : "text-red-600"`}>{formatarMoeda(movBancario.valor)}</td>
+														<td className="p-2 text-center capitalize">{formatarMoeda(movBancario.saldo)}</td>
+														<td className="p-2 text-center capitalize">
+                              <input type="checkbox" checked={movBancario.ideagro} readOnly className="w-4 h-4 accent-orange-500" />
+                            </td>
+
+                            <td className="p-2 text-right pr-5 relative">
+                              <button
+                                className="text-gray-700 hover:text-black px-2"
+                                onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+                              >
+                                <FontAwesomeIcon icon={faEllipsisV} />
+                              </button>
+
+                              {menuAtivoId === movBancario.id && (
+                                <div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-32">
+                                  <button
+                                    className="w-full px-4 py-2 hover:bg-gray-100 text-left"
+                                    onClick={() => openModal(movBancario)}
+                                  >
+                                    Informação
+                                  </button>
+                                  <button
+                                    className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
+                                    onClick={() => handleDelete(movBancario.id)}
+                                  >
+                                    Excluir
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+
                           </tr>
                         ))
                       )}
@@ -350,6 +408,12 @@ const MovimentoBancarioTable: React.FC = () => {
 				onClose={() => setModalContaIsOpen(false)}
 				onSelect={handleSelectConta}
 			/>
+
+      <Transferir 
+        isOpen={modalTransferirIsOpen}
+        onClose={() => setModalTransferirIsOpen(false)}
+        onTransferir={handleTransferir}
+        />
     </div>
   );
 };

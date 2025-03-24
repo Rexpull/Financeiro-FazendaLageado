@@ -14,4 +14,5 @@ export interface MovimentoBancario {
     identificadorOfx: string;
     criadoEm: string;
     atualizadoEm: string;
+    idUsuario?: number;
 }

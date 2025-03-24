@@ -40,14 +40,21 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     idPlanoEntradaFinanciamentos: 0,
     idPlanoPagamentoFinanciamentos: 0,
   });
+
+  const conta = JSON.parse(localStorage.getItem("contaSelecionada") || "{}");
   const [formData, setFormData] = useState({
     idPlanoContas: "",
     valor: "0,00",
-    dataMovimento: new Date().toISOString().slice(0, 16),
-    descricao: "",
+    saldo: 0,
+    dtMovimento: new Date().toISOString().slice(0, 16),
     numeroDocumento: "",
-    bancoSelecionado: null,
+    descricao: "",
+    transfOrigem: null,
+    transfDestino: null,
     pessoaSelecionada: null,
+    idContaCorrente: conta?.id || 0,
+    historico: "",
+    ideagro: false,
   });
   const [parcelado, setParcelado] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
@@ -144,8 +151,8 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     const newErrors: { [key: string]: string } = {};
     if (!formData.idPlanoContas) newErrors.idPlanoContas = "Selecione um plano de contas!";
     if (!formData.valor || formData.valor === "0,00") newErrors.valor = "Informe um valor!";
-    if (!formData.dataMovimento) newErrors.dataMovimento = "Selecione uma data!";
-    if (!formData.descricao.trim()) newErrors.descricao = "A descrição é obrigatória!";
+    if (!formData.dtMovimento) newErrors.dtMovimento = "Selecione uma data!";
+    if (!formData.historico.trim()) newErrors.historico = "A descrição é obrigatória!";
 
     if (modalidadeMovimento === "financiamento") {
       if (!formData.numeroDocumento.trim()) newErrors.numeroDocumento = "Informe o número do documento!";
@@ -365,7 +372,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
             <input
               type="text"
               className="w-full p-2 bg-gray-200 border border-gray-300 rounded cursor-not-allowed"
-              value="SICOOB | 107964 | Ronaldo"
+              value={`${conta?.bancoNome} | ${conta?.numConta} | ${conta?.responsavel}`}
               disabled
             />
           </div>
@@ -424,13 +431,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
               </label>
               <input
                 type="datetime-local"
-                name="dataMovimento"
-                className={`w-full p-2 bg-white border ${errors.dataMovimento ? "border-red-500" : "border-gray-300"} rounded`}
-                value={formData.dataMovimento}
+                name="dtMovimento"
+                className={`w-full p-2 bg-white border ${errors.dtMovimento ? "border-red-500" : "border-gray-300"} rounded`}
+                value={formData.dtMovimento}
                 onChange={handleInputChange}
                 disabled={isSaving}
               />
-              {errors.dataMovimento && <p className="text-red-500 text-xs">{errors.dataMovimento}</p>}
+              {errors.dtMovimento && <p className="text-red-500 text-xs">{errors.dtMovimento}</p>}
             </div>
         </div>
 
@@ -441,14 +448,14 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
           </label>
           <input
             type="text"
-            name="descricao"
+            name="historico"
             className="w-full p-2 bg-white border border-gray-300 rounded"
             placeholder="Digite uma descrição"
-            value={formData.descricao}
+            value={formData.historico}
             onChange={handleInputChange}
             disabled={isSaving}
           />
-          {errors.descricao && <p className="text-red-500 text-xs">{errors.descricao}</p>}
+          {errors.historico && <p className="text-red-500 text-xs">{errors.historico}</p>}
 
         </div>
       </div>

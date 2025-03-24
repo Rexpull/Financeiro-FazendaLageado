@@ -31,6 +31,7 @@ export class MovimentoBancarioController {
 
 			if (method === "POST" && pathname === "/api/movBancario") {
 				const body: MovimentoBancario = await req.json();
+				console.log("Recebido no backend:", JSON.stringify(body, null, 2));
 				const id = await this.movBancarioRepository.create(body);
 				return new Response(JSON.stringify({ id, message: "Movimento bancário criado com sucesso!" }), {
 					status: 201,
@@ -41,6 +42,7 @@ export class MovimentoBancarioController {
 			if (method === "PUT" && pathname.startsWith("/api/movBancario/")) {
 				const id = parseInt(pathname.split("/")[3]);
 				const body: MovimentoBancario = await req.json();
+				console.log("Recebido no backend:", JSON.stringify(body, null, 2));
 				await this.movBancarioRepository.update(id, body);
 				return new Response(JSON.stringify({ message: "Movimento bancário atualizado com sucesso!" }), {
 					status: 200,

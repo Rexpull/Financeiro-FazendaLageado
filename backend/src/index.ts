@@ -4,6 +4,7 @@ import { handleRequest as handlePlanoContaRequest } from "./routes/handlePlanoCo
 import { handleRequest as handleParametroRequest } from "./routes/handleParametro";
 import { handleRequest as handlePessoaRequest } from "./routes/handlePessoa";
 import { handleRequest as handleUsuarioRequest } from "./routes/handleUsuario";
+import { handleRequest as handeMovimentoBancario } from "./routes/handeMovimentoBancario";
 import { handleAuthRequest as handleAuthRequest } from "./routes/handleAuthRequest";
 
 const corsHeaders = {
@@ -34,6 +35,8 @@ export default {
         return handlePessoaRequest(req, env.DB);
       case pathname.startsWith("/api/usuario"):
         return handleUsuarioRequest(req, env.DB);
+        case pathname.startsWith("/api/movBancario"):
+        return handeMovimentoBancario(req, env.DB);
       case pathname.startsWith("/api/auth"):
         return handleAuthRequest(req, env, env.DB);
       default:

@@ -18,12 +18,15 @@ const SelecionarContaModal: React.FC<ModalProps> = ({ isOpen, onClose, onSelect 
   const [filteredContas, setFilteredContas] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [contaSelecionada, setContaSelecionada] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchContas = async () => {
+      setIsLoading(true);
       const data = await listarContas();
       setContas(data);
       setFilteredContas(data);
+      setIsLoading(false);
     };
     if (isOpen) {
       fetchContas();
@@ -72,24 +75,31 @@ const SelecionarContaModal: React.FC<ModalProps> = ({ isOpen, onClose, onSelect 
         className="w-full p-2 mt-3 border border-gray-300 rounded"
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
+        disabled={isLoading}
       />
 
       {/* 🔹 Lista de Contas */}
-      <div className="grid grid-cols-2 gap-3 mt-5">
-        {filteredContas.map((conta) => (
-          <div
-            key={conta.id}
-            className={`flex flex-col items-center bg-gray-100 rounded-lg p-3 border cursor-pointer transition ${
-              contaSelecionada && contaSelecionada.id === conta.id ? "border-orange-200 bg-orange-50 shadow-md hover:bg-orange-200" : "hover:bg-gray-200"
-            }`}
-            onClick={() => handleSelectConta(conta)}
-          >
-            <img src={getBancoLogo(conta.bancoCodigo)} alt="Banco" className="w-10 h-10 mb-2" />
-            <p className="text-sm font-bold">{conta.bancoNome}</p>
-            <p className="text-xs text-gray-600">{conta.numConta} - {conta.responsavel}</p>
-          </div>
-        ))}
-      </div>
+      {isLoading ? (
+        <div className="flex justify-center items-center h-40">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-orange-500 border-t-transparent"></div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 mt-5">
+          {filteredContas.map((conta) => (
+            <div
+              key={conta.id}
+              className={`flex flex-col items-center bg-gray-100 rounded-lg p-3 border cursor-pointer transition ${
+                contaSelecionada && contaSelecionada.id === conta.id ? "border-orange-200 bg-orange-50 shadow-md hover:bg-orange-200" : "hover:bg-gray-200"
+              }`}
+              onClick={() => handleSelectConta(conta)}
+            >
+              <img src={getBancoLogo(conta.bancoCodigo)} alt="Banco" className="w-10 h-10 mb-2" />
+              <p className="text-sm font-bold">{conta.bancoNome}</p>
+              <p className="text-xs text-gray-600">{conta.numConta} - {conta.responsavel}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 };
