@@ -9,8 +9,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank, faEllipsisV } from '@fortawesome/free-solid-svg-icons';
 import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario } from "../../../services/movimentoBancarioService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
-import { log } from "console";
-
+import {salvarParcelaFinanciamento} from "../../../services/financiamentoParcelasService"
 
 const MovimentoBancarioTable: React.FC = () => {
   const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
@@ -76,6 +75,20 @@ const MovimentoBancarioTable: React.FC = () => {
     }
   };
 
+  const calcularSaldoDinamico = () => {
+    let saldo = 0;
+    return currentItems.map((mov) => {
+      const valor = mov.valor;
+      if (mov.tipoMovimento === "C") {
+        saldo += valor;
+      } else {
+        saldo -= valor;
+      }
+      return { ...mov, saldo };
+    });
+  };
+  
+
   const handleImportFile = (file: File) => {
     console.log("Arquivo importado:", file);
     // Aqui você pode processar o arquivo OFX
@@ -132,6 +145,25 @@ const MovimentoBancarioTable: React.FC = () => {
 
 
       const movimentoSalvo = await salvarMovimentoBancario(movimentoCompleto);
+
+      console.log("movimentoSalvo", movimentoSalvo);
+
+      if (
+        movimentoSalvo?.id &&
+        formData.modalidadeMovimento === "financiamento" &&
+        formData.parcelado &&
+        formData.parcelas &&
+        formData.parcelas.length > 0
+      ) {
+        for (const parcela of formData.parcelas) {
+          
+          parcela.idMovimentoBancario = movimentoSalvo.id;
+          console.log("parcela sendo enviada:" , parcela)
+          salvarParcelaFinanciamento(parcela)
+          
+        }
+      }
+
       if (movimentoSalvo !== undefined && movimentoSalvo !== null) {
         setMovimentos((prev) => [...prev, movimentoSalvo]);
       }
@@ -254,7 +286,7 @@ const MovimentoBancarioTable: React.FC = () => {
             </button>
           </div>
       </div>
-        <div className="bg-gray-50 shadow-md rounded-lg overflow-hidden border border-gray-200">
+        <div className="bg-gray-50 shadow-md rounded-lg border border-gray-200">
         {isLoading ? (
             <div className="flex justify-center items-center h-64">
             <div className="loader"></div>
@@ -266,7 +298,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
                         <tr className="bg-gray-200">
 
-                          <th className="p-2 text-left">Data do Movimento</th>
+                          <th className="pl-5 p-2 text-left">Data do Movimento</th>
                           <th className="p-2 text-left">Histórico</th>
                           <th className="p-2 text-center">Plano Contas</th>
                           <th className="p-2 text-center">Valor R$</th>
@@ -283,21 +315,19 @@ const MovimentoBancarioTable: React.FC = () => {
                           </td>
                         </tr>
                       ) : (
-                        currentItems.map((movBancario) => (
+                        calcularSaldoDinamico().map((movBancario) => (
                           <tr key={movBancario.id} className="border-b">
-                            <td className="p-2 text-left">{formatarData(movBancario.dtMovimento)}</td>
+                            <td className="pl-5 p-2 text-left">{formatarData(movBancario.dtMovimento)}</td>
                             <td className="p-2 text-left">{movBancario.historico}</td>
 
                             <td className="p-2 text-center cursor-pointer hover:underline" onClick={() => openModal(movBancario)}>
                               {planos.find(p => p.id === movBancario.idPlanoContas)?.descricao || '---'}
                             </td>
-                            <td className={`p-2 text-center capitalize movBancario.valor >= 0 ? "text-green-600" : "text-red-600"`}>{formatarMoeda(movBancario.valor)}</td>
+                            <td className={`p-2 text-center capitalize ${movBancario.valor >= 0 ? "text-green-600" : "text-red-600"}`}>{formatarMoeda(movBancario.valor)}</td>
 														<td className="p-2 text-center capitalize">{formatarMoeda(movBancario.saldo)}</td>
-														<td className="p-2 text-center capitalize">
+														<td className="p-2 justify-end mr-1 capitalize flex items-center gap-8 relative">
                               <input type="checkbox" checked={movBancario.ideagro} readOnly className="w-4 h-4 accent-orange-500" />
-                            </td>
 
-                            <td className="p-2 text-right pr-5 relative">
                               <button
                                 className="text-gray-700 hover:text-black px-2"
                                 onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
@@ -322,6 +352,8 @@ const MovimentoBancarioTable: React.FC = () => {
                                 </div>
                               )}
                             </td>
+
+                        
 
                           </tr>
                         ))

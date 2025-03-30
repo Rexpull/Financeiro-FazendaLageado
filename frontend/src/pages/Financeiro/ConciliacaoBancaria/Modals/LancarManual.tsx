@@ -58,7 +58,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   });
   const [parcelado, setParcelado] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
-  const [parcelas, setParcelas] = useState<{ parcela: number; vencimento: string; valor: string }[]>([]);
+  const [parcelas, setParcelas] = useState<{ numParcela: number; dt_vencimento: string; valor: string }[]>([]);
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [searchPlano, setSearchPlano] = useState("");
@@ -113,8 +113,8 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
     const valorParcela = (parseFloat(formData.valor.replace(",", ".")) / numParcelas).toFixed(2);
     const novasParcelas = Array.from({ length: numParcelas }, (_, i) => ({
-      parcela: i + 1,
-      vencimento: new Date(new Date().setMonth(new Date().getMonth() + i)).toISOString().slice(0, 10),
+      numParcela: i + 1,
+      dt_vencimento: new Date(new Date().setMonth(new Date().getMonth() + i)).toISOString().slice(0, 10),
       valor: valorParcela,
     }));
 
@@ -126,7 +126,6 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     novasParcelas[index] = { ...novasParcelas[index], [field]: value };
     setParcelas(novasParcelas);
   };
-
 
 	const planosFiltrados = planos.filter((plano) => plano.nivel === 3);
 
@@ -169,9 +168,17 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
   const handleSubmit = () => {
     if (validarFormulario()) {
-      handleSave(formData);
+      const dataToSend = {
+        ...formData,
+        tipoMovimento: tipoMovimento === "credito" ? "C" : "D",
+        modalidadeMovimento,
+        parcelado,
+        parcelas
+      };
+      handleSave(dataToSend);
     }
   };
+  
 
   const handleSearchPlano = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchPlano(e.target.value);
@@ -188,8 +195,8 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     if (parcelado && parseFloat(formData.valor.replace(",", ".")) > 0) {
       const valorParcela = (parseFloat(formData.valor.replace(",", ".")) / numParcelas).toFixed(2);
       const novasParcelas = Array.from({ length: numParcelas }, (_, i) => ({
-        parcela: i + 1,
-        vencimento: new Date(new Date().setMonth(new Date().getMonth() + i)).toISOString().slice(0, 10),
+        numParcela: i + 1,
+        dt_vencimento: new Date(new Date().setMonth(new Date().getMonth() + i)).toISOString().slice(0, 10),
         valor: valorParcela,
       }));
       setParcelas(novasParcelas);
@@ -462,7 +469,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
       {/* 🔹 Parcelamento */}
       {parcelado && modalidadeMovimento == "financiamento" && (
-        <div className={`p-4 border-l mt-3 min-w-[400px] ${parcelado ? "w-1/3" : "w-full"}`}>
+        <div className={`p-4 border-l mt-3 min-w-[400px] max-h-[500px] overflow-y-auto ${parcelado ? "w-1/3" : "w-full"}`}>
           <h3 className="text-lg font-semibold text-gray-800 mb-3">Parcelamento</h3>
           <label>Número de Parcelas</label>
           <input
@@ -488,13 +495,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 								</thead>
 								<tbody>
 									{parcelas.map((parcela, index) => (
-										<tr key={parcela.parcela} className="border-b">
-											<td className="p-2">{parcela.parcela}/{numParcelas}</td>
+										<tr key={parcela.numParcela} className="border-b">
+											<td className="p-2">{parcela.numParcela}/{numParcelas}</td>
 											<td className="p-2">
 												<input
 													type="date"
-													value={parcela.vencimento}
-													onChange={(e) => handleParcelaChange(index, "vencimento", e.target.value)}
+													value={parcela.dt_vencimento}
+													onChange={(e) => handleParcelaChange(index, "dt_vencimento", e.target.value)}
 													className="w-full p-1 border border-gray-300 rounded m-w-[125px]"
 												/>
 											</td>

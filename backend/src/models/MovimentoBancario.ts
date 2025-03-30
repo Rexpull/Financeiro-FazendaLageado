@@ -15,4 +15,6 @@ export interface MovimentoBancario {
     criadoEm: string;
     atualizadoEm: string;
     idUsuario?: number;
+    tipoMovimento?: "C" | "D";
+	modalidadeMovimento?: "padrao" | "financiamento" | "transferencia";
 }

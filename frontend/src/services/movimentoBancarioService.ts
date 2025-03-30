@@ -8,7 +8,7 @@ export const listarMovimentosBancarios = async (): Promise<MovimentoBancario[]> 
 	return res.json();
 };
 
-export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Promise<void> => {
+export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Promise<{ id: number }> => {
 	const method = movimento.id ? "PUT" : "POST";
 	const url = movimento.id ? `${API_URL}/api/movBancario/${movimento.id}` : `${API_URL}/api/movBancario`;
 
@@ -19,6 +19,7 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 	});
 
 	if (!res.ok) throw new Error("Erro ao salvar movimento bancário");
+	return res.json();
 };
 
 export const excluirMovimentoBancario = async (id: number): Promise<void> => {

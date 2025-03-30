@@ -33,27 +33,39 @@ export class MovimentoBancarioRepository {
 	}
 
 	async create(movimento: MovimentoBancario): Promise<number> {
-		const { dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx, idUsuario } = movimento;
-
+		const {
+			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
+			numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx,
+			idUsuario, tipoMovimento, modalidadeMovimento
+		} = movimento;
+	
 		const { meta } = await this.db.prepare(`
-			INSERT INTO MovimentoBancario (dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_documento, descricao, transf_origem, transf_destino, identificador_ofx, idUsuario, criado_em, atualizado_em)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'));
+			INSERT INTO MovimentoBancario (
+				dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
+				ideagro, numero_documento, descricao, transf_origem, transf_destino,
+				identificador_ofx, idUsuario, tipoMovimento, modalidadeMovimento,
+				criado_em, atualizado_em
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
 		`).bind(
-			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx, idUsuario
+			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
+			ideagro, numeroDocumento, descricao, transfOrigem, transfDestino,
+			identificadorOfx, idUsuario, tipoMovimento, modalidadeMovimento
 		).run();
-
+	
 		return meta.last_row_id;
 	}
+	
 
 	async update(id: number, movimento: MovimentoBancario): Promise<void> {
-		const { dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx } = movimento;
+		const { dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx, tipoMovimento, modalidadeMovimento } = movimento;
 
 		await this.db.prepare(`
 			UPDATE MovimentoBancario
-			SET dtMovimento = ?, historico = ?, idPlanoContas = ?, idContaCorrente = ?, valor = ?, saldo = ?, ideagro = ?, numero_documento = ?, descricao = ?, transf_origem = ?, transf_destino = ?, identificador_ofx = ?, atualizado_em = datetime('now')
+			SET dtMovimento = ?, historico = ?, idPlanoContas = ?, idContaCorrente = ?, valor = ?, saldo = ?, ideagro = ?, numero_documento = ?, descricao = ?, transf_origem = ?, transf_destino = ?, identificador_ofx = ?, atualizado_em = datetime('now'), tipoMovimento = ?, modalidadeMovimento = ?,
 			WHERE id = ?;
 		`).bind(
-			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx, id
+			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx, tipoMovimento, modalidadeMovimento, id
 		).run();
 	}
 
