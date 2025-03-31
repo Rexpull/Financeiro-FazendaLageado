@@ -59,6 +59,92 @@ export class MovimentoBancarioController {
 				});
 			}
 
+			if (method === "PATCH" && pathname.startsWith("/api/movBancario/")) {
+				const id = parseInt(pathname.split("/")[3]);
+				const body: MovimentoBancario = await req.json();
+				if (typeof body.ideagro === "boolean") {
+					await this.movBancarioRepository.updateIdeagro(id, body.ideagro);
+					return new Response(JSON.stringify({ message: "Status ideagro atualizado!" }), {
+						status: 200,
+						headers: corsHeaders,
+					});
+				}
+			}
+
+			if (method === "GET" && pathname.startsWith("/api/movBancario/saldo/")) {
+				const idConta = parseInt(pathname.split("/")[3]);
+				const saldo = await this.movBancarioRepository.getSaldoContaCorrente(idConta);
+				return new Response(JSON.stringify({ saldo }), {
+				  status: 200,
+				  headers: corsHeaders,
+				});
+			  }
+			  
+
+			if (method === "POST" && pathname === "/api/movBancario/transfer") {
+
+				interface MovTransf {
+					// Existing properties
+					contaOrigemId?: number;
+					contaDestinoId?: number;
+					valor?: number;
+					data?: string;
+					descricao?: string;
+					idUsuario?: number;
+					contaOrigemDescricao?: string;
+					contaDestinoDescricao?: string;
+				}
+
+				const body: MovTransf = await req.json();
+
+				if (
+					!body.contaOrigemId || !body.contaDestinoId ||
+					!body.valor || !body.data || !body.descricao || !body.idUsuario ||
+					!body.contaOrigemDescricao || !body.contaDestinoDescricao
+				) {
+					return new Response(JSON.stringify({ error: "Dados incompletos para transferência." }), {
+						status: 400,
+						headers: corsHeaders,
+					});
+				}
+
+				try {
+					await this.movBancarioRepository.transfer({
+						contaOrigemId: body.contaOrigemId!,
+						contaOrigemDescricao: body.contaOrigemDescricao!,
+						contaDestinoId: body.contaDestinoId!,
+						contaDestinoDescricao: body.contaDestinoDescricao!,
+						valor: body.valor!,
+						descricao: body.descricao!,
+						data: body.data!,
+						idUsuario: body.idUsuario!,
+					});
+					return new Response(JSON.stringify({ message: "Transferência realizada com sucesso!" }), {
+						status: 201,
+						headers: corsHeaders,
+					});
+				} catch (error) {
+					const message = (error as Error).message;
+					const stack = (error as Error).stack;
+				
+					console.error("[TRANSFER ERROR]:", message, stack);
+				
+					const errorResponse = {
+						error: "Erro ao realizar transferência bancária",
+						message,
+						stack,
+					};
+				
+					return new Response(JSON.stringify(errorResponse), {
+						status: 500,
+						headers: corsHeaders,
+					});
+				}
+				
+			}
+
+
+
 			return new Response("Rota não encontrada", { status: 404, headers: corsHeaders });
 		} catch (error) {
 			return new Response(JSON.stringify({ error: "Erro no servidor", details: (error as Error).message }), {

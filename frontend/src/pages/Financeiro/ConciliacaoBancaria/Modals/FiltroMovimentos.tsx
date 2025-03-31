@@ -9,9 +9,12 @@ interface FiltroMovimentosModalProps {
   isOpen: boolean;
   onClose: () => void;
   handleSearch: (filters: { dataInicio: string; dataFim: string; status: string }) => void;
+  dataInicio: string;
+  dataFim: string;
+  
 }
 
-const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({ isOpen, onClose, handleSearch }) => {
+const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({ isOpen, onClose, handleSearch,  dataInicio: dataInicioProp , dataFim: dataFimProp   }) => {
 
   const getCurrentMonthRange = () => {
     const now = new Date();
@@ -33,13 +36,13 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({ isOpen, o
   // 🔹 Resetar filtros ao abrir o modal
   useEffect(() => {
     if (isOpen) {
-      const { inicio, fim } = getCurrentMonthRange();
-      setDataInicio(inicio);
-      setDataFim(fim);
+      setDataInicio(dataInicioProp);
+      setDataFim(dataFimProp);
       setStatus("todos");
       setErroData("");
     }
-  }, [isOpen]);
+  }, [isOpen, dataInicioProp, dataFimProp]);
+
 
   // 🔹 Validação das datas
   useEffect(() => {

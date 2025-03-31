@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck, faEquals, faMinus, faTimes } from "@fortawesome/free-solid-svg-icons";
 import { formatarMoeda } from "../../../Utils/formataMoeda";
 import { getBancoLogo } from "../../../Utils/bancoUtils";
-
+import { buscarSaldoContaCorrente } from "../../../services/movimentoBancarioService";
 
 Modal.setAppElement("#root");
 
@@ -12,6 +12,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
   const [contaSelecionada, setContaSelecionada] = useState<any | null>(null);
   const [status, setStatus] = useState<string>("todos");
+  const [saldoConta, setSaldoConta] = useState(0);
+  const [saldoPosExtrato, setSaldoPosExtrato] = useState<number>(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -19,6 +21,12 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
       if (storedConta) {
         setContaSelecionada(JSON.parse(storedConta));
       }
+      if(contaSelecionada){
+        buscarSaldoContaCorrente(contaSelecionada.id).then((response) => {
+          setSaldoConta((response as { saldo: number }).saldo);
+        });
+      }
+      setSaldoPosExtrato(saldoConta + totalizadores.liquido);
     }
     
     setStatus("todos");
@@ -83,7 +91,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
             <div className="mt-4 flex items-center justify-between text-center text-lg font-bold">
               <div className="flex flex-col items-start">
                 <span className="text-gray-600" style={{fontSize: '0.950rem'}}>Saldo na conta corrente atualmente</span>
-                <span className="text-2xl font-bold text-green-600">R$ 1.000,00 (Todo)</span>
+                <span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(saldoConta,2)} </span>
               </div>
               <div className="totalDivider"/>
               <div className="flex flex-col items-center">
@@ -104,7 +112,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
               <div className="totalDivider"/>
               <div className="flex flex-col items-center">
                 <span className="text-gray-600" style={{fontSize: '0.950rem'}}>Saldo na conta após o Extrato</span>
-                <span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(totalizadores.saldoFinal, 2)}</span>
+                <span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(saldoPosExtrato, 2)}</span>
               </div>
             </div>
           </div>
@@ -131,7 +139,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
                     movimentos.map((mov, index) => (
                       <tr key={index} className="border-b">
                         <td className="p-2 text-left">{mov.dtMovimento}</td>
-                        <td className="p-2 text-left">{mov.historico}</td>
+                        <td className="p-2 text-left m-w-[500px] truncate" title={mov.historico}>{mov.historico}</td>
+                      
                         <td className={`p-2 font-medium text-center ${mov.valor >= 0 ? "text-green-600" : "text-red-600"}`}>R$ {formatarMoeda(mov.valor,2)}</td>
                       </tr>
                     ))

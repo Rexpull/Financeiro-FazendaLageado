@@ -56,6 +56,7 @@ const TransferenciaBancariaModal: React.FC<Props> = ({ isOpen, onClose, onTransf
     if (validarFormulario()) {
       onTransferir({
         contaOrigem,
+        contas,
         ...formData,
         valor: parseFloat(formData.valor.replace(".", "").replace(",", ".")),
       });
