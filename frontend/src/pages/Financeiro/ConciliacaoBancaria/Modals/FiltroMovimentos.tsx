@@ -11,7 +11,7 @@ interface FiltroMovimentosModalProps {
   handleSearch: (filters: { dataInicio: string; dataFim: string; status: string }) => void;
   dataInicio: string;
   dataFim: string;
-  
+  status: string; 
 }
 
 const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({ isOpen, onClose, handleSearch,  dataInicio: dataInicioProp , dataFim: dataFimProp   }) => {
@@ -38,10 +38,10 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({ isOpen, o
     if (isOpen) {
       setDataInicio(dataInicioProp);
       setDataFim(dataFimProp);
-      setStatus("todos");
+      setStatus(status); 
       setErroData("");
     }
-  }, [isOpen, dataInicioProp, dataFimProp]);
+  }, [isOpen, dataInicioProp, dataFimProp, status]);
 
 
   // 🔹 Validação das datas

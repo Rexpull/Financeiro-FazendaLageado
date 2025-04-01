@@ -28,26 +28,29 @@ export const excluirMovimentoBancario = async (id: number): Promise<void> => {
 	if (!res.ok) throw new Error("Erro ao excluir movimento bancário");
 };
 
-export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Promise<void> => {
+export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Promise<any> => {
 	try {
-
-		const res = await fetch(`${API_URL}/api/movBancario/${id}`, {
-			method: "PATCH",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ ideagro }),
-		});
-
-		if (!res.ok) throw new Error("Erro ao atualizar status IdeAgro");
-
-		if (ideagro) {
-			toast.success(`Movimento conciliado com sucesso!`);
-		}
+	  const res = await fetch(`${API_URL}/api/movBancario/${id}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ ideagro }),
+	  });
+  
+	  if (!res.ok) throw new Error("Erro ao atualizar status IdeAgro");
+  
+	  const data = await res.json();
+  
+	  if (ideagro) {
+		toast.success(`Movimento conciliado com sucesso!`);
+	  }
+  
+	  return data;
 	} catch (error) {
-		toast.error("Erro ao atualizar status da conta!");
-		throw error;
+	  toast.error("Erro ao atualizar status da conta!");
+	  throw error;
 	}
-
-};
+  };
+  
 
 export const transferirMovimentoBancario = async (payload: {
 	contaOrigemId: number;

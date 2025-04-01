@@ -13,6 +13,8 @@ import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBa
 import { salvarParcelaFinanciamento } from "../../../services/financiamentoParcelasService"
 import { listarPlanoContas } from "../../../services/planoContasService"
 import { Tooltip } from 'react-tooltip';
+import ConciliarPlano from "./Modals/ConciliarPlano";
+
 
 const MovimentoBancarioTable: React.FC = () => {
   const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
@@ -38,6 +40,11 @@ const MovimentoBancarioTable: React.FC = () => {
 
   const [dataInicio, setDataInicio] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
+  const [statusFiltro, setStatusFiltro] = useState<string>("todos");
+
+  const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
+  const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
+
   const [modalDetalheOpen, setModalDetalheOpen] = useState(false);
   const [movimentoSelecionado, setMovimentoSelecionado] = useState<MovimentoBancario | null>(null);
 
@@ -101,11 +108,7 @@ const MovimentoBancarioTable: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await listarMovimentosBancarios();
-      setMovimentos(data);
-
-      const filtrados = data.filter(m => m.idContaCorrente === contaSelecionada?.id);
-      setFilteredMovimentos(filtrados);
-
+      atualizarListasMovimentos(data);
       setCurrentPage(1);
     } catch (error) {
       console.error("Erro ao buscar Movimentos Bancários:", error);
@@ -189,9 +192,9 @@ const MovimentoBancarioTable: React.FC = () => {
   const handleSearchFilters = (filters: { dataInicio: string; dataFim: string; status: string }) => {
     setDataInicio(filters.dataInicio);
     setDataFim(filters.dataFim);
-    const lista = gerarListaComSaldos(filters.dataInicio, filters.dataFim);
-    setFilteredMovimentos(lista);
-    setMovimentosFiltradosComSaldo(lista);
+    setStatusFiltro(filters.status);
+
+    atualizarListasMovimentos(movimentos, filters);
   };
 
   const handleTransferir = async (data: any) => {
@@ -219,6 +222,11 @@ const MovimentoBancarioTable: React.FC = () => {
     } catch (error) {
       console.error("Erro ao transferir:", error);
     }
+  };
+
+  const openModalConcilia = (movimento: MovimentoBancario) => {
+    setMovimentoParaConciliar(movimento);
+    setModalConciliaIsOpen(true);
   };
 
 
@@ -355,33 +363,33 @@ const MovimentoBancarioTable: React.FC = () => {
   const handleStatusChange = async (id: number, novoStatus: boolean) => {
     try {
       await atualizarStatusIdeagro(id, novoStatus);
-      console.log("novoStatus: " + novoStatus)
-      setMovimentos((prev) =>
-        prev.map((conta) =>
-          conta.id === id ? { ...conta, ativo: novoStatus } : conta
-        )
-      );
 
-      setMovimentosFiltradosComSaldo((prev) =>
-        prev.map((conta) =>
-          conta.id === id ? { ...conta, ativo: novoStatus } : conta
-        )
-      );
-
-      setFilteredMovimentos((prev) =>
-        prev.map((conta) =>
-          conta.id === id ? { ...conta, ativo: novoStatus } : conta
-        )
-      );
-
-      const lista = gerarListaComSaldos(dataInicio, dataFim);
-      setFilteredMovimentos(lista);
-      setMovimentosFiltradosComSaldo(lista);
-
+      await fetchMovimentos();
+  
     } catch (error) {
-      console.error("Erro ao atualizar status da conta:", error);
+      console.error("Erro ao atualizar status do movimento:", error);
     }
   };
+
+  const atualizarListasMovimentos = (novaLista: MovimentoBancario[], filtros?: { dataInicio: string; dataFim: string; status: string }) => {
+    setMovimentos(novaLista);
+  
+    const dataInicioAtual = filtros?.dataInicio || dataInicio;
+    const dataFimAtual = filtros?.dataFim || dataFim;
+    const statusAtual = filtros?.status || statusFiltro;
+  
+    const listaComSaldos = gerarListaComSaldos(dataInicioAtual, dataFimAtual);
+  
+    if (statusAtual === "pendentes") {
+      const apenasPendentes = listaComSaldos.filter(m => m.idPlanoContas === null || m.idPlanoContas === 0);
+      setFilteredMovimentos(apenasPendentes);
+      setMovimentosFiltradosComSaldo(apenasPendentes);
+    } else {
+      setFilteredMovimentos(listaComSaldos);
+      setMovimentosFiltradosComSaldo(listaComSaldos);
+    }
+  };
+  
 
 
   // 🔹 Paginação: calcular registros exibidos
@@ -503,7 +511,7 @@ const MovimentoBancarioTable: React.FC = () => {
                             <td
                               className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 ${!planos.find(p => p.id === movBancario.idPlanoContas) ? 'text-orange-500 font-semibold' : ''}`}
                               style={{ textUnderlineOffset: '2px' }}
-                              onClick={() => openModal(movBancario)}
+                              onClick={() => openModalConcilia(movBancario)}
                             >
                               {planos.find(p => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
                             </td>
@@ -628,6 +636,7 @@ const MovimentoBancarioTable: React.FC = () => {
         handleSearch={handleSearchFilters}
         dataInicio={dataInicio}
         dataFim={dataFim}
+        status={statusFiltro}
       />
 
       <DialogModal
@@ -658,6 +667,19 @@ const MovimentoBancarioTable: React.FC = () => {
         onClose={() => setModalDetalheOpen(false)}
         movimento={movimentoSelecionado}
       />
+
+      <ConciliarPlano
+        isOpen={modalConciliaIsOpen}
+        onClose={() => setModalConciliaIsOpen(false)}
+        movimento={movimentoParaConciliar || {} as MovimentoBancario}
+        planos={planos}
+        handleConcilia={(data) => {
+          console.log("Dados conciliados:", data);
+          // Aqui você pode implementar o salvar no banco ou atualizar a lista após conciliação
+          fetchMovimentos();
+        }}
+      />
+
 
     </div>
   );

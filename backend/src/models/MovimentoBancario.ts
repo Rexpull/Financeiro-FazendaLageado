@@ -2,7 +2,7 @@ export interface MovimentoBancario {
     id: number;
     dtMovimento: string;
     historico: string;
-    idPlanoContas: number;
+    idPlanoContas?: number;
     idContaCorrente: number;
     valor: number;
     saldo: number;
