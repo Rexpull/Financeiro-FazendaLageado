@@ -29,6 +29,25 @@ export class MovimentoBancarioController {
 				return new Response(JSON.stringify(movBancario), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 			}
 
+			if (method === "GET" && pathname.startsWith("/api/movBancario/")) {
+				const pathParts = pathname.split("/");
+				if (pathParts.length === 4 && !isNaN(Number(pathParts[3]))) {
+					const id = parseInt(pathParts[3]);
+					const movimento = await this.movBancarioRepository.getById(id);
+					if (!movimento) {
+						return new Response(JSON.stringify({ message: "Movimento não encontrado" }), {
+							status: 404,
+							headers: corsHeaders,
+						});
+					}
+					return new Response(JSON.stringify(movimento), {
+						status: 200,
+						headers: corsHeaders,
+					});
+				}
+			}
+			
+
 			if (method === "POST" && pathname === "/api/movBancario") {
 				const body: MovimentoBancario = await req.json();
 				console.log("Recebido no backend:", JSON.stringify(body, null, 2));

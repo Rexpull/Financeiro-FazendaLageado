@@ -8,7 +8,7 @@ import DetalhamentoMovimento from "./Modals/DetalhamentoMovimento";
 import Transferir from "./Modals/Transferir";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank, faEllipsisV, faInfo, faInfoCircle } from '@fortawesome/free-solid-svg-icons';
-import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario, atualizarStatusIdeagro, transferirMovimentoBancario } from "../../../services/movimentoBancarioService";
+import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario, atualizarStatusIdeagro, transferirMovimentoBancario, buscarMovimentoBancarioById } from "../../../services/movimentoBancarioService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
 import { salvarParcelaFinanciamento } from "../../../services/financiamentoParcelasService"
 import { listarPlanoContas } from "../../../services/planoContasService"
@@ -224,9 +224,14 @@ const MovimentoBancarioTable: React.FC = () => {
     }
   };
 
-  const openModalConcilia = (movimento: MovimentoBancario) => {
-    setMovimentoParaConciliar(movimento);
-    setModalConciliaIsOpen(true);
+  const openModalConcilia = async (movimento: MovimentoBancario) => {
+    try {
+      const movimentoCompleto = await buscarMovimentoBancarioById(movimento.id);
+      setMovimentoParaConciliar(movimentoCompleto);
+      setModalConciliaIsOpen(true);
+    } catch (error) {
+      console.error("Erro ao buscar dados completos:", error);
+    }
   };
 
 

@@ -23,6 +23,12 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 	return res.json();
 };
 
+export const buscarMovimentoBancarioById = async (id: number): Promise<MovimentoBancario> => {
+	const res = await fetch(`${API_URL}/api/movBancario/${id}`);
+	if (!res.ok) throw new Error(`Erro ao buscar movimento bancário id ${id}`);
+	return res.json();
+};
+
 export const excluirMovimentoBancario = async (id: number): Promise<void> => {
 	const res = await fetch(`${API_URL}/api/movBancario/${id}`, { method: "DELETE" });
 	if (!res.ok) throw new Error("Erro ao excluir movimento bancário");

@@ -98,7 +98,7 @@ export class MovimentoBancarioRepository {
 	}): Promise<void> {
 		try {
 			const planoTransferencia = await this.getPlanoTransferencia();
-	
+
 			// Movimento de saída
 			const historicoSaida = `Transferência para a conta corrente ${data.contaDestinoDescricao} com descrição: ${data.descricao}`;
 
@@ -115,9 +115,9 @@ export class MovimentoBancarioRepository {
 				data.data, historicoSaida, planoTransferencia, data.contaOrigemId, -data.valor,
 				data.descricao, data.contaDestinoId, crypto.randomUUID(), data.idUsuario
 			).run();
-	
+
 			const idSaida = saida.last_row_id;
-	
+
 			// Movimento de entrada
 			const historicoEntrada = `Transferência da conta corrente ${data.contaOrigemDescricao} com descrição: ${data.descricao}`;
 			await this.db.prepare(`
@@ -140,11 +140,44 @@ export class MovimentoBancarioRepository {
 
 	async getSaldoContaCorrente(idContaCorrente: number): Promise<number> {
 		const { results } = await this.db
-		  .prepare(`SELECT SUM(valor) AS saldo FROM MovimentoBancario WHERE idContaCorrente = ?`)
-		  .bind(idContaCorrente)
-		  .all();
-	  
+			.prepare(`SELECT SUM(valor) AS saldo FROM MovimentoBancario WHERE idContaCorrente = ?`)
+			.bind(idContaCorrente)
+			.all();
+
 		return Number(results[0]?.saldo ?? 0);
-	  }
-	  
+	}
+
+	async getById(id: number): Promise<MovimentoBancario | null> {
+		const { results } = await this.db
+			.prepare(`SELECT * FROM MovimentoBancario WHERE id = ?`)
+			.bind(id)
+			.all();
+
+		const result = results[0];
+
+		if (!result) return null;
+
+		return {
+			id: result.id as number,
+			dtMovimento: result.dtMovimento as string,
+			historico: result.historico as string,
+			idPlanoContas: result.idPlanoContas as number,
+			idContaCorrente: result.idContaCorrente as number,
+			valor: result.valor as number,
+			saldo: result.saldo as number,
+			ideagro: result.ideagro as boolean,
+			numeroDocumento: result.numeroDocumento as string,
+			descricao: result.descricao as string,
+			transfOrigem: result.transfOrigem as number | null,
+			transfDestino: result.transfDestino as number | null,
+			identificadorOfx: result.identificadorOfx as string,
+			criadoEm: result.criadoEm as string,
+			atualizadoEm: result.atualizadoEm as string,
+			idUsuario: result.idUsuario as number,
+			tipoMovimento: result.tipoMovimento as "C" | "D",
+			modalidadeMovimento: result.modalidadeMovimento as "padrao" | "financiamento" | "transferencia",
+		};
+	}
+
+
 }
