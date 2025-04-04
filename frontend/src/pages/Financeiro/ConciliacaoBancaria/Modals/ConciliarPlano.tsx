@@ -52,8 +52,6 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
   const [showSuggestions, setShowSuggestions] = useState(false);
   const planoRef = useRef(null);
   const [searchPlano, setSearchPlano] = useState('');
-  const [searchPessoa, setSearchPessoa] = useState('');
-  const [searchBanco, setSearchBanco] = useState('');
   const [nomePlanoFinanciamento, setNomePlanoFinanciamento] = useState('');
 
 

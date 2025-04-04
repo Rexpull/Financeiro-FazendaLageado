@@ -22,6 +22,22 @@ export class ParcelaFinanciamentoRepository {
 		})) as ParcelaFinanciamento[];
 	}
 
+	async getByIdMovimentoBancario(idMovimentoBancario: number): Promise<ParcelaFinanciamento[]> {
+		const { results } = await this.db.prepare(`
+		  SELECT id, idMovimentoBancario, valor, dt_vencimento, numParcela
+		  FROM parcelaFinanciamento
+		  WHERE idMovimentoBancario = ?
+		`).bind(idMovimentoBancario).all();
+	
+		return results.map(result => ({
+		  id: result.id as number,
+		  idMovimentoBancario: result.idMovimentoBancario as number,
+		  valor: result.valor as number,
+		  dt_vencimento: result.dt_vencimento as string,
+		  numParcela: result.numParcela as number
+		})) as ParcelaFinanciamento[];
+	  }
+
 	async create(parcela: ParcelaFinanciamento): Promise<number> {
 		const { idMovimentoBancario, valor, dt_vencimento, numParcela } = parcela;
 

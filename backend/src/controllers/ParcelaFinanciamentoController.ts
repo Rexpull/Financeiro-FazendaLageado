@@ -31,6 +31,14 @@ export class ParcelaFinanciamentoController {
 				});
 			}
 
+			if (method === "GET" && pathname.startsWith("/api/parcelaFinanciamento/")) {
+				const idMovimentoBancario = parseInt(pathname.split("/")[3]);
+				const parcelas = await this.repository.getByIdMovimentoBancario(idMovimentoBancario);
+				return new Response(JSON.stringify(parcelas), {
+				  headers: { ...corsHeaders, "Content-Type": "application/json" },
+				});
+			  }		
+
 			if (method === "POST" && pathname === "/api/parcelaFinanciamento") {
 				const body: ParcelaFinanciamento = await req.json();
 				const id = await this.repository.create(body);

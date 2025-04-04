@@ -10,7 +10,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faFileArchive, faFileExcel, faFilePdf, faExchange, faExchangeAlt, faChevronDown, faBank, faEllipsisV, faInfo, faInfoCircle } from '@fortawesome/free-solid-svg-icons';
 import { listarMovimentosBancarios, salvarMovimentoBancario, excluirMovimentoBancario, atualizarStatusIdeagro, transferirMovimentoBancario, buscarMovimentoBancarioById } from "../../../services/movimentoBancarioService";
 import { MovimentoBancario } from "../../../../../backend/src/models/MovimentoBancario";
-import { salvarParcelaFinanciamento } from "../../../services/financiamentoParcelasService"
+import { excluirParcelaFinanciamento, listarParcelaFinanciamentos, salvarParcelaFinanciamento, verificarParcelasAssociadas} from "../../../services/financiamentoParcelasService"
 import { listarPlanoContas } from "../../../services/planoContasService"
 import { Tooltip } from 'react-tooltip';
 import ConciliarPlano from "./Modals/ConciliarPlano";
@@ -33,10 +33,11 @@ const MovimentoBancarioTable: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [confirmDeleteParcelaModalOpen, setConfirmDeleteParcelaModalOpen] = useState(false);
   const [deleteMovimentoId, setDeleteMovimentoId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
-  const [planos, setPlanos] = useState<{ id: number, descricao: string }[]>([]);
+  const [planos, setPlanos] = useState<{ id: number, descricao: string, tipo: string  }[]>([]);
 
   const [dataInicio, setDataInicio] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
@@ -342,9 +343,15 @@ const MovimentoBancarioTable: React.FC = () => {
     }
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
+    const temParcelas = await verificarParcelasAssociadas(id);
     setDeleteMovimentoId(id);
-    setConfirmModalOpen(true);
+
+    if (temParcelas) {
+      setConfirmDeleteParcelaModalOpen(true);
+    } else{
+      setConfirmModalOpen(true);
+    }
   };
 
   const formatarData = (data: string) => {
@@ -654,6 +661,37 @@ const MovimentoBancarioTable: React.FC = () => {
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />
+
+      <DialogModal
+        isOpen={confirmDeleteParcelaModalOpen}
+        onClose={() => setConfirmDeleteParcelaModalOpen(false)}
+        onConfirm={async () => {
+          
+          if (deleteMovimentoId !== null) {
+            const temParcelas = await verificarParcelasAssociadas(deleteMovimentoId);
+            
+           
+            if (temParcelas) {
+              
+              const parcelas = await listarParcelaFinanciamentos();
+              for (const parcela of parcelas.filter(p => p.idMovimentoBancario === deleteMovimentoId)) {
+                await excluirParcelaFinanciamento(parcela.id);
+              }
+            }
+
+            await excluirMovimentoBancario(deleteMovimentoId);
+            
+            setMovimentos((prev) => prev.filter((movimento) => movimento.id !== deleteMovimentoId));
+            setConfirmDeleteParcelaModalOpen(false);
+          }
+        }}
+        title="Atenção"
+        type="warn"
+        message="Este movimento possui parcelas associadas. Se continuar, as parcelas também serão excluídas. Deseja continuar?"
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+      />
+
 
       <SelectContaCorrente
         isOpen={modalContaIsOpen}

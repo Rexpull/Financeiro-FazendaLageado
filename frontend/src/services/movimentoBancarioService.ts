@@ -10,17 +10,25 @@ export const listarMovimentosBancarios = async (): Promise<MovimentoBancario[]> 
 };
 
 export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Promise<{ id: number }> => {
-	const method = movimento.id ? "PUT" : "POST";
-	const url = movimento.id ? `${API_URL}/api/movBancario/${movimento.id}` : `${API_URL}/api/movBancario`;
+	try{
+		const method = movimento.id ? "PUT" : "POST";
+		const url = movimento.id ? `${API_URL}/api/movBancario/${movimento.id}` : `${API_URL}/api/movBancario`;
+	
+		const res = await fetch(url, {
+			method,
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(movimento),
+		});
+		
+		if (!res.ok) throw new Error("Erro ao salvar movimento bancário");
+		toast.success(`Movimento criado com sucesso!`);
 
-	const res = await fetch(url, {
-		method,
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(movimento),
-	});
+		return res.json();
+	} catch (error) {
+		toast.error(`Falha na criação no movimento!`);
+	}
 
-	if (!res.ok) throw new Error("Erro ao salvar movimento bancário");
-	return res.json();
+	
 };
 
 export const buscarMovimentoBancarioById = async (id: number): Promise<MovimentoBancario> => {
@@ -30,8 +38,15 @@ export const buscarMovimentoBancarioById = async (id: number): Promise<Movimento
 };
 
 export const excluirMovimentoBancario = async (id: number): Promise<void> => {
-	const res = await fetch(`${API_URL}/api/movBancario/${id}`, { method: "DELETE" });
-	if (!res.ok) throw new Error("Erro ao excluir movimento bancário");
+	try{
+		const res = await fetch(`${API_URL}/api/movBancario/${id}`, { method: "DELETE" });
+		if (!res.ok) throw new Error("Erro ao excluir movimento bancário");
+		toast.success("Movimento excluido com sucesso!");
+	} catch (error) {
+		toast.error(`Falha na exclusão do movimento!`);
+
+	}
+
 };
 
 export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Promise<any> => {

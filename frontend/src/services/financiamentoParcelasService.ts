@@ -22,6 +22,13 @@ export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento):
 	return res.json();
 };
 
+export const verificarParcelasAssociadas = async (idMovimentoBancario: number) => {
+	const res = await fetch(`${API_URL}/api/parcelaFinanciamento/${idMovimentoBancario}`);
+	const parcelas: ParcelaFinanciamento[] = await res.json();
+	return parcelas.length > 0; 
+  };
+  
+
 export const excluirParcelaFinanciamento = async (id: number): Promise<void> => {
 	const res = await fetch(`${API_URL}/api/parcelaFinanciamento/${id}`, { method: "DELETE" });
 	if (!res.ok) throw new Error("Erro ao excluir Parcela do Financiamento");
