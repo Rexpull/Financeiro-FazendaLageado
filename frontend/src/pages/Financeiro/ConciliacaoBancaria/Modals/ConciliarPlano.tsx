@@ -36,11 +36,11 @@ interface ConciliaPlanoContasModalProps {
 }
 
 const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isOpen, onClose, movimento, planos, handleConcilia }) => {
-  const [modalidade, setModalidade] = useState('padrao');
+  const [modalidadeMovimento, setModalidadeMovimento] = useState('padrao');
   const [idPlanoContas, setIdPlanoContas] = useState<number | null>(null);
   const [idPessoa, setIdPessoa] = useState<number | null>(null);
   const [idBanco, setIdBanco] = useState<number | null>(null);
-  const [numDocumento, setNumDocumento] = useState('');
+  const [numeroDocumento, setNumeroDocumento] = useState('');
   const [parcelado, setParcelado] = useState(false);
   const [parcelas, setParcelas] = useState<any[]>([]);
   const [planosFetch, setPlanosFetch] = useState<PlanoConta[]>([]);
@@ -59,21 +59,31 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
     idPlanoContas: null,
     pessoaSelecionada: '',
     bancoSelecionado: '',
+    idPessoa: null,
+    idBanco: null,
+    parcelado: false,
     numeroDocumento: ''
   });
 
 
   useEffect(() => {
     if (isOpen) {
-      setModalidade('padrao');
+      setModalidadeMovimento('padrao');
       setIdPlanoContas(null);
       setIdPessoa(null);
       setIdBanco(null);
-      setNumDocumento('');
+      setNumeroDocumento('');
       setParcelado(false);
       setParcelas([]);
       setSearchPlano('');
-
+      setFormData({
+        idPlanoContas: movimento.idPlanoContas || null,
+        idPessoa: movimento.idPessoa || null,
+        idBanco: movimento.idBanco || null,
+        parcelado: movimento.parcelado || false,
+        numeroDocumento: movimento.numeroDocumento || ''
+      });
+      console.log("formData ", formData)
       preencherCamposExistentes();
       validarFormulario();
     }
@@ -103,9 +113,9 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
   }, [isOpen]);
 
   const preencherCamposExistentes = () => {
-    setModalidade(movimento.modalidade || 'padrao');
+    setModalidadeMovimento(movimento.modalidadeMovimento || 'padrao');
 
-    if (movimento.modalidade === 'padrao') {
+    if (movimento.modalidadeMovimento === 'padrao') {
       setFormData({
         idPlanoContas: movimento.idPlanoContas?.toString() || null,
         pessoaSelecionada: movimento.idPessoa ? movimento.idPessoa.toString() : '',
@@ -116,15 +126,18 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
       const plano = planos.find((p) => p.id === movimento.idPlanoContas);
       setSearchPlano(plano ? plano.descricao : '');
 
-    } else if (movimento.modalidade === 'financiamento') {
+    } else if (movimento.modalidadeMovimento === 'financiamento') {
       setIdPlanoContas(movimento.idPlanoContas || null);
       setFormData({
         idPlanoContas: movimento.idPlanoContas?.toString() || null,
         pessoaSelecionada: movimento.idPessoa ? movimento.idPessoa.toString() : '',
         bancoSelecionado: movimento.idBanco ? movimento.idBanco.toString() : '',
-        numeroDocumento: movimento.numDocumento || ''
+        numeroDocumento: movimento.numeroDocumento || ''
       });
-      setNumDocumento(movimento.numDocumento || '');
+
+      console.log("movimento ", movimento)
+      
+      setNumeroDocumento(movimento.numeroDocumento || '');
       setParcelado(movimento.parcelado || false);
       setParcelas(movimento.parcelas || []);
     }
@@ -141,9 +154,9 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 
   const validarFormulario = () => {
     const newErrors = {};
-    if (modalidade === 'padrao' && !formData.idPlanoContas) newErrors.idPlanoContas = 'Selecione um plano de contas!';
-    if (modalidade === 'financiamento') {
-      if (!formData.numeroDocumento.trim()) newErrors.numeroDocumento = 'Informe o número do documento!';
+    if (modalidadeMovimento=== 'padrao' && !formData.idPlanoContas) newErrors.idPlanoContas = 'Selecione um plano de contas!';
+    if (modalidadeMovimento=== 'financiamento') {
+      if (!numeroDocumento.trim()) newErrors.numeroDocumento = 'Informe o número do documento!';
       if (!formData.bancoSelecionado && !formData.pessoaSelecionada) {
         newErrors.bancoPessoa = 'Escolha um banco ou uma pessoa!';
       }
@@ -156,7 +169,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
   };
 
   useEffect(() => {
-    if (modalidade === 'financiamento' && movimento.tipoMovimento === 'C' && parametros.length > 0) {
+    if (modalidadeMovimento=== 'financiamento' && movimento.tipoMovimento === 'C' && parametros.length > 0) {
       const idPlano = parametros[0]?.idPlanoEntradaFinanciamentos;
       if (idPlano) {
         setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
@@ -166,7 +179,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
         setNomePlanoFinanciamento(plano ? plano.descricao : '');
       }
     } 
-  }, [modalidade, parametros, movimento.tipoMovimento, planos]);
+  }, [modalidadeMovimento, parametros, movimento.tipoMovimento, planos]);
 
   useEffect(() => {
     if (parcelado && movimento.valor > 0) {
@@ -240,28 +253,28 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 
     let dados = {};
 
-    if (modalidade === 'padrao') {
+    if (modalidadeMovimento=== 'padrao') {
       dados = {
         idPlanoContas: parseInt(formData.idPlanoContas),
-        idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
-        idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
-        modalidade
+        idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
+        idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
+        modalidadeMovimento
       };
-    } else if (modalidade === 'financiamento') {
+    } else if (modalidadeMovimento=== 'financiamento') {
       dados = {
         idPlanoContas: idPlanoContas,
-        idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
-        idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
-        numDocumento,
+        idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
+        idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
+        numeroDocumento,
         parcelado,
         parcelas,
-        modalidade
+        modalidadeMovimento
       };
-    } else if (modalidade === 'transferencia') {
+    } else if (modalidadeMovimento=== 'transferencia') {
       const idPlano = parametros[0]?.idPlanoTransferenciaEntreContas;
       dados = {
         idPlanoContas: idPlano,
-        modalidade
+        modalidadeMovimento
       };
     }
 
@@ -270,7 +283,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
   };
 
   const renderCampos = () => {
-    if (modalidade === 'padrao') {
+    if (modalidadeMovimento=== 'padrao') {
       return (
         <>
           <div className="grid grid-cols-2 gap-4 mb-4">
@@ -307,7 +320,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
                 className="w-full p-2 border border-gray-300 rounded"
                 value={formData.pessoaSelecionada}
                 onChange={handleInputChange}
-                disabled={!!formData.bancoSelecionado}
+                
               >
                 <option value="">Selecione uma pessoa</option>
                 {pessoas.map((pessoa) => (
@@ -322,7 +335,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
       );
     }
 
-    if (modalidade === 'financiamento') {
+    if (modalidadeMovimento=== 'financiamento') {
       return (
         <>
           <div className="grid grid-cols-2 gap-4 mb-4">
@@ -336,8 +349,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
               </label>
               <input
                 type="text"
-                value={numDocumento}
-                onChange={(e) => setNumDocumento(e.target.value)}
+                value={numeroDocumento}
+                onChange={(e) => setNumeroDocumento(e.target.value)}
                 className="w-full border p-2 rounded"
               />
               {errors.numeroDocumento && <p className="text-red-500 text-xs col-span-2">{errors.numeroDocumento}</p>}
@@ -461,7 +474,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
       );
     }
 
-    if (modalidade === 'transferencia') {
+    if (modalidadeMovimento=== 'transferencia') {
       return (
         <div className="flex flex-col items-center text-center text-yellow-600 mt-10 mb-10">
           <FontAwesomeIcon icon={faMoneyBillTransfer} size="3x" />
@@ -479,8 +492,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
       isOpen={isOpen}
       onRequestClose={onClose}
       shouldCloseOnOverlayClick={false}
-      className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-auto"
-      overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-auto z-100"
+      overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-100"
     >
       <div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
         <h2 className="text-xl font-semibold text-gray-800">Associação de Plano de Contas</h2>
@@ -507,9 +520,9 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
           {['padrao', 'financiamento', 'transferencia'].map((tipo) => (
             <button
               key={tipo}
-              onClick={() => setModalidade(tipo)}
+              onClick={() => setModalidadeMovimento(tipo)}
               disabled={tipo === 'financiamento' && movimento.tipoMovimento === 'D'}
-              className={`px-4 flex-1 text-center text-lg py-1 font-semibold ${modalidade === tipo ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-700'
+              className={`px-4 flex-1 text-center text-lg py-1 font-semibold ${modalidadeMovimento=== tipo ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-700'
                 }`}
             >
               {tipo === 'padrao' && 'Padrão'}

@@ -51,12 +51,25 @@ export class MovimentoBancarioController {
 			if (method === "POST" && pathname === "/api/movBancario") {
 				const body: MovimentoBancario = await req.json();
 				console.log("Recebido no backend:", JSON.stringify(body, null, 2));
-				const id = await this.movBancarioRepository.create(body);
-				return new Response(JSON.stringify({ id, message: "Movimento bancário criado com sucesso!" }), {
+				
+				try {
+				  const id = await this.movBancarioRepository.create(body);
+				  return new Response(JSON.stringify({ id, message: "Movimento bancário criado com sucesso!" }), {
 					status: 201,
 					headers: corsHeaders,
-				});
-			}
+				  });
+				} catch (error) {
+				  console.error("Erro ao criar movimento:", (error as Error).message, (error as Error).stack);
+				  return new Response(JSON.stringify({
+					error: "Erro ao criar movimento",
+					message: (error as Error).message,
+				  }), {
+					status: 500,
+					headers: corsHeaders,
+				  });
+				}
+			  }
+			  
 
 			if (method === "PUT" && pathname.startsWith("/api/movBancario/")) {
 				const id = parseInt(pathname.split("/")[3]);

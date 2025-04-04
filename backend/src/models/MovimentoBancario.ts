@@ -4,9 +4,12 @@ export interface MovimentoBancario {
     historico: string;
     idPlanoContas?: number;
     idContaCorrente: number;
+    idPessoa?: number;
+    idBanco?: number;
     valor: number;
     saldo: number;
     ideagro: boolean;
+    parcelado: boolean;
     numeroDocumento?: string;
     descricao?: string;
     transfOrigem?: number | null;

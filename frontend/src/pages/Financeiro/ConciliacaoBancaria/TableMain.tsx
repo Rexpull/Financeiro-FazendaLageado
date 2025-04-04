@@ -228,8 +228,11 @@ const MovimentoBancarioTable: React.FC = () => {
   const openModalConcilia = async (movimento: MovimentoBancario) => {
     try {
       const movimentoCompleto = await buscarMovimentoBancarioById(movimento.id);
+      console.log("Movimento completo:", movimentoCompleto);
       setMovimentoParaConciliar(movimentoCompleto);
-      setModalConciliaIsOpen(true);
+      setTimeout(() => {
+        setModalConciliaIsOpen(true);
+      }, 0); 
     } catch (error) {
       console.error("Erro ao buscar dados completos:", error);
     }
@@ -399,6 +402,34 @@ const MovimentoBancarioTable: React.FC = () => {
     } else {
       setFilteredMovimentos(listaComSaldos);
       setMovimentosFiltradosComSaldo(listaComSaldos);
+    }
+  };
+  
+  const handleConcilia = async (data: any) => {
+    try {
+      const movimentoAtualizado: MovimentoBancario = {
+        ...movimentoParaConciliar!,
+        idPlanoContas: data.idPlanoContas,
+        modalidadeMovimento: data.modalidadeMovimento,
+        idPessoa: data.idPessoa ?? null,
+      };
+  
+      if (data.modalidadeMovimento === 'padrao') {
+        movimentoAtualizado.idBanco = null;
+        movimentoAtualizado.parcelado = false;
+        movimentoAtualizado.numeroDocumento = null;
+        
+        let temParcelas = await verificarParcelasAssociadas(movimentoAtualizado.id);
+        if (temParcelas) {
+          await excluirParcelaFinanciamento(movimentoAtualizado.id);
+        }
+      }
+      console.log("movimentoAtualizado", movimentoAtualizado);
+      await salvarMovimentoBancario(movimentoAtualizado); 
+      setModalConciliaIsOpen(false);
+      fetchMovimentos();
+    } catch (error) {
+      console.error('Erro ao conciliar movimento:', error);
     }
   };
   
@@ -716,11 +747,7 @@ const MovimentoBancarioTable: React.FC = () => {
         onClose={() => setModalConciliaIsOpen(false)}
         movimento={movimentoParaConciliar || {} as MovimentoBancario}
         planos={planos}
-        handleConcilia={(data) => {
-          console.log("Dados conciliados:", data);
-          // Aqui você pode implementar o salvar no banco ou atualizar a lista após conciliação
-          fetchMovimentos();
-        }}
+        handleConcilia={handleConcilia}
       />
 
 

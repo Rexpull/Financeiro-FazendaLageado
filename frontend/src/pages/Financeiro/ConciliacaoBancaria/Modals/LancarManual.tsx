@@ -42,7 +42,24 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   });
 
   const conta = JSON.parse(localStorage.getItem("contaSelecionada") || "{}");
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    idPlanoContas: string;
+    valor: string;
+    saldo: number;
+    dtMovimento: string;
+    numeroDocumento: string;
+    descricao: string;
+    transfOrigem: null;
+    transfDestino: null;
+    pessoaSelecionada: null;
+    bancoSelecionado: null;
+    idContaCorrente: number;
+    historico: string;
+    ideagro: boolean;
+    idBanco: number | null;
+    idPessoa: number | null;
+    parcelado: boolean;
+  }>({
     idPlanoContas: "",
     valor: "0,00",
     saldo: 0,
@@ -52,9 +69,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     transfOrigem: null,
     transfDestino: null,
     pessoaSelecionada: null,
+    bancoSelecionado: null,
     idContaCorrente: conta?.id || 0,
     historico: "",
     ideagro: false,
+    idBanco: null,
+    idPessoa: null,
+    parcelado: false,
   });
   const [parcelado, setParcelado] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
@@ -131,11 +152,31 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+  
+    if (name === "bancoSelecionado") {
+      setFormData((prev) => ({
+        ...prev,
+        bancoSelecionado: value || null,
+        pessoaSelecionada: null,
+        idBanco: value ? parseInt(value) : null,
+        idPessoa: null,
+      }));
+    } else if (name === "pessoaSelecionada") {
+      setFormData((prev) => ({
+        ...prev,
+        pessoaSelecionada: value || null,
+        bancoSelecionado: null,
+        idPessoa: value ? parseInt(value) : null,
+        idBanco: null,
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
   };
+  
   
 
   useEffect(() => {
@@ -172,6 +213,8 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         ...formData,
         tipoMovimento: tipoMovimento === "credito" ? "C" : "D",
         modalidadeMovimento,
+        idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
+        idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
         parcelado,
         parcelas
       };
@@ -214,7 +257,9 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   }, []);
 
 	const alterarModalidadeMovimento = (modalidadeMovimento: string | ((prevState: "padrao" | "financiamento") => "padrao" | "financiamento")) => {
-		setModalidadeMovimento(modalidadeMovimento);
+    if (modalidadeMovimento === "padrao" || modalidadeMovimento === "financiamento") {
+      setModalidadeMovimento(modalidadeMovimento);
+    }
 		if(modalidadeMovimento == "padrao"){
 			setParcelado(false);
 		}
@@ -330,7 +375,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
                 <select
                   name="bancoSelecionado"
                   className="w-full p-2 border border-gray-300 rounded"
-                  value={formData.bancoSelecionado}
+                  value={formData.bancoSelecionado ?? ""}
                   onChange={handleInputChange}
                   disabled={!!formData.pessoaSelecionada}
                 >
@@ -351,7 +396,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
                 <select
                   name="pessoaSelecionada"
                   className="w-full p-2 border border-gray-300 rounded"
-                  value={formData.pessoaSelecionada}
+                  value={formData.pessoaSelecionada ?? ""}
                   onChange={handleInputChange}
                   disabled={!!formData.bancoSelecionado}
                 >

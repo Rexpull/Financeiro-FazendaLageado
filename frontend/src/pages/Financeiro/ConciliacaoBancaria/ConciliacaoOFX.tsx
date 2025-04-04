@@ -4,7 +4,11 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck, faEquals, faMinus, faTimes } from "@fortawesome/free-solid-svg-icons";
 import { formatarMoeda } from "../../../Utils/formataMoeda";
 import { getBancoLogo } from "../../../Utils/bancoUtils";
-import { buscarSaldoContaCorrente } from "../../../services/movimentoBancarioService";
+import { buscarSaldoContaCorrente, buscarMovimentoBancarioById } from "../../../services/movimentoBancarioService";
+import { listarPlanoContas } from "../../../services/planoContasService";
+import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
+import ConciliarPlano from "./Modals/ConciliarPlano";
+import { excluirParcelaFinanciamento, verificarParcelasAssociadas } from "../../../services/financiamentoParcelasService";
 
 Modal.setAppElement("#root");
 
@@ -14,6 +18,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
   const [status, setStatus] = useState<string>("todos");
   const [saldoConta, setSaldoConta] = useState(0);
   const [saldoPosExtrato, setSaldoPosExtrato] = useState<number>(0);
+  const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
+  const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
+  const [planos, setPlanos] = useState<{ id: number, descricao: string, tipo: string  }[]>([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -21,16 +28,68 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
       if (storedConta) {
         setContaSelecionada(JSON.parse(storedConta));
       }
-      if(contaSelecionada){
+      if (contaSelecionada) {
         buscarSaldoContaCorrente(contaSelecionada.id).then((response) => {
           setSaldoConta((response as { saldo: number }).saldo);
         });
       }
       setSaldoPosExtrato(saldoConta + totalizadores.liquido);
     }
-    
+    listarPlanoContas().then((planos) => setPlanos(planos));
+
+
     setStatus("todos");
   }, [isOpen]);
+
+
+  const movimentosFiltrados = status === "pendentes"
+    ? movimentos.filter(m => !m.idPlanoContas)
+    : movimentos;
+
+  const openModalConcilia = async (movimento: MovimentoBancario) => {
+    try {
+
+      setMovimentoParaConciliar(movimento);
+      setTimeout(() => {
+        setModalConciliaIsOpen(true);
+      }, 0); 
+    } catch (error) {
+      console.error("Erro ao buscar dados completos:", error);
+    }
+  };
+
+  const handleConcilia = async (data: any) => {
+    try {
+      const movimentoAtualizado: MovimentoBancario = {
+        ...movimentoParaConciliar!,
+        idPlanoContas: data.idPlanoContas,
+        modalidadeMovimento: data.modalidadeMovimento,
+        idPessoa: data.idPessoa ?? null,
+      };
+  
+      if (data.modalidadeMovimento === 'padrao') {
+        movimentoAtualizado.idBanco = null;
+        movimentoAtualizado.parcelado = false;
+        movimentoAtualizado.numeroDocumento = null;
+      }
+  
+      // ✅ Atualizar o movimento no array local
+      const index = movimentos.findIndex(m => m.id === movimentoAtualizado.id);
+      if (index !== -1) {
+        movimentos[index] = {
+          ...movimentos[index],
+          ...movimentoAtualizado,
+          planosDescricao: planos.find(p => p.id === data.idPlanoContas)?.descricao || ''
+        };
+      }
+  
+      setModalConciliaIsOpen(false);
+      setMovimentoParaConciliar(null);
+    } catch (error) {
+      console.error('Erro ao conciliar movimento:', error);
+    }
+  };
+  
 
   return (
     <>
@@ -56,18 +115,18 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
             <div className="flex items-center justify-center gap-6">
               <label className={`flex items-center gap-2 cursor-pointer transition-all ${status === "todos" ? "" : "text-gray-500"}`}>
                 <input type="radio" name="status" value="todos" checked={status === "todos"} onChange={() => setStatus("todos")} className="hidden" />
-                <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "todos" ? "bg-red-500 border-red-500" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
-                  {status === "todos" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck}/></span>}
+                <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "todos" ? "bg-red-500 border-red-500" : "border-gray-400"}`} style={{ padding: '0.60rem' }}>
+                  {status === "todos" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck} /></span>}
                 </div>
                 <span>Mostrar todos</span>
               </label>
-    
+
               <label className={`flex items-center gap-2 cursor-pointer transition-all ${status === "pendentes" ? "" : "text-gray-500"}`}>
                 <input type="radio" name="status" value="pendentes" checked={status === "pendentes"} onChange={() => setStatus("pendentes")} className="hidden" />
-                <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "pendentes" ? "bg-red-500 border-red-500" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
-                  {status === "pendentes" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck}/></span>}
+                <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "pendentes" ? "bg-red-500 border-red-500" : "border-gray-400"}`} style={{ padding: '0.60rem' }}>
+                  {status === "pendentes" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck} /></span>}
                 </div>
-                <span>Apenas pendentes</span>
+                <span>Pendentes <span className="text-lg font-semibold text-orange-600">({(movimentos as MovimentoBancario[]).filter(m => !m.idPlanoContas).length})</span></span>
               </label>
             </div>
           </div>
@@ -78,70 +137,79 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
               <div className="flex items-center gap-4">
                 <img src={getBancoLogo(contaSelecionada ? contaSelecionada.bancoCodigo : '')} alt="Logo Banco" className="w-12 h-12" />
                 <div className="flex flex-col items-start">
-                  <span className="font-bold text-xl">{contaSelecionada ? contaSelecionada.bancoNome : ''} </span> 
+                  <span className="font-bold text-xl">{contaSelecionada ? contaSelecionada.bancoNome : ''} </span>
                   <span className="text-md font-medium text-gray-600">{contaSelecionada ? contaSelecionada.numConta : ''} - {contaSelecionada ? contaSelecionada.responsavel : ''} </span>
                 </div>
               </div>
               <div className="flex flex-col items-end">
-                <span className="font-bold text-grey-900" style={{lineHeight:'20px'}}>Período do Arquivo</span>
+                <span className="font-bold text-grey-900" style={{ lineHeight: '20px' }}>Período do Arquivo</span>
                 <span className="text-sm font-medium text-gray-600">{totalizadores.dtInicialExtrato} à {totalizadores.dtFinalExtrato}</span>
-            
+
               </div>
             </div>
             <div className="mt-4 flex items-center justify-between text-center text-lg font-bold">
               <div className="flex flex-col items-start">
-                <span className="text-gray-600" style={{fontSize: '0.950rem'}}>Saldo na conta corrente atualmente</span>
-                <span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(saldoConta,2)} </span>
+                <span className="text-gray-600" style={{ fontSize: '0.950rem' }}>Saldo na conta corrente atualmente</span>
+                <span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(saldoConta, 2)} </span>
               </div>
-              <div className="totalDivider"/>
+              <div className="totalDivider" />
               <div className="flex flex-col items-center">
-                <span className="text-gray-600" style={{fontSize: '0.950rem'}}>Valor das Receitas do Extrato</span>
+                <span className="text-gray-600" style={{ fontSize: '0.950rem' }}>Valor das Receitas do Extrato</span>
                 <span className="text-2xl font-bold text-blue-600">R$ {formatarMoeda(totalizadores.receitas, 2)}</span>
               </div>
-              <div className="totalMinus"><FontAwesomeIcon icon={faMinus}/></div>
+              <div className="totalMinus"><FontAwesomeIcon icon={faMinus} /></div>
               <div className="flex flex-col items-center">
-                <span className="text-gray-600" style={{fontSize: '0.950rem'}}>Valor das Despesas do Extrato</span>
+                <span className="text-gray-600" style={{ fontSize: '0.950rem' }}>Valor das Despesas do Extrato</span>
                 <span className="text-2xl font-bold text-orange-600">R$ {formatarMoeda(totalizadores.despesas, 2)}</span>
               </div>
-              <div className="totalEquals"><FontAwesomeIcon icon={faEquals}/></div>
+              <div className="totalEquals"><FontAwesomeIcon icon={faEquals} /></div>
               <div className="flex flex-col items-center">
-                <span className="text-gray-600" style={{fontSize: '0.950rem'}}>Valor Líquido do Extrato</span>
-                <span className="text-2xl font-bold text-gray-600" 
-                style={{textDecoration: 'underline', textDecorationThickness:'3px', textDecorationColor:'#00c100', textUnderlineOffset:'4px'}}>R$ {formatarMoeda(totalizadores.liquido, 2)}</span>
+                <span className="text-gray-600" style={{ fontSize: '0.950rem' }}>Valor Líquido do Extrato</span>
+                <span className="text-2xl font-bold text-gray-600"
+                  style={{ textDecoration: 'underline', textDecorationThickness: '3px', textDecorationColor: '#00c100', textUnderlineOffset: '4px' }}>R$ {formatarMoeda(totalizadores.liquido, 2)}</span>
               </div>
-              <div className="totalDivider"/>
+              <div className="totalDivider" />
               <div className="flex flex-col items-center">
-                <span className="text-gray-600" style={{fontSize: '0.950rem'}}>Saldo na conta após o Extrato</span>
+                <span className="text-gray-600" style={{ fontSize: '0.950rem' }}>Saldo na conta após o Extrato</span>
                 <span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(saldoPosExtrato, 2)}</span>
               </div>
             </div>
           </div>
-          
+
           {/* Tabela de Movimentos */}
-          <div className="bg-gray-50 shadow-md rounded-lg overflow-hidden border border-gray-200 w-full" style={{marginBottom:'50px'}}>
-            <div className="overflow-y-auto" style={{maxHeight:'100%'}}>
+          <div className="bg-gray-50 shadow-md rounded-lg overflow-hidden border border-gray-200 w-full" style={{ marginBottom: '50px' }}>
+            <div className="overflow-y-auto" style={{ maxHeight: '100%' }}>
               <table className="w-full border-collapse">
                 <thead className="bg-gray-200 sticky top-0 z-10">
                   <tr className="bg-gray-200">
                     <th className="p-2 text-left">Data</th>
                     <th className="p-2 text-left">Histórico</th>
+                    <th className="p-2 text-center">Plano de Contas</th>
                     <th className="p-2 text-center">Valor</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {movimentos.length === 0 ? (
+                  {movimentosFiltrados.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
                         Nenhum movimento encontrado!
                       </td>
                     </tr>
                   ) : (
-                    movimentos.map((mov, index) => (
+                    movimentosFiltrados.map((mov, index) => (
                       <tr key={index} className="border-b">
                         <td className="p-2 text-left">{mov.dtMovimento}</td>
                         <td className="p-2 text-left m-w-[500px] truncate" title={mov.historico}>{mov.historico}</td>
-                      
-                        <td className={`p-2 font-medium text-center ${mov.valor >= 0 ? "text-green-600" : "text-red-600"}`}>R$ {formatarMoeda(mov.valor,2)}</td>
+                        <td
+                          className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 ${!mov.planosDescricao ? 'text-orange-700 font-semibold' : ''
+                            }`}
+                          style={{ textUnderlineOffset: '2px' }}
+                          onClick={() => openModalConcilia(mov)}
+                        >
+                          {mov.planosDescricao || 'Selecione um Plano de Contas'}
+                        </td>
+
+                        <td className={`p-2 font-medium text-center ${mov.valor >= 0 ? "text-green-600" : "text-red-600"}`}>R$ {formatarMoeda(mov.valor, 2)}</td>
                       </tr>
                     ))
                   )}
@@ -150,7 +218,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
             </div>
           </div>
         </div>
-        
+
 
         {/* Rodapé */}
         <div className="p-4 flex justify-end border-t">
@@ -162,6 +230,17 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
           </button>
         </div>
       </Modal>
+
+      
+      <ConciliarPlano
+        isOpen={modalConciliaIsOpen}
+        onClose={() => setModalConciliaIsOpen(false)}
+        movimento={movimentoParaConciliar || {} as MovimentoBancario}
+        planos={planos}
+        handleConcilia={handleConcilia}
+      />
+
+
     </>
   );
 };
