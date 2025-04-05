@@ -52,7 +52,6 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
   const [showSuggestions, setShowSuggestions] = useState(false);
   const planoRef = useRef(null);
   const [searchPlano, setSearchPlano] = useState('');
-  const [nomePlanoFinanciamento, setNomePlanoFinanciamento] = useState('');
 
 
   const [formData, setFormData] = useState<any>({
@@ -176,7 +175,6 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
         setIdPlanoContas(idPlano);
         const plano = planos.find((p) => p.id === idPlano);
         setSearchPlano(plano ? plano.descricao : '');
-        setNomePlanoFinanciamento(plano ? plano.descricao : '');
       }
     } 
   }, [modalidadeMovimento, parametros, movimento.tipoMovimento, planos]);
@@ -339,10 +337,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
       return (
         <>
           <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label>Plano de Contas</label>
-              <input type="text" value={nomePlanoFinanciamento} readOnly className="w-full border p-2 rounded bg-gray-100 cursor-not-allowed" />
-            </div>
+            
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Número do Documento <span className="text-red-500">*</span>
@@ -355,6 +350,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
               />
               {errors.numeroDocumento && <p className="text-red-500 text-xs col-span-2">{errors.numeroDocumento}</p>}
 
+            </div>
+            <div className="flex items-start flex-col gap-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Este movimento é parcelado?
+              </label>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={parcelado} onChange={() => setParcelado(!parcelado)} />
+                <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+              </label>
             </div>
 
             {/* Banco */}
@@ -403,15 +407,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
             {errors.bancoPessoa && <p className="text-red-500 text-xs col-span-2">{errors.bancoPessoa}</p>}
 
             {/* Switch Parcelado */}
-            <div className="flex items-start flex-col gap-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Este movimento é parcelado?
-              </label>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={parcelado} onChange={() => setParcelado(!parcelado)} />
-                <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
-              </label>
-            </div>
+           
 
             {parcelado && (
               <div className="mt-2 pt-2 border-t">
@@ -492,7 +488,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
       isOpen={isOpen}
       onRequestClose={onClose}
       shouldCloseOnOverlayClick={false}
-      className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-auto z-100"
+      className="bg-white rounded-lg shadow-lg w-full max-w-3xl mx-auto z-100"
       overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-100"
     >
       <div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
@@ -508,7 +504,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
             <span className="flex items-center gap-2 overflow-hidden">
               <span>{formatarData(movimento.dtMovimento)}</span>
               <span>|</span>
-              <span className="truncate max-w-[360px]" title={movimento.historico}>
+              <span className="truncate max-w-[430px]" title={movimento.historico}>
                 {movimento.historico}
               </span>
             </span>

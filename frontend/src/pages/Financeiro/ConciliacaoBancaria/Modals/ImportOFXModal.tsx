@@ -4,7 +4,8 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faSave } from "@fortawesome/free-solid-svg-icons";
 import SelectContaCorrente from "../Modals/SelectContaCorrente";
 import ConciliacaoOFXModal from "../ConciliacaoOFX";
-import { parseOFXFile, MovimentoOFX, TotalizadoresOFX } from "../../../../Utils/parseOfxFile";
+import { parseOFXFile, TotalizadoresOFX } from "../../../../Utils/parseOfxFile";
+import { MovimentoBancario } from "../../../../../../backend/src/models/MovimentoBancario";
 
 Modal.setAppElement("#root");
 
@@ -19,7 +20,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
   const [error, setError] = useState<string>("");
   const [modalContaIsOpen, setModalContaIsOpen] = useState(false);
   const [modalConciliacaoIsOpen, setModalConciliacaoIsOpen] = useState(false);
-  const [movimentosOFX, setMovimentosOFX] = useState<MovimentoOFX[]>([]);
+  const [movimentosOFX, setMovimentosOFX] = useState<MovimentoBancario[]>([]);
   const [totalizadores, setTotalizadores] = useState<TotalizadoresOFX>({
     receitas: 0,
     despesas: 0,
@@ -60,6 +61,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
     if (selectedFile) {
       try {
         const { movimentos, totalizadores } = await parseOFXFile(selectedFile);
+        console.log("Movimentos OFX:", movimentos);
         setMovimentosOFX(movimentos);
         setTotalizadores(totalizadores);
         setModalContaIsOpen(true);

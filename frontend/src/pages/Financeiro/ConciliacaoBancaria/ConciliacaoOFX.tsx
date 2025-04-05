@@ -50,6 +50,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
     try {
 
       setMovimentoParaConciliar(movimento);
+      console.log("Movimento para conciliar:", movimento);
       setTimeout(() => {
         setModalConciliaIsOpen(true);
       }, 0); 
@@ -73,7 +74,6 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
         movimentoAtualizado.numeroDocumento = null;
       }
   
-      // ✅ Atualizar o movimento no array local
       const index = movimentos.findIndex(m => m.id === movimentoAtualizado.id);
       if (index !== -1) {
         movimentos[index] = {

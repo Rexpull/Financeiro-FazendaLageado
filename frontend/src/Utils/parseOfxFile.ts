@@ -1,8 +1,4 @@
-export interface MovimentoOFX {
-  dtMovimento: string;
-  historico: string;
-  valor: number;
-}
+import { MovimentoBancario } from "../../../backend/src/models/MovimentoBancario";
 
 export interface TotalizadoresOFX {
   receitas: number;
@@ -13,7 +9,7 @@ export interface TotalizadoresOFX {
   dtFinalExtrato: string;
 }
 
-export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoOFX[]; totalizadores: TotalizadoresOFX }> => {
+export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -26,12 +22,13 @@ export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoOFX[]; 
       const transactions = ofxContent.match(/<STMTTRN>(.*?)<\/STMTTRN>/gs) || [];
       let totalReceitas = 0;
       let totalDespesas = 0;
-      let movimentos: MovimentoOFX[] = [];
+      let movimentos: MovimentoBancario[] = [];
 
       transactions.forEach((transaction) => {
         const dateMatch = transaction.match(/<DTPOSTED>(\d+)/);
         const memoMatch = transaction.match(/<MEMO>(.*?)<\/MEMO>/);
         const amountMatch = transaction.match(/<TRNAMT>(-?\d+\.\d+)/);
+        const idOfxMatch = transaction.match(/<FITID>(.*?)<\/FITID>/);
 
         if (!dateMatch || !amountMatch) return;
 
@@ -39,7 +36,8 @@ export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoOFX[]; 
         const dtMovimento = `${dateStr.substring(6, 8)}/${dateStr.substring(4, 6)}/${dateStr.substring(0, 4)}`;
         const historico = memoMatch ? memoMatch[1] : "Sem descrição";
         const valor = parseFloat(amountMatch[1]);
-
+        const tipoMovimento = valor >= 0 ? "C" : "D";
+        const identificadorOfx = idOfxMatch ? idOfxMatch[1] : "Sem ID"; 
         if (valor > 0) {
           totalReceitas += valor;
           console.log('totalReceitas', totalReceitas + 'valor', valor);
@@ -49,7 +47,16 @@ export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoOFX[]; 
 
         }
 
-        movimentos.push({ dtMovimento, historico, valor });
+        movimentos.push({
+          dtMovimento, historico, valor, tipoMovimento, identificadorOfx,
+          id: 0,
+          idContaCorrente: 0,
+          saldo: 0,
+          ideagro: false,
+          parcelado: false,
+          criadoEm: "",
+          atualizadoEm: ""
+        });
       });
 
       const liquido = totalReceitas + totalDespesas;
