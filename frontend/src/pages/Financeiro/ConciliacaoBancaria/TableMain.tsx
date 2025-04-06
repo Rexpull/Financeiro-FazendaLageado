@@ -122,7 +122,7 @@ const MovimentoBancarioTable: React.FC = () => {
     if (!contaSelecionada) return [];
 
     // 1 - Movimentos da conta
-    const movimentosConta = movimentos.filter(m => m.idContaCorrente === contaSelecionada.id);
+    const movimentosConta = movimentos.filter(m => m.idContaCorrente === contaSelecionada.id).sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());;
 
     // Ajustar fim para pegar até 23:59:59
     const dataInicioDate = new Date(dataInicio + "T00:00:00");
@@ -438,8 +438,8 @@ const MovimentoBancarioTable: React.FC = () => {
   // 🔹 Paginação: calcular registros exibidos
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredMovimentos.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredMovimentos.length / itemsPerPage);
+  const currentItems = movimentosFiltradosComSaldo.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(movimentosFiltradosComSaldo.length / itemsPerPage);
 
 
   return (
@@ -532,19 +532,19 @@ const MovimentoBancarioTable: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {movimentosFiltradosComSaldo.length === 2 ? (
+                {currentItems.length === 2 ? (
                   <tr>
                     <td colSpan={6} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
                       Nenhum movimento encontrado!
                     </td>
                   </tr>
                 ) : (
-                  movimentosFiltradosComSaldo.map((movBancario) => {
+                  currentItems.map((movBancario) => {
                     const isSaldo = movBancario.id === -1 || movBancario.id === -2;
                     return (
                       <tr key={movBancario.id} className="border-b">
                         <td className="pl-5 p-2 text-left truncate">{formatarData(movBancario.dtMovimento)}</td>
-                        <td className="p-2 text-left max-w-[500px] truncate">
+                        <td className="p-2 text-left max-w-[490px] truncate">
                           <span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
                           <Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
                         </td>
@@ -552,7 +552,7 @@ const MovimentoBancarioTable: React.FC = () => {
                         {!isSaldo ? (
                           <>
                             <td
-                              className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 ${!planos.find(p => p.id === movBancario.idPlanoContas) ? 'text-orange-500 font-semibold' : ''}`}
+                              className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${!planos.find(p => p.id === movBancario.idPlanoContas) ? 'text-orange-500 font-semibold' : ''}`}
                               style={{ textUnderlineOffset: '2px' }}
                               onClick={() => openModalConcilia(movBancario)}
                             >

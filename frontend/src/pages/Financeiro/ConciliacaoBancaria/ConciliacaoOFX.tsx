@@ -4,11 +4,10 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck, faEquals, faMinus, faTimes } from "@fortawesome/free-solid-svg-icons";
 import { formatarMoeda } from "../../../Utils/formataMoeda";
 import { getBancoLogo } from "../../../Utils/bancoUtils";
-import { buscarSaldoContaCorrente, buscarMovimentoBancarioById } from "../../../services/movimentoBancarioService";
+import { buscarSaldoContaCorrente, buscarMovimentoBancarioById, salvarMovimentoBancario } from "../../../services/movimentoBancarioService";
 import { listarPlanoContas } from "../../../services/planoContasService";
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import ConciliarPlano from "./Modals/ConciliarPlano";
-import { excluirParcelaFinanciamento, verificarParcelasAssociadas } from "../../../services/financiamentoParcelasService";
 
 Modal.setAppElement("#root");
 
@@ -74,21 +73,30 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
         movimentoAtualizado.numeroDocumento = null;
       }
   
-      const index = movimentos.findIndex(m => m.id === movimentoAtualizado.id);
-      if (index !== -1) {
-        movimentos[index] = {
-          ...movimentos[index],
-          ...movimentoAtualizado,
-          planosDescricao: planos.find(p => p.id === data.idPlanoContas)?.descricao || ''
-        };
-      }
+      console.log("Movimento atualizado:", movimentoAtualizado);
+      await salvarMovimentoBancario(movimentoAtualizado);
   
-      setModalConciliaIsOpen(false);
+      const novaLista = movimentos.map((m) =>
+        m.id === movimentoAtualizado.id
+          ? {
+              ...m,
+              ...movimentoAtualizado,
+              planosDescricao: planos.find(p => p.id === data.idPlanoContas)?.descricao || ''
+            }
+          : m
+      );
+  
+      novaLista.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());
+  
       setMovimentoParaConciliar(null);
+      setModalConciliaIsOpen(false);
+      setMovimentoParaConciliar(novaLista);
     } catch (error) {
       console.error('Erro ao conciliar movimento:', error);
     }
   };
+  
+  
   
 
   return (

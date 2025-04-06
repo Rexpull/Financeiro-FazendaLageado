@@ -6,6 +6,8 @@ import SelectContaCorrente from "../Modals/SelectContaCorrente";
 import ConciliacaoOFXModal from "../ConciliacaoOFX";
 import { parseOFXFile, TotalizadoresOFX } from "../../../../Utils/parseOfxFile";
 import { MovimentoBancario } from "../../../../../../backend/src/models/MovimentoBancario";
+import { toast } from "react-toastify";
+import { salvarMovimentosOFX } from "../../../../services/movimentoBancarioService";
 
 Modal.setAppElement("#root");
 
@@ -27,6 +29,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
     liquido: 0,
     saldoFinal: 0,
   });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -34,7 +37,6 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
       setError("");
     }
   }, [isOpen]);
-
 
   // 🔹 Função para validar e armazenar o arquivo
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,20 +67,44 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
         setMovimentosOFX(movimentos);
         setTotalizadores(totalizadores);
         setModalContaIsOpen(true);
-        onClose();
+        
       } catch (error) {
         setError("Erro ao processar o arquivo OFX.");
       }
     }
   };
 
-  const handleSelectConta = () => {
+  const handleSelectConta = async () => {
     setModalContaIsOpen(false);
-    setModalConciliacaoIsOpen(true);
+    setLoading(true);
+  
+    try {
+      const conta = JSON.parse(localStorage.getItem("contaSelecionada") || '{}');
+      const idContaCorrente = conta?.id;
+  
+      if (!idContaCorrente) {
+        toast.error("Conta corrente não selecionada.");
+        return;
+      }
+  
+      const movimentosAtualizados = await salvarMovimentosOFX(movimentosOFX, idContaCorrente);
+      setMovimentosOFX(movimentosAtualizados);
+  
+      // Abrir o modal somente após os dados estarem prontos
+      setModalConciliacaoIsOpen(true);
+    } catch (error) {
+      toast.error("Erro ao salvar movimentos!");
+      console.error("Erro ao salvar movimentos:", error);
+    } finally {
+      setLoading(false);
+    }
   };
+  
 
   return (
     <>
+    
+
       <Modal
         isOpen={isOpen}
         onRequestClose={() => {}} 
@@ -97,7 +123,8 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
         {/* 🔹 Corpo do Modal */}
         <div className="p-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">Arquivo OFX</label>
-          <input
+          <input 
+            disabled={loading}
             type="file"
             accept=".ofx"
             className="w-full p-2 border border-gray-300 rounded bg-white cursor-pointer"
@@ -106,6 +133,28 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
           {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
         </div>
 
+        {loading && (
+          <div className="flex justify-center items-center mt-3 mb-3 gap-2 text-red-600 font-semibold">
+            <svg className="animate-spin h-5 w-5 text-red-500" viewBox="0 0 24 24">
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+                fill="none"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20 10 10 0 0010-10h-4l3 3 3-3h-4a8 8 0 01-8 8z"
+              />
+            </svg>
+            <span>Importando movimentos... Aguarde</span>
+          </div>
+        )}
+
         {/* 🔹 Botão de Importação */}
         <div className="p-4 flex justify-end border-t">
           <button
@@ -113,7 +162,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
               selectedFile ? "bg-red-500 hover:bg-red-600" : "bg-gray-300 cursor-not-allowed"
             }`}
             onClick={handleConfirmImport}
-            disabled={!selectedFile}
+            disabled={!selectedFile || loading}
           >
             <FontAwesomeIcon icon={faSave} />
             Importar

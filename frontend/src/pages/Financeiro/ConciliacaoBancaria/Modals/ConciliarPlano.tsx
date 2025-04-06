@@ -251,6 +251,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 
     let dados = {};
 
+    console.log("formData ", formData)
+    console.log("idPlanoContas ", idPlanoContas)
     if (modalidadeMovimento=== 'padrao') {
       dados = {
         idPlanoContas: parseInt(formData.idPlanoContas),

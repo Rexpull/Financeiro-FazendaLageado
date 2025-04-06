@@ -31,6 +31,65 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 	
 };
 
+export const salvarMovimentosOFX = async (
+	movimentos: MovimentoBancario[],
+	idContaCorrente: number
+  ): Promise<MovimentoBancario[]> => {
+	const movimentosFinal: MovimentoBancario[] = [];
+	let numM = 0;
+	console.log("Movimentos a serem salvos:", movimentos);
+	for (const mov of movimentos) {
+	  try {
+		const movComConta: MovimentoBancario = {
+			...mov,
+			idContaCorrente,
+			saldo: mov.saldo ?? 0,
+			modalidadeMovimento: mov.modalidadeMovimento ?? "padrao",
+			ideagro: mov.ideagro ?? false,
+			parcelado: mov.parcelado ?? false,
+			numeroDocumento: mov.numeroDocumento ?? null,
+			descricao: mov.descricao ?? null,
+			transfOrigem: mov.transfOrigem ?? null,
+			transfDestino: mov.transfDestino ?? null,
+			idBanco: mov.idBanco ?? null,
+			idPessoa: mov.idPessoa ?? null,
+			idPlanoContas: mov.idPlanoContas ?? null,
+			idUsuario: mov.idUsuario ?? null,
+			criadoEm: "", // backend já vai definir
+			atualizadoEm: "",
+		  };
+
+		  Object.keys(movComConta).forEach(key => {
+			if (movComConta[key as keyof MovimentoBancario] === undefined) {
+			  delete movComConta[key as keyof MovimentoBancario];
+			}
+		  });
+  
+		const response = await fetch(`${API_URL}/api/movBancario`, {
+		  method: "POST",
+		  headers: { "Content-Type": "application/json" },
+		  body: JSON.stringify(movComConta),
+		});
+  
+		const data : MovimentoBancario = await response.json();
+  
+		if (response.ok && data?.id) {
+			movimentosFinal.push({ ...movComConta, id: data.id });
+		  } else {
+			console.warn("Movimento não salvo, response:", response.status, data);
+		  }
+	  } catch (error) {
+		toast.error(`Erro ao salvar movimento bancário: ${error}`);
+		console.error("Erro ao salvar/verificar movimento OFX:", error);
+	  }
+
+	  numM = numM + 1;
+	  console.log("Movimento salvo: ", numM);
+	}
+  
+	return movimentosFinal;
+  };
+
 export const buscarMovimentoBancarioById = async (id: number): Promise<MovimentoBancario> => {
 	const res = await fetch(`${API_URL}/api/movBancario/${id}`);
 	if (!res.ok) throw new Error(`Erro ao buscar movimento bancário id ${id}`);

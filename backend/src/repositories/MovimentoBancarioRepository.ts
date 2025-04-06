@@ -141,6 +141,48 @@ export class MovimentoBancarioRepository {
 		}
 	}
 
+	async getByIdentificadorOfx(identificadorOfx: string): Promise<MovimentoBancario | null> {
+		const { results } = await this.db
+			.prepare(`
+				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
+					numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
+					criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
+					idBanco, idPessoa, parcelado
+				FROM MovimentoBancario
+				WHERE identificador_ofx = ?
+			`)
+			.bind(identificadorOfx)
+			.all();
+	
+		const result = results[0];
+		if (!result) return null;
+	
+		return {
+			id: result.id,
+			dtMovimento: result.dtMovimento,
+			historico: result.historico,
+			idPlanoContas: result.idPlanoContas,
+			idContaCorrente: result.idContaCorrente,
+			valor: result.valor,
+			saldo: result.saldo,
+			ideagro: result.ideagro,
+			numeroDocumento: result.numero_documento,
+			descricao: result.descricao,
+			transfOrigem: result.transf_origem,
+			transfDestino: result.transf_destino,
+			identificadorOfx: result.identificador_ofx,
+			criadoEm: result.criado_em,
+			atualizadoEm: result.atualizado_em,
+			idUsuario: result.idUsuario,
+			tipoMovimento: result.tipoMovimento,
+			modalidadeMovimento: result.modalidadeMovimento,
+			idBanco: result.idBanco,
+			idPessoa: result.idPessoa,
+			parcelado: result.parcelado === 1,
+		} as MovimentoBancario;
+	}
+	
+
 
 	async getSaldoContaCorrente(idContaCorrente: number): Promise<number> {
 		const { results } = await this.db

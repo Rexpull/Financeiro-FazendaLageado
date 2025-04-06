@@ -49,27 +49,44 @@ export class MovimentoBancarioController {
 			
 
 			if (method === "POST" && pathname === "/api/movBancario") {
-				const body: MovimentoBancario = await req.json();
-				console.log("Recebido no backend:", JSON.stringify(body, null, 2));
-				
-				try {
-				  const id = await this.movBancarioRepository.create(body);
-				  return new Response(JSON.stringify({ id, message: "Movimento bancário criado com sucesso!" }), {
-					status: 201,
-					headers: corsHeaders,
-				  });
+				try{
+					const body: MovimentoBancario = await req.json();
+					console.log("🔍 Corpo recebido:", JSON.stringify(body, null, 2));
+
+					if (body.identificadorOfx) {
+						const existente = await this.movBancarioRepository.getByIdentificadorOfx(body.identificadorOfx);
+						if (existente) {
+							return new Response(JSON.stringify({
+								id: existente.id,
+								message: "Movimento já existente com esse identificador_ofx",
+							}), {
+								status: 200,
+								headers: corsHeaders,
+							});
+						}
+					}
+					
+					const id = await this.movBancarioRepository.create(body);
+					return new Response(JSON.stringify({ id, message: "Movimento bancário criado com sucesso!" }), {
+						status: 201,
+						headers: corsHeaders,
+					});
+
 				} catch (error) {
-				  console.error("Erro ao criar movimento:", (error as Error).message, (error as Error).stack);
-				  return new Response(JSON.stringify({
-					error: "Erro ao criar movimento",
-					message: (error as Error).message,
-				  }), {
-					status: 500,
-					headers: corsHeaders,
-				  });
+					console.error("🔥 Erro interno:", (error as Error).message, (error as Error).stack);
+					return new Response(JSON.stringify({
+						error: "Erro interno",
+						message: (error as Error).message,
+						stack: (error as Error).stack,
+					}), {
+						status: 500,
+						headers: corsHeaders,
+					});
 				}
-			  }
-			  
+				
+				
+			}
+			
 
 			if (method === "PUT" && pathname.startsWith("/api/movBancario/")) {
 				const id = parseInt(pathname.split("/")[3]);
