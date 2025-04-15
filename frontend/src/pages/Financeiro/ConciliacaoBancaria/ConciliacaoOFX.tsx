@@ -8,6 +8,7 @@ import { buscarSaldoContaCorrente, buscarMovimentoBancarioById, salvarMovimentoB
 import { listarPlanoContas } from "../../../services/planoContasService";
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import ConciliarPlano from "./Modals/ConciliarPlano";
+import { formatarData, formatarDataSemHora, calcularDataAnteriorFimDia } from "../../../Utils/formatarData";
 
 Modal.setAppElement("#root");
 
@@ -20,7 +21,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
   const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
   const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
   const [planos, setPlanos] = useState<{ id: number, descricao: string, tipo: string  }[]>([]);
-
+  const [movimentosSendoConciliados, setMovimentosSendoConciliados] = useState<MovimentoBancario[]>([]);
   useEffect(() => {
     if (isOpen) {
       const storedConta = localStorage.getItem("contaSelecionada");
@@ -28,7 +29,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
         setContaSelecionada(JSON.parse(storedConta));
       }
       if (contaSelecionada) {
-        buscarSaldoContaCorrente(contaSelecionada.id).then((response) => {
+        const dataAnterior = calcularDataAnteriorFimDia(totalizadores.dtInicialExtrato);
+      
+        buscarSaldoContaCorrente(contaSelecionada.id, dataAnterior).then((response) => {
           setSaldoConta((response as { saldo: number }).saldo);
         });
       }
@@ -36,14 +39,14 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
     }
     listarPlanoContas().then((planos) => setPlanos(planos));
 
-
+    setMovimentosSendoConciliados(movimentos);
     setStatus("todos");
   }, [isOpen]);
 
 
   const movimentosFiltrados = status === "pendentes"
-    ? movimentos.filter(m => !m.idPlanoContas)
-    : movimentos;
+    ? movimentosSendoConciliados.filter(m => !m.idPlanoContas)
+    : movimentosSendoConciliados;
 
   const openModalConcilia = async (movimento: MovimentoBancario) => {
     try {
@@ -87,14 +90,14 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
       );
   
       novaLista.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());
-  
+      setMovimentosSendoConciliados(novaLista);
       setMovimentoParaConciliar(null);
       setModalConciliaIsOpen(false);
-      setMovimentoParaConciliar(novaLista);
     } catch (error) {
       console.error('Erro ao conciliar movimento:', error);
     }
   };
+  
   
   
   
@@ -151,7 +154,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
               </div>
               <div className="flex flex-col items-end">
                 <span className="font-bold text-grey-900" style={{ lineHeight: '20px' }}>Período do Arquivo</span>
-                <span className="text-sm font-medium text-gray-600">{totalizadores.dtInicialExtrato} à {totalizadores.dtFinalExtrato}</span>
+                <span className="text-sm font-medium text-gray-600">{formatarDataSemHora(totalizadores.dtInicialExtrato)} à {formatarDataSemHora(totalizadores.dtFinalExtrato)}</span>
 
               </div>
             </div>
@@ -206,7 +209,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
                   ) : (
                     movimentosFiltrados.map((mov, index) => (
                       <tr key={index} className="border-b">
-                        <td className="p-2 text-left">{mov.dtMovimento}</td>
+                        <td className="p-2 text-left">{formatarData(mov.dtMovimento)}</td>
                         <td className="p-2 text-left m-w-[500px] truncate" title={mov.historico}>{mov.historico}</td>
                         <td
                           className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 ${!mov.planosDescricao ? 'text-orange-700 font-semibold' : ''

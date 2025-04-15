@@ -33,7 +33,7 @@ export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoBancari
         if (!dateMatch || !amountMatch) return;
 
         const dateStr = dateMatch[1];
-        const dtMovimento = `${dateStr.substring(6, 8)}/${dateStr.substring(4, 6)}/${dateStr.substring(0, 4)}`;
+        const dtMovimento = new Date(`${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}T00:00:00.000Z`).toISOString();
         const historico = memoMatch ? memoMatch[1] : "Sem descrição";
         const valor = parseFloat(amountMatch[1]);
         const tipoMovimento = valor >= 0 ? "C" : "D";

@@ -122,7 +122,10 @@ export class MovimentoBancarioController {
 
 			if (method === "GET" && pathname.startsWith("/api/movBancario/saldo/")) {
 				const idConta = parseInt(pathname.split("/")[3]);
-				const saldo = await this.movBancarioRepository.getSaldoContaCorrente(idConta);
+				const urlObj = new URL(req.url);
+				const data = urlObj.searchParams.get("data");
+
+  				const saldo = await this.movBancarioRepository.getSaldoContaCorrente(idConta, data ?? "");
 				return new Response(JSON.stringify({ saldo }), {
 				  status: 200,
 				  headers: corsHeaders,

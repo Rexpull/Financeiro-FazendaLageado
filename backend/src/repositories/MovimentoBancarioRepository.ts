@@ -184,10 +184,10 @@ export class MovimentoBancarioRepository {
 	
 
 
-	async getSaldoContaCorrente(idContaCorrente: number): Promise<number> {
+	async getSaldoContaCorrente(idContaCorrente: number, dataLimite: string): Promise<number> {
 		const { results } = await this.db
-			.prepare(`SELECT SUM(valor) AS saldo FROM MovimentoBancario WHERE idContaCorrente = ?`)
-			.bind(idContaCorrente)
+			.prepare(`SELECT SUM(valor) AS saldo FROM MovimentoBancario WHERE idContaCorrente = ? AND dtMovimento < ?`)
+			.bind(idContaCorrente, dataLimite)
 			.all();
 
 		return Number(results[0]?.saldo ?? 0);

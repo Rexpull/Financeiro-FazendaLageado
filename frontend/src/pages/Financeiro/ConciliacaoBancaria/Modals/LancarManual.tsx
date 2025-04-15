@@ -148,8 +148,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     setParcelas(novasParcelas);
   };
 
-	const planosFiltrados = planos.filter((plano) => plano.nivel === 3);
-
+	const planosFiltrados = planos
+  .filter((plano) => plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()) &&
+    (tipoMovimento === 'debito' ? plano.hierarquia.startsWith('002') : plano.hierarquia.startsWith('001')) 
+    && plano.nivel === 3)
+  .slice(0, 10);
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
   
@@ -265,6 +268,12 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 		}
 	}
 
+  const handleChangeTipoMovimento = (tipoMovimento: string) => {
+    setTipoMovimento(tipoMovimento as "credito" | "debito");
+    setFormData((prev) => ({ ...prev, idPlanoContas: "", descricao: "" }));
+    setSearchPlano("");
+  }
+
   return (
     <Modal
     isOpen={isOpen}
@@ -289,7 +298,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
             ? "text-white bg-green-700 border-green-700"
             : "text-gray-800 bg-white border-gray-300 hover:bg-green-100 "
         }`}
-        onClick={() => setTipoMovimento("credito") }
+        onClick={() => handleChangeTipoMovimento("credito") }
       >
         Crédito <span className="text-xs">(Depósito)</span>
       </button>
@@ -299,7 +308,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
             ? "text-white bg-red-800 border-red-800"
             : "text-gray-800 bg-white border-gray-300 hover:bg-red-100"
         }`}
-        onClick={() => setTipoMovimento("debito")}
+        onClick={() => handleChangeTipoMovimento("debito")}
       >
         Débito <span className="text-xs">(Saque)</span>
       </button>

@@ -14,7 +14,7 @@ import { excluirParcelaFinanciamento, listarParcelaFinanciamentos, salvarParcela
 import { listarPlanoContas } from "../../../services/planoContasService"
 import { Tooltip } from 'react-tooltip';
 import ConciliarPlano from "./Modals/ConciliarPlano";
-
+import { formatarData } from "../../../Utils/formatarData";
 
 const MovimentoBancarioTable: React.FC = () => {
   const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
@@ -121,25 +121,20 @@ const MovimentoBancarioTable: React.FC = () => {
   const gerarListaComSaldos = (dataInicio: string, dataFim: string) => {
     if (!contaSelecionada) return [];
 
-    // 1 - Movimentos da conta
     const movimentosConta = movimentos.filter(m => m.idContaCorrente === contaSelecionada.id).sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());;
 
-    // Ajustar fim para pegar até 23:59:59
     const dataInicioDate = new Date(dataInicio + "T00:00:00");
     const dataFimDate = new Date(dataFim + "T23:59:59");
 
-    // 2 - Separar movimentos anteriores e do período
     const movimentosAnteriores = movimentosConta.filter(m => new Date(m.dtMovimento) < dataInicioDate);
     const movimentosPeriodo = movimentosConta.filter(m =>
       new Date(m.dtMovimento) >= dataInicioDate && new Date(m.dtMovimento) <= dataFimDate
     );
 
-    // 3 - Calcular saldo anterior
     const saldoAnterior = movimentosAnteriores.reduce((acc, m) => acc + m.valor, 0);
 
     let saldoAtual = saldoAnterior;
 
-    // 4 - Montar movimentos do período já com saldo acumulado
     const movimentosCalculados = movimentosPeriodo.map((mov) => {
       saldoAtual += mov.valor;
       return {
@@ -148,7 +143,6 @@ const MovimentoBancarioTable: React.FC = () => {
       };
     });
 
-    // 5 - Criar registros adicionais
     const saldoFinal = saldoAtual;
 
     const registroSaldoAnterior = {
@@ -355,17 +349,6 @@ const MovimentoBancarioTable: React.FC = () => {
     } else{
       setConfirmModalOpen(true);
     }
-  };
-
-  const formatarData = (data: string) => {
-    return new Date(data).toLocaleString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    });
   };
 
   const formatarMoeda = (valor: number) => {
