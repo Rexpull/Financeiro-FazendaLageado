@@ -228,3 +228,87 @@ select:disabled {
     background: #bdbdbd  !important;
     margin-top: 5px;
 }
+
+.table tr td:nth-child(1) {
+    position: sticky !important;
+    left: -6px;
+    z-index: 2;
+    text-align-last: auto !important;
+    font-size: 16px;
+    font-weight: 500;
+    min-width: 320px;
+    font-family: system-ui !important;
+    border-left: none !important;
+}
+.table .saldoInicial td{
+    background: #ccffd3 ;
+
+}
+
+.table .saldoInicial td:nth-child(1){
+    background: #80ff7d !important;
+}
+.table .entradas td{
+    background: #c7eafe !important;
+}
+.table .saidas td{
+    background: #ffe6bc !important;
+}
+
+.table .saidasSection td,
+.table .entradasSection td{
+    font-size: 15px !important;
+
+}
+.table tr td{
+    color: black !important;
+    position: relative !important;
+    vertical-align: middle !important;
+    text-wrap: nowrap !important;
+    text-align-last: justify !important;
+    font-weight: 500;
+    font-family: system-ui !important;
+    padding: 10px !important;
+    
+}
+
+.table tr td span:nth-child(1){
+    margin-left: -4px;
+    margin-right: 30px;
+}
+
+.table tr td span:nth-child(2) span{
+    margin-right: -1px;
+}
+
+th {
+    background-color: whitesmoke;
+}
+
+.toggle-icon {
+   margin-right: 10px !important;
+    font-weight: bold;
+    font-size: 16px;
+    color: #001fff;
+    margin-left: 2px !important;
+}
+
+
+.btnValue{
+    margin-right: -1px !important;
+    font-size: 15px !important;
+    font-weight: 500;
+    font-family: system-ui !important;
+}
+
+.btnValue span {
+    margin-right: -1px !important;
+}
+
+.btn-toggle > .ui-icon{
+    color: #001fff;
+}
+
+.td-pai{
+    background: #efefef !important;
+}

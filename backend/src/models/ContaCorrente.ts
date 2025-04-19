@@ -9,5 +9,7 @@ export interface ContaCorrente {
     responsavel: string;
     observacao?: string; 
     ativo: boolean;
+
+    bancoNome? : string;
   }
   

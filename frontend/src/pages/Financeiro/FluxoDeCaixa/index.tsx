@@ -1,12 +1,12 @@
 import React from "react";
-import EmBreve from "../../../components/EmBreve";
 import BreadCrumb from "../../../components/BreadCrumb";
+import TableMain from "../FluxoDeCaixa/TableMain";
 
 const FluxoCaixa = () => {
   return (
     <div >
       <BreadCrumb grupo="Financeiro" pagina="Fluxo de Caixa" />
-      <EmBreve />
+      <TableMain />
     </div>
   );
 };
