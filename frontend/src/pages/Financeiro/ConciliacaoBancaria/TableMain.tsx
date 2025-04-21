@@ -535,11 +535,20 @@ const MovimentoBancarioTable: React.FC = () => {
                         {!isSaldo ? (
                           <>
                             <td
-                              className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${!planos.find(p => p.id === movBancario.idPlanoContas) ? 'text-orange-500 font-semibold' : ''}`}
+                              className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
+                                movBancario.resultadoList?.length > 1
+                                  ? 'text-blue-600 font-semibold'
+                                  : !planos.find(p => p.id === movBancario.idPlanoContas)
+                                    ? 'text-orange-500 font-semibold'
+                                    : ''
+                              }`}
                               style={{ textUnderlineOffset: '2px' }}
                               onClick={() => openModalConcilia(movBancario)}
                             >
-                              {planos.find(p => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+                               {movBancario.resultadoList?.length > 1
+                                ? 'Múltiplos Planos'
+                                : planos.find(p => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+
                             </td>
                             <td className={`p-2 text-center font-semibold capitalize ${movBancario.valor >= 0 ? "text-green-600" : "text-red-600"}`}>
                               {formatarMoeda(movBancario.valor)}

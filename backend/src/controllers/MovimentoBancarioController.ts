@@ -25,7 +25,10 @@ export class MovimentoBancarioController {
 
 		try {
 			if (method === "GET" && pathname === "/api/movBancario") {
+				console.log("📥 Requisição GET /api/movBancario recebida");
 				const movBancario = await this.movBancarioRepository.getAll();
+				console.log("📤 Retornando", movBancario.length, "movimentos bancários");
+
 				return new Response(JSON.stringify(movBancario), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 			}
 
@@ -33,13 +36,16 @@ export class MovimentoBancarioController {
 				const pathParts = pathname.split("/");
 				if (pathParts.length === 4 && !isNaN(Number(pathParts[3]))) {
 					const id = parseInt(pathParts[3]);
+					console.log(`🔍 Buscando movimento com ID ${id}`);
 					const movimento = await this.movBancarioRepository.getById(id);
 					if (!movimento) {
+						console.warn("⚠️ Movimento não encontrado", id);
 						return new Response(JSON.stringify({ message: "Movimento não encontrado" }), {
 							status: 404,
 							headers: corsHeaders,
 						});
 					}
+					console.log("✅ Movimento encontrado:", movimento);
 					return new Response(JSON.stringify(movimento), {
 						status: 200,
 						headers: corsHeaders,
@@ -51,11 +57,13 @@ export class MovimentoBancarioController {
 			if (method === "POST" && pathname === "/api/movBancario") {
 				try{
 					const body: MovimentoBancario = await req.json();
-					console.log("🔍 Corpo recebido:", JSON.stringify(body, null, 2));
+					console.log("📥 Criando novo movimento:", JSON.stringify(body, null, 2));
 
 					if (body.identificadorOfx) {
 						const existente = await this.movBancarioRepository.getByIdentificadorOfx(body.identificadorOfx);
 						if (existente) {
+							console.warn("⚠️ Movimento duplicado detectado pelo identificador_ofx");
+
 							return new Response(JSON.stringify({
 								id: existente.id,
 								message: "Movimento já existente com esse identificador_ofx",
@@ -67,6 +75,7 @@ export class MovimentoBancarioController {
 					}
 					
 					const id = await this.movBancarioRepository.create(body);
+					console.log("✅ Movimento criado com ID:", id);
 					return new Response(JSON.stringify({ id, message: "Movimento bancário criado com sucesso!" }), {
 						status: 201,
 						headers: corsHeaders,
@@ -91,8 +100,10 @@ export class MovimentoBancarioController {
 			if (method === "PUT" && pathname.startsWith("/api/movBancario/")) {
 				const id = parseInt(pathname.split("/")[3]);
 				const body: MovimentoBancario = await req.json();
-				console.log("Recebido no backend:", JSON.stringify(body, null, 2));
+				console.log(`✏️ Atualizando movimento ID ${id}`, JSON.stringify(body, null, 2));
 				await this.movBancarioRepository.update(id, body);
+				console.log("✅ Atualização realizada com sucesso");
+
 				return new Response(JSON.stringify({ message: "Movimento bancário atualizado com sucesso!" }), {
 					status: 200,
 					headers: corsHeaders,
@@ -101,7 +112,10 @@ export class MovimentoBancarioController {
 
 			if (method === "DELETE" && pathname.startsWith("/api/movBancario/")) {
 				const id = parseInt(pathname.split("/")[3]);
+				console.log(`🗑 Excluindo movimento ID ${id}`);
 				await this.movBancarioRepository.deleteById(id);
+				console.log("✅ Exclusão realizada com sucesso");
+
 				return new Response(JSON.stringify({ message: "Movimento bancário excluído com sucesso!" }), {
 					status: 200,
 					headers: corsHeaders,
@@ -111,6 +125,8 @@ export class MovimentoBancarioController {
 			if (method === "PATCH" && pathname.startsWith("/api/movBancario/")) {
 				const id = parseInt(pathname.split("/")[3]);
 				const body: MovimentoBancario = await req.json();
+				console.log(`🔄 Atualizando status ideagro do movimento ID ${id} para ${body.ideagro}`);
+
 				if (typeof body.ideagro === "boolean") {
 					await this.movBancarioRepository.updateIdeagro(id, body.ideagro);
 					return new Response(JSON.stringify({ message: "Status ideagro atualizado!" }), {
@@ -125,6 +141,7 @@ export class MovimentoBancarioController {
 				const urlObj = new URL(req.url);
 				const data = urlObj.searchParams.get("data");
 
+				console.log(`📊 Buscando saldo da conta ${idConta} até a data ${data}`);
   				const saldo = await this.movBancarioRepository.getSaldoContaCorrente(idConta, data ?? "");
 				return new Response(JSON.stringify({ saldo }), {
 				  status: 200,
@@ -136,7 +153,6 @@ export class MovimentoBancarioController {
 			if (method === "POST" && pathname === "/api/movBancario/transfer") {
 
 				interface MovTransf {
-					// Existing properties
 					contaOrigemId?: number;
 					contaDestinoId?: number;
 					valor?: number;
@@ -148,12 +164,15 @@ export class MovimentoBancarioController {
 				}
 
 				const body: MovTransf = await req.json();
+				console.log("🔄 Iniciando transferência:", body);
 
 				if (
 					!body.contaOrigemId || !body.contaDestinoId ||
 					!body.valor || !body.data || !body.descricao || !body.idUsuario ||
 					!body.contaOrigemDescricao || !body.contaDestinoDescricao
 				) {
+					console.warn("⚠️ Dados incompletos para transferência", body);
+
 					return new Response(JSON.stringify({ error: "Dados incompletos para transferência." }), {
 						status: 400,
 						headers: corsHeaders,
@@ -171,6 +190,8 @@ export class MovimentoBancarioController {
 						data: body.data!,
 						idUsuario: body.idUsuario!,
 					});
+					console.log("✅ Transferência realizada com sucesso");
+
 					return new Response(JSON.stringify({ message: "Transferência realizada com sucesso!" }), {
 						status: 201,
 						headers: corsHeaders,
@@ -179,8 +200,8 @@ export class MovimentoBancarioController {
 					const message = (error as Error).message;
 					const stack = (error as Error).stack;
 				
-					console.error("[TRANSFER ERROR]:", message, stack);
-				
+					console.error("🔥 Erro na transferência:", message, stack);
+
 					const errorResponse = {
 						error: "Erro ao realizar transferência bancária",
 						message,
@@ -199,6 +220,8 @@ export class MovimentoBancarioController {
 
 			return new Response("Rota não encontrada", { status: 404, headers: corsHeaders });
 		} catch (error) {
+			console.error("🚨 Erro no servidor:", (error as Error).message);
+
 			return new Response(JSON.stringify({ error: "Erro no servidor", details: (error as Error).message }), {
 				status: 500,
 				headers: corsHeaders,

@@ -1,3 +1,5 @@
+import { Resultado } from "./Resultado";
+
 export interface MovimentoBancario {
     id: number;
     dtMovimento: string;
@@ -20,4 +22,7 @@ export interface MovimentoBancario {
     idUsuario?: number;
     tipoMovimento?: "C" | "D";
 	modalidadeMovimento?: "padrao" | "financiamento" | "transferencia";
+
+
+    resultadoList?: Resultado[]; 
 }

@@ -1,10 +1,13 @@
 import { MovimentoBancario } from "../models/MovimentoBancario";
+import { ResultadoRepository } from "./ResultadoRepository";
 
 export class MovimentoBancarioRepository {
 	private db: D1Database;
+	private resultadoRepo: ResultadoRepository;
 
 	constructor(db: D1Database) {
 		this.db = db;
+		this.resultadoRepo = new ResultadoRepository(db);
 	}
 
 	async getAll(): Promise<MovimentoBancario[]> {
@@ -13,26 +16,34 @@ export class MovimentoBancarioRepository {
 			FROM MovimentoBancario
 		`).all();
 
-		return results.map(result => ({
-			id: result.id as number,
-			dtMovimento: result.dtMovimento as string,
-			historico: result.historico as string,
-			idPlanoContas: result.idPlanoContas as number,
-			idContaCorrente: result.idContaCorrente as number,
-			valor: result.valor as number,
-			saldo: result.saldo as number,
-			ideagro: result.ideagro as boolean,
-			numeroDocumento: result.numeroDocumento as string,
-			descricao: result.descricao as string,
-			transfOrigem: result.transfOrigem as number | null,
-			transfDestino: result.transfDestino as number | null,
-			identificadorOfx: result.identificadorOfx as string,
-			criadoEm: result.criadoEm as string,
-			atualizadoEm: result.atualizadoEm as string,
-			idBanco: result.idBanco as number,
-			idPessoa: result.idPessoa as number,
-			parcelado: result.parcelado === 1,
-		})) as MovimentoBancario[];
+		const movimentos = await Promise.all(
+			results.map(async (result) => {
+				const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
+				return {
+					id: result.id as number,
+					dtMovimento: result.dtMovimento as string,
+					historico: result.historico as string,
+					idPlanoContas: result.idPlanoContas as number,
+					idContaCorrente: result.idContaCorrente as number,
+					valor: result.valor as number,
+					saldo: result.saldo as number,
+					ideagro: result.ideagro as boolean,
+					numeroDocumento: result.numeroDocumento as string,
+					descricao: result.descricao as string,
+					transfOrigem: result.transfOrigem as number | null,
+					transfDestino: result.transfDestino as number | null,
+					identificadorOfx: result.identificadorOfx as string,
+					criadoEm: result.criadoEm as string,
+					atualizadoEm: result.atualizadoEm as string,
+					idBanco: result.idBanco as number,
+					idPessoa: result.idPessoa as number,
+					parcelado: result.parcelado === 1,
+					resultadoList: resultadoList,
+				};
+			})
+		);
+	
+		return movimentos;
 	}
 
 	async create(movimento: MovimentoBancario): Promise<number> {
@@ -57,24 +68,107 @@ export class MovimentoBancarioRepository {
 			new Date().toISOString(), new Date().toISOString(), idBanco, idPessoa, parcelado ? 1 : 0
 		).run();
 
-		return meta.last_row_id;
+		const idMov = meta.last_row_id;
+
+		
+		let resultadoList = movimento.resultadoList;
+		if (!resultadoList || resultadoList.length === 0) {
+			if (idPlanoContas) {
+			resultadoList = [{
+				dtMovimento,
+				idPlanoContas,
+				idContaCorrente,
+				idMovimentoBancario: idMov,
+				valor: Math.abs(valor),
+				tipo: tipoMovimento || (valor >= 0 ? "C" : "D")
+			}];
+			}
+		}
+
+		if (resultadoList?.length) {
+			await this.resultadoRepo.createMany(
+			resultadoList.map(r => ({ ...r, idMovimentoBancario: idMov }))
+			);
+		}
+
+
+		
+		return idMov;
 	}
 
 
 	async update(id: number, movimento: MovimentoBancario): Promise<void> {
-		const { dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx, tipoMovimento, modalidadeMovimento, idBanco, idPessoa, parcelado } = movimento;
-
+		console.log("🔧 Atualizando movimento:", id);
+		console.log("📄 Dados recebidos:", JSON.stringify(movimento, null, 2));
+	
+		const {
+			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
+			ideagro, numeroDocumento, descricao, transfOrigem, transfDestino,
+			identificadorOfx, tipoMovimento, modalidadeMovimento,
+			idBanco, idPessoa, parcelado
+		} = movimento;
+	
 		await this.db.prepare(`
 			UPDATE MovimentoBancario
 			SET dtMovimento = ?, historico = ?, idPlanoContas = ?, idContaCorrente = ?, valor = ?, saldo = ?, ideagro = ?, numero_documento = ?, descricao = ?, transf_origem = ?, transf_destino = ?, identificador_ofx = ?, atualizado_em = datetime('now'), tipoMovimento = ?, modalidadeMovimento = ?,  idBanco = ?, idPessoa = ?, parcelado = ?
 			WHERE id = ?;
 		`).bind(
-			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numeroDocumento, descricao, transfOrigem, transfDestino, identificadorOfx, tipoMovimento, modalidadeMovimento, idBanco, idPessoa, parcelado ? 1 : 0, id
+			dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
+			ideagro, numeroDocumento, descricao, transfOrigem, transfDestino,
+			identificadorOfx, tipoMovimento, modalidadeMovimento, idBanco, idPessoa,
+			parcelado ? 1 : 0, id
 		).run();
+	
+		console.log("🧹 Limpando resultados antigos...");
+		await this.resultadoRepo.deleteByMovimento(id);
+	
+		let resultadoList = movimento.resultadoList;
+	
+		// fallback automático
+		if (!resultadoList || resultadoList.length === 0) {
+			if (idPlanoContas) {
+				const tipo = tipoMovimento || (valor >= 0 ? "C" : "D");
+				const valorAbs = Math.abs(valor);
+	
+				console.log("⚠️ Nenhum resultado informado. Criando resultado padrão com:");
+				console.log(`📌 Plano: ${idPlanoContas}, Valor: ${valorAbs}, Tipo: ${tipo}`);
+	
+				resultadoList = [{
+					dtMovimento,
+					idPlanoContas,
+					idContaCorrente,
+					idMovimentoBancario: id,
+					valor: valorAbs,
+					tipo
+				}];
+			}
+		}
+	
+		if (resultadoList?.length) {
+			console.log(`📝 Salvando ${resultadoList.length} resultados para o movimento ID ${id}...`);
+			await this.resultadoRepo.createMany(
+				resultadoList.map(r => ({
+					dtMovimento: r.dtMovimento,
+					idPlanoContas: r.idPlanoContas,
+					idContaCorrente: r.idContaCorrente,
+					idMovimentoBancario: id,
+					idParcelaFinanciamento: r.idParcelaFinanciamento ?? undefined,
+					valor: r.valor,
+					tipo: r.tipo,
+				}))
+				
+			);
+			console.log("✅ Resultados atualizados com sucesso.");
+		} else {
+			console.warn("⚠️ Nenhum resultado foi salvo. (idPlanoContas ausente?)");
+		}
 	}
+	
 
 	async deleteById(id: number): Promise<void> {
 		await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(id).run();
+
+		await this.resultadoRepo.deleteByMovimento(id);
 	}
 
 	async updateIdeagro(id: number, ideagro: boolean): Promise<void> {
@@ -102,11 +196,11 @@ export class MovimentoBancarioRepository {
 	}): Promise<void> {
 		try {
 			const planoTransferencia = await this.getPlanoTransferencia();
-
+	
 			// Movimento de saída
 			const historicoSaida = `Transferência para a conta corrente ${data.contaDestinoDescricao} com descrição: ${data.descricao}`;
-
-
+			const identificador = crypto.randomUUID();
+	
 			const { meta: saida } = await this.db.prepare(`
 				INSERT INTO MovimentoBancario (
 					dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
@@ -117,14 +211,23 @@ export class MovimentoBancarioRepository {
 				VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, null, ?, ?, ?, 'D', 'transferencia', datetime('now'), datetime('now'))
 			`).bind(
 				data.data, historicoSaida, planoTransferencia, data.contaOrigemId, -data.valor,
-				data.descricao, data.contaDestinoId, crypto.randomUUID(), data.idUsuario
+				data.descricao, data.contaDestinoId, identificador, data.idUsuario
 			).run();
-
+	
 			const idSaida = saida.last_row_id;
-
+	
+			await this.resultadoRepo.createMany([{
+				dtMovimento: data.data,
+				idPlanoContas: planoTransferencia,
+				idContaCorrente: data.contaOrigemId,
+				valor: -data.valor,
+				tipo: 'D',
+				idMovimentoBancario: idSaida,
+			}]);
+	
 			// Movimento de entrada
 			const historicoEntrada = `Transferência da conta corrente ${data.contaOrigemDescricao} com descrição: ${data.descricao}`;
-			await this.db.prepare(`
+			const { meta: entrada } = await this.db.prepare(`
 				INSERT INTO MovimentoBancario (
 					dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
 					ideagro, numero_documento, descricao, transf_origem, transf_destino,
@@ -134,12 +237,27 @@ export class MovimentoBancarioRepository {
 				VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, ?, null, ?, ?, 'C', 'transferencia', datetime('now'), datetime('now'))
 			`).bind(
 				data.data, historicoEntrada, planoTransferencia, data.contaDestinoId, data.valor,
-				data.descricao, idSaida, crypto.randomUUID(), data.idUsuario
+				data.descricao, idSaida, identificador, data.idUsuario
 			).run();
+	
+			const idEntrada = entrada.last_row_id;
+	
+			// Inserir resultado da entrada
+			await this.resultadoRepo.createMany([{
+				dtMovimento: data.data,
+				idPlanoContas: planoTransferencia,
+				idContaCorrente: data.contaDestinoId,
+				valor: data.valor,
+				tipo: 'C',
+				idMovimentoBancario: idEntrada,
+			}]);
+	
 		} catch (error) {
+			console.error("Erro ao processar transferência:", error);
 			throw error;
 		}
 	}
+	
 
 	async getByIdentificadorOfx(identificadorOfx: string): Promise<MovimentoBancario | null> {
 		const { results } = await this.db
@@ -156,7 +274,9 @@ export class MovimentoBancarioRepository {
 	
 		const result = results[0];
 		if (!result) return null;
-	
+					
+		const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
+		
 		return {
 			id: result.id,
 			dtMovimento: result.dtMovimento,
@@ -179,6 +299,7 @@ export class MovimentoBancarioRepository {
 			idBanco: result.idBanco,
 			idPessoa: result.idPessoa,
 			parcelado: result.parcelado === 1,
+			resultadoList: resultadoList,
 		} as MovimentoBancario;
 	}
 	
@@ -209,7 +330,9 @@ export class MovimentoBancarioRepository {
 		const result = results[0];
 	
 		if (!result) return null;
-	
+				
+		const resultadoList = await this.resultadoRepo.getByMovimento(id);
+
 		return {
 			id: result.id as number,
 			dtMovimento: result.dtMovimento as string,
@@ -232,6 +355,8 @@ export class MovimentoBancarioRepository {
 			idBanco: result.idBanco as number,
 			idPessoa: result.idPessoa as number,
 			parcelado: result.parcelado === 1,
+
+			resultadoList: 	resultadoList,
 		};
 	}
 	
