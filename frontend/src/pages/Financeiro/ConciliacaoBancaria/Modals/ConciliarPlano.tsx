@@ -32,7 +32,7 @@ interface ConciliaPlanoContasModalProps {
 	isOpen: boolean;
 	onClose: () => void;
 	movimento: MovimentoBancario;
-	planos: { id: number; descricao: string; tipo: string}[];
+	planos: { id: number; descricao: string; tipo: string }[];
 	handleConcilia: (data: any) => void;
 }
 
@@ -55,6 +55,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 	const [searchPlano, setSearchPlano] = useState('');
 	const [rateioModalAberto, setRateioModalAberto] = useState(false);
 	const [rateios, setRateios] = useState<{ idPlano: number; descricao: string; valor: number }[]>([]);
+	const [isSaving, setIsSaving] = useState(false);
 
 	const [formData, setFormData] = useState<any>({
 		idPlanoContas: null,
@@ -142,20 +143,19 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		}
 	};
 
-  const aplicarRateioComoResultadoList = (resultados: Resultado[]) => {
-    movimento.resultadoList = resultados;
-    const convertidos = resultados.map((r) => {
-      const plano = planos.find((p) => p.id === r.idPlanoContas);
-      return {
-        idPlano: r.idPlanoContas,
-        descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
-        valor: r.valor,
-      };
-    });
-    setRateios(convertidos);
-    setRateioModalAberto(false);
-  };
-  
+	const aplicarRateioComoResultadoList = (resultados: Resultado[]) => {
+		movimento.resultadoList = resultados;
+		const convertidos = resultados.map((r) => {
+			const plano = planos.find((p) => p.id === r.idPlanoContas);
+			return {
+				idPlano: r.idPlanoContas,
+				descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
+				valor: r.valor,
+			};
+		});
+		setRateios(convertidos);
+		setRateioModalAberto(false);
+	};
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 		const { name, value } = e.target;
@@ -167,7 +167,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 
 	const validarFormulario = () => {
 		const newErrors = {};
-		if (modalidadeMovimento === 'padrao' && !formData.idPlanoContas) newErrors.idPlanoContas = 'Selecione um plano de contas!';
+		if (modalidadeMovimento === 'padrao') {
+			const multiplosPlanos = rateios.length > 0 || (movimento.resultadoList && movimento.resultadoList.length > 1);
+
+			if (!formData.idPlanoContas && !multiplosPlanos) {
+				newErrors.idPlanoContas = 'Selecione um plano de contas ou defina múltiplos!';
+			}
+		}
 		if (modalidadeMovimento === 'financiamento') {
 			if (!numeroDocumento.trim()) newErrors.numeroDocumento = 'Informe o número do documento!';
 			if (!formData.bancoSelecionado && !formData.pessoaSelecionada) {
@@ -265,37 +271,44 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 	const handleSalvar = () => {
 		if (!validarFormulario()) return;
 
-		let dados = {};
+		setIsSaving(true);
+		try {
+			let dados = {};
 
-		console.log('formData ', formData);
-		console.log('idPlanoContas ', idPlanoContas);
-		if (modalidadeMovimento === 'padrao') {
-			dados = {
-				idPlanoContas: parseInt(formData.idPlanoContas),
-				idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
-				idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
-				modalidadeMovimento,
-			};
-		} else if (modalidadeMovimento === 'financiamento') {
-			dados = {
-				idPlanoContas: idPlanoContas,
-				idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
-				idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
-				numeroDocumento,
-				parcelado,
-				parcelas,
-				modalidadeMovimento,
-			};
-		} else if (modalidadeMovimento === 'transferencia') {
-			const idPlano = parametros[0]?.idPlanoTransferenciaEntreContas;
-			dados = {
-				idPlanoContas: idPlano,
-				modalidadeMovimento,
-			};
+			console.log('formData ', formData);
+			console.log('idPlanoContas ', idPlanoContas);
+			if (modalidadeMovimento === 'padrao') {
+				dados = {
+					idPlanoContas: parseInt(formData.idPlanoContas),
+					idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
+					idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
+					modalidadeMovimento,
+				};
+			} else if (modalidadeMovimento === 'financiamento') {
+				dados = {
+					idPlanoContas: idPlanoContas,
+					idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
+					idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
+					numeroDocumento,
+					parcelado,
+					parcelas,
+					modalidadeMovimento,
+				};
+			} else if (modalidadeMovimento === 'transferencia') {
+				const idPlano = parametros[0]?.idPlanoTransferenciaEntreContas;
+				dados = {
+					idPlanoContas: idPlano,
+					modalidadeMovimento,
+				};
+			}
+
+			handleConcilia(dados);
+			onClose();
+		} catch (error) {
+			console.error('Erro ao salvar movimento:', error);
+		} finally {
+			setIsSaving(false);
 		}
-
-		handleConcilia(dados);
-		onClose();
 	};
 
 	const renderCampos = () => {
@@ -305,7 +318,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 					<div className="grid grid-cols-2 gap-4 mb-4">
 						<div ref={planoRef} className="relative mb-4">
 							<label>
-								Plano de Contas {movimento.resultadoList?.length} <span className="text-red-500">*</span>
+								Plano de Contas <span className="text-red-500">*</span>
 							</label>
 							<div className="flex w-full">
 								<div className="relative w-full">
@@ -327,6 +340,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 									<FontAwesomeIcon icon={faPlus} className="font-bolder" />
 								</button>
 							</div>
+							{errors.idPlanoContas && <p className="text-red-500 text-xs col-span-2">{errors.idPlanoContas}</p>}
 
 							{showSuggestions && (
 								<ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
@@ -557,11 +571,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 
 					<div className="flex justify-end mt-8 border-t pt-4">
 						<button
-							className="bg-red-500 text-white font-semibold px-5 py-2 rounded flex items-center gap-2 hover:bg-red-600"
+							className={`font-semibold px-5 py-2 rounded flex items-center gap-2 transition ${
+								isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white'
+							}`}
 							onClick={handleSalvar}
+							disabled={isSaving}
 						>
 							<FontAwesomeIcon icon={faSave} />
-							Associar
+							{isSaving ? 'Salvando...' : 'Associar'}
 						</button>
 					</div>
 				</div>
@@ -569,9 +586,9 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			<ModalRateioPlano
 				isOpen={rateioModalAberto}
 				onClose={() => setRateioModalAberto(false)}
-        onConfirmar={aplicarRateioComoResultadoList}
+				onConfirmar={aplicarRateioComoResultadoList}
 				planosDisponiveis={planos}
-        movimento={movimento}
+				movimento={movimento}
 				valorTotal={movimento.valor}
 				rateios={rateios}
 				setRateios={setRateios}

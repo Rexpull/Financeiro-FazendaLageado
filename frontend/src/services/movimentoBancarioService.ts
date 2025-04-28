@@ -36,9 +36,13 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 export const salvarMovimentosOFX = async (
 	movimentos: MovimentoBancario[],
 	idContaCorrente: number,
-	setCurrentIndex?: (i: number) => void
+	setCurrentIndex?: (i: number) => void,
+	setNovosExistentes?: (novos: number, existentes: number) => void
 ): Promise<MovimentoBancario[]> => {
 	const movimentosFinal: MovimentoBancario[] = [];
+	let novos = 0;
+	let encontrados = 0;
+
 	console.log('Movimentos a serem salvos:', movimentos);
 	for (let i = 0; i < movimentos.length; i++) {
 		const mov = movimentos[i];
@@ -63,7 +67,7 @@ export const salvarMovimentosOFX = async (
 				idPessoa: mov.idPessoa ?? null,
 				idPlanoContas: mov.idPlanoContas ?? null,
 				idUsuario: mov.idUsuario ?? null,
-				criadoEm: '', // backend já vai definir
+				criadoEm: '',
 				atualizadoEm: '',
 			};
 
@@ -82,7 +86,12 @@ export const salvarMovimentosOFX = async (
 			const data: MovimentoBancario = await response.json();
 
 			if (response.ok && data?.id) {
-				movimentosFinal.push({ ...movComConta, id: data.id });
+				movimentosFinal.push(data);
+				if (response.status === 200) {
+					encontrados++;
+				} else if (response.status === 201) {
+					novos++;
+				}
 			} else {
 				console.warn('Movimento não salvo, response:', response.status, data);
 			}
@@ -92,8 +101,9 @@ export const salvarMovimentosOFX = async (
 		}
 
 		setCurrentIndex?.(i + 1);
+		setNovosExistentes?.(novos, encontrados);
 	}
-
+	console.log('Movimentos salvos:', movimentosFinal);
 	return movimentosFinal;
 };
 
@@ -169,4 +179,3 @@ export const buscarSaldoContaCorrente = async (idConta: number, data: string) =>
 	if (!res.ok) throw new Error('Erro ao buscar saldo da conta');
 	return res.json();
 };
-

@@ -29,6 +29,10 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 		liquido: 0,
 		saldoFinal: 0,
 	});
+
+	const [novosMovimentos, setNovosMovimentos] = useState(0);
+	const [existentesMovimentos, setExistentesMovimentos] = useState(0);
+
 	const [loading, setLoading] = useState(false);
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [totalMovimentos, setTotalMovimentos] = useState(0);
@@ -90,7 +94,10 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 				return;
 			}
 
-			const movimentosAtualizados = await salvarMovimentosOFX(movimentosOFX, idContaCorrente, setCurrentIndex);
+			const movimentosAtualizados = await salvarMovimentosOFX(movimentosOFX, idContaCorrente, setCurrentIndex, (novos, existentes) => {
+				setNovosMovimentos(novos);
+				setExistentesMovimentos(existentes);
+			  });
 			setMovimentosOFX(movimentosAtualizados);
 			setModalConciliacaoIsOpen(true);
 		} catch (error) {
@@ -141,6 +148,12 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 								className="bg-red-500 h-4 rounded-full transition-all duration-300"
 								style={{ width: `${(currentIndex / totalMovimentos) * 100}%` }}
 							/>
+						</div>
+
+						<div className="flex justify-center gap-3 items-center text-center text-sm mt-2 text-gray-600">
+							<div>Movimentos novos importados: <strong>{novosMovimentos}</strong></div>
+							| 
+							<div>Movimentos já existentes: <strong>{existentesMovimentos}</strong></div>
 						</div>
 					</div>
 				)}

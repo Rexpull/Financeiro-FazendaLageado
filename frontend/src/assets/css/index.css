@@ -312,3 +312,7 @@ th {
 .td-pai{
     background: #efefef !important;
 }
+
+.arvorePlanos > ul > li > ul >li >ul >li > ul{
+    display: none !important;
+}

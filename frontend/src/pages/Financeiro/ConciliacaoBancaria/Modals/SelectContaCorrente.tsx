@@ -59,7 +59,7 @@ const SelecionarContaModal: React.FC<ModalProps> = ({ isOpen, onClose, onSelect 
       isOpen={isOpen}
       onRequestClose={() => {}}
       shouldCloseOnOverlayClick={false}
-      className="bg-white rounded-lg shadow-lg w-full max-w-[600px] mx-auto p-5 z-50 "
+      className="bg-white rounded-lg shadow-lg w-full max-w-[600px] max-h-[600px] mx-auto p-5 z-50 overflow-x-auto"
       overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 "
     >
       {/* 🔹 Cabeçalho */}

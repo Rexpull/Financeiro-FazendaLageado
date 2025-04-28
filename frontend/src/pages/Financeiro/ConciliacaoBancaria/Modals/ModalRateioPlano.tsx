@@ -1,4 +1,4 @@
-import React, { useEffect, useState,useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Modal from 'react-modal';
 import { PlanoConta } from '../../../../../../backend/src/models/PlanoConta';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -6,9 +6,7 @@ import { faPlus, faTrash, faCheck, faTimes, faArrowLeft, faWarning } from '@fort
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { formatarMoeda } from '../../../../Utils/formataMoeda';
 import CurrencyInput from 'react-currency-input-field';
-import { Resultado
-
- } from '../../../../../../backend/src/models/Resultado';
+import { Resultado } from '../../../../../../backend/src/models/Resultado';
 interface Rateio {
 	idPlano: number;
 	descricao: string;
@@ -23,7 +21,7 @@ interface ModalRateioPlanoProps {
 	planosDisponiveis: PlanoConta[];
 	rateios: Rateio[];
 	setRateios: (rateios: Rateio[]) => void;
-    onConfirmar: (resultados: Resultado[]) => void;
+	onConfirmar: (resultados: Resultado[]) => void;
 }
 
 const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
@@ -34,7 +32,7 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	movimento,
 	rateios,
 	setRateios,
-    onConfirmar,
+	onConfirmar,
 }) => {
 	const [planoSelecionado, setPlanoSelecionado] = useState<PlanoConta | null>(null);
 	const [valorParcial, setValorParcial] = useState<string>('0,00');
@@ -45,9 +43,9 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	const totalRateado = rateios.reduce((acc, r) => acc + r.valor, 0);
 	const valorRestante = valorTotalAbsoluto - totalRateado;
 
-    const rateiosOriginais = useRef<Rateio[]>([]); 
+	const rateiosOriginais = useRef<Rateio[]>([]);
 
-    useEffect(() => {
+	useEffect(() => {
 		if (isOpen && movimento && (movimento.resultadoList ?? []).length > 0) {
 			const convertidos: Rateio[] = (movimento.resultadoList ?? []).map((r) => {
 				const plano = planosDisponiveis.find((p) => p.id === r.idPlanoContas);
@@ -61,29 +59,25 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 			setRateios(convertidos); // atualiza visual
 		}
 	}, [isOpen]); // somente ao abrir
-    
 
-    
 	const handleCancelar = () => {
 		setRateios(rateiosOriginais.current); // restaura valores
 		onClose();
 	};
 
-  
-    const handleConfirmar = () => {
-        if (!podeConfirmar) return;
-    
+	const handleConfirmar = () => {
+		if (!podeConfirmar) return;
+
 		const novosResultados: Resultado[] = rateios.map((r) => ({
 			idPlanoContas: r.idPlano,
 			valor: r.valor,
-			tipo: movimento.tipoMovimento ?? "C", 
+			tipo: movimento.tipoMovimento ?? 'C',
 			idContaCorrente: movimento.idContaCorrente,
 			dtMovimento: movimento.dtMovimento,
 		}));
-    
-        onConfirmar(novosResultados); 
-    };
-        
+
+		onConfirmar(novosResultados);
+	};
 
 	const adicionarRateio = () => {
 		if (planoSelecionado && valorNumericoParcial > 0 && valorNumericoParcial <= valorRestante) {
@@ -117,7 +111,9 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 			overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-100"
 		>
 			<div className="flex justify-between items-center bg-blue-50 px-4 py-3 rounded-t-lg border-b">
-				<h2 className="text-xl font-semibold text-gray-800">Rateio de planos de contas - {movimento.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}</h2>
+				<h2 className="text-xl font-semibold text-gray-800">
+					Rateio de planos de contas - {movimento.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}
+				</h2>
 				<button onClick={handleCancelar} className="text-gray-500 hover:text-gray-700">
 					<FontAwesomeIcon icon={faTimes} size="xl" />
 				</button>
@@ -133,14 +129,20 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 							const plano = planosDisponiveis.find((p) => p.id === parseInt(e.target.value));
 							setPlanoSelecionado(plano || null);
 						}}
-                        disabled={!valorRestante || valorRestante <= 0}
+						disabled={!valorRestante || valorRestante <= 0}
 					>
 						<option value="">Selecione um plano</option>
-						{planosDisponiveis.map((plano) => (
-							<option key={plano.id} value={plano.id}>
-								{plano.hierarquia} - {plano.descricao}
-							</option>
-						))}
+						{planosDisponiveis
+							.filter((plano) => {
+								const ehReceita = movimento.tipoMovimento === 'C';
+								const hierarquiaCorreta = ehReceita ? plano.hierarquia.startsWith('001') : plano.hierarquia.startsWith('002');
+								return plano.nivel === 3 && hierarquiaCorreta;
+							})
+							.map((plano) => (
+								<option key={plano.id} value={plano.id}>
+									{plano.hierarquia} - {plano.descricao}
+								</option>
+							))}
 					</select>
 				</div>
 
@@ -170,12 +172,12 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 							<FontAwesomeIcon icon={faPlus} />
 						</button>
 					</div>
-                    {valorRestante > 0 && (
-                        <div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-                        <FontAwesomeIcon icon={faWarning} />
-                        Restante: {formatarMoeda(valorRestante)}
-                        </div>
-                    )}
+					{valorRestante > 0 && (
+						<div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+							<FontAwesomeIcon icon={faWarning} />
+							Restante: {formatarMoeda(valorRestante)}
+						</div>
+					)}
 				</div>
 			</div>
 
@@ -186,7 +188,9 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 							<tr>
 								<th className="p-2 text-left">Plano de Conta</th>
 								<th className="p-2 text-center">Valor</th>
-								<th className="p-2 text-right pr-2" style={{ width: '50px' }}>Ação</th>
+								<th className="p-2 text-right pr-2" style={{ width: '50px' }}>
+									Ação
+								</th>
 							</tr>
 						</thead>
 						<tbody>

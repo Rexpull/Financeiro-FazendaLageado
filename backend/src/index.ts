@@ -38,6 +38,8 @@ export default {
         return handleUsuarioRequest(req, env.DB);
       case pathname.startsWith("/api/movBancario"):
         return handeMovimentoBancario(req, env.DB);
+        case pathname.startsWith("/api/fluxoCaixa"):
+        return handeMovimentoBancario(req, env.DB);
       case pathname.startsWith("/api/parcelaFinanciamento"):
         return handleParcelaFinanciamento(req, env.DB);
       case pathname.startsWith("/api/auth"):

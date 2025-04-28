@@ -409,6 +409,16 @@ const MovimentoBancarioTable: React.FC = () => {
       }
       console.log("movimentoAtualizado", movimentoAtualizado);
       await salvarMovimentoBancario(movimentoAtualizado); 
+
+    //   const salvo = await salvarMovimentoBancario(movimentoAtualizado); 
+     
+      
+    // if (salvo && salvo.id) {
+    //   setMovimentos((prevMovimentos) =>
+    //     prevMovimentos.map((m) => (m.id === salvo.id ? { ...m, ...salvo } : m))
+    //   );
+    // }
+    
       setModalConciliaIsOpen(false);
       fetchMovimentos();
     } catch (error) {

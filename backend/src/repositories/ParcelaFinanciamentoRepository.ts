@@ -22,6 +22,25 @@ export class ParcelaFinanciamentoRepository {
 		})) as ParcelaFinanciamento[];
 	}
 
+	async getByAno(ano: string): Promise<ParcelaFinanciamento[]> {
+		const inicio = `${ano}-01-01`;
+		const fim = `${ano}-12-31`;
+	
+		const { results } = await this.db.prepare(`
+			SELECT * FROM ParcelaFinanciamento
+			WHERE dt_vencimento BETWEEN ? AND ?
+		`).bind(inicio, fim).all();
+	
+		return results.map(result => ({
+			id: result.id as number,
+			idMovimentoBancario: result.idMovimentoBancario as number,
+			valor: result.valor as number,
+			dt_vencimento: result.dt_vencimento as string,
+			numParcela: result.numParcela as number
+		})) as ParcelaFinanciamento[];
+	}
+	
+
 	async getByIdMovimentoBancario(idMovimentoBancario: number): Promise<ParcelaFinanciamento[]> {
 		const { results } = await this.db.prepare(`
 		  SELECT id, idMovimentoBancario, valor, dt_vencimento, numParcela
