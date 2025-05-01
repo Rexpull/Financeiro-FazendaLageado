@@ -294,6 +294,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 					parcelas,
 					modalidadeMovimento,
 				};
+				console.log('financiamento sendo enviado:', dados)
 			} else if (modalidadeMovimento === 'transferencia') {
 				const idPlano = parametros[0]?.idPlanoTransferenciaEntreContas;
 				dados = {

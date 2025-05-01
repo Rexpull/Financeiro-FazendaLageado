@@ -13,6 +13,10 @@
     scrollbar-color: #FA500C transparent;
 }
 
+body{
+    overflow-x: unset;
+}
+
 html:has(.ReactModal__Overlay){
     overflow: hidden;
 }
@@ -261,7 +265,7 @@ select:disabled {
 
 }
 .table tr td{
-    color: black !important;
+    color: black ;
     position: relative !important;
     vertical-align: middle !important;
     text-wrap: nowrap !important;
@@ -316,3 +320,12 @@ th {
 .arvorePlanos > ul > li > ul >li >ul >li > ul{
     display: none !important;
 }
+
+.no-scrollbar {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;  /* IE 10+ */
+  }
+  
+  .no-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }

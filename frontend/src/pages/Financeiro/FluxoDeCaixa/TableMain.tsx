@@ -3,9 +3,11 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faSearchDollar } from '@fortawesome/free-solid-svg-icons';
 import { listarContas } from '../../../services/contaCorrenteService';
 import FiltroFluxoCaixaModal from './FiltroFluxoCaixaModal';
-import { buscarFluxoCaixa } from '../../../services/fluxoCaixaService';
+import { buscarFluxoCaixa, buscarDetalhamento } from '../../../services/fluxoCaixaService';
 import { FluxoCaixaMes } from '../../../../../backend/src/models/FluxoCaixaDTO';
 import { formatarMoeda, formatarMoedaOuTraco, parseMoeda } from '../../../Utils/formataMoeda';
+import ModalDetalhamento from './ModalDetalhamento';
+import { MovimentoDetalhado } from '../../../../../backend/src/models/MovimentoDetalhado';
 
 const MovimentoBancarioTable: React.FC = () => {
 	const [dadosFluxo, setDadosFluxo] = useState<FluxoCaixaMes[]>([]);
@@ -27,12 +29,16 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [contasSelecionadas, setContasSelecionadas] = useState<string[]>([]);
 	const [anoSelecionado, setAnoSelecionado] = useState<string>(String(new Date().getFullYear()));
 	const [meses, setMeses] = useState<string[]>([]);
+	const [modalDetalhamentoAberto, setModalDetalhamentoAberto] = useState(false);
+	const [movimentosDetalhados, setMovimentosDetalhados] = useState<MovimentoDetalhado[]>([]);
+	const [tituloDetalhamento, setTituloDetalhamento] = useState<string>('');
+
 	interface Categoria {
 		label: string;
 		cor: string;
 		subcategorias: { id: string; descricao: string; filhos?: { id: string; descricao: string }[] }[];
 	}
-	
+
 	const [categorias, setCategorias] = useState<{
 		entradas: Categoria;
 		saidas: Categoria;
@@ -45,12 +51,12 @@ const MovimentoBancarioTable: React.FC = () => {
 		financiamentos: { label: 'Financiamentos', cor: 'bg-red-500', subcategorias: [] },
 		investimentos: { label: 'Investimentos', cor: 'bg-yellow-500', subcategorias: [] },
 		pendentes: { label: 'Pendentes Seleção', cor: 'bg-yellow-300', subcategorias: [] },
-
 	});
 
 	useEffect(() => {
 		async function buscarContas() {
 			const contas = await listarContas();
+			console.log('Contas encontradas:', contas);
 			setContasCorrentes(contas);
 			setContasSelecionadas(contas.map((c: any) => c.id));
 		}
@@ -76,39 +82,38 @@ const MovimentoBancarioTable: React.FC = () => {
 			const subEntradas = Object.entries(receitas).map(([id, { descricao, filhos }]) => ({
 				id,
 				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, _]) => ({
+				filhos: Object.entries(filhos).map(([idFilho, dadosFilho]) => ({
 					id: idFilho,
-					descricao: `Plano ${idFilho}`,
+					descricao: (dadosFilho as any).descricao || `Plano ${idFilho}`,
 				})),
 			}));
 
 			const subSaidas = Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
 				id,
 				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, _]) => ({
+				filhos: Object.entries(filhos).map(([idFilho, dadosFilho]) => ({
 					id: idFilho,
-					descricao: `Plano ${idFilho}`,
+					descricao: (dadosFilho as any).descricao || `Plano ${idFilho}`,
 				})),
 			}));
 
-			const subFinanciamentos = Object.keys(dados[0]?.financiamentos || {}).map((idConta) => ({
+			const subFinanciamentos = Object.entries(dados[0]?.financiamentos || {}).map(([idConta, { descricao }]) => ({
 				id: idConta,
-				descricao: `Conta ${idConta}`,
-				filhos: [],
-			}));
-			
-			const subInvestimentos = Object.keys(dados[0]?.investimentos || {}).map((idPlano) => ({
-				id: idPlano,
-				descricao: `Plano ${idPlano}`,
+				descricao: descricao || `Conta ${idConta}`,
 				filhos: [],
 			}));
 
-			const subPendentes = Object.keys(dados[0]?.pendentesSelecao || {}).map((idConta) => ({
-				id: idConta,
-				descricao: `Conta ${idConta}`,
+			const subInvestimentos = Object.entries(dados[0]?.investimentos || {}).map(([idPlano, { descricao }]) => ({
+				id: idPlano,
+				descricao: descricao || `Plano ${idPlano}`,
 				filhos: [],
 			}));
-			
+
+			const subPendentes = Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, { descricao }]) => ({
+				id: idConta,
+				descricao: descricao || `Conta ${idConta}`,
+				filhos: [],
+			}));
 
 			setCategorias((prev) => ({
 				entradas: { ...prev.entradas, subcategorias: subEntradas },
@@ -138,21 +143,47 @@ const MovimentoBancarioTable: React.FC = () => {
 	const expandirTodos = () => {
 		const novasSubs: any = {};
 		Object.values(categorias).forEach((cat) => cat.subcategorias.forEach((sub) => (novasSubs[sub.id] = true)));
-		setExpandido({ entradas: true, saidas: true, financiamentos: true, investimentos: true });
+
+		setExpandido({
+			entradas: true,
+			saidas: true,
+			financiamentos: true,
+			investimentos: true,
+			pendentes: true,
+		});
 		setExpandidoSub(novasSubs);
 	};
 
 	const recolherTodos = () => {
 		const novasSubs: any = {};
 		Object.values(categorias).forEach((cat) => cat.subcategorias.forEach((sub) => (novasSubs[sub.id] = false)));
-		setExpandido({ entradas: false, saidas: false, financiamentos: false, investimentos: false });
+
+		setExpandido({
+			entradas: false,
+			saidas: false,
+			financiamentos: false,
+			investimentos: false,
+			pendentes: false,
+		});
 		setExpandidoSub(novasSubs);
+	};
+
+	const abrirDetalhamento = async (planoId: string, mes: number, tipo: string, descricao: string) => {
+		try {
+			const dados = await buscarDetalhamento(planoId, mes, tipo);
+			setMovimentosDetalhados(dados);
+			setTituloDetalhamento(descricao);
+			setModalDetalhamentoAberto(true);
+		} catch (error) {
+			console.error('Erro ao buscar detalhamento:', error);
+		}
 	};
 
 	const calcularTotais = (tipo: keyof FluxoCaixaMes): string[] => {
 		return dadosFluxo.map((mes) => {
 			if (tipo === 'financiamentos' || tipo === 'investimentos' || tipo === 'pendentesSelecao') {
-				const soma = Object.values(mes[tipo] ?? {}).reduce((a, b) => a + b, 0);
+				const soma = Object.values(mes[tipo] ?? {}).reduce((a, b: any) => a + (typeof b === 'object' ? b.valor || 0 : b), 0);
+
 				return 'R$ ' + formatarMoedaOuTraco(soma);
 			}
 			let total = 0;
@@ -166,240 +197,140 @@ const MovimentoBancarioTable: React.FC = () => {
 	const calcularSaldoMes = (): string[] => {
 		return dadosFluxo.map((mes) => {
 			const receita = Object.values(mes.receitas ?? {}).reduce((acc, subcat: any) => {
-				return acc + Object.values(subcat.filhos).reduce((a: number, b: number) => a + b, 0);
+				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'object' ? b.valor || 0 : b), 0);
 			}, 0);
+
 			const despesa = Object.values(mes.despesas ?? {}).reduce((acc, subcat: any) => {
-				return acc + Object.values(subcat.filhos).reduce((a: number, b: number) => a + b, 0);
+				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'object' ? b.valor || 0 : b), 0);
 			}, 0);
 
 			return 'R$ ' + formatarMoeda(receita - despesa);
 		});
 	};
 
-	const calcularLucro = (): string[] => {
-		return dadosFluxo.map((mes) => {
-			const receita = Object.values(mes.receitas ?? {}).reduce((acc, subcat: any) => {
-				return acc + Object.values(subcat.filhos).reduce((a: number, b: number) => a + b, 0);
-			}, 0);
-			const investimento = Object.values(mes.investimentos ?? {}).reduce((a, b) => a + b, 0);
-			if (investimento === 0) return '% -';
-			const lucro = (receita / investimento) * 100;
-			return `% ${lucro.toFixed(1)}`;
-		});
-	};
+	const renderCategoria = (tipo: keyof FluxoCaixaMes, label: string, mainCor: string, valueCor: string) => {
+		const possuiDados = dadosFluxo.some((mes) => mes[tipo] && Object.keys(mes[tipo] ?? {}).length > 0);
 
-	const buscarValorFilho = (tipo: keyof FluxoCaixaMes, planoId: string): string[] => {
-		return dadosFluxo.map((mes) => {
-			let valor = 0;
-			Object.values(mes[tipo] ?? {}).forEach((subcat: any) => {
-				if (subcat.filhos?.[planoId]) {
-					valor += subcat.filhos[planoId];
-				}
-			});
-			return 'R$ ' + formatarMoedaOuTraco(valor);
-		});
-	};
-
-	// const categorias = {
-	// 	entradas: {
-	// 		label: 'Receitas',
-	// 		cor: 'bg-blue-500',
-	// 		subcategorias: [
-	// 			{
-	// 				id: '1',
-	// 				descricao: 'Receitas com Vendas',
-	// 				filhos: [
-	// 					{ id: '1.1', descricao: 'Receitas com Leite' },
-	// 					{ id: '1.2', descricao: 'Receitas com Milho' },
-	// 				],
-	// 			},
-	// 		],
-	// 	},
-	// 	saidas: {
-	// 		label: 'Despesas',
-	// 		cor: 'bg-red-500',
-	// 		subcategorias: [
-	// 			{
-	// 				id: '2',
-	// 				descricao: 'Despesas com Pessoal',
-	// 				filhos: [{ id: '2.1', descricao: 'Uniformes' }],
-	// 			},
-	// 		],
-	// 	},
-	// 	financiamentos: {
-	// 		label: 'Financiamentos',
-	// 		cor: 'bg-red-500',
-	// 		subcategorias: [
-	// 			{
-	// 				descricao: '1524 - SICOOB - Ronaldo',
-	// 			},
-	// 			{
-	// 				descricao: '1523 - SICREDI - Marcus',
-	// 			},
-	// 		],
-	// 	},
-	// 	investimentos: {
-	// 		label: 'Investimentos',
-	// 		cor: 'bg-yellow-500',
-	// 		subcategorias: [
-	// 			{
-	// 				descricao: 'Receitas - Investimentos Fixos',
-	// 			},
-	// 			{
-	// 				descricao: 'Despesas - Investimentos Fixos',
-	// 			},
-	// 		],
-	// 	},
-	// };
-
-	// Move this function above the line where it is used
-	const gerarCategoriasDinamicas = (): any => {
-		if (!dadosFluxo.length) return {};
-
-		const receitas = dadosFluxo[0].receitas || {};
-		const despesas = dadosFluxo[0].despesas || {};
-
-		const entradas = {
-			label: 'Receitas',
-			cor: 'bg-blue-500',
-			subcategorias: Object.entries(receitas).map(([id, { descricao, filhos }]) => ({
-				id,
-				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, _]) => ({
-					id: idFilho,
-					descricao: `Plano ${idFilho}`,
-				})),
-			})),
-		};
-
-		const saidas = {
-			label: 'Despesas',
-			cor: 'bg-red-500',
-			subcategorias: Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
-				id,
-				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, _]) => ({
-					id: idFilho,
-					descricao: `Plano ${idFilho}`,
-				})),
-			})),
-		};
-
-		const financiamentos = {
-			label: 'Financiamentos',
-			cor: 'bg-red-500',
-			subcategorias: Object.keys(dadosFluxo[0].financiamentos).map((idConta) => ({
-				descricao: `Conta ${idConta}`,
-			})),
-		};
-
-		const investimentos = {
-			label: 'Investimentos',
-			cor: 'bg-yellow-500',
-			subcategorias: Object.keys(dadosFluxo[0].investimentos).map((idPlano) => ({
-				descricao: `Plano ${idPlano}`,
-			})),
-		};
-
-		return { entradas, saidas, financiamentos, investimentos };
-	};
-
-	const renderCategoria = (key: keyof typeof categorias, categoria: any) => {
-		const isReceita = key === 'entradas';
-		const isDespesa = key === 'saidas';
-		const isFinanciamento = key === 'financiamentos';
-		const isInvestimento = key === 'investimentos';
-
-		const bgCategoria = isReceita
-			? '#82b4ff'
-			: isDespesa
-			? '#ffbe82'
-			: isFinanciamento
-			? '#ffc0c0'
-			: isInvestimento
-			? '#ffefbd'
-			: '#e2e8f0';
-
-		const bgCategoriaValor = isReceita
-			? '#c7eafe'
-			: isDespesa
-			? '#ffe6bc'
-			: isFinanciamento
-			? '#fce1e3'
-			: isInvestimento
-			? '#fff4d0'
-			: '#f8fafc';
+		const isFilhoDireto = tipo === 'financiamentos' || tipo === 'investimentos' || tipo === 'pendentesSelecao';
 
 		return (
 			<>
-				{/* Linha da categoria */}
+				{/* Linha principal da categoria */}
 				<tr className="font-bold border border-gray-300">
 					<td
-						className="px-3 py-2 sticky left-0 z-10 text-left cursor-pointer"
-						style={{ backgroundColor: bgCategoria }}
-						onClick={() => toggleCategoria(key)}
+						className={`px-3 py-2 sticky left-0 z-10 text-left ${possuiDados ? 'cursor-pointer' : ''}`}
+						style={{ backgroundColor: mainCor }}
+						onClick={possuiDados ? () => toggleCategoria(tipo) : undefined}
 					>
-						<FontAwesomeIcon icon={expandido[key] ? faMinus : faPlus} className="mr-2 text-blue-600" />
-						{categoria.label}
+						{possuiDados && <FontAwesomeIcon icon={expandido[tipo] ? faMinus : faPlus} className="mr-2 text-blue-600" />}
+						{label}
 					</td>
 					{meses.map((_, idx) => (
-						<td key={idx} className="text-center px-3 py-2 border border-gray-300" style={{ backgroundColor: bgCategoriaValor }}>
-							R$ 0,00
+						<td key={idx} className="text-center px-3 py-2 border border-gray-300" style={{ backgroundColor: valueCor }}>
+							{(() => {
+								let total = 0;
+								if (isFilhoDireto) {
+									total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
+										(acc: number, item: any) => acc + (typeof item === 'object' ? item.valor || 0 : item),
+										0
+									);
+								} else {
+									Object.values(dadosFluxo[idx]?.[tipo] ?? {}).forEach((subcat: any) => {
+										total += Object.values(subcat.filhos ?? {}).reduce(
+											(acc: number, filho: any) => acc + (typeof filho === 'object' ? filho.valor || 0 : filho),
+											0
+										);
+									});
+								}
+								return total ? `R$ ${formatarMoeda(total)}` : 'R$ 0,00';
+							})()}
 						</td>
 					))}
 				</tr>
 
-				{/* Subcategorias e filhos */}
-				{expandido[key] &&
-					Array.isArray(categoria.subcategorias) &&
-					categoria.subcategorias.map((sub: any) =>
-						sub.filhos ? (
-							<React.Fragment key={`sub-${key}-${sub.id}`}>
+				{/* Se for movimentação direta (Financiamento, Investimento ou Pendentes) */}
+				{expandido[tipo] &&
+					isFilhoDireto &&
+					// Coletar filhos únicos ao longo dos 12 meses
+					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
+						const descricao = dadosFluxo.find((mes) => mes[tipo]?.[idFilho])?.[tipo]?.[idFilho]?.descricao || `Item ${idFilho}`;
+
+						return (
+							<tr key={`filho-direto-${idFilho}`} className="bg-white border border-gray-200">
+								<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
+									<div className="ml-7">{descricao}</div>
+								</td>
+								{meses.map((_, idx) => (
+									<td
+										key={`valor-direto-${idFilho}-${idx}`}
+										className="text-center px-3 py-1 border border-gray-300 cursor-pointer hover:underline hover:text-blue-600"
+										onClick={() => abrirDetalhamento(idFilho, idx, tipo, descricao)}
+									>
+										{(() => {
+											const filhoValor = dadosFluxo[idx]?.[tipo]?.[idFilho]?.valor;
+											return filhoValor ? `R$ ${formatarMoeda(filhoValor)}` : 'R$ 0,00';
+										})()}
+									</td>
+								))}
+							</tr>
+						);
+					})}
+
+				{/* Se for Receitas/Despesas (normal com expandir/recolher subcategorias) */}
+				{expandido[tipo] &&
+					!isFilhoDireto &&
+					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idPai) => {
+						const pai = dadosFluxo.find((mes) => mes[tipo]?.[idPai])?.[tipo]?.[idPai];
+						if (!pai) return null;
+
+						return (
+							<React.Fragment key={idPai}>
 								<tr className="cursor-pointer border border-gray-300 bg-gray-100">
-									<td className="px-6 py-2 sticky left-0 z-10 text-left font-bold bg-gray-100" onClick={() => toggleSubcategoria(sub.id)}>
-										<FontAwesomeIcon icon={expandidoSub[sub.id] ? faMinus : faPlus} className="ml-2 mr-2 text-blue-600" />
-										{sub.id}. {sub.descricao}
+									<td className="px-6 py-2 sticky left-0 z-10 text-left font-bold bg-gray-100" onClick={() => toggleSubcategoria(idPai)}>
+										<FontAwesomeIcon icon={expandidoSub[idPai] ? faMinus : faPlus} className="ml-2 mr-2 text-blue-600" />
+										{pai.descricao}
 									</td>
 									{meses.map((_, idx) => (
-										<td key={`head-${sub.id}-${idx}`} className="text-center px-3 py-2 border border-gray-300 bg-gray-100">
-											R$ 0,00
+										<td key={`total-pai-${idPai}-${idx}`} className="text-center px-3 py-2 border border-gray-300 bg-gray-100">
+											{(() => {
+												const valorPai = Object.values(dadosFluxo[idx]?.[tipo]?.[idPai]?.filhos ?? {}).reduce(
+													(total: number, filho: any) => total + (filho.valor || 0),
+													0
+												);
+												return valorPai ? `R$ ${formatarMoeda(valorPai)}` : 'R$ 0,00';
+											})()}
 										</td>
 									))}
 								</tr>
-								{/* Filhos da subcategoria */}
 
-								{expandidoSub[sub.id] &&
-									sub.filhos.map((filho: any) => {
-										const valores = buscarValorFilho(key, filho.id);
+								{expandidoSub[idPai] &&
+									Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo]?.[idPai]?.filhos ?? {})))).map((idFilho) => {
+										const filho = dadosFluxo.find((mes) => mes[tipo]?.[idPai]?.filhos?.[idFilho])?.[tipo]?.[idPai]?.filhos?.[idFilho];
+										if (!filho) return null;
+
 										return (
-											<tr key={`filho-${key}-${sub.id}-${filho.id}`} className="bg-white border border-gray-200">
+											<tr key={`filho-${idPai}-${idFilho}`} className="bg-white border border-gray-200">
 												<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-													<div className="ml-7">
-														{filho.id}. {filho.descricao}
-													</div>
+													<div className="ml-7">{filho.descricao}</div>
 												</td>
-												{valores.map((valor, idx) => (
-													<td key={`valor-${filho.id}-${idx}`} className="text-center px-3 py-1 border border-gray-300">
-														{valor}
+												{meses.map((_, idx) => (
+													<td
+														key={`valor-${idFilho}-${idx}`}
+														className="text-center px-3 py-1 border border-gray-300 cursor-pointer hover:underline hover:text-blue-600"
+														onClick={() => abrirDetalhamento(idFilho, idx, tipo, filho.descricao)}
+													>
+														{(() => {
+															const filhoValor = dadosFluxo[idx]?.[tipo]?.[idPai]?.filhos?.[idFilho]?.valor;
+															return filhoValor ? `R$ ${formatarMoeda(filhoValor)}` : 'R$ 0,00';
+														})()}
 													</td>
 												))}
 											</tr>
 										);
 									})}
 							</React.Fragment>
-						) : (
-							<tr key={`subdireto-${key}-${sub.descricao}`} className="bg-white border border-gray-200">
-								<td className="px-6 py-2 sticky left-0 z-10 bg-white text-left">
-									<div className="ml-7">{sub.descricao}</div>
-								</td>
-								{meses.map((_, idx) => (
-									<td key={`direto-${sub.descricao}-${idx}`} className="text-center px-3 py-2 border border-gray-300">
-										R$ -
-									</td>
-								))}
-							</tr>
-						)
-					)}
+						);
+					})}
 			</>
 		);
 	};
@@ -449,7 +380,10 @@ const MovimentoBancarioTable: React.FC = () => {
 					</button>
 				</div>
 			</div>
-			<div className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto">
+			<div
+				className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto max-w-full relative"
+				style={{ overflowX: 'auto', position: 'relative' }}
+			>
 				{!isLoading ? (
 					<div className="flex justify-center items-center h-64">
 						<div className="loader"></div>
@@ -483,10 +417,16 @@ const MovimentoBancarioTable: React.FC = () => {
 							</tr>
 
 							{/* Categorias dinâmicas */}
-							{Object.entries(categorias).map(([key, cat]) => renderCategoria(key, cat))}
+							{/* {Object.entries(categorias).map(([key, cat]) => renderCategoria(key, cat))} */}
+
+							{renderCategoria('receitas', 'Receitas', '#82b4ff', '#c7eafe')}
+							{renderCategoria('despesas', 'Despesas', '#ffbe82', '#ffe6bc')}
+							{renderCategoria('financiamentos', 'Financiamentos', '#ffc0c0', '#fce1e3')}
+							{renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
+							{renderCategoria('pendentesSelecao', 'Pendentes Seleção', '#e2e8f0', '#f8fafc')}
 
 							{/* Totalizadores */}
-							<tr className="bg-gray-100 font-bold border border-gray-300">
+							<tr className="bg-gray-100 font-bold border border-gray-300" style={{ borderTop: '3px solid lightgrey' }}>
 								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo do mês (R x D)</td>
 
 								{calcularSaldoMes().map((valor, idx) => (
@@ -523,32 +463,31 @@ const MovimentoBancarioTable: React.FC = () => {
 								))}
 							</tr>
 
-
 							<tr className="bg-gray-100 font-bold border border-gray-300">
 								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo Final</td>
-								{calcularTotais('receitas').map((_, idx) => {
-									const saldo = calcularSaldoMes()[idx];
-									const fin = calcularTotais('financiamentos')
-										[idx].replace(/[^\d,-]+/g, '')
-										.replace(',', '.');
-									const inv = calcularTotais('investimentos')
-										[idx].replace(/[^\d,-]+/g, '')
-										.replace(',', '.');
-									const total = parseMoeda(saldo) + parseMoeda(fin) + parseMoeda(inv);
-
-									return (
-										<td key={idx} className="text-center border border-gray-300 bg-white">
-											{'R$ ' + formatarMoeda(total)}
-										</td>
-									);
-								})}
+								{dadosFluxo.map((mes, idx) => (
+									<td
+										key={idx}
+										className={`text-center border border-gray-300 bg-white ${
+											mes.saldoFinal > 0 ? '!text-green-600' : mes.saldoFinal < 0 ? '!text-red-600' : 'text-gray-600'
+										}`}
+									>
+										{'R$ ' + formatarMoeda(mes.saldoFinal)}
+									</td>
+								))}
 							</tr>
 
 							<tr className="bg-gray-100 font-bold border border-gray-300">
 								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Lucratividade</td>
-								{calcularLucro().map((valor, idx) => (
-									<td key={idx} className="text-center border border-gray-300 bg-white">
-										{valor}
+
+								{dadosFluxo.map((mes, idx) => (
+									<td
+										key={idx}
+										className={`text-center border border-gray-300 bg-white ${
+											mes.lucro > 0 ? '!text-green-600' : mes.lucro < 0 ? '!text-red-600' : 'text-gray-600'
+										}`}
+									>
+										{'% ' + formatarMoeda(mes.lucro)}
 									</td>
 								))}
 							</tr>
@@ -565,8 +504,17 @@ const MovimentoBancarioTable: React.FC = () => {
 				onAplicarFiltro={(ano, contas) => {
 					setAnoSelecionado(ano);
 					setContasSelecionadas(contas);
-					gerarFluxo();
+					gerarFluxo().then(() => {
+						expandirTodos();
+					});
 				}}
+			/>
+
+			<ModalDetalhamento
+				isOpen={modalDetalhamentoAberto}
+				onClose={() => setModalDetalhamentoAberto(false)}
+				movimentos={movimentosDetalhados}
+				titulo={tituloDetalhamento}
 			/>
 		</div>
 	);

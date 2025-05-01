@@ -1,5 +1,6 @@
 import { MovimentoBancario } from '../models/MovimentoBancario';
 import { ResultadoRepository } from './ResultadoRepository';
+import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 
 export class MovimentoBancarioRepository {
 	private db: D1Database;
@@ -8,6 +9,96 @@ export class MovimentoBancarioRepository {
 	constructor(db: D1Database) {
 		this.db = db;
 		this.resultadoRepo = new ResultadoRepository(db);
+	}
+
+	async getMovimentosPorDetalhamento(planoId: number, mes: number, tipo: string): Promise<MovimentoDetalhado[]> {
+		let sql = '';
+		let params: any[] = [];
+
+		const primeiroDiaMes = `${new Date().getFullYear()}-${String(mes + 1).padStart(2, '0')}-01`;
+		const ultimoDiaMes = `${new Date().getFullYear()}-${String(mes + 1).padStart(2, '0')}-31`;
+
+		if (tipo === 'receitas' || tipo === 'despesas' || tipo === 'investimentos' ) {
+			sql = `
+				SELECT
+					mb.id,
+					mb.dtMovimento,
+					mb.historico,
+					r.valor,
+					b.nome AS bancoNome,
+					cc.numConta,
+					cc.numCartao,
+					cc.responsavel
+				FROM MovimentoBancario mb
+				INNER JOIN Resultado r ON mb.id = r.idMovimentoBancario
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				LEFT JOIN Banco b ON cc.idBanco = b.id
+				WHERE r.idPlanoContas = ?
+				AND mb.dtMovimento BETWEEN ? AND ?
+				ORDER BY mb.dtMovimento ASC
+			`;
+			params = [planoId, primeiroDiaMes, ultimoDiaMes];
+		} else if ( tipo === 'pendentesSelecao') {
+			sql = `
+				SELECT
+					mb.id,
+					mb.dtMovimento,
+					mb.historico,
+					mb.valor,
+					b.nome AS bancoNome,
+					cc.numConta,
+					cc.numCartao,
+					cc.responsavel
+				FROM MovimentoBancario mb
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				LEFT JOIN Banco b ON cc.idBanco = b.id
+				WHERE mb.idContaCorrente = ?
+				AND mb.dtMovimento BETWEEN ? AND ?
+				ORDER BY mb.dtMovimento ASC
+			`;
+			params = [planoId, primeiroDiaMes, ultimoDiaMes];
+		} else if (tipo === 'financiamentos') {
+			sql = `
+				SELECT
+					pf.id,
+					pf.valor,
+					pf.dt_vencimento,
+					pf.numParcela,
+					b.nome AS bancoNome,
+					cc.numConta,
+					cc.numCartao,
+					cc.responsavel
+				FROM parcelaFinanciamento pf
+				INNER JOIN MovimentoBancario mb ON pf.idMovimentoBancario = mb.id
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				LEFT JOIN Banco b ON cc.idBanco = b.id
+				WHERE mb.idContaCorrente = ?
+				AND pf.dt_vencimento BETWEEN ? AND ?
+				ORDER BY pf.dt_vencimento ASC
+			`;
+			params = [planoId, primeiroDiaMes, ultimoDiaMes];
+		}
+		
+		
+		
+
+		const { results } = await this.db
+			.prepare(sql)
+			.bind(...params)
+			.all();
+
+		return results.map((row: any) => {
+			const contaFormatada = `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'} - ${
+				row.responsavel || 'Responsável'
+			}`;
+			return {
+				id: row.id,
+				data: row.dt_vencimento || row.dtMovimento,
+				descricao: row.historico || (row.numParcela ? `Parcela ${row.numParcela}` : ''),
+				valor: Number(row.valor),
+				conta: contaFormatada,
+			};
+		});
 	}
 
 	async getAll(): Promise<MovimentoBancario[]> {
@@ -57,11 +148,32 @@ export class MovimentoBancarioRepository {
 		const { results } = await this.db
 			.prepare(
 				`
-			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_documento, descricao, transf_origem, transf_destino, identificador_ofx, criado_em, atualizado_em, idBanco, idPessoa, parcelado
-			FROM MovimentoBancario
-			WHERE dtMovimento BETWEEN ? AND ?
-			AND idContaCorrente IN (${contas.map(() => '?').join(',')})
-		`
+				SELECT
+					id,
+					dtMovimento,
+					historico,
+					idPlanoContas,
+					idPessoa,
+					idBanco,
+					parcelado,
+					idContaCorrente,
+					valor,
+					saldo,
+					ideagro,
+					numero_documento,
+					descricao,
+					transf_origem,
+					transf_destino,
+					identificador_ofx,
+					criado_em,
+					atualizado_em,
+					idUsuario,
+					tipoMovimento,
+					modalidadeMovimento
+				FROM MovimentoBancario
+				WHERE dtMovimento BETWEEN ? AND ?
+				AND idContaCorrente IN (${contas.map(() => '?').join(',')})
+				`
 			)
 			.bind(inicioAno, fimAno, ...contas)
 			.all();
@@ -74,26 +186,27 @@ export class MovimentoBancarioRepository {
 					dtMovimento: result.dtMovimento as string,
 					historico: result.historico as string,
 					idPlanoContas: result.idPlanoContas as number,
+					idPessoa: result.idPessoa as number,
+					idBanco: result.idBanco as number,
+					parcelado: result.parcelado === 1,
 					idContaCorrente: result.idContaCorrente as number,
 					valor: result.valor as number,
 					saldo: result.saldo as number,
-					ideagro: result.ideagro as boolean,
-					numeroDocumento: result.numero_documento as string, 
+					ideagro: result.ideagro === 1,
+					numeroDocumento: result.numero_documento as string,
 					descricao: result.descricao as string,
 					transfOrigem: result.transf_origem as number | null,
 					transfDestino: result.transf_destino as number | null,
 					identificadorOfx: result.identificador_ofx as string,
 					criadoEm: result.criado_em as string,
 					atualizadoEm: result.atualizado_em as string,
-					idBanco: result.idBanco as number,
-					idPessoa: result.idPessoa as number,
-					parcelado: result.parcelado === 1,
+					idUsuario: result.idUsuario as number,
+					tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+					modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
 					resultadoList,
 				};
-				
 			})
 		);
-
 
 		return movimentos;
 	}

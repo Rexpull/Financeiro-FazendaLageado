@@ -6,7 +6,7 @@ const MainLayout = () => {
   return (
     <div className="flex">
       <Sidebar /> {/* 🔹 Sidebar presente em todas as páginas */}
-      <div className="flex-1 py-5 px-7">
+      <div className="flex-1 py-5 px-7" style={{maxWidth: 'calc(100vw - 257px)'}}>
         <Outlet /> 
         <div className="mt-10 text-center text-gray-500 leading-tight">
           <span className="block text-sm font-medium">Financeiro Fazenda Lageado</span>

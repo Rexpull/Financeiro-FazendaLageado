@@ -407,6 +407,25 @@ const MovimentoBancarioTable: React.FC = () => {
           await excluirParcelaFinanciamento(movimentoAtualizado.id);
         }
       }
+
+      if (data.modalidadeMovimento === 'financiamento') {
+        movimentoAtualizado.idBanco = data.idBanco ?? null;
+        movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? null;
+        movimentoAtualizado.parcelado = data.parcelado ?? false;
+      
+        // 🔄 Excluir parcelas antigas se existirem
+        const temParcelasAntigas = await verificarParcelasAssociadas(movimentoAtualizado.id);
+        if (temParcelasAntigas) {
+          await excluirParcelaFinanciamento(movimentoAtualizado.id);
+        }
+
+        for (const parcela of data.parcelas) {
+          parcela.idMovimentoBancario = movimentoAtualizado.id;
+          console.log("parcela sendo enviada:", parcela)
+          salvarParcelaFinanciamento(parcela)
+        }
+      }
+      
       console.log("movimentoAtualizado", movimentoAtualizado);
       await salvarMovimentoBancario(movimentoAtualizado); 
 

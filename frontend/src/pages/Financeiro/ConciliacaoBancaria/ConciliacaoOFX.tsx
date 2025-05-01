@@ -377,7 +377,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 								<tbody>
 									{movimentosFiltrados.length === 0 ? (
 										<tr>
-											<td colSpan={3} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
+											<td colSpan={4} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
 												Nenhum movimento encontrado!
 											</td>
 										</tr>

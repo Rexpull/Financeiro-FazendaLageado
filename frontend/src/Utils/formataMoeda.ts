@@ -5,7 +5,7 @@ export const formatarMoeda = (valor: number | string, casasDecimais: number = 2)
     }
     
     if (isNaN(valor)) {
-        throw new Error("Valor inválido");
+		return "0,00";
     }
     
     return valor.toLocaleString("pt-BR", {
@@ -34,9 +34,16 @@ export const formatarMoedaOuTraco = (valor: number | string, casasDecimais: numb
 	});
 };
 
-
 export const parseMoeda = (valor: string): number => {
-	const limpo = valor.replace(/[^\d,-]+/g, '').replace(',', '.');
+	if (!valor) return 0;
+
+	const limpo = valor
+		.replace(/\s/g, '')        
+		.replace('R$', '')      
+		.replace(/\./g, '')       
+		.replace(',', '.');      
+
 	const parsed = parseFloat(limpo);
 	return isNaN(parsed) ? 0 : parsed;
 };
+
