@@ -14,6 +14,18 @@ export const listarPessoas = async (): Promise<Pessoa[]> => {
   }
 };
 
+export const buscarPessoaById = async (id: number): Promise<Pessoa | null> => {
+  try {
+    const res = await fetch(`${API_URL}/api/pessoa/${id}`);
+    if (!res.ok) throw new Error("Erro ao buscar pessoa por ID");
+    return await res.json();
+  } catch (error) {
+    console.error("Erro ao buscar pessoa:", error);
+    toast.error("Erro ao buscar pessoa!");
+    return null;
+  }
+};
+
 export const salvarPessoa = async (pessoa: Pessoa): Promise<Pessoa> => {
   const method = pessoa.id ? "PUT" : "POST";
   const url = pessoa.id ? `${API_URL}/api/pessoa/${pessoa.id}` : `${API_URL}/api/pessoa`;

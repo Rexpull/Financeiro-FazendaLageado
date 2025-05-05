@@ -39,6 +39,14 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
       return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (req.method === "GET" && pathname.startsWith("/api/bancos/")) {
+      const id = parseInt(pathname.split("/")[3]);
+      const result = await DB.prepare("SELECT id, nome, codigo FROM banco where id = ?;")
+      .bind(id)
+      .first();
+      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // 📌 POST - Criar banco
     if (method === "POST" && pathname === "/api/bancos") {
       const { nome, codigo }: { nome: string; codigo: string } = await req.json();

@@ -19,6 +19,18 @@ export const listarBancos = async (): Promise<Banco[]> => {
   }
 };
 
+export const buscarBancoById = async (id: number): Promise<Banco | null> => {
+  try {
+    const res = await fetch(`${API_URL}/api/bancos/${id}`);
+    if (!res.ok) throw new Error("Erro ao buscar banco por ID");
+    return await res.json();
+  } catch (error) {
+    console.error("Erro ao buscar banco:", error);
+    toast.error("Erro ao buscar banco!");
+    return null;
+  }
+};
+
 export const salvarBanco = async (banco: Banco): Promise<Banco> => {
   const method = banco.id ? "PUT" : "POST";
   const url = banco.id ? `${API_URL}/api/bancos/${banco.id}` : `${API_URL}/api/bancos`;

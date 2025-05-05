@@ -29,6 +29,13 @@ export class PessoaController {
                 return new Response(JSON.stringify(pessoas), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            
+            if (req.method === "GET" && pathname.startsWith("/pessoa/")) {
+                const id = parseInt(pathname.split("/")[2]);
+                const pessoa = await this.pessoaRepository.getById(id);
+                return pessoa ? Response.json(pessoa) : new Response("Pessoa não encontrada", { status: 404 });
+            }
+
             if (method === "POST" && pathname === "/api/pessoa") {
                 const body: Pessoa = await req.json();
                 const id = await this.pessoaRepository.create(body);

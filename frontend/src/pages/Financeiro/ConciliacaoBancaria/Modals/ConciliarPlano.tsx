@@ -280,15 +280,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			if (modalidadeMovimento === 'padrao') {
 				dados = {
 					idPlanoContas: parseInt(formData.idPlanoContas),
-					idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
-					idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
+					idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
+					idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
 					modalidadeMovimento,
 				};
 			} else if (modalidadeMovimento === 'financiamento') {
 				dados = {
 					idPlanoContas: idPlanoContas,
-					idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
-					idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
+					idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
+					idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
 					numeroDocumento,
 					parcelado,
 					parcelas,
