@@ -9,6 +9,15 @@ export interface TotalizadoresOFX {
   dtFinalExtrato: string;
 }
 
+function normalizarOfx(ofx: string): string {
+  return ofx
+    .replace(/<(\w+?)>([^<\r\n]+)/g, '<$1>$2</$1>') 
+    .replace(/&nbsp;/g, ' ')                         
+    .replace(/\r?\n/g, '')                           
+    .replace(/>\s+</g, '><');                       
+}
+
+
 export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -17,7 +26,9 @@ export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoBancari
         reject("Erro ao ler o arquivo.");
         return;
       }
-      const ofxContent = event.target.result as string;
+      let ofxContent = event.target.result as string;
+      ofxContent = normalizarOfx(ofxContent);
+
 
       const transactions = ofxContent.match(/<STMTTRN>(.*?)<\/STMTTRN>/gs) || [];
       let totalReceitas = 0;
