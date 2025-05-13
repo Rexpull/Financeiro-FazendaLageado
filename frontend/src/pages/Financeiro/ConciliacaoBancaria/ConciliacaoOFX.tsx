@@ -9,7 +9,12 @@ import { listarPlanoContas } from '../../../services/planoContasService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import ConciliarPlano from './Modals/ConciliarPlano';
 import { formatarData, formatarDataSemHora, calcularDataAnteriorFimDia } from '../../../Utils/formatarData';
-import CurrencyInput from 'react-currency-input-field';
+import {
+	excluirParcelaFinanciamento,
+	listarParcelaFinanciamentos,
+	salvarParcelaFinanciamento,
+	verificarParcelasAssociadas,
+} from '../../../services/financiamentoParcelasService';
 
 Modal.setAppElement('#root');
 
@@ -127,6 +132,32 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				movimentoAtualizado.idBanco = null;
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = null;
+
+				let temParcelas = await verificarParcelasAssociadas(movimentoAtualizado.id);
+				if (temParcelas) {
+					await excluirParcelaFinanciamento(movimentoAtualizado.id);
+				}
+			}
+
+			if (data.modalidadeMovimento === 'financiamento') {
+				movimentoAtualizado.idBanco = data.idBanco ?? null;
+				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? null;
+				movimentoAtualizado.parcelado = data.parcelado ?? false;
+
+				const temParcelasAntigas = await verificarParcelasAssociadas(movimentoAtualizado.id);
+				if (temParcelasAntigas) {
+					await excluirParcelaFinanciamento(movimentoAtualizado.id);
+				}
+
+				for (const parcela of data.parcelas) {
+					parcela.idMovimentoBancario = movimentoAtualizado.id;
+					console.log('parcela sendo enviada:', parcela);
+					salvarParcelaFinanciamento(parcela);
+				}
+			}
+
+			if(data.modalidadeMovimento === 'transferencia') {	
+				movimentoAtualizado.resultadoList = [];
 			}
 
 			console.log('Movimento atualizado:', movimentoAtualizado);

@@ -79,9 +79,6 @@ export class MovimentoBancarioRepository {
 			params = [planoId, primeiroDiaMes, ultimoDiaMes];
 		}
 		
-		
-		
-
 		const { results } = await this.db
 			.prepare(sql)
 			.bind(...params)

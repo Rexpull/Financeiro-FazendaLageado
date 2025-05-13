@@ -73,9 +73,9 @@ const PlanoContasTable: React.FC = () => {
 	};
 
 	const planosFiltrados = planos.filter((p) => {
-		if (tipoSelecionado === 'despesa') return p.hierarquia.startsWith('002');
-		if (tipoSelecionado === 'receita') return p.hierarquia.startsWith('001');
-		if (tipoSelecionado === 'movimentacao') return p.hierarquia.startsWith('003');
+		if (tipoSelecionado === 'despesa') return p.hierarquia?.startsWith('002');
+		if (tipoSelecionado === 'receita') return p.hierarquia?.startsWith('001');
+		if (tipoSelecionado === 'movimentacao') return p.hierarquia?.startsWith('003');
 		return true;
 	});
 
@@ -410,7 +410,10 @@ const PlanoContasTable: React.FC = () => {
 								</div>
 
 								{/* Container da arvore */}
-								<div className="arvorePlanos overflow-auto border bg-gray-100 rounded p-6 shadow" style={{ width: '100%', height: '600px' }}>
+								<div
+									className="arvorePlanos overflow-auto border bg-gray-100 rounded p-6 shadow"
+									style={{ width: '100%', height: '600px' }}
+								>
 									<Tree
 										lineWidth={'2px'}
 										lineColor={'#bbb'}
