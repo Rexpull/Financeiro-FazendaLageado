@@ -23,6 +23,5 @@ export interface MovimentoBancario {
     tipoMovimento?: "C" | "D";
 	modalidadeMovimento?: "padrao" | "financiamento" | "transferencia";
 
-
     resultadoList?: Resultado[]; 
 }

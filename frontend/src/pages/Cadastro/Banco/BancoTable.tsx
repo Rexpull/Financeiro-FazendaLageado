@@ -23,9 +23,8 @@ const BancoTable: React.FC = () => {
 
   // 🔹 Paginação
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(15); // Quantidade de registros por página
+  const [itemsPerPage, setItemsPerPage] = useState(15);
 
-   // 🔹 Buscar bancos ao carregar a página
    const fetchBancos = async () => {
     setIsLoading(true);
     try {
@@ -39,14 +38,10 @@ const BancoTable: React.FC = () => {
     }
   };
 
-
   useEffect(() => {
     fetchBancos();
   }, []);
   
-
-
-  // 🔹 Filtragem em tempo real
   useEffect(() => {
     if (!searchTerm) {
       setFilteredBancos(bancos);
@@ -58,19 +53,16 @@ const BancoTable: React.FC = () => {
       );
       setFilteredBancos(filtered);
     }
-    setCurrentPage(1); // Reinicia a paginação ao filtrar
+    setCurrentPage(1); 
   }, [searchTerm, bancos]);
 
 
-  // 🔹 Abrir modal para criar ou editar banco
   const openModal = (banco?: Banco) => {
     setBancoData(banco || { id: 0, nome: "", codigo: "" });
     setModalIsOpen(true);
   };
 
-    // 🔹 Manipular o estado de bancos sem recarregar a lista
     const handleSave = async () => {
-      // if (!bancoData.nome || !bancoData.codigo) return;
       setIsSaving(true);
   
       try {
@@ -81,9 +73,8 @@ const BancoTable: React.FC = () => {
                 prev.map((banco) => (banco.id === bancoData.id ? bancoData : banco))
             );
         } else {
-            // Criar banco e adicionar ao estado com ID correto
             bancoSalvo = await salvarBanco(bancoData);
-            setBancos((prev) => [...prev, bancoSalvo]); // Adiciona novo banco com ID real
+            setBancos((prev) => [...prev, bancoSalvo]);
         }
 
         setModalIsOpen(false);
@@ -95,7 +86,6 @@ const BancoTable: React.FC = () => {
   };
 
 
-  // Mapeamento fixo de cores para bancos conhecidos
   const bancoColors: Record<string, string> = {
     "Nubank": "#ffacf1", // Lilás claro
     "Banco do Brasil": "#ffef5a", // Amarelo claro
@@ -107,19 +97,16 @@ const BancoTable: React.FC = () => {
     "Caixa Econômica": "#a3cfff", // Azul lavanda
   };
 
-  // Lista de cores suaves para os bancos não cadastrados
   const pastelColors = [
     "#FFDEE9", "#FFDAC1", "#FCF6BD", "#D0F4DE",
     "#C4E8FF", "#D4A5A5", "#E2C2C6", "#C1C8E4",
     "#FAD2E1", "#BEE1E6"
   ];
 
-  // Função para obter cor associada ao banco, ou gerar aleatória se não estiver mapeado
   const getBancoColor = (nome: string): string => {
     return bancoColors[nome] || pastelColors[nome.length % pastelColors.length];
   };
 
-  // Função para obter a abreviação do banco
   const getBancoAbreviacao = (nome: string): string => {
     const words = nome.trim().split(" ");
 
@@ -130,7 +117,6 @@ const BancoTable: React.FC = () => {
     }
   };
 
-   // 🔹 Excluir banco com modal de confirmação
    const handleDeleteConfirm = async () => {
     if (deleteBancoId === null) return;
     try {
@@ -142,14 +128,12 @@ const BancoTable: React.FC = () => {
     }
   };
 
-  // 🔹 Abrir modal de confirmação antes de excluir
   const handleDelete = (id: number) => {
     setDeleteBancoId(id);
     setConfirmModalOpen(true);
   };
 
 
-    // 🔹 Paginação: calcular registros exibidos
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
     const currentItems = filteredBancos.slice(indexOfFirstItem, indexOfLastItem);
@@ -280,7 +264,6 @@ const BancoTable: React.FC = () => {
 
         )}
         </div>
-      {/* Modal para Criar/Editar Banco */}
       <BancoModal
         isOpen={modalIsOpen}
         onClose={() => setModalIsOpen(false)}

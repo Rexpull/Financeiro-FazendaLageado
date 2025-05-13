@@ -1,6 +1,5 @@
 import { PlanoContaRepository } from "../repositories/PlanoContaRepository";
 import { PlanoConta } from "../models/PlanoConta";
-import { toast } from "react-toastify";
 
 export class PlanoContaController {
     private planoRepository: PlanoContaRepository;
