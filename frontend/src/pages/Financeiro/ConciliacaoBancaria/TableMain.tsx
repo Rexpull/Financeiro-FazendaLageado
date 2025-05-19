@@ -485,6 +485,12 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const handleConcilia = async (data: any) => {
 		try {
+			console.log('🔍 Iniciando conciliação com dados:', data);
+			console.log('📊 Página atual antes da conciliação:', currentPage);
+			
+			// Armazenar a página atual em uma constante
+			const paginaAtual = currentPage;
+			
 			const movimentoAtualizado: MovimentoBancario = {
 				...movimentoParaConciliar!,
 				idPlanoContas: data.idPlanoContas,
@@ -508,7 +514,6 @@ const MovimentoBancarioTable: React.FC = () => {
 				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? null;
 				movimentoAtualizado.parcelado = data.parcelado ?? false;
 
-				// 🔄 Excluir parcelas antigas se existirem
 				const temParcelasAntigas = await verificarParcelasAssociadas(movimentoAtualizado.id);
 				if (temParcelasAntigas) {
 					await excluirParcelaFinanciamento(movimentoAtualizado.id);
@@ -516,22 +521,47 @@ const MovimentoBancarioTable: React.FC = () => {
 
 				for (const parcela of data.parcelas) {
 					parcela.idMovimentoBancario = movimentoAtualizado.id;
-					console.log('parcela sendo enviada:', parcela);
-					salvarParcelaFinanciamento(parcela);
+					await salvarParcelaFinanciamento(parcela);
 				}
 			}
 
-			if(data.modalidadeMovimento === 'transferencia') {	
+			if(data.modalidadeMovimento === 'transferencia') {    
 				movimentoAtualizado.resultadoList = [];
 			}
 
-			console.log('movimentoAtualizado', movimentoAtualizado);
-			await salvarMovimentoBancario(movimentoAtualizado);
+			const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
+			
+			// Atualizar os estados em uma única operação para evitar re-renders desnecessários
+			const atualizarEstados = () => {
+				setMovimentos(prevMovimentos => 
+					prevMovimentos.map(mov => 
+						mov.id === movimentoSalvo.id ? movimentoSalvo : mov
+					)
+				);
+
+				setMovimentosFiltradosComSaldo(prevMovimentos => 
+					prevMovimentos.map(mov => 
+						mov.id === movimentoSalvo.id ? movimentoSalvo : mov
+					)
+				);
+
+				setFilteredMovimentos(prevMovimentos => 
+					prevMovimentos.map(mov => 
+						mov.id === movimentoSalvo.id ? movimentoSalvo : mov
+					)
+				);
+
+				// Forçar a manutenção da página atual
+				setCurrentPage(paginaAtual);
+			};
+
+			// Executar todas as atualizações de estado de uma vez
+			atualizarEstados();
 
 			setModalConciliaIsOpen(false);
-			fetchMovimentos();
+			console.log('🔄 Página atualizada:', currentPage);
 		} catch (error) {
-			console.error('Erro ao conciliar movimento:', error);
+			console.error('❌ Erro ao conciliar movimento:', error);
 		}
 	};
 

@@ -29,18 +29,28 @@ const FiltroFluxoCaixaModal: React.FC<Props> = ({
     useEffect(() => {
         if (isOpen) {
             setAno(anoSelecionado);
-            setContasSelecionadasLocal(contasDisponiveis.map((conta) => conta.id.toString()));
+            setContasSelecionadasLocal(contasSelecionadas.map(id => id.toString()));
         }
-    }, [isOpen, anoSelecionado, contasDisponiveis]);
+    }, [isOpen, anoSelecionado, contasSelecionadas]);
 
 	const toggleConta = (id: string) => {
-		setContasSelecionadasLocal((prev) =>
-			prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-		);
+		setContasSelecionadasLocal((prev) => {
+			const novasContas = prev.includes(id) 
+				? prev.filter((item) => item !== id) 
+				: [...prev, id];
+			return novasContas;
+		});
 	};
 
 	const aplicarFiltro = () => {
-		onAplicarFiltro(ano, contasSelecionadasLocal);
+		if (contasSelecionadasLocal.length === 0) {
+			window.alert('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
+			return;
+		}
+		const contasFiltradas = contasSelecionadasLocal.filter(id => 
+			contasDisponiveis.some(conta => conta.id.toString() === id)
+		);
+		onAplicarFiltro(ano, contasFiltradas);
 		onClose();
 	};
 
@@ -60,20 +70,26 @@ const FiltroFluxoCaixaModal: React.FC<Props> = ({
 			</div>
 
 			<div className="px-5 py-4 space-y-3">
-
-                <div>
+				<div>
 					<label className="font-semibold block mb-1">Selecione as contas correntes</label>
 					<div className="max-h-40 overflow-y-auto border rounded p-2 bg-gray-50">
-						{contasDisponiveis.map((conta: ContaCorrente) => (
-							<div key={conta.id} className="flex items-center gap-2 mb-2">
-								<input
-									type="checkbox"
-									checked={contasSelecionadasLocal.includes(conta.id.toString())}
-									onChange={() => toggleConta(conta.id.toString())}
-								/>
-								<span>{(conta.numConta || conta.numCartao) + " - " + conta.bancoNome + " - " + conta.responsavel}</span>
-							</div>
-						))}
+						{contasDisponiveis.map((conta: ContaCorrente) => {
+							const contaId = conta.id.toString();
+							const isChecked = contasSelecionadasLocal.includes(contaId);
+							return (
+								<div key={conta.id} className="flex items-center gap-2 mb-2">
+									<input
+										type="checkbox"
+										id={`conta-${conta.id}`}
+										checked={isChecked}
+										onChange={() => toggleConta(contaId)}
+									/>
+									<label htmlFor={`conta-${conta.id}`} className="cursor-pointer">
+										{(conta.numConta || conta.numCartao) + " - " + conta.bancoNome + " - " + conta.responsavel}
+									</label>
+								</div>
+							);
+						})}
 					</div>
 				</div>
 
@@ -81,15 +97,13 @@ const FiltroFluxoCaixaModal: React.FC<Props> = ({
 					<label className="font-semibold block mb-1">Ano</label>
 					<select
 						value={ano}
-						onChange={(e) => setAno(e.target.value)}
+						onChange={(e) => setAno((e.target as HTMLSelectElement).value)}
 						className="w-full border px-3 py-2 rounded bg-white"
 					>
 						<option value="2024">2024</option>
 						<option value="2025">2025</option>
 					</select>
 				</div>
-
-				
 			</div>
 
 			<div className="flex justify-end gap-3 px-5 py-4 border-t">

@@ -58,24 +58,75 @@ export class ParcelaFinanciamentoRepository {
 	  }
 
 	async create(parcela: ParcelaFinanciamento): Promise<number> {
-		const { idMovimentoBancario, valor, dt_vencimento, numParcela } = parcela;
+		try {
+			const {
+				idMovimentoBancario = null,
+				idFinanciamento,
+				valor,
+				status,
+				numParcela,
+				dt_lancamento,
+				dt_vencimento,
+				dt_liquidacao = null
+			} = parcela;
 
-		const { meta } = await this.db.prepare(`
-			INSERT INTO parcelaFinanciamento (idMovimentoBancario, valor, dt_vencimento, numParcela)
-			VALUES (?, ?, ?, ?)
-		`).bind(idMovimentoBancario, valor, dt_vencimento, numParcela).run();
+			console.log("Dados da parcela para inserção:", {
+				idMovimentoBancario,
+				idFinanciamento,
+				valor,
+				status,
+				numParcela,
+				dt_lancamento,
+				dt_vencimento,
+				dt_liquidacao
+			});
 
-		return meta.last_row_id;
+			const { meta } = await this.db.prepare(`
+				INSERT INTO parcelaFinanciamento (
+					idMovimentoBancario, idFinanciamento, valor, status,
+					numParcela, dt_lancamento, dt_vencimento, dt_liquidacao
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`).bind(
+				idMovimentoBancario, idFinanciamento, valor, status,
+				numParcela, dt_lancamento, dt_vencimento, dt_liquidacao
+			).run();
+
+			return meta.last_row_id;
+		} catch (error) {
+			console.error("Erro ao criar parcela:", error);
+			throw new Error(`Erro ao criar parcela: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
+		}
 	}
 
 	async update(id: number, parcela: ParcelaFinanciamento): Promise<void> {
-		const { idMovimentoBancario, valor, dt_vencimento, numParcela } = parcela;
+		const { 
+			idMovimentoBancario, 
+			valor, 
+			dt_vencimento, 
+			numParcela,
+			status,
+			dt_liquidacao
+		} = parcela;
 
 		await this.db.prepare(`
 			UPDATE parcelaFinanciamento
-			SET idMovimentoBancario = ?, valor = ?, dt_vencimento = ?, numParcela = ?
+			SET idMovimentoBancario = ?, 
+				valor = ?, 
+				dt_vencimento = ?, 
+				numParcela = ?,
+				status = ?,
+				dt_liquidacao = ?
 			WHERE id = ?
-		`).bind(idMovimentoBancario, valor, dt_vencimento, numParcela, id).run();
+		`).bind(
+			idMovimentoBancario, 
+			valor, 
+			dt_vencimento, 
+			numParcela,
+			status,
+			dt_liquidacao,
+			id
+		).run();
 	}
 
 	async deleteById(id: number): Promise<void> {

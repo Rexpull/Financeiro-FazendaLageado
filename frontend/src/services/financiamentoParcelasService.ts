@@ -8,26 +8,36 @@ export const listarParcelaFinanciamentos = async (): Promise<ParcelaFinanciament
 	return res.json();
 };
 
-export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento): Promise<{ id: number }> => {
+export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento): Promise<ParcelaFinanciamento> => {
 	const method = parcela.id ? "PUT" : "POST";
 	const url = parcela.id ? `${API_URL}/api/parcelaFinanciamento/${parcela.id}` : `${API_URL}/api/parcelaFinanciamento`;
+
+	const parcelaAtualizada = {
+		...parcela,
+		valor: Number(parcela.valor),
+		dt_liquidacao: parcela.status === 'Liquidado' ? parcela.dt_liquidacao : null
+	};
 
 	const res = await fetch(url, {
 		method,
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(parcela),
+		body: JSON.stringify(parcelaAtualizada),
 	});
 
-	if (!res.ok) throw new Error("Erro ao salvar Parcela do Financiamento");
-	return res.json();
+	if (!res.ok) {
+		const errorData = await res.json().catch(() => null);
+		throw new Error(errorData?.details || errorData?.error || "Erro ao salvar Parcela do Financiamento");
+	}
+
+	const data = await res.json();
+	return { ...parcelaAtualizada, id: data.id };
 };
 
 export const verificarParcelasAssociadas = async (idMovimentoBancario: number) => {
 	const res = await fetch(`${API_URL}/api/parcelaFinanciamento/${idMovimentoBancario}`);
 	const parcelas: ParcelaFinanciamento[] = await res.json();
 	return parcelas.length > 0; 
-  };
-  
+};
 
 export const excluirParcelaFinanciamento = async (id: number): Promise<void> => {
 	const res = await fetch(`${API_URL}/api/parcelaFinanciamento/${id}`, { method: "DELETE" });

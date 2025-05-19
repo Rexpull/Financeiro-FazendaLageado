@@ -2,29 +2,58 @@ import React, { useState, useEffect } from 'react';
 import CurrencyInput from 'react-currency-input-field';
 import { Financiamento, ParcelaFinanciamento } from '../../../../../backend/src/models';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGear, faGripLinesVertical, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { faGear, faGripLinesVertical, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
 import Modal from 'react-modal';
 import { toast } from 'react-toastify';
+import { salvarFinanciamento } from '../../../services/financiamentoService';
+import { salvarParcelaFinanciamento } from '../../../services/financiamentoParcelasService';
+
+import { Banco } from '../../../../../backend/src/models/Banco';
+import { Pessoa } from '../../../../../backend/src/models/Pessoa';
+
 interface Props {
 	onClose: () => void;
 	onSave: (data: Financiamento) => void;
 	isOpen: boolean;
+	bancos: Banco[];
+	pessoas: Pessoa[];
+	financiamentoData?: Financiamento | null;
 }
 
-const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
+const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, pessoas, financiamentoData }) => {
 	const [tipoParcelamento, setTipoParcelamento] = useState<'mensal' | 'anual'>('mensal');
 	const [dataVencimentoInicial, setDataVencimentoInicial] = useState('');
-	const [form, setForm] = useState<Partial<Financiamento>>({
+	const [form, setForm] = useState<Partial<Financiamento & { valor?: string; taxaJurosAnual?: string }>>({
 		parcelasList: [],
 	});
+
 	const [numParcelas, setNumParcelas] = useState(1);
+	const [isLoading, setIsLoading] = useState(false);
+	const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
 	useEffect(() => {
 		if (isOpen) {
-			const hoje = new Date();
-			setDataVencimentoInicial(hoje.toISOString().split('T')[0]);
+			if (financiamentoData) {
+				setForm({
+					...financiamentoData,
+					valor: financiamentoData.valor?.toString().replace('.', ',') || '0,00',
+					taxaJurosAnual: financiamentoData.taxaJurosAnual?.toString().replace('.', ',') || '0,00',
+				});
+				if (financiamentoData.parcelasList && financiamentoData.parcelasList.length > 0) {
+					setNumParcelas(financiamentoData.parcelasList.length);
+					setDataVencimentoInicial(financiamentoData.parcelasList[0].dt_vencimento);
+				}
+			} else {
+				const hoje = new Date();
+				setDataVencimentoInicial(hoje.toISOString().split('T')[0]);
+				setForm({
+					parcelasList: [],
+				});
+				setNumParcelas(1);
+			}
 		}
-	}, [isOpen]);
+	}, [isOpen, financiamentoData]);
+
 
 	const handleInputChange = (field: string, value: any) => {
 		setForm((prev) => ({ ...prev, [field]: value }));
@@ -33,11 +62,34 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 	const handleParcelaChange = (index: number, field: keyof ParcelaFinanciamento, value: any) => {
 		const updatedParcelas = [...(form.parcelasList || [])];
 		if (field === 'valor') {
-			updatedParcelas[index][field] = parseFloat(value);
+			updatedParcelas[index][field] = value || '0,00';
 		} else {
 			updatedParcelas[index][field] = value;
 		}
 		handleInputChange('parcelasList', updatedParcelas);
+	};
+
+	const validarFormulario = () => {
+		const newErrors: { [key: string]: string } = {};
+
+		if (!form.responsavel) newErrors.responsavel = 'Responsável é obrigatório';
+		if (!form.dataContrato) newErrors.dataContrato = 'Data do contrato é obrigatória';
+		if (!form.valor) newErrors.valor = 'Valor é obrigatório';
+		if (!form.numeroContrato) newErrors.numeroContrato = 'Número do contrato é obrigatório';
+		if (!form.parcelasList || form.parcelasList.length === 0) {
+			newErrors.parcelas = 'Gere as parcelas antes de salvar';
+		}
+
+		// Validação de banco/pessoa
+		if (!form.idBanco && !form.idPessoa) {
+			newErrors.bancoPessoa = 'Escolha um banco ou uma pessoa';
+		}
+		if (form.idBanco && form.idPessoa) {
+			newErrors.bancoPessoa = 'Escolha apenas um: Banco ou Pessoa';
+		}
+
+		setErrors(newErrors);
+		return Object.keys(newErrors).length === 0;
 	};
 
 	const gerarParcelas = () => {
@@ -55,7 +107,16 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 		}
 
 		const parcelas: ParcelaFinanciamento[] = [];
-		const valorParcela = (form.valor || 0) / numParcelas;
+		const valorTotal = parseFloat((form.valor || '0,00').replace(/\./g, '').replace(',', '.'));
+		if (valorTotal <= 0) {
+			toast.error('Valor total do financiamento inválido.');
+			return;
+		}
+
+		// Calcula o valor base da parcela e o resto da divisão
+		const valorBaseParcela = Math.floor((valorTotal * 100) / numParcelas) / 100;
+		const resto = valorTotal - (valorBaseParcela * (numParcelas - 1));
+
 		const dataInicial = new Date(dataVencimentoInicial);
 
 		for (let i = 0; i < numParcelas; i++) {
@@ -66,6 +127,9 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 			} else {
 				vencimento.setFullYear(vencimento.getFullYear() + i);
 			}
+
+			// Se for a última parcela, usa o valor com o resto
+			const valorParcela = i === numParcelas - 1 ? resto : valorBaseParcela;
 
 			parcelas.push({
 				id: 0,
@@ -84,6 +148,70 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 		handleInputChange('dataVencimentoUltimaParcela', parcelas[parcelas.length - 1].dt_vencimento);
 	};
 
+	const handleSave = async () => {
+		if (!validarFormulario()) {
+			return;
+		}
+
+		try {
+			setIsLoading(true);
+
+			const financiamentoData: Financiamento = {
+				...form,
+				valor: parseFloat((form.valor || '0,00').replace(/\./g, '').replace(',', '.')),
+				taxaJurosAnual: form.taxaJurosAnual ? parseFloat((form.taxaJurosAnual || '0,00').replace(/\./g, '').replace(',', '.')) : null,
+			} as Financiamento;
+
+			// Se estiver editando, mantém o ID original
+			if (financiamentoData.id) {
+				await salvarFinanciamento(financiamentoData);
+				
+				// Atualiza as parcelas existentes
+				if (form.parcelasList) {
+					for (const parcela of form.parcelasList) {
+						await salvarParcelaFinanciamento({
+							...parcela,
+							idFinanciamento: financiamentoData.id
+						});
+					}
+				}
+				
+				toast.success('Financiamento atualizado com sucesso!');
+			} else {
+				// Criação de novo financiamento
+				const { id } = await salvarFinanciamento(financiamentoData);
+				
+				// Cria as novas parcelas
+				const parcelasSalvas: ParcelaFinanciamento[] = [];
+				for (const parcela of form.parcelasList) {
+					try {
+						const parcelaComId = await salvarParcelaFinanciamento({
+							...parcela,
+							idFinanciamento: id
+						});
+						parcelasSalvas.push(parcelaComId);
+					} catch (error) {
+						console.error(`Erro ao salvar parcela ${parcela.numParcela}:`, error);
+						toast.error(`Erro ao salvar parcela ${parcela.numParcela}. Tente novamente.`);
+						return;
+					}
+				}
+				
+				toast.success('Financiamento criado com sucesso!');
+				financiamentoData.id = id;
+				financiamentoData.parcelasList = parcelasSalvas;
+			}
+
+			onSave(financiamentoData);
+			onClose();
+		} catch (error) {
+			console.error('Erro ao salvar financiamento:', error);
+			toast.error('Erro ao salvar financiamento. Tente novamente.');
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
 	return (
 		<Modal
 			isOpen={isOpen}
@@ -93,7 +221,9 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 			overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
 		>
 			<div className="flex justify-between items-center bg-yellow-100 px-4 py-3 rounded-t-lg border-b">
-				<h2 className="text-xl font-semibold text-gray-800">Novo Financiamento</h2>
+				<h2 className="text-xl font-semibold text-gray-800">
+					{financiamentoData ? 'Editar Financiamento' : 'Novo Financiamento'}
+				</h2>
 				<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
 					<FontAwesomeIcon icon={faTimes} size="lg" />
 				</button>
@@ -105,10 +235,12 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 							Responsável <span className="text-red-500">*</span>
 						</label>
 						<input
-							className="w-full border rounded p-2"
+							className="w-full p-2 bg-white border border-gray-300 rounded"
+							placeholder="Digite o nome do responsável"
 							value={form.responsavel || ''}
 							onChange={(e) => handleInputChange('responsavel', e.target.value)}
 						/>
+						{errors.responsavel && <p className="text-red-500 text-xs">{errors.responsavel}</p>}
 					</div>
 
 					<div>
@@ -117,10 +249,11 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 						</label>
 						<input
 							type="date"
-							className="w-full border rounded p-2"
+							className="w-full p-2 bg-white border border-gray-300 rounded"
 							value={form.dataContrato || ''}
 							onChange={(e) => handleInputChange('dataContrato', e.target.value)}
 						/>
+						{errors.dataContrato && <p className="text-red-500 text-xs">{errors.dataContrato}</p>}
 					</div>
 
 					<div>
@@ -128,12 +261,16 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 							Valor <span className="text-red-500">*</span>
 						</label>
 						<CurrencyInput
-							className="w-full border rounded p-2"
-							value={form.valor || 0}
+							className="w-full p-2 bg-white border border-gray-300 rounded"
+							value={form.valor || '0,00'}
 							decimalsLimit={2}
 							prefix="R$ "
-							onValueChange={(value) => handleInputChange('valor', parseFloat(value || '0'))}
+							decimalSeparator=","
+							groupSeparator="."
+							fixedDecimalLength={2}
+							onValueChange={(value) => handleInputChange('valor', value || '0,00')}
 						/>
+						{errors.valor && <p className="text-red-500 text-xs">{errors.valor}</p>}
 					</div>
 
 					<div>
@@ -141,31 +278,76 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 							Número do Contrato <span className="text-red-500">*</span>
 						</label>
 						<input
-							className="w-full border rounded p-2"
+							className="w-full p-2 bg-white border border-gray-300 rounded"
+							placeholder="Digite o número do contrato"
 							value={form.numeroContrato || ''}
 							onChange={(e) => handleInputChange('numeroContrato', e.target.value)}
 						/>
+						{errors.numeroContrato && <p className="text-red-500 text-xs">{errors.numeroContrato}</p>}
 					</div>
 
 					<div>
-						<label>Taxa de Juros (Anual)</label>
+						<label>Banco <span className="text-gray-500">(opcional)</span></label>
+						<select
+							className="w-full p-2 bg-white border border-gray-300 rounded"
+							value={form.idBanco?.toString() || ''}
+							onChange={(e) => {
+								handleInputChange('idBanco', e.target.value ? parseInt(e.target.value) : null);
+								handleInputChange('idPessoa', null);
+							}}
+							disabled={!!form.idPessoa}
+						>
+							<option value="">Selecione um banco</option>
+							{bancos.map((banco) => (
+								<option key={banco.id} value={banco.id}>
+									{banco.nome}
+								</option>
+							))}
+						</select>
+					</div>
+
+					<div>
+						<label>Pessoa <span className="text-gray-500">(opcional)</span></label>
+						<select
+							className="w-full p-2 bg-white border border-gray-300 rounded"
+							value={form.idPessoa?.toString() || ''}
+							onChange={(e) => {
+								handleInputChange('idPessoa', e.target.value ? parseInt(e.target.value) : null);
+								handleInputChange('idBanco', null);
+							}}
+							disabled={!!form.idBanco}
+						>
+							<option value="">Selecione uma pessoa</option>
+							{pessoas.map((pessoa) => (
+								<option key={pessoa.id} value={pessoa.id}>
+									{pessoa.nome}
+								</option>
+							))}
+						</select>
+					</div>
+
+					{errors.bancoPessoa && <p className="text-red-500 text-xs col-span-2">{errors.bancoPessoa}</p>}
+
+					<div>
+						<label>Total de Juros do Contrato</label>
 						<CurrencyInput
-							className="w-full border rounded p-2"
-							value={form.taxaJurosAnual || 0}
+							className="w-full p-2 bg-white border border-gray-300 rounded"
+							value={form.taxaJurosAnual || '0,00'}
 							decimalsLimit={2}
 							prefix="R$ "
 							decimalSeparator=","
 							groupSeparator="."
 							fixedDecimalLength={2}
-							onValueChange={(value) => handleInputChange('taxaJurosAnual', parseFloat(value || '0'))}
+							onValueChange={(value) => handleInputChange('taxaJurosAnual', value || '0,00')}
 						/>
 					</div>
 
 					<div>
 						<label>Número da Garantia</label>
 						<input
-							className="w-full border rounded p-2"
+							className="w-full p-2 bg-white border border-gray-300 rounded"
 							value={form.numeroGarantia || ''}
+							placeholder="Digite o número da garantia"
 							onChange={(e) => handleInputChange('numeroGarantia', e.target.value)}
 						/>
 					</div>
@@ -173,25 +355,46 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 					<div className="col-span-2">
 						<label>Observação</label>
 						<textarea
-							className="w-full border rounded p-2"
+							className="w-full p-2 bg-white border border-gray-300 rounded"
+							placeholder="Digite a observação"
 							value={form.observacao || ''}
 							onChange={(e) => handleInputChange('observacao', e.target.value)}
 						/>
 					</div>
+
+					{errors.parcelas && <p className="text-red-500 text-xs col-span-2">{errors.parcelas}</p>}
+
 					<div className="col-span-2 flex justify-end mt-6 gap-3">
-						<button onClick={onClose} className="text-gray-600">
+						<button 
+							onClick={onClose} 
+							className="text-gray-600 font-semibold hover:bg-gray-200 px-4 py-2 rounded"
+							disabled={isLoading}
+						>
 							Cancelar
 						</button>
-						<button onClick={() => onSave(form as Financiamento)} className="bg-primary text-white px-4 py-2 rounded">
-							Salvar
+						<button 
+							onClick={handleSave} 
+							className="bg-primary hover:bg-orange-600 font-semibold text-white px-4 py-2 rounded flex items-center"
+							disabled={isLoading}
+						>
+							{isLoading ? (
+								<>
+									<span className="animate-spin mr-2">⏳</span>
+									Salvando...
+								</>
+							) : (
+								<>
+									{financiamentoData ? 'Confirmar Edição' : 'Salvar e Criar'} <FontAwesomeIcon icon={faSave} className='ml-2' />
+								</>
+							)}
 						</button>
 					</div>
 				</div>
+
 				<div className="grid grid-cols-2 gap-4 w-full">
 					<div className="col-span-2">
 						<label className="font-semibold ">Gerar Parcelas</label>
 						<div className="border-t w-full pt-4 mt-2 flex gap-3 items-end">
-
 							<input
 								type="number"
 								min={1}
@@ -225,52 +428,50 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen }) => {
 					</div>
 
 					<div className="col-span-2 max-h-64 overflow-y-auto mt-4">
-						<div className="col-span-2 max-h-64 overflow-y-auto mt-4">
-							<table className="w-full  border">
-								<thead className="bg-gray-100">
+						<table className="w-full border">
+							<thead className="bg-gray-100">
+								<tr>
+									<th className="p-2">Parcela</th>
+									<th>Vencimento</th>
+									<th>Valor</th>
+								</tr>
+							</thead>
+							<tbody>
+								{form.parcelasList.length === 0 ? (
 									<tr>
-										<th className="p-2">Parcela</th>
-										<th>Vencimento</th>
-										<th>Valor</th>
+										<td colSpan={3} className="text-center py-3 text-gray-500 italic">
+											Nenhuma parcela encontrada
+										</td>
 									</tr>
-								</thead>
-								<tbody>
-									{form.parcelasList.length === 0 ? (
-										<tr>
-											<td colSpan={3} className="text-center py-3 text-gray-500 italic">
-												Nenhuma parcela encontrada
+								) : (
+									form.parcelasList.map((parcela, index) => (
+										<tr key={index} className="text-center border-t">
+											<td className="p-1">{parcela.numParcela}</td>
+											<td className="p-1">
+												<input
+													type="date"
+													value={parcela.dt_vencimento}
+													onChange={(e) => handleParcelaChange(index, 'dt_vencimento', e.target.value)}
+													className="border p-1 rounded"
+												/>
+											</td>
+											<td className="p-1">
+												<CurrencyInput
+													className="w-full p-1 border border-gray-300 rounded"
+													value={parcela.valor?.toString().replace('.', ',') || '0,00'}
+													decimalsLimit={2}
+													prefix="R$ "
+													decimalSeparator=","
+													groupSeparator="."
+													fixedDecimalLength={2}
+													onValueChange={(value) => handleParcelaChange(index, 'valor', value || '0.00')}
+												/>
 											</td>
 										</tr>
-									) : (
-										form.parcelasList.map((parcela, index) => (
-											<tr key={index} className="text-center border-t">
-												<td className="p-1">{parcela.numParcela}</td>
-												<td className="p-1">
-													<input
-														type="date"
-														value={parcela.dt_vencimento}
-														onChange={(e) => handleParcelaChange(index, 'dt_vencimento', e.target.value)}
-														className="border p-1 rounded "
-													/>
-												</td>
-												<td className="p-1">
-													<CurrencyInput
-														className="w-full p-1 border border-gray-300 rounded"
-														value={parcela.valor}
-														decimalsLimit={2}
-														prefix="R$ "
-														decimalSeparator=","
-														groupSeparator="."
-														fixedDecimalLength={2}
-														onValueChange={(value) => handleParcelaChange(index, 'valor', value || '0.00')}
-													/>
-												</td>
-											</tr>
-										))
-									)}
-								</tbody>
-							</table>
-						</div>
+									))
+								)}
+							</tbody>
+						</table>
 					</div>
 				</div>
 			</div>

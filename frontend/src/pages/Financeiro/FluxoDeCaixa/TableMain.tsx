@@ -56,18 +56,26 @@ const MovimentoBancarioTable: React.FC = () => {
 	useEffect(() => {
 		async function buscarContas() {
 			const contas = await listarContas();
-			console.log('Contas encontradas:', contas);
 			setContasCorrentes(contas);
-			setContasSelecionadas(contas.map((c: any) => c.id));
+			if (contasSelecionadas.length === 0) {
+				setContasSelecionadas(contas.map((c: any) => c.id.toString()));
+			}
 		}
 
 		buscarContas();
 	}, []);
 
-	const gerarFluxo = async () => {
+	const gerarFluxo = async (contasParaGerar?: string[]) => {
 		try {
+			const contas = contasParaGerar || contasSelecionadas;
+			if (contas.length === 0) {
+				window.alert('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
+				return;
+			}
+
 			setIsLoading(false);
-			const dados = await buscarFluxoCaixa(anoSelecionado, contasSelecionadas);
+			console.log('Gerando fluxo com contas:', contas);
+			const dados = await buscarFluxoCaixa(anoSelecionado, contas);
 			setDadosFluxo(dados);
 			console.log('Dados do fluxo de caixa:', dados);
 
@@ -504,7 +512,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				onAplicarFiltro={(ano, contas) => {
 					setAnoSelecionado(ano);
 					setContasSelecionadas(contas);
-					gerarFluxo().then(() => {
+					gerarFluxo(contas).then(() => {
 						expandirTodos();
 					});
 				}}
