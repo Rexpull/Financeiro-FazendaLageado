@@ -520,7 +520,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 					<div className="grid grid-cols-2 gap-4 mb-4" style={{position: 'relative'}}>
 						<div className="col-span-2">
 							<label className="block text-sm font-medium text-gray-700 mb-1">
-								Associar Financiamento {movimento.idFinanciamento ? ' (Desvincular)' : ''} <span className="text-red-500">*</span>
+								Associar Financiamento <span className="text-red-500">*</span>
 							</label>
 							<div className="flex w-full">
 								<input
