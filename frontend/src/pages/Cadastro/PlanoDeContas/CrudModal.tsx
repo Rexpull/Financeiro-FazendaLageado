@@ -40,13 +40,40 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
     }
   }, [planoData.nivel]);
 
+  // 🔹 Limpa o referente quando o tipo for alterado (apenas para nível 3)
+  useEffect(() => {
+    if (planoData.nivel === 3) {
+      handleInputChange({ target: { name: "idReferente", value: null } } as any);
+      setSearchReferente("");
+    }
+  }, [planoData.tipo]);
+
   // 🔹 Filtragem de planos de conta para pesquisa no campo "Referente"
   const filteredPlanos = planos
-    .filter((plano) => plano.nivel == planoData.nivel - 1) // 🔹 Filtra pelo nível anterior
-    .filter((plano) => 
-      `${plano.hierarquia} | ${plano.descricao}`.toLowerCase().includes(searchReferente.toLowerCase())
-    )
+    .filter((plano) => {
+      const nivelAtual = Number(planoData.nivel);
+
+      // 🔹 Filtra pelo nível anterior
+      if (plano.nivel !== nivelAtual - 1) return false;
+  
+      // 🔹 Se for nível 3, filtra também pelo tipo
+      if (nivelAtual === 3 && plano.tipo !== planoData.tipo) return false;
+      
+      // 🔹 Filtra pela busca
+      return `${plano.hierarquia} | ${plano.descricao}`.toLowerCase().includes(searchReferente.toLowerCase());
+    })
     .slice(0, 10);
+
+  console.log('🔍 Debug - Filtragem de Planos:', {
+    nivelAtual: planoData.nivel,
+    tipoAtual: planoData.tipo,
+    planosFiltrados: filteredPlanos.map(p => ({
+      id: p.id,
+      nivel: p.nivel,
+      tipo: p.tipo,
+      descricao: p.descricao
+    }))
+  });
 
   // 🔹 Seleção do plano de conta referente
   const handleSelectReferente = (plano: PlanoConta) => {

@@ -102,7 +102,7 @@ export class MovimentoBancarioRepository {
 		const { results } = await this.db
 			.prepare(
 				`
-			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_Documento, descricao, transf_origem, transf_destino, identificador_ofx, criado_em, atualizado_em, idBanco, idPessoa, parcelado
+			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_Documento, descricao, transf_origem, transf_destino, identificador_ofx, criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento
 			FROM MovimentoBancario
 		`
 			)
@@ -130,6 +130,7 @@ export class MovimentoBancarioRepository {
 					idBanco: result.idBanco as number,
 					idPessoa: result.idPessoa as number,
 					parcelado: result.parcelado === 1,
+					idFinanciamento: result.idFinanciamento as number | undefined,
 					resultadoList: resultadoList,
 				};
 			})
@@ -166,7 +167,8 @@ export class MovimentoBancarioRepository {
 					atualizado_em,
 					idUsuario,
 					tipoMovimento,
-					modalidadeMovimento
+					modalidadeMovimento,
+					idFinanciamento
 				FROM MovimentoBancario
 				WHERE dtMovimento BETWEEN ? AND ?
 				AND idContaCorrente IN (${contas.map(() => '?').join(',')})
@@ -200,6 +202,7 @@ export class MovimentoBancarioRepository {
 					idUsuario: result.idUsuario as number,
 					tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
 					modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
+					idFinanciamento: result.idFinanciamento as number | undefined,
 					resultadoList,
 				};
 			})
@@ -228,6 +231,7 @@ export class MovimentoBancarioRepository {
 			idBanco,
 			idPessoa,
 			parcelado,
+			idFinanciamento,
 		} = movimento;
 
 		const { meta } = await this.db
@@ -237,9 +241,9 @@ export class MovimentoBancarioRepository {
 				dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
 				ideagro, numero_documento, descricao, transf_origem, transf_destino,
 				identificador_ofx, idUsuario, tipoMovimento, modalidadeMovimento,
-				criado_em, atualizado_em, idBanco, idPessoa, parcelado
+				criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`
 			)
 			.bind(
@@ -262,7 +266,8 @@ export class MovimentoBancarioRepository {
 				new Date().toISOString(),
 				idBanco,
 				idPessoa,
-				parcelado ? 1 : 0
+				parcelado ? 1 : 0,
+				idFinanciamento
 			)
 			.run();
 
@@ -313,13 +318,14 @@ export class MovimentoBancarioRepository {
 			idBanco,
 			idPessoa,
 			parcelado,
+			idFinanciamento,
 		} = movimento;
 
 		await this.db
 			.prepare(
 				`
 			UPDATE MovimentoBancario
-			SET dtMovimento = ?, historico = ?, idPlanoContas = ?, idContaCorrente = ?, valor = ?, saldo = ?, ideagro = ?, numero_documento = ?, descricao = ?, transf_origem = ?, transf_destino = ?, identificador_ofx = ?, atualizado_em = datetime('now'), tipoMovimento = ?, modalidadeMovimento = ?,  idBanco = ?, idPessoa = ?, parcelado = ?
+			SET dtMovimento = ?, historico = ?, idPlanoContas = ?, idContaCorrente = ?, valor = ?, saldo = ?, ideagro = ?, numero_documento = ?, descricao = ?, transf_origem = ?, transf_destino = ?, identificador_ofx = ?, atualizado_em = datetime('now'), tipoMovimento = ?, modalidadeMovimento = ?,  idBanco = ?, idPessoa = ?, parcelado = ?, idFinanciamento = ?
 			WHERE id = ?;
 		`
 			)
@@ -341,6 +347,7 @@ export class MovimentoBancarioRepository {
 				idBanco,
 				idPessoa,
 				parcelado ? 1 : 0,
+				idFinanciamento,
 				id
 			)
 			.run();
@@ -522,7 +529,7 @@ export class MovimentoBancarioRepository {
 				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
 					numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
 					criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
-					idBanco, idPessoa, parcelado
+					idBanco, idPessoa, parcelado, idFinanciamento
 				FROM MovimentoBancario
 				WHERE identificador_ofx = ?
 			`
@@ -557,6 +564,7 @@ export class MovimentoBancarioRepository {
 			idBanco: result.idBanco,
 			idPessoa: result.idPessoa,
 			parcelado: result.parcelado === 1,
+			idFinanciamento: result.idFinanciamento as number | undefined,
 			resultadoList: resultadoList,
 		} as MovimentoBancario;
 	}
@@ -577,7 +585,7 @@ export class MovimentoBancarioRepository {
 				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
 					   numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
 					   criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
-					   idBanco, idPessoa, parcelado
+					   idBanco, idPessoa, parcelado, idFinanciamento
 				FROM MovimentoBancario
 				WHERE id = ?
 			`
@@ -608,12 +616,12 @@ export class MovimentoBancarioRepository {
 			criadoEm: result.criado_em as string,
 			atualizadoEm: result.atualizado_em as string,
 			idUsuario: result.idUsuario as number,
-			tipoMovimento: result.tipoMovimento as 'C' | 'D',
-			modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia',
+			tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+			modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
 			idBanco: result.idBanco as number,
 			idPessoa: result.idPessoa as number,
 			parcelado: result.parcelado === 1,
-
+			idFinanciamento: result.idFinanciamento as number | undefined,
 			resultadoList: resultadoList,
 		};
 	}

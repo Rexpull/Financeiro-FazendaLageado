@@ -22,6 +22,6 @@ export interface MovimentoBancario {
     idUsuario?: number;
     tipoMovimento?: "C" | "D";
 	modalidadeMovimento?: "padrao" | "financiamento" | "transferencia";
-
+    idFinanciamento?: number;
     resultadoList?: Resultado[]; 
 }

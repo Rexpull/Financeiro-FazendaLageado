@@ -217,12 +217,13 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 			isOpen={isOpen}
 			onRequestClose={onClose}
 			shouldCloseOnOverlayClick={false}
-			className="bg-white rounded-lg shadow-lg w-full max-w-[1300px] mx-auto"
-			overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+			className="bg-white rounded-lg shadow-lg w-full max-w-[1300px] mx-auto z-150"
+			overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-150"
+			contentLabel="Modal Financiamento"
 		>
 			<div className="flex justify-between items-center bg-yellow-100 px-4 py-3 rounded-t-lg border-b">
 				<h2 className="text-xl font-semibold text-gray-800">
-					{financiamentoData ? 'Editar Financiamento' : 'Novo Financiamento'}
+					{financiamentoData?.id ? 'Editar Financiamento' : 'Novo Financiamento'}
 				</h2>
 				<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
 					<FontAwesomeIcon icon={faTimes} size="lg" />
@@ -384,7 +385,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 								</>
 							) : (
 								<>
-									{financiamentoData ? 'Confirmar Edição' : 'Salvar e Criar'} <FontAwesomeIcon icon={faSave} className='ml-2' />
+									{financiamentoData?.id ? 'Confirmar Edição' : 'Salvar e Criar'} <FontAwesomeIcon icon={faSave} className='ml-2' />
 								</>
 							)}
 						</button>
@@ -437,14 +438,14 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 								</tr>
 							</thead>
 							<tbody>
-								{form.parcelasList.length === 0 ? (
+								{form.parcelasList?.length === 0 ? (
 									<tr>
 										<td colSpan={3} className="text-center py-3 text-gray-500 italic">
 											Nenhuma parcela encontrada
 										</td>
 									</tr>
 								) : (
-									form.parcelasList.map((parcela, index) => (
+									form.parcelasList?.map((parcela, index) => (
 										<tr key={index} className="text-center border-t">
 											<td className="p-1">{parcela.numParcela}</td>
 											<td className="p-1">

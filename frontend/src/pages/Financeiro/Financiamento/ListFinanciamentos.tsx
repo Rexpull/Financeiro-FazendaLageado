@@ -501,7 +501,7 @@ const ListFinanciamentos: React.FC = () => {
 							className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded flex items-center gap-2"
 						>
 							<FontAwesomeIcon icon={faCheck} />
-							Ver {financiamentosCompletos.length} Contrato{financiamentosCompletos.length > 1 ? 's' : ''} Completado{financiamentosCompletos.length > 1 ? 's' : ''}
+							Ver {financiamentosCompletos.length} Contrato{financiamentosCompletos.length > 1 ? 's' : ''} Liquidado{financiamentosCompletos.length > 1 ? 's' : ''}
 						</button>
 					</div>
 				)}
@@ -511,7 +511,7 @@ const ListFinanciamentos: React.FC = () => {
 						<div className="flex items-center gap-4 mb-4">
 							<div className="h-px bg-gray-300 flex-1"></div>
 							<h2 className="text-lg font-semibold text-gray-700 whitespace-nowrap">
-								Contratos Completados
+								Contratos Liquidados
 							</h2>
 							<div className="h-px bg-gray-300 flex-1"></div>
 						</div>
@@ -902,7 +902,7 @@ const ListFinanciamentos: React.FC = () => {
 									className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded flex items-center gap-2"
 								>
 									<FontAwesomeIcon icon={faCheck} />
-									Ver {financiamentosCompletos.length} Contrato{financiamentosCompletos.length > 1 ? 's' : ''} Completado{financiamentosCompletos.length > 1 ? 's' : ''}
+									Ver {financiamentosCompletos.length} Contrato{financiamentosCompletos.length > 1 ? 's' : ''} Liquidado{financiamentosCompletos.length > 1 ? 's' : ''}
 								</button>
 							</div>
 						)}
@@ -912,7 +912,7 @@ const ListFinanciamentos: React.FC = () => {
 								<div className="flex items-center gap-4 mb-4">
 									<div className="h-px bg-gray-300 flex-1"></div>
 									<h2 className="text-lg font-semibold text-gray-700 whitespace-nowrap">
-										Contratos Completados
+										Contratos Liquidados
 									</h2>
 									<div className="h-px bg-gray-300 flex-1"></div>
 								</div>
@@ -1020,7 +1020,7 @@ const ListFinanciamentos: React.FC = () => {
 													setSelectedFinanciamento(fin);
 													setModalParcelasOpen(true);
 												}}
-												className="mt-4 py-2 border-t w-full text-orange-600 hover:underline text-sm font-semibold"
+												className="mt-4 py-2 border-t w-full text-green-600 border-green-300 hover:underline text-sm font-semibold"
 											>
 												Ver parcelas
 											</button>

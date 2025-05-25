@@ -54,7 +54,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
       isOpen={isOpen}
       onRequestClose={isProcessing ? undefined : onClose} // Desativa fechar enquanto processa
       className="bg-white p-5 rounded shadow-lg max-w-md mx-auto mt-20 text-center"
-      overlayClassName="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50"
+      overlayClassName="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-200"
     >
       {/* 🔹 Exibe o ícone correspondente ao tipo */}
       {ICONS[type]}

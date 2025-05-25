@@ -191,6 +191,9 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 		}
 
 		const valorTotalParcelas = parcelas.reduce((total, p) => total + p.valor, 0);
+
+		console.log('valorTotalParcelas', valorTotalParcelas);
+		console.log('financiamento.valor', financiamento.valor);
 		if (Math.abs(valorTotalParcelas - financiamento.valor) > 0.01) {
 			setShowValueMismatchModal(true);
 			return false;
@@ -219,6 +222,10 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 
 			if (parcelasInvalidas.length > 0) {
 				toast.error('Existem parcelas com valores inválidos ou datas de vencimento não preenchidas');
+				return;
+			}
+
+			if(!validarParcelas()){
 				return;
 			}
 
@@ -351,7 +358,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 				onRequestClose={handleClose}
 				shouldCloseOnOverlayClick={false}
 				className="bg-white rounded-lg shadow-lg w-full max-w-[1000px] mx-auto"
-				overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+				overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-150" 
 			>
 				<div className="flex justify-between items-center bg-yellow-100 px-4 py-3 rounded-t-lg border-b">
 					<div className="flex items-center gap-3">

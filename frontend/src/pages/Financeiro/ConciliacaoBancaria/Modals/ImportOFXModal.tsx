@@ -97,9 +97,21 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 			const movimentosAtualizados = await salvarMovimentosOFX(movimentosOFX, idContaCorrente, setCurrentIndex, (novos, existentes) => {
 				setNovosMovimentos(novos);
 				setExistentesMovimentos(existentes);
-			  });
+			});
 			setMovimentosOFX(movimentosAtualizados);
 			setModalConciliacaoIsOpen(true);
+
+			const novoHistorico = {
+				nomeArquivo: selectedFile?.name || 'Desconhecido',
+				data: new Date().toISOString(),
+				idMovimentos: movimentosAtualizados.map((m) => m.id),
+				movimentos: movimentosAtualizados,
+				totalizadores,
+			};
+
+			let historico = JSON.parse(localStorage.getItem('historicoOFX') || '[]');
+			historico = [novoHistorico, ...historico].slice(0, 5);
+			localStorage.setItem('historicoOFX', JSON.stringify(historico));
 		} catch (error) {
 			toast.error('Erro ao salvar movimentos!');
 			console.error('Erro ao salvar movimentos:', error);
@@ -151,9 +163,13 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 						</div>
 
 						<div className="flex justify-center gap-3 items-center text-center text-sm mt-2 text-gray-600">
-							<div>Movimentos novos importados: <strong>{novosMovimentos}</strong></div>
-							| 
-							<div>Movimentos já existentes: <strong>{existentesMovimentos}</strong></div>
+							<div>
+								Movimentos novos importados: <strong>{novosMovimentos}</strong>
+							</div>
+							|
+							<div>
+								Movimentos já existentes: <strong>{existentesMovimentos}</strong>
+							</div>
 						</div>
 					</div>
 				)}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTimes, faSave, faCheck, faSearch } from "@fortawesome/free-solid-svg-icons";
+import { faTimes, faSave, faCheck, faSearch, faPlus } from "@fortawesome/free-solid-svg-icons";
 import { MovimentoBancario } from "../../../../../../backend/src/models/MovimentoBancario";
 import CurrencyInput from "react-currency-input-field";
 import { PlanoConta } from "../../../../../../backend/src/models/PlanoConta";
@@ -9,6 +9,9 @@ import { listarPlanoContas } from "../../../../services/planoContasService";
 import { listarBancos } from "../../../../services/bancoService";
 import { listarPessoas } from "../../../../services/pessoaService";
 import { listarParametros } from "../../../../services/parametroService";
+import { listarFinanciamentos } from "../../../../services/financiamentoService";
+import { Financiamento } from "../../../../../../backend/src/models/Financiamento";
+import { toast } from "react-toastify";
 
 Modal.setAppElement("#root"); 
 
@@ -59,6 +62,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     idBanco: number | null;
     idPessoa: number | null;
     parcelado: boolean;
+    idFinanciamento: number | null;
   }>({
     idPlanoContas: "",
     valor: "0,00",
@@ -76,6 +80,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     idBanco: null,
     idPessoa: null,
     parcelado: false,
+    idFinanciamento: null,
   });
   const [parcelado, setParcelado] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
@@ -85,6 +90,10 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   const [searchPlano, setSearchPlano] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const planoRef = useRef<HTMLDivElement>(null);
+
+  const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
+  const [buscaFinanciamento, setBuscaFinanciamento] = useState('');
+  const [financiamentoSelecionado, setFinanciamentoSelecionado] = useState<Financiamento | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -125,6 +134,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     }
   }, [isOpen, modalidadeMovimento, tipoMovimento, parametros, planos]);
 
+  useEffect(() => {
+    if (isOpen) {
+      carregarFinanciamentos();
+    }
+  }, [isOpen]);
 
 	const gerarParcelas = () => {
     if (!parcelado || parseFloat(formData.valor.replace(",", ".")) <= 0) {
@@ -139,12 +153,6 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       valor: valorParcela,
     }));
 
-    setParcelas(novasParcelas);
-  };
-
-	const handleParcelaChange = (index: number, field: string, value: string) => {
-    const novasParcelas = [...parcelas];
-    novasParcelas[index] = { ...novasParcelas[index], [field]: value };
     setParcelas(novasParcelas);
   };
 
@@ -180,8 +188,6 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     }
   };
   
-  
-
   useEffect(() => {
 		if(modalidadeMovimento == "padrao"){
 			setFormData((prev) => ({ ...prev, idPlanoContas: "", descricao: "" }));
@@ -198,13 +204,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     if (!formData.historico.trim()) newErrors.historico = "A descrição é obrigatória!";
 
     if (modalidadeMovimento === "financiamento") {
-      if (!formData.numeroDocumento.trim()) newErrors.numeroDocumento = "Informe o número do documento!";
-      if (!formData.bancoSelecionado && !formData.pessoaSelecionada) {
-        newErrors.bancoPessoa = "Escolha um banco ou uma pessoa!";
-      }
-      if (formData.bancoSelecionado && formData.pessoaSelecionada) {
-        newErrors.bancoPessoa = "Escolha apenas um: Banco ou Pessoa!";
-      }
+      if (!formData.idFinanciamento) newErrors.idFinanciamento = "Selecione um financiamento!";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -219,7 +219,8 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
         idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
         parcelado,
-        parcelas
+        parcelas,
+        idFinanciamento: formData.idFinanciamento
       };
       handleSave(dataToSend);
     }
@@ -259,13 +260,15 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-	const alterarModalidadeMovimento = (modalidadeMovimento: string | ((prevState: "padrao" | "financiamento") => "padrao" | "financiamento")) => {
+	const alterarModalidadeMovimento = (modalidadeMovimento: string) => {
     if (modalidadeMovimento === "padrao" || modalidadeMovimento === "financiamento") {
       setModalidadeMovimento(modalidadeMovimento);
     }
 		if(modalidadeMovimento == "padrao"){
 			setParcelado(false);
 		}
+    setFinanciamentoSelecionado(null);
+    setBuscaFinanciamento('');
 	}
 
   const handleChangeTipoMovimento = (tipoMovimento: string) => {
@@ -273,6 +276,22 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     setFormData((prev) => ({ ...prev, idPlanoContas: "", descricao: "" }));
     setSearchPlano("");
   }
+
+  const carregarFinanciamentos = async () => {
+    try {
+      const financiamentosList = await listarFinanciamentos();
+      setFinanciamentos(financiamentosList);
+    } catch (error) {
+      console.error('Erro ao carregar financiamentos:', error);
+    }
+  };
+
+  const financiamentosFiltrados = financiamentos.filter(f => 
+    f.responsavel.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+    f.numeroContrato.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+    (bancos.find(b => b.id === f.idBanco)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+    (pessoas.find(p => p.id === f.idPessoa)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase())
+  );
 
   return (
     <Modal
@@ -344,84 +363,55 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         </div>
 
         {modalidadeMovimento === "financiamento" && (
-          <>
-            {/* Número do Documento */}
-            <div className="pt-1 grid grid-cols-2 gap-4 ">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Número do Documento <span className="text-red-500">*</span>
-                </label>
+          <div className="grid grid-cols-2 gap-4 border-b border-gray-300 pb-4" style={{position: 'relative'}}>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Associar Financiamento <span className="text-red-500">*</span>
+              </label>
+              <div className="flex w-full">
                 <input
                   type="text"
-                  name="numeroDocumento"
-                  className={`w-full p-2 border ${
-                    errors.numeroDocumento ? "border-red-500" : "border-gray-300"
-                  } rounded`}
-                  placeholder="Informe o número do documento"
-                  value={formData.numeroDocumento}
-                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded-l"
+                  placeholder="Buscar por responsável, credor ou contrato"
+                  value={financiamentoSelecionado ? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${bancos.find(b=>b.id===financiamentoSelecionado.idBanco)?.nome || pessoas.find(p=>p.id===financiamentoSelecionado.idPessoa)?.nome})` : buscaFinanciamento}
+                  onChange={e => setBuscaFinanciamento(e.target.value)}
+                  disabled={!!financiamentoSelecionado}
                 />
-                {errors.numeroDocumento && <p className="text-red-500 text-xs">{errors.numeroDocumento}</p>}
-              </div>
-              {/* Switch Parcelado */}
-              <div className="flex items-start flex-col gap-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Este movimento é parcelado?
-                </label>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={parcelado} onChange={() => setParcelado(!parcelado)} />
-                  <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
-                </label>
-              </div>
-            </div>
-            <div className="pt-1 grid grid-cols-2 gap-4 pb-5 border-b">
-
-              {/* Banco */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Banco <span className="text-gray-500">(opcional)</span>
-                </label>
-                <select
-                  name="bancoSelecionado"
-                  className="w-full p-2 border border-gray-300 rounded"
-                  value={formData.bancoSelecionado ?? ""}
-                  onChange={handleInputChange}
-                  disabled={!!formData.pessoaSelecionada}
+                <button
+                  type="button"
+                  style={{height: 'auto'}}
+                  className={`text-white text-lg px-4 ${financiamentoSelecionado ? 'bg-blue-500 hover:bg-blue-600' : 'bg-orange-500 hover:bg-orange-600'} rounded-r `} 
+                  onClick={() => {
+                    if (financiamentoSelecionado) {
+                      setFinanciamentoSelecionado(null);
+                      setBuscaFinanciamento('');
+                      setFormData(prev => ({ ...prev, idFinanciamento: null }));
+                    }
+                  }}
+                  title={financiamentoSelecionado ? "Desvincular Financiamento" : "Novo Financiamento"}
                 >
-                  <option value="">Selecione um banco</option>
-                  {bancos.map((banco) => (
-                    <option key={banco.id} value={banco.id}>
-                      {banco.nome}
-                    </option>
-                  ))}
-                </select>
+                  <FontAwesomeIcon icon={financiamentoSelecionado ? faTimes : faPlus} />
+                </button>
               </div>
-
-              {/* Pessoa */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Pessoa <span className="text-gray-500">(opcional)</span>
-                </label>
-                <select
-                  name="pessoaSelecionada"
-                  className="w-full p-2 border border-gray-300 rounded"
-                  value={formData.pessoaSelecionada ?? ""}
-                  onChange={handleInputChange}
-                  disabled={!!formData.bancoSelecionado}
-                >
-                  <option value="">Selecione uma pessoa</option>
-                  {pessoas.map((pessoa) => (
-                    <option key={pessoa.id} value={pessoa.id}>
-                      {pessoa.nome}
-                    </option>
+              {errors.idFinanciamento && <p className="text-red-500 text-xs">{errors.idFinanciamento}</p>}
+              {buscaFinanciamento && !financiamentoSelecionado && (
+                <ul className="absolute z-10 border rounded mt-1 bg-white max-h-40 overflow-y-auto w-full shadow-lg">
+                  {financiamentosFiltrados.map(f => (
+                    <li
+                      key={f.id}
+                      className={`p-2 cursor-pointer hover:bg-orange-100 ${financiamentoSelecionado?.id === f.id ? 'bg-orange-200' : ''}`}
+                      onClick={() => {
+                        setFinanciamentoSelecionado(f);
+                        setFormData(prev => ({ ...prev, idFinanciamento: f.id }));
+                      }}
+                    >
+                      <strong>{f.numeroContrato}</strong> - {f.responsavel} - {bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome}
+                    </li>
                   ))}
-                </select>
-              </div>
-
-              {/* Validação de Banco/Pessoa */}
-              {errors.bancoPessoa && <p className="text-red-500 text-xs col-span-2">{errors.bancoPessoa}</p>}
+                </ul>
+              )}
             </div>
-          </>
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-4">
@@ -519,63 +509,9 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
           {errors.historico && <p className="text-red-500 text-xs">{errors.historico}</p>}
 
         </div>
-      </div>
 
-      {/* 🔹 Parcelamento */}
-      {parcelado && modalidadeMovimento == "financiamento" && (
-        <div className={`p-4 border-l mt-3 min-w-[400px] max-h-[500px] overflow-y-auto ${parcelado ? "w-1/3" : "w-full"}`}>
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">Parcelamento</h3>
-          <label>Número de Parcelas</label>
-          <input
-            type="number"
-            min="1"
-            value={numParcelas}
-            onChange={(e) => setNumParcelas(parseInt(e.target.value))}
-            className="w-full p-2 border border-gray-300 rounded mb-3"
-          />
-					{parcelado && parseFloat(formData.valor.replace(",", ".")) <= 0 && (
-            <p className="text-red-500 text-sm mt-1 text-center">Informe o valor do movimento para gerar a parcela!</p>
-          )}
-          {/* Lista de Parcelas */}
-					{parcelado && parcelas.length > 0 && (
-						<div className=" overflow-y-auto border border-gray-200 rounded-md">
-							<table className="w-full text-left border-collapse">
-								<thead>
-									<tr className="bg-gray-200">
-										<th className="p-2">Parcela</th>
-										<th className="p-2">Vencimento</th>
-										<th className="p-2">Valor R$</th>
-									</tr>
-								</thead>
-								<tbody>
-									{parcelas.map((parcela, index) => (
-										<tr key={parcela.numParcela} className="border-b">
-											<td className="p-2">{parcela.numParcela}/{numParcelas}</td>
-											<td className="p-2">
-												<input
-													type="date"
-													value={parcela.dt_vencimento}
-													onChange={(e) => handleParcelaChange(index, "dt_vencimento", e.target.value)}
-													className="w-full p-1 border border-gray-300 rounded m-w-[125px]"
-												/>
-											</td>
-											<td className="p-2">
-												<CurrencyInput
-													className="w-full p-1 border border-gray-300 rounded"
-													value={parcela.valor}
-													decimalsLimit={2}
-													prefix="R$ "
-													onValueChange={(value) => handleParcelaChange(index, "valor", value || "0.00")}
-												/>
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					)}
-        </div>
-      )}
+        
+      </div>
     </div>
     {/* 🔹 Botão de Confirmar */}
     <div className="p-3 flex justify-end border-t mt-3">

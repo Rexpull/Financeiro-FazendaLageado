@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTimes, faSave, faCheck, faInfoCircle, faUsers, faMoneyBillTransfer, faSearch, faPlus } from '@fortawesome/free-solid-svg-icons';
+import { faTimes, faSave, faCheck, faInfoCircle, faUsers, faMoneyBillTransfer, faSearch, faPlus, faEdit, faMoneyBillWave } from '@fortawesome/free-solid-svg-icons';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { listarPlanoContas } from '../../../../services/planoContasService';
 import { listarBancos } from '../../../../services/bancoService';
@@ -13,7 +13,16 @@ import { Banco } from '../../../../../../backend/src/models/Banco';
 import { Pessoa } from '../../../../../../backend/src/models/Pessoa';
 import ModalRateioPlano from './ModalRateioPlano';
 import { Resultado } from '../../../../../../backend/src/models/Resultado';
-
+import ModalFinanciamento from '../../Financiamento/ModalFinanciamento';
+import { listarFinanciamentos, salvarFinanciamento } from '../../../../services/financiamentoService';
+import { Financiamento } from '../../../../../../backend/src/models/Financiamento';
+import ModalParcelas from '../../Financiamento/ModalParcelas';
+import DialogModal from '../../../../components/DialogModal';
+import { toast } from 'react-toastify';
+import { ParcelaFinanciamento } from '../../../../../../backend/src/models/ParcelaFinanciamento';
+import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinanciamentoService';
+import ListFinanciamentos from '../../Financiamento/ListFinanciamentos';
+  
 Modal.setAppElement('#root');
 
 const cache: {
@@ -32,8 +41,19 @@ interface ConciliaPlanoContasModalProps {
 	isOpen: boolean;
 	onClose: () => void;
 	movimento: MovimentoBancario;
-	planos: { id: number; descricao: string; tipo: string }[];
+	planos: { id: number; descricao: string; tipo: string; hierarquia: string; nivel: number }[];
 	handleConcilia: (data: any) => void;
+}
+
+interface FormData {
+	idPlanoContas: number | null;
+	pessoaSelecionada: string;
+	bancoSelecionado: string;
+	idPessoa: number | null;
+	idBanco: number | null;
+	parcelado: boolean;
+	numeroDocumento: string;
+	idFinanciamento: number | null;
 }
 
 const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isOpen, onClose, movimento, planos, handleConcilia }) => {
@@ -56,8 +76,18 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 	const [rateioModalAberto, setRateioModalAberto] = useState(false);
 	const [rateios, setRateios] = useState<{ idPlano: number; descricao: string; valor: number }[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
+	const [modalFinanciamentoOpen, setModalFinanciamentoOpen] = useState(false);
+	const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
+	const [buscaFinanciamento, setBuscaFinanciamento] = useState('');
+	const [financiamentoSelecionado, setFinanciamentoSelecionado] = useState<Financiamento | null>(null);
+	const [novoFinanciamentoData, setNovoFinanciamentoData] = useState<any>(null);
+	const [transferenciaPlanoMode, setTransferenciaPlanoMode] = useState('transferencia');
+	const [modalParcelasOpen, setModalParcelasOpen] = useState(false);
+	const [liquidationModalOpen, setLiquidationModalOpen] = useState(false);
+	const [selectedParcela, setSelectedParcela] = useState<ParcelaFinanciamento | null>(null);
+	const [liquidationDate, setLiquidationDate] = useState('');
 
-	const [formData, setFormData] = useState<any>({
+	const [formData, setFormData] = useState<FormData>({
 		idPlanoContas: null,
 		pessoaSelecionada: '',
 		bancoSelecionado: '',
@@ -65,6 +95,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		idBanco: null,
 		parcelado: false,
 		numeroDocumento: '',
+		idFinanciamento: null
 	});
 
 	useEffect(() => {
@@ -77,16 +108,45 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			setParcelado(false);
 			setParcelas([]);
 			setSearchPlano('');
-			setFormData({
-				idPlanoContas: movimento.idPlanoContas || null,
-				idPessoa: movimento.idPessoa || null,
-				idBanco: movimento.idBanco || null,
-				parcelado: movimento.parcelado || false,
-				numeroDocumento: movimento.numeroDocumento || '',
-			});
-			console.log('formData ', formData);
-			preencherCamposExistentes();
-			validarFormulario();
+			setFinanciamentoSelecionado(null);
+			setBuscaFinanciamento('');
+			
+			const inicializarModal = async () => {
+				try {
+					const financiamentosList = await listarFinanciamentos();
+					setFinanciamentos(financiamentosList);
+					console.log('financiamentosList ', financiamentosList);
+					
+					setFormData({
+						idPlanoContas: movimento.idPlanoContas || null,
+						pessoaSelecionada: '',
+						bancoSelecionado: '',
+						idPessoa: movimento.idPessoa || null,
+						idBanco: movimento.idBanco || null,
+						parcelado: movimento.parcelado || false,
+						numeroDocumento: movimento.numeroDocumento || '',
+						idFinanciamento: movimento.idFinanciamento || null
+					});
+					
+					console.log('movimento ', movimento);
+					if (movimento.idFinanciamento) {
+						const financiamento = financiamentosList.find(f => f.id === movimento.idFinanciamento);
+						console.log('financiamento encontrado ', financiamento);
+						
+						if (financiamento) {
+							setFinanciamentoSelecionado(financiamento);
+						}
+					}
+					
+					preencherCamposExistentes();
+					validarFormulario();
+				} catch (error) {
+					console.error('Erro ao inicializar modal:', error);
+					toast.error('Erro ao carregar dados do modal');
+				}
+			};
+			
+			inicializarModal();
 		}
 	}, [isOpen]);
 
@@ -118,10 +178,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 
 		if (movimento.modalidadeMovimento === 'padrao') {
 			setFormData({
-				idPlanoContas: movimento.idPlanoContas?.toString() || null,
+				idPlanoContas: movimento.idPlanoContas || null,
 				pessoaSelecionada: movimento.idPessoa ? movimento.idPessoa.toString() : '',
 				bancoSelecionado: movimento.idBanco ? movimento.idBanco.toString() : '',
-				numeroDocumento: '',
+				idPessoa: movimento.idPessoa || null,
+				idBanco: movimento.idBanco || null,
+				parcelado: movimento.parcelado || false,
+				numeroDocumento: movimento.numeroDocumento || '',
+				idFinanciamento: movimento.idFinanciamento || null
 			});
 			setIdPlanoContas(movimento.idPlanoContas || null);
 			const plano = planos.find((p) => p.id === movimento.idPlanoContas);
@@ -129,17 +193,18 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		} else if (movimento.modalidadeMovimento === 'financiamento') {
 			setIdPlanoContas(movimento.idPlanoContas || null);
 			setFormData({
-				idPlanoContas: movimento.idPlanoContas?.toString() || null,
+				idPlanoContas: movimento.idPlanoContas || null,
 				pessoaSelecionada: movimento.idPessoa ? movimento.idPessoa.toString() : '',
 				bancoSelecionado: movimento.idBanco ? movimento.idBanco.toString() : '',
+				idPessoa: movimento.idPessoa || null,
+				idBanco: movimento.idBanco || null,
+				parcelado: movimento.parcelado || false,
 				numeroDocumento: movimento.numeroDocumento || '',
+				idFinanciamento: movimento.idFinanciamento || null
 			});
-
-			console.log('movimento ', movimento);
 
 			setNumeroDocumento(movimento.numeroDocumento || '');
 			setParcelado(movimento.parcelado || false);
-			setParcelas(movimento.parcelas || []);
 		}
 	};
 
@@ -158,15 +223,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 	};
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-		const { name, value } = e.target;
-		setFormData((prev) => ({
+		const target = e.target as HTMLInputElement;
+		setFormData((prev: FormData) => ({
 			...prev,
-			[name]: value,
+			[target.name]: target.value,
 		}));
 	};
 
 	const validarFormulario = () => {
-		const newErrors = {};
+		const newErrors: { [key: string]: string } = {};
 		if (modalidadeMovimento === 'padrao') {
 			const multiplosPlanos = rateios.length > 0 || (movimento.resultadoList && movimento.resultadoList.length > 1);
 
@@ -175,12 +240,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			}
 		}
 		if (modalidadeMovimento === 'financiamento') {
-			if (!numeroDocumento.trim()) newErrors.numeroDocumento = 'Informe o número do documento!';
-			if (!formData.bancoSelecionado && !formData.pessoaSelecionada) {
-				newErrors.bancoPessoa = 'Escolha um banco ou uma pessoa!';
-			}
-			if (formData.bancoSelecionado && formData.pessoaSelecionada) {
-				newErrors.bancoPessoa = 'Escolha apenas um: Banco ou Pessoa!';
+			if (!financiamentoSelecionado) {
+				newErrors.financiamento = 'Selecione um financiamento ou crie um novo!';
 			}
 		}
 		setErrors(newErrors);
@@ -188,13 +249,23 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 	};
 
 	useEffect(() => {
-		if (modalidadeMovimento === 'financiamento' && movimento.tipoMovimento === 'C' && parametros.length > 0) {
-			const idPlano = parametros[0]?.idPlanoEntradaFinanciamentos;
-			if (idPlano) {
-				setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
-				setIdPlanoContas(idPlano);
-				const plano = planos.find((p) => p.id === idPlano);
-				setSearchPlano(plano ? plano.descricao : '');
+		if (modalidadeMovimento === 'financiamento' && parametros.length > 0) {
+			if (movimento.tipoMovimento === 'C') {
+				const idPlano = parametros[0]?.idPlanoEntradaFinanciamentos;
+				if (idPlano) {
+					setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
+					setIdPlanoContas(idPlano);
+					const plano = planos.find((p) => p.id === idPlano);
+					setSearchPlano(plano ? plano.descricao : '');
+				}
+			} else {
+				const idPlano = parametros[0]?.idPlanoPagamentoFinanciamentos;
+				if (idPlano) {
+					setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
+					setIdPlanoContas(idPlano);
+					const plano = planos.find((p) => p.id === idPlano);
+					setSearchPlano(plano ? plano.descricao : '');
+				}
 			}
 		}
 	}, [modalidadeMovimento, parametros, movimento.tipoMovimento, planos]);
@@ -220,16 +291,27 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		)
 		.slice(0, 10);
 
-	const handleSearchPlano = (e) => {
+	const handleSearchPlano = (e: React.ChangeEvent<HTMLInputElement>) => {
 		setSearchPlano(e.target.value);
 		setShowSuggestions(true);
 	};
 
-	const selectPlano = (plano) => {
+	const selectPlano = (plano: { id: number; descricao: string; hierarquia: string }) => {
 		setSearchPlano(plano.descricao);
-		setFormData((prev) => ({ ...prev, idPlanoContas: plano.id.toString() }));
+		setFormData((prev: FormData) => ({ ...prev, idPlanoContas: plano.id }));
 		setIdPlanoContas(plano.id);
 		setShowSuggestions(false);
+	};
+
+	const handleSaveFinanciamento = async (financiamento: Financiamento) => {
+		try {
+			await salvarFinanciamento(financiamento);
+			await carregarFinanciamentos();
+			toast.success('Financiamento atualizado com sucesso!');
+		} catch (error) {
+			console.error('Erro ao salvar financiamento:', error);
+			toast.error('Erro ao salvar financiamento');
+		}
 	};
 
 	useEffect(() => {
@@ -268,6 +350,23 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		});
 	};
 
+	const carregarFinanciamentos = async () => {
+		try {
+			const financiamentosList = await listarFinanciamentos();
+			setFinanciamentos(financiamentosList);
+			console.log('financiamentosList ', financiamentosList);
+		} catch (error) {
+			console.error('Erro ao carregar financiamentos:', error);
+		}
+	};
+
+	const financiamentosFiltrados = financiamentos.filter(f => 
+		f.responsavel.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+		f.numeroContrato.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+		(bancos.find(b => b.id === f.idBanco)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+		(pessoas.find(p => p.id === f.idPessoa)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase())
+	);
+
 	const handleSalvar = () => {
 		if (!validarFormulario()) return;
 
@@ -287,16 +386,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			} else if (modalidadeMovimento === 'financiamento') {
 				dados = {
 					idPlanoContas: idPlanoContas,
-					idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
-					idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
-					numeroDocumento,
-					parcelado,
-					parcelas,
+					idFinanciamento: financiamentoSelecionado?.id,
 					modalidadeMovimento,
 				};
 				console.log('financiamento sendo enviado:', dados)
 			} else if (modalidadeMovimento === 'transferencia') {
-				const idPlano = parametros[0]?.idPlanoTransferenciaEntreContas;
+				const idPlano = transferenciaPlanoMode === 'transferencia' ? parametros[0]?.idPlanoTransferenciaEntreContas : 172; //Id plano de contas de aplicação de fundos (Tô com preguiça de parametrizar)
+				
 				dados = {
 					idPlanoContas: idPlano,
 					modalidadeMovimento,
@@ -309,6 +405,48 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			console.error('Erro ao salvar movimento:', error);
 		} finally {
 			setIsSaving(false);
+		}
+	};
+
+	const handleLiquidarParcela = async () => {
+		if (!selectedParcela || !liquidationDate) return;
+
+		try {
+			const parcelaAtualizada: ParcelaFinanciamento = {
+				...selectedParcela,
+				status: 'Liquidado' as 'Liquidado',
+				dt_liquidacao: liquidationDate,
+			};
+
+			await salvarParcelaFinanciamento(parcelaAtualizada);
+			
+			// Atualiza a lista de parcelas do financiamento selecionado
+			if (financiamentoSelecionado) {
+				const parcelasAtualizadas: ParcelaFinanciamento[] = financiamentoSelecionado.parcelasList?.map(p => 
+					p.id === selectedParcela.id ? parcelaAtualizada : p
+				) || [];
+				
+				const financiamentoAtualizado: Financiamento = {
+					...financiamentoSelecionado,
+					parcelasList: parcelasAtualizadas
+				};
+				
+				setFinanciamentoSelecionado(financiamentoAtualizado);
+				
+				// Atualiza a lista de financiamentos
+				const financiamentosAtualizados = financiamentos.map(f => 
+					f.id === financiamentoAtualizado.id ? financiamentoAtualizado : f
+				);
+				setFinanciamentos(financiamentosAtualizados);
+			}
+
+			setLiquidationModalOpen(false);
+			setSelectedParcela(null);
+			setLiquidationDate('');
+			toast.success('Parcela liquidada com sucesso!');
+		} catch (error) {
+			console.error('Erro ao liquidar parcela:', error);
+			toast.error('Erro ao liquidar parcela');
 		}
 	};
 
@@ -379,131 +517,141 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		if (modalidadeMovimento === 'financiamento') {
 			return (
 				<>
-					<div className="grid grid-cols-2 gap-4 mb-4">
-						<div>
+					<div className="grid grid-cols-2 gap-4 mb-4" style={{position: 'relative'}}>
+						<div className="col-span-2">
 							<label className="block text-sm font-medium text-gray-700 mb-1">
-								Número do Documento <span className="text-red-500">*</span>
+								Associar Financiamento {movimento.idFinanciamento ? ' (Desvincular)' : ''} <span className="text-red-500">*</span>
 							</label>
-							<input
-								type="text"
-								value={numeroDocumento}
-								onChange={(e) => setNumeroDocumento(e.target.value)}
-								className="w-full border p-2 rounded"
-							/>
-							{errors.numeroDocumento && <p className="text-red-500 text-xs col-span-2">{errors.numeroDocumento}</p>}
-						</div>
-						<div className="flex items-start flex-col gap-2">
-							<label className="block text-sm font-medium text-gray-700 mb-1">Este movimento é parcelado?</label>
-							<label className="relative inline-flex items-center cursor-pointer">
-								<input type="checkbox" className="sr-only peer" checked={parcelado} onChange={() => setParcelado(!parcelado)} />
-								<div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
-							</label>
-						</div>
-
-						{/* Banco */}
-						<div>
-							<label className="block text-sm font-medium text-gray-700 mb-1">
-								Banco <span className="text-gray-500">(opcional)</span>
-							</label>
-							<select
-								name="bancoSelecionado"
-								className="w-full p-2 border border-gray-300 rounded"
-								value={formData.bancoSelecionado}
-								onChange={handleInputChange}
-								disabled={!!formData.pessoaSelecionada}
-							>
-								<option value="">Selecione um banco</option>
-								{bancos.map((banco) => (
-									<option key={banco.id} value={banco.id}>
-										{banco.nome}
-									</option>
-								))}
-							</select>
-						</div>
-
-						{/* Pessoa */}
-						<div>
-							<label className="block text-sm font-medium text-gray-700 mb-1">
-								Pessoa <span className="text-gray-500">(opcional)</span>
-							</label>
-							<select
-								name="pessoaSelecionada"
-								className="w-full p-2 border border-gray-300 rounded"
-								value={formData.pessoaSelecionada}
-								onChange={handleInputChange}
-								disabled={!!formData.bancoSelecionado}
-							>
-								<option value="">Selecione uma pessoa</option>
-								{pessoas.map((pessoa) => (
-									<option key={pessoa.id} value={pessoa.id}>
-										{pessoa.nome}
-									</option>
-								))}
-							</select>
-						</div>
-
-						{/* Validação de Banco/Pessoa */}
-						{errors.bancoPessoa && <p className="text-red-500 text-xs col-span-2">{errors.bancoPessoa}</p>}
-
-						{/* Switch Parcelado */}
-
-						{parcelado && (
-							<div className="mt-2 pt-2 border-t">
-								<label>Número de Parcelas</label>
+							<div className="flex w-full">
 								<input
-									type="number"
-									min="1"
-									value={numParcelas}
-									onChange={(e) => setNumParcelas(parseInt(e.target.value))}
-									className="w-full p-2 border rounded"
+									type="text"
+									className="w-full p-2 border rounded-l"
+									placeholder="Buscar por responsável, credor ou contrato"
+									value={financiamentoSelecionado ? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${bancos.find(b=>b.id===financiamentoSelecionado.idBanco)?.nome || pessoas.find(p=>p.id===financiamentoSelecionado.idPessoa)?.nome})` : buscaFinanciamento}
+									onChange={e => setBuscaFinanciamento(e.target.value)}
+									disabled={!!financiamentoSelecionado}
 								/>
-								{parcelas.length > 0 && (
-									<table className="w-full text-left border-collapse mt-2">
-										<thead>
-											<tr className="bg-gray-200">
-												<th className="p-2">Parcela</th>
-												<th className="p-2">Vencimento</th>
-												<th className="p-2">Valor R$</th>
-											</tr>
-										</thead>
-										<tbody>
-											{parcelas.map((parcela, index) => (
-												<tr key={index}>
-													<td className="p-2">
-														{parcela.numParcela}/{numParcelas}
-													</td>
-													<td className="p-2">
-														<input
-															type="date"
-															value={parcela.dt_vencimento}
-															onChange={(e) => {
-																const novasParcelas = [...parcelas];
-																novasParcelas[index].dt_vencimento = e.target.value;
-																setParcelas(novasParcelas);
-															}}
-															className="w-full p-1 border rounded"
-														/>
-													</td>
-													<td className="p-2">
-														<input
-															type="text"
-															value={parcela.valor}
-															onChange={(e) => {
-																const novasParcelas = [...parcelas];
-																novasParcelas[index].valor = e.target.value;
-																setParcelas(novasParcelas);
-															}}
-															className="w-full p-1 border rounded"
-														/>
-													</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
+								{movimento.tipoMovimento === 'C' && (
+									<button
+										type="button"
+										style={{height: 'auto'}}
+										className={`text-white text-lg px-4 ${financiamentoSelecionado ? 'bg-blue-500 hover:bg-blue-600' : 'bg-orange-500 hover:bg-orange-600'} rounded-r `} 
+										onClick={() => {
+											if (financiamentoSelecionado) {
+												setFinanciamentoSelecionado(null);
+												setBuscaFinanciamento('');
+											} else {
+												setNovoFinanciamentoData({
+													valor: movimento.valor?.toString().replace('.', ',') || '0,00',
+													dataContrato: movimento.dtMovimento?.slice(0, 10) || '',
+													observacao: "Conciliação Bancária: " + movimento.historico + " - No valor de: R$ " + movimento.valor || '',
+												});
+												setModalFinanciamentoOpen(true);
+											}
+										}}
+										title={financiamentoSelecionado ? "Desvincular Financiamento" : "Novo Financiamento"}
+									>
+										<FontAwesomeIcon icon={financiamentoSelecionado ? faTimes : faPlus} />
+									</button>
 								)}
 							</div>
-						)}
+							{errors.financiamento && <p className="text-red-500 text-xs">{errors.financiamento}</p>}
+							
+							{buscaFinanciamento && !financiamentoSelecionado && (
+								<ul className="absolute z-10 border rounded mt-1 bg-white max-h-40 overflow-y-auto w-full shadow-lg">
+									{financiamentosFiltrados.map(f => (
+										<li
+											key={f.id}
+											className={`p-2 cursor-pointer hover:bg-orange-100 ${financiamentoSelecionado?.id === f.id ? 'bg-orange-200' : ''}`}
+											onClick={() => setFinanciamentoSelecionado(f)}
+										>
+											<strong>{f.numeroContrato}</strong> - {f.responsavel} - {bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome}
+										</li>
+									))}
+								</ul>
+							)}
+							
+						</div>
 					</div>
+
+					{financiamentoSelecionado && (
+						<div className="mt-6">
+							<div className="flex justify-between items-center mb-4">
+								<h3 className="text-lg font-semibold">Parcelas do Financiamento</h3>
+								<button
+									onClick={() => setModalParcelasOpen(true)}
+									className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"
+								>
+									<FontAwesomeIcon icon={faEdit} />
+									Editar Parcelas
+								</button>
+							</div>
+
+							<div className="overflow-x-auto">
+								<table className="w-full">
+									<thead className="bg-gray-50">
+										<tr>
+											<th className="p-2 text-left">Parcela</th>
+											<th className="p-2 text-left">Vencimento</th>
+											<th className="p-2 text-left">Valor</th>
+											<th className="p-2 text-left">Status</th>
+											<th className="p-2 text-left">Data Liquidação</th>
+											<th className="p-2 text-right">Ações</th>
+										</tr>
+									</thead>
+									<tbody>
+										{financiamentoSelecionado.parcelasList?.map((parcela) => (
+											<tr key={parcela.id} className="border-t">
+												<td className="p-2">{parcela.numParcela}</td>
+												<td className="p-2">{new Date(parcela.dt_vencimento).toLocaleDateString()}</td>
+												<td className="p-2">{formatarMoeda(parcela.valor)}</td>
+												<td className="p-2">
+													<span
+														className={`px-2 py-1 rounded font-semibold text-sm ${
+															parcela.status === 'Liquidado'
+																? 'bg-green-100 text-green-800'
+																: parcela.status === 'Vencido'
+																? 'bg-red-100 text-red-800'
+																: 'bg-yellow-100 text-yellow-800'
+														}`}
+													>
+														{parcela.status}
+													</span>
+												</td>
+												<td className="p-2">
+													{parcela.status === 'Liquidado' ? (
+														<span className="text-sm text-gray-600">
+															{new Date(parcela.dt_liquidacao!).toLocaleDateString()}
+														</span>
+													) : (
+														<span className="text-sm text-gray-400">-</span>
+													)}
+												</td>
+												<td className="p-2 text-right">
+													<div className="flex justify-end">
+														{parcela.status !== 'Liquidado' && movimento.tipoMovimento === 'D' && (
+															<button
+																onClick={() => {
+																	setSelectedParcela(parcela);
+																	setLiquidationDate(new Date().toISOString().split('T')[0]);
+																	setLiquidationModalOpen(true);
+																}}
+																
+																className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 text-sm rounded-md flex items-center gap-2 transition-colors"
+																title="Liquidar parcela"
+															>
+																<FontAwesomeIcon icon={faMoneyBillWave} />
+															</button>
+														)}
+													</div>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					)}
 				</>
 			);
 		}
@@ -511,9 +659,60 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		if (modalidadeMovimento === 'transferencia') {
 			return (
 				<div className="flex flex-col items-center text-center text-yellow-600 mt-10 mb-10">
+					
+					<p className="text-lg font-semibold text-gray-800 mb-2">Tipo do Movimento</p>
+					<div className="flex items-center gap-5 pb-5 border-b border-gray-200 mb-6">
+					<label className={`flex items-center gap-2 cursor-pointer text-gray-600 transition-all`}>
+							<input
+								type="radio"
+								name="filterMode"
+								value="transferencia"
+								checked={transferenciaPlanoMode === 'transferencia'}
+								onChange={() => setTransferenciaPlanoMode('transferencia')}
+								className="hidden"
+							/>
+							<div
+								className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
+									transferenciaPlanoMode === 'transferencia' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+								}`}
+								style={{ padding: '0.60rem' }}
+							>
+								{transferenciaPlanoMode === 'transferencia' && (
+									<span className="text-white text-md">
+										<FontAwesomeIcon icon={faCheck} />
+									</span>
+								)}
+							</div>
+							<span>Mera Transferência</span>
+						</label>
+
+						<label className={`flex items-center gap-2 cursor-pointer transition-all text-gray-500`}>
+							<input
+								type="radio"
+								name="filterMode"
+								value="aplicacao"
+								checked={transferenciaPlanoMode === 'aplicacao'}
+								onChange={() => setTransferenciaPlanoMode('aplicacao')}
+								className="hidden"
+							/>
+							<div
+								className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
+									transferenciaPlanoMode === 'aplicacao' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+								}`}
+								style={{ padding: '0.60rem' }}
+							>
+								{transferenciaPlanoMode === 'aplicacao' && (
+									<span className="text-white text-md">
+										<FontAwesomeIcon icon={faCheck} />
+									</span>
+								)}
+							</div>
+							<span>Aplicação de Fundos</span>
+						</label>
+					</div>
 					<FontAwesomeIcon icon={faMoneyBillTransfer} size="3x" />
 					<p className="mt-2 font-medium">
-						Mera transferência entre contas próprias da Fazenda <br />
+						{transferenciaPlanoMode === 'transferencia' ? 'Mera transferência entre contas próprias da Fazenda' : 'Aplicação de fundos'} <br />
 						na qual será ignorada no Fluxo de Caixa!
 					</p>
 				</div>
@@ -556,7 +755,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 							<button
 								key={tipo}
 								onClick={() => setModalidadeMovimento(tipo)}
-								disabled={tipo === 'financiamento' && movimento.tipoMovimento === 'D'}
+								// disabled={tipo === 'financiamento' && movimento.tipoMovimento === 'D'}
 								className={`px-4 flex-1 text-center text-lg py-1 font-semibold ${
 									modalidadeMovimento === tipo ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-700'
 								}`}
@@ -593,6 +792,55 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 				valorTotal={movimento.valor}
 				rateios={rateios}
 				setRateios={setRateios}
+			/>
+			<ModalFinanciamento
+				isOpen={modalFinanciamentoOpen}
+				onClose={() => setModalFinanciamentoOpen(false)}
+				onSave={async (financiamento: Financiamento) => {
+					await salvarFinanciamento(financiamento);
+					setModalFinanciamentoOpen(false);
+					await carregarFinanciamentos();
+					setFinanciamentoSelecionado(financiamento);
+				}}
+				bancos={bancos}
+				pessoas={pessoas}
+				financiamentoData={novoFinanciamentoData}
+			/>
+			{financiamentoSelecionado && (
+				<ModalParcelas
+					isOpen={modalParcelasOpen}
+					onClose={() => {
+						setModalParcelasOpen(false);
+					}}
+					financiamento={financiamentoSelecionado}
+					onSave={handleSaveFinanciamento}
+					bancos={bancos}
+					pessoas={pessoas}
+				/>
+			)}
+			<DialogModal
+				isOpen={liquidationModalOpen}
+				onClose={() => {
+					setLiquidationModalOpen(false);
+					setSelectedParcela(null);
+					setLiquidationDate('');
+				}}
+				onConfirm={handleLiquidarParcela}
+				title="Liquidar Parcela"
+				type="info"
+				message={
+					<div className="space-y-4">
+						<p>Selecione a data de liquidação da parcela:</p>
+						<input
+							type="date"
+							value={liquidationDate}
+							onChange={(e) => setLiquidationDate(e.target.value)}
+							className="w-full p-2 border rounded"
+						/>
+					</div>
+				}
+				confirmLabel="Liquidar"
+				cancelLabel="Cancelar"
 			/>
 		</>
 	);

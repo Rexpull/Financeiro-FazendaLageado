@@ -9,12 +9,7 @@ import { listarPlanoContas } from '../../../services/planoContasService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import ConciliarPlano from './Modals/ConciliarPlano';
 import { formatarData, formatarDataSemHora, calcularDataAnteriorFimDia } from '../../../Utils/formatarData';
-import {
-	excluirParcelaFinanciamento,
-	listarParcelaFinanciamentos,
-	salvarParcelaFinanciamento,
-	verificarParcelasAssociadas,
-} from '../../../services/financiamentoParcelasService';
+
 
 Modal.setAppElement('#root');
 
@@ -121,6 +116,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 	const handleConcilia = async (data: any) => {
 		try {
+			console.log('data:', data);
 			const movimentoAtualizado: MovimentoBancario = {
 				...movimentoParaConciliar!,
 				idPlanoContas: data.idPlanoContas,
@@ -132,32 +128,25 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				movimentoAtualizado.idBanco = null;
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = null;
-
-				let temParcelas = await verificarParcelasAssociadas(movimentoAtualizado.id);
-				if (temParcelas) {
-					await excluirParcelaFinanciamento(movimentoAtualizado.id);
-				}
+				movimentoAtualizado.idFinanciamento = null;
+				
 			}
 
 			if (data.modalidadeMovimento === 'financiamento') {
 				movimentoAtualizado.idBanco = data.idBanco ?? null;
 				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? null;
 				movimentoAtualizado.parcelado = data.parcelado ?? false;
-
-				const temParcelasAntigas = await verificarParcelasAssociadas(movimentoAtualizado.id);
-				if (temParcelasAntigas) {
-					await excluirParcelaFinanciamento(movimentoAtualizado.id);
-				}
-
-				for (const parcela of data.parcelas) {
-					parcela.idMovimentoBancario = movimentoAtualizado.id;
-					console.log('parcela sendo enviada:', parcela);
-					salvarParcelaFinanciamento(parcela);
-				}
+				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? null;
+				
 			}
 
 			if(data.modalidadeMovimento === 'transferencia') {	
 				movimentoAtualizado.resultadoList = [];
+				movimentoAtualizado.idFinanciamento = null;
+				movimentoAtualizado.idBanco = null;
+				movimentoAtualizado.parcelado = false;
+				movimentoAtualizado.numeroDocumento = null;
+
 			}
 
 			console.log('Movimento atualizado:', movimentoAtualizado);
@@ -187,6 +176,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			<Modal
 				isOpen={isOpen}
 				onRequestClose={onClose}
+				shouldCloseOnOverlayClick={false}
+				shouldCloseOnEsc={false}
 				className="bg-white rounded-lg shadow-lg w-full mx-auto h-full"
 				overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
 			>

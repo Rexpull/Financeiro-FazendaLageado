@@ -48,6 +48,8 @@ import { formatarData } from '../../../Utils/formatarData';
 import { buscarBancoById } from '../../../services/bancoService';
 import { buscarPessoaById } from '../../../services/pessoaService';
 import { toast } from 'react-toastify';
+import { TotalizadoresOFX } from '../../../Utils/parseOfxFile';
+import ConciliacaoOFXModal from './ConciliacaoOFX';
 
 const MovimentoBancarioTable: React.FC = () => {
 	const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
@@ -71,7 +73,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const menuRef = useRef<HTMLDivElement>(null);
 	const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
 	const [planos, setPlanos] = useState<{ id: number; descricao: string; tipo: string }[]>([]);
-  const [isExporting, setIsExporting] = useState(false);
+	const [isExporting, setIsExporting] = useState(false);
 
 	const [dataInicio, setDataInicio] = useState<string>('');
 	const [dataFim, setDataFim] = useState<string>('');
@@ -82,6 +84,14 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const [modalDetalheOpen, setModalDetalheOpen] = useState(false);
 	const [movimentoSelecionado, setMovimentoSelecionado] = useState<MovimentoBancario | null>(null);
+
+	const [historicoImportacoes, setHistoricoImportacoes] = useState<any[]>([]);
+	const [dropdownHistoricoAberto, setDropdownHistoricoAberto] = useState(false);
+	const [modalConciliacaoHistoricoIsOpen, setModalConciliacaoHistoricoIsOpen] = useState(false);
+	const [historicoSelecionado, setHistoricoSelecionado] = useState<{
+		movimentos: MovimentoBancario[];
+		totalizadores: TotalizadoresOFX;
+	} | null>(null);
 
 	// 🔹 Paginação
 	const [currentPage, setCurrentPage] = useState(1);
@@ -96,6 +106,11 @@ const MovimentoBancarioTable: React.FC = () => {
 		setDataInicio(inicio);
 		setDataFim(fim);
 	}, []);
+
+	useEffect(() => {
+		const dados = JSON.parse(localStorage.getItem('historicoOFX') || '[]');
+		setHistoricoImportacoes(dados);
+	}, [modalImportOFXIsOpen]);
 
 	useEffect(() => {
 		if (contaSelecionada) {
@@ -147,8 +162,8 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const exportarParaExcel = async () => {
 		try {
-      setAcoesMenu(false);
-      setIsExporting(true);
+			setAcoesMenu(false);
+			setIsExporting(true);
 			console.log('movimentos sendo exportados pro Excel', movimentosFiltradosComSaldo);
 
 			const dadosCompletos = await Promise.all(
@@ -201,7 +216,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				['Período:', periodo],
 				['Conta Corrente:', contaCorrente],
 				['Tipo de Consulta:', statusFiltro === 'pendentes' ? 'Apenas Pendentes' : 'Todos os Movimentos'],
-				[], 
+				[],
 			];
 
 			const ws = XLSX.utils.aoa_to_sheet(header);
@@ -218,8 +233,8 @@ const MovimentoBancarioTable: React.FC = () => {
 			console.error('Erro ao exportar Excel:', error);
 			toast.error('Erro ao gerar o Excel. Verifique os dados e tente novamente.');
 		} finally {
-      setIsExporting(false);
-    }
+			setIsExporting(false);
+		}
 	};
 
 	const gerarListaComSaldos = (dataInicio: string, dataFim: string) => {
@@ -382,7 +397,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			const usuario = JSON.parse(localStorage.getItem('user') || '{}');
 			const movimentoCompleto = {
 				...formData,
-				valor: parseFloat((formData.valor || '0').replace(',', '.')), // garantir número
+				valor: parseFloat((formData.valor || '0').replace(',', '.')),
 				dtMovimento: new Date(formData.dtMovimento).toISOString(),
 				idPlanoContas: parseInt(formData.idPlanoContas),
 				idContaCorrente: formData.idContaCorrente,
@@ -397,20 +412,6 @@ const MovimentoBancarioTable: React.FC = () => {
 			const movimentoSalvo = await salvarMovimentoBancario(movimentoCompleto);
 
 			console.log('movimentoSalvo', movimentoSalvo);
-
-			if (
-				movimentoSalvo?.id &&
-				formData.modalidadeMovimento === 'financiamento' &&
-				formData.parcelado &&
-				formData.parcelas &&
-				formData.parcelas.length > 0
-			) {
-				for (const parcela of formData.parcelas) {
-					parcela.idMovimentoBancario = movimentoSalvo.id;
-					console.log('parcela sendo enviada:', parcela);
-					salvarParcelaFinanciamento(parcela);
-				}
-			}
 
 			if (movimentoSalvo !== undefined && movimentoSalvo !== null) {
 				setMovimentos((prev) => [...prev, movimentoSalvo]);
@@ -487,10 +488,10 @@ const MovimentoBancarioTable: React.FC = () => {
 		try {
 			console.log('🔍 Iniciando conciliação com dados:', data);
 			console.log('📊 Página atual antes da conciliação:', currentPage);
-			
+
 			// Armazenar a página atual em uma constante
 			const paginaAtual = currentPage;
-			
+
 			const movimentoAtualizado: MovimentoBancario = {
 				...movimentoParaConciliar!,
 				idPlanoContas: data.idPlanoContas,
@@ -502,60 +503,40 @@ const MovimentoBancarioTable: React.FC = () => {
 				movimentoAtualizado.idBanco = null;
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = null;
-
-				let temParcelas = await verificarParcelasAssociadas(movimentoAtualizado.id);
-				if (temParcelas) {
-					await excluirParcelaFinanciamento(movimentoAtualizado.id);
-				}
+				movimentoAtualizado.idFinanciamento = null;
 			}
 
 			if (data.modalidadeMovimento === 'financiamento') {
 				movimentoAtualizado.idBanco = data.idBanco ?? null;
+				movimentoAtualizado.idPessoa = data.idPessoa ?? null;
 				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? null;
 				movimentoAtualizado.parcelado = data.parcelado ?? false;
-
-				const temParcelasAntigas = await verificarParcelasAssociadas(movimentoAtualizado.id);
-				if (temParcelasAntigas) {
-					await excluirParcelaFinanciamento(movimentoAtualizado.id);
-				}
-
-				for (const parcela of data.parcelas) {
-					parcela.idMovimentoBancario = movimentoAtualizado.id;
-					await salvarParcelaFinanciamento(parcela);
-				}
+				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? null;
 			}
 
-			if(data.modalidadeMovimento === 'transferencia') {    
+			if (data.modalidadeMovimento === 'transferencia') {
+				movimentoAtualizado.idBanco = null;
+				movimentoAtualizado.parcelado = false;
+				movimentoAtualizado.numeroDocumento = null;
+				movimentoAtualizado.idFinanciamento = null;
+
 				movimentoAtualizado.resultadoList = [];
 			}
 
 			const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
-			
-			// Atualizar os estados em uma única operação para evitar re-renders desnecessários
+
 			const atualizarEstados = () => {
-				setMovimentos(prevMovimentos => 
-					prevMovimentos.map(mov => 
-						mov.id === movimentoSalvo.id ? movimentoSalvo : mov
-					)
+				setMovimentos((prevMovimentos) => prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
+
+				setMovimentosFiltradosComSaldo((prevMovimentos) =>
+					prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov))
 				);
 
-				setMovimentosFiltradosComSaldo(prevMovimentos => 
-					prevMovimentos.map(mov => 
-						mov.id === movimentoSalvo.id ? movimentoSalvo : mov
-					)
-				);
+				setFilteredMovimentos((prevMovimentos) => prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
 
-				setFilteredMovimentos(prevMovimentos => 
-					prevMovimentos.map(mov => 
-						mov.id === movimentoSalvo.id ? movimentoSalvo : mov
-					)
-				);
-
-				// Forçar a manutenção da página atual
 				setCurrentPage(paginaAtual);
 			};
 
-			// Executar todas as atualizações de estado de uma vez
 			atualizarEstados();
 
 			setModalConciliaIsOpen(false);
@@ -565,7 +546,6 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
-	// 🔹 Paginação: calcular registros exibidos
 	const indexOfLastItem = currentPage * itemsPerPage;
 	const indexOfFirstItem = indexOfLastItem - itemsPerPage;
 	const currentItems = movimentosFiltradosComSaldo.slice(indexOfFirstItem, indexOfLastItem);
@@ -639,12 +619,47 @@ const MovimentoBancarioTable: React.FC = () => {
 					>
 						Lançar Manual <FontAwesomeIcon icon={faPlus} className="ml-3 font-bold" />
 					</button>
-					<button
-						className="bg-primary text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-500"
-						onClick={() => setModalImportOFXIsOpen(true)}
-					>
-						Buscar OFX <FontAwesomeIcon icon={faFileArchive} className="ml-3 font-bold" />
-					</button>
+					<div className="flex relative">
+						<button
+							className="bg-primary text-white font-bold px-4 py-2 flex items-center rounded-l hover:bg-orange-500"
+							onClick={() => setModalImportOFXIsOpen(true)}
+						>
+							Buscar OFX <FontAwesomeIcon icon={faFileArchive} className="ml-3" />
+						</button>
+						<button
+							className="rounded-r-md font-bold text-white bg-primary border-l-2 border-gray-300 text-lg px-2 py-2 flex items-center"
+							onClick={() => setDropdownHistoricoAberto(!dropdownHistoricoAberto)}
+						>
+							<FontAwesomeIcon icon={faChevronDown} />
+						</button>
+
+						{dropdownHistoricoAberto && (
+							<div className="absolute top-10 right-0 mt-1 bg-white border rounded shadow-lg z-50 w-72">
+								<div className="text-xs font-semibold text-gray-500 px-4 py-2 border-b border-gray-200">Últimas Importações</div>
+								{historicoImportacoes.length === 0 ? (
+									<div className="text-sm text-gray-600 px-4 py-2">Nenhum histórico encontrado.</div>
+								) : (
+									historicoImportacoes.map((item, index) => (
+										<button
+											key={index}
+											onClick={() => {
+												setHistoricoSelecionado({ movimentos: item.movimentos, totalizadores: item.totalizadores });
+												setModalConciliacaoHistoricoIsOpen(true);
+												setDropdownHistoricoAberto(false);
+											}}
+											className="block w-full text-left text-sm border-b border-gray-200 px-4 py-2 hover:bg-gray-100"
+										>
+											<div className="font-semibold truncate">{item.nomeArquivo}</div>
+											<div className="flex justify-between items-center mt-1">
+												<div className="text-xs text-gray-500">{new Date(item.data).toLocaleString('pt-BR')}</div>
+												<div className="text-xs text-gray-400">{item.idMovimentos.length} movimentos</div>
+											</div>
+										</button>
+									))
+								)}
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 			<div className="bg-gray-50 shadow-md rounded-lg border border-gray-200">
@@ -876,14 +891,26 @@ const MovimentoBancarioTable: React.FC = () => {
 				handleConcilia={handleConcilia}
 			/>
 
-      {isExporting && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 cursor-wait">
-          <div className="bg-white px-6 py-4 rounded shadow-md flex items-center gap-4">
-            <div className="loaderExcel border-4 border-orange-500 border-t-transparent rounded-full w-8 h-8 animate-spin"></div>
-            <span className="text-orange-500 font-semibold text-2xl">Exportando Excel</span>
-          </div>
-        </div>
-      )}
+			{historicoSelecionado && (
+				<ConciliacaoOFXModal
+					isOpen={modalConciliacaoHistoricoIsOpen}
+					onClose={() => {
+						setModalConciliacaoHistoricoIsOpen(false);
+						setHistoricoSelecionado(null);
+					}}
+					movimentos={historicoSelecionado.movimentos}
+					totalizadores={historicoSelecionado.totalizadores}
+				/>
+			)}
+
+			{isExporting && (
+				<div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 cursor-wait">
+					<div className="bg-white px-6 py-4 rounded shadow-md flex items-center gap-4">
+						<div className="loaderExcel border-4 border-orange-500 border-t-transparent rounded-full w-8 h-8 animate-spin"></div>
+						<span className="text-orange-500 font-semibold text-2xl">Exportando Excel</span>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 };

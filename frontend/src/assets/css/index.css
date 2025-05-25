@@ -343,3 +343,11 @@ th {
   .no-scrollbar::-webkit-scrollbar {
     display: none; /* Chrome, Safari and Opera */
   }
+
+.z-150{
+    z-index: 150 !important;
+}
+
+.z-200{
+    z-index: 200 !important;
+}

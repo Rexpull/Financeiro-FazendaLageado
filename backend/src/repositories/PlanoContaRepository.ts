@@ -80,8 +80,8 @@ export class PlanoContaRepository {
     async update(id: number,plano: PlanoConta): Promise<void> {
 
         const existente = await this.db.prepare(`
-            SELECT COUNT(*) AS count FROM planoContas WHERE descricao = ?
-        `).bind(plano.descricao).first();
+            SELECT COUNT(*) AS count FROM planoContas WHERE descricao = ? AND id <> ?
+        `).bind(plano.descricao, id).first();
     
         if ((existente as { count: number })?.count > 0) {
             throw new Error("Já existe um plano de contas com esta descrição.");
