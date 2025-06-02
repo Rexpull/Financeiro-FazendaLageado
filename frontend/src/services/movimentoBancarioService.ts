@@ -29,7 +29,8 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 
 		return res.json();
 	} catch (error) {
-		toast.error(`Falha na criação no movimento!`);
+		console.error('Erro ao salvar movimento bancário:', error);
+		// toast.error(`Falha na criação no movimento!`);
 	}
 };
 

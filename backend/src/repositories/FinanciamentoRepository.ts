@@ -202,4 +202,60 @@ export class FinanciamentoRepository {
 			throw new Error("Erro ao excluir financiamento");
 		}
 	}
+
+	async getFinanciamentosPorMes(ano: number) {
+		try {
+			const query = `
+				SELECT 
+					f.data_inicio,
+					f.valor_total,
+					f.valor_quitado,
+					(f.valor_total - f.valor_quitado) as valor_em_aberto
+				FROM financiamentos f
+				WHERE EXTRACT(YEAR FROM f.data_inicio) = $1
+				ORDER BY f.data_inicio
+			`;
+
+			const result = await this.db.prepare(query).bind(ano).all();
+			
+			const quitados = result.results.map(row => ({
+				data: row.data_inicio,
+				valor: row.valor_quitado
+			}));
+
+			const emAberto = result.results.map(row => ({
+				data: row.data_inicio,
+				valor: row.valor_em_aberto
+			}));
+
+			return {
+				quitados,
+				emAberto
+			};
+		} catch (error) {
+			console.error("Erro ao buscar financiamentos por mês:", error);
+			throw error;
+		}
+	}
+
+	async getFinanciamentosPorCredor(ano: number) {
+		try {
+			const query = `
+				SELECT 
+					p.nome as credor,
+					SUM(f.valor_total) as valor
+				FROM financiamentos f
+				JOIN pessoas p ON f.credor_id = p.id
+				WHERE EXTRACT(YEAR FROM f.data_inicio) = $1
+				GROUP BY p.nome
+				ORDER BY valor DESC
+			`;
+
+			const result = await this.db.prepare(query).bind(ano).all();
+			return result.results;
+		} catch (error) {
+			console.error("Erro ao buscar financiamentos por credor:", error);
+			throw error;
+		}
+	}
 }

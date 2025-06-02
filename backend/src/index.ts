@@ -47,6 +47,11 @@ export default {
         return handleFinanciamento(req, env.DB);
       case pathname.startsWith("/api/auth"):
         return handleAuthRequest(req, env, env.DB);
+      case pathname.startsWith("/api/dashboard"):
+        {
+          const { handleRequest } = await import("./routes/dashboardRoutes");
+          return handleRequest(req, env.DB);
+        }
       default:
         return new Response("Rota não encontrada", { status: 404, headers: corsHeaders });
     }

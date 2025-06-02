@@ -9,6 +9,7 @@ import { listarPlanoContas } from '../../../services/planoContasService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import ConciliarPlano from './Modals/ConciliarPlano';
 import { formatarData, formatarDataSemHora, calcularDataAnteriorFimDia } from '../../../Utils/formatarData';
+import { toast } from 'react-toastify';
 
 
 Modal.setAppElement('#root');
@@ -27,6 +28,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 	const [filtroDataInicio, setFiltroDataInicio] = useState('');
 	const [filtroDataFim, setFiltroDataFim] = useState('');
 	const [dropdownAberto, setDropdownAberto] = useState(false);
+	const [movimentosSelecionados, setMovimentosSelecionados] = useState<MovimentoBancario[]>([]);
+	const [tipoMovimentoSelecionado, setTipoMovimentoSelecionado] = useState<'C' | 'D' | null>(null);
 	const formatarISOParaInput = (iso: string): string => {
 		if (!iso || isNaN(new Date(iso).getTime())) {
 			return '';
@@ -171,8 +174,112 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 		}
 	};
 
+	const handleSelecionarMovimento = (movimento: MovimentoBancario) => {
+		if (!tipoMovimentoSelecionado) {
+			setTipoMovimentoSelecionado(movimento.tipoMovimento);
+			setMovimentosSelecionados([movimento]);
+		} else if (tipoMovimentoSelecionado === movimento.tipoMovimento) {
+			const jaSelecionado = movimentosSelecionados.some(m => m.id === movimento.id);
+			if (jaSelecionado) {
+				const novosSelecionados = movimentosSelecionados.filter(m => m.id !== movimento.id);
+				setMovimentosSelecionados(novosSelecionados);
+				if (novosSelecionados.length === 0) {
+					setTipoMovimentoSelecionado(null);
+				}
+			} else {
+				setMovimentosSelecionados([...movimentosSelecionados, movimento]);
+			}
+		} else {
+			toast.warning('Não é possível selecionar movimentos de tipos diferentes (Crédito/Débito)');
+		}
+	};
+
+	const handleSelecionarTodos = (e: React.ChangeEvent<HTMLInputElement>) => {
+		if (e.target.checked) {
+			const primeiroMovimento = movimentosFiltrados[0];
+			const todosMesmoTipo = movimentosFiltrados.every(m => m.tipoMovimento === primeiroMovimento.tipoMovimento);
+			
+			if (todosMesmoTipo) {
+				setTipoMovimentoSelecionado(primeiroMovimento.tipoMovimento);
+				setMovimentosSelecionados(movimentosFiltrados);
+			} else {
+				toast.warning('Não é possível selecionar movimentos de tipos diferentes (Crédito/Débito)');
+				e.target.checked = false;
+			}
+		} else {
+			setMovimentosSelecionados([]);
+			setTipoMovimentoSelecionado(null);
+		}
+	};
+
+	const handleConciliarSelecionados = () => {
+		if (movimentosSelecionados.length > 0) {
+			setMovimentoParaConciliar(movimentosSelecionados[0]);
+			setModalConciliaIsOpen(true);
+		}
+	};
+
+	const handleConciliaMultiplos = async (data: any) => {
+		try {
+			const movimentosAtualizados = [];
+			const erros = [];
+
+			for (const movimento of movimentosSelecionados) {
+				try {
+					const movimentoAtualizado = {
+						...movimento,
+						modalidadeMovimento: data.modalidadeMovimento,
+						idPlanoContas: data.idPlanoContas,
+						idPessoa: data.idPessoa,
+						idBanco: data.idBanco,
+						numeroDocumento: data.numeroDocumento,
+						parcelado: data.parcelado,
+						idFinanciamento: data.idFinanciamento,
+						idUsuario: usuario?.id || null,
+						conciliado: true,
+						dataConciliacao: new Date().toISOString()
+					};
+
+					await salvarMovimentoBancario(movimentoAtualizado);
+					movimentosAtualizados.push(movimentoAtualizado);
+				} catch (error) {
+					console.error(`Erro ao conciliar movimento ${movimento.id}:`, error);
+					erros.push(movimento.id);
+				}
+			}
+
+			// Atualiza a lista de movimentos
+			const movimentosAtualizadosList = movimentos.map(mov => {
+				const atualizado = movimentosAtualizados.find(m => m.id === mov.id);
+				return atualizado || mov;
+			});
+
+			setMovimentos(movimentosAtualizadosList.sort((a, b) => 
+				new Date(a.data).getTime() - new Date(b.data).getTime()
+			));
+
+			// Limpa a seleção
+			setMovimentosSelecionados([]);
+			setTipoMovimentoSelecionado(null);
+
+			// Fecha o modal
+			setMovimentoParaConciliar(null);
+
+			// Exibe mensagens de feedback
+			if (erros.length > 0) {
+				toast.error(`Erro ao conciliar ${erros.length} movimento(s). Verifique o console para mais detalhes.`);
+			}
+			if (movimentosAtualizados.length > 0) {
+				toast.success(`${movimentosAtualizados.length} movimento(s) conciliado(s) com sucesso!`);
+			}
+		} catch (error) {
+			console.error('Erro ao conciliar movimentos:', error);
+			toast.error('Erro ao conciliar movimentos. Verifique o console para mais detalhes.');
+		}
+	};
+
 	return (
-		<>
+		<div className="flex flex-col h-full">
 			<Modal
 				isOpen={isOpen}
 				onRequestClose={onClose}
@@ -390,6 +497,14 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 							<table className="w-full border-collapse">
 								<thead className="bg-gray-200 sticky top-0 z-10">
 									<tr className="bg-gray-200">
+										<th className="p-2 text-center w-12">
+											<input
+												type="checkbox"
+												checked={movimentosFiltrados.length > 0 && movimentosFiltrados.every(m => movimentosSelecionados.some(ms => ms.id === m.id))}
+												onChange={handleSelecionarTodos}
+												className="w-4 h-4"
+											/>
+										</th>
 										<th className="p-2 text-left">Data</th>
 										<th className="p-2 text-left">Histórico</th>
 										<th className="p-2 text-center">Plano de Contas</th>
@@ -399,13 +514,22 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 								<tbody>
 									{movimentosFiltrados.length === 0 ? (
 										<tr>
-											<td colSpan={4} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
+											<td colSpan={5} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
 												Nenhum movimento encontrado!
 											</td>
 										</tr>
 									) : (
 										movimentosFiltrados.map((mov, index) => (
 											<tr key={index} className="border-b">
+												<td className="p-2 text-center">
+													<input
+														type="checkbox"
+														checked={movimentosSelecionados.some(m => m.id === mov.id)}
+														onChange={() => handleSelecionarMovimento(mov)}
+														className="w-4 h-4"
+														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== mov.tipoMovimento}
+													/>
+												</td>
 												<td className="p-2 text-left">{formatarData(mov.dtMovimento)}</td>
 												<td className="p-2 text-left m-w-[500px] truncate" title={mov.historico}>
 													{mov.historico}
@@ -438,6 +562,23 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 					</div>
 				</div>
 
+				{/* Botão fixo de conciliação */}
+				{movimentosSelecionados.length > 0 && (
+					<div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-50">
+						<div className="container mx-auto flex justify-between items-center">
+							<span className="text-gray-600">
+								{movimentosSelecionados.length} movimento(s) selecionado(s)
+							</span>
+							<button
+								onClick={handleConciliarSelecionados}
+								className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+							>
+								Conciliar {movimentosSelecionados.length} Movimento(s)
+							</button>
+						</div>
+					</div>
+				)}
+
 				{/* Rodapé */}
 				<div className="p-4 flex justify-end border-t">
 					<button className="bg-red-500 text-white font-semibold px-5 py-2 rounded hover:bg-red-600" onClick={onClose}>
@@ -446,14 +587,19 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				</div>
 			</Modal>
 
-			<ConciliarPlano
-				isOpen={modalConciliaIsOpen}
-				onClose={() => setModalConciliaIsOpen(false)}
-				movimento={movimentoParaConciliar || ({} as MovimentoBancario)}
-				planos={planos}
-				handleConcilia={handleConcilia}
-			/>
-		</>
+			{/* Modal de conciliação */}
+			{movimentoParaConciliar && (
+				<ConciliarPlano
+					isOpen={!!movimentoParaConciliar}
+					onClose={() => setMovimentoParaConciliar(null)}
+					movimento={movimentoParaConciliar}
+					planos={planos}
+					handleConcilia={handleConcilia}
+					movimentosSelecionados={movimentosSelecionados}
+					onConciliaMultiplos={handleConciliaMultiplos}
+				/>
+			)}
+		</div>
 	);
 };
 

@@ -41,8 +41,9 @@ interface ConciliaPlanoContasModalProps {
 	isOpen: boolean;
 	onClose: () => void;
 	movimento: MovimentoBancario;
-	planos: { id: number; descricao: string; tipo: string; hierarquia: string; nivel: number }[];
+	planos: PlanoConta[];
 	handleConcilia: (data: any) => void;
+	movimentosSelecionados?: MovimentoBancario[];
 }
 
 interface FormData {
@@ -56,7 +57,7 @@ interface FormData {
 	idFinanciamento: number | null;
 }
 
-const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isOpen, onClose, movimento, planos, handleConcilia }) => {
+const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isOpen, onClose, movimento, planos = [], handleConcilia, movimentosSelecionados = [] }) => {
 	const [modalidadeMovimento, setModalidadeMovimento] = useState('padrao');
 	const [idPlanoContas, setIdPlanoContas] = useState<number | null>(null);
 	const [idPessoa, setIdPessoa] = useState<number | null>(null);
@@ -100,45 +101,66 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 
 	useEffect(() => {
 		if (isOpen) {
-			setModalidadeMovimento('padrao');
-			setIdPlanoContas(null);
-			setIdPessoa(null);
-			setIdBanco(null);
-			setNumeroDocumento('');
-			setParcelado(false);
-			setParcelas([]);
-			setSearchPlano('');
-			setFinanciamentoSelecionado(null);
-			setBuscaFinanciamento('');
+			if (movimentosSelecionados.length > 1) {
+				// Limpa todos os campos para conciliação em lote
+				setModalidadeMovimento('padrao');
+				setIdPlanoContas(null);
+				setIdPessoa(null);
+				setIdBanco(null);
+				setNumeroDocumento('');
+				setParcelado(false);
+				setParcelas([]);
+				setSearchPlano('');
+				setFinanciamentoSelecionado(null);
+				setBuscaFinanciamento('');
+				setRateios([]);
+				setFormData({
+					idPlanoContas: null,
+					pessoaSelecionada: '',
+					bancoSelecionado: '',
+					idPessoa: null,
+					idBanco: null,
+					parcelado: false,
+					numeroDocumento: '',
+					idFinanciamento: null
+				});
+			} else {
+				// Mantém o comportamento existente para um único movimento
+				setModalidadeMovimento(movimento.modalidadeMovimento || 'padrao');
+				setIdPlanoContas(movimento.idPlanoContas || null);
+				setIdPessoa(movimento.idPessoa || null);
+				setIdBanco(movimento.idBanco || null);
+				setNumeroDocumento(movimento.numeroDocumento || '');
+				setParcelado(movimento.parcelado || false);
+				setParcelas([]);
+				setSearchPlano('');
+				setFinanciamentoSelecionado(null);
+				setBuscaFinanciamento('');
+				
+				setFormData({
+					idPlanoContas: movimento.idPlanoContas || null,
+					pessoaSelecionada: movimento.idPessoa ? movimento.idPessoa.toString() : '',
+					bancoSelecionado: movimento.idBanco ? movimento.idBanco.toString() : '',
+					idPessoa: movimento.idPessoa || null,
+					idBanco: movimento.idBanco || null,
+					parcelado: movimento.parcelado || false,
+					numeroDocumento: movimento.numeroDocumento || '',
+					idFinanciamento: movimento.idFinanciamento || null
+				});
+			}
 			
 			const inicializarModal = async () => {
 				try {
 					const financiamentosList = await listarFinanciamentos();
 					setFinanciamentos(financiamentosList);
-					console.log('financiamentosList ', financiamentosList);
 					
-					setFormData({
-						idPlanoContas: movimento.idPlanoContas || null,
-						pessoaSelecionada: '',
-						bancoSelecionado: '',
-						idPessoa: movimento.idPessoa || null,
-						idBanco: movimento.idBanco || null,
-						parcelado: movimento.parcelado || false,
-						numeroDocumento: movimento.numeroDocumento || '',
-						idFinanciamento: movimento.idFinanciamento || null
-					});
-					
-					console.log('movimento ', movimento);
-					if (movimento.idFinanciamento) {
+					if (movimentosSelecionados.length === 1 && movimento.idFinanciamento) {
 						const financiamento = financiamentosList.find(f => f.id === movimento.idFinanciamento);
-						console.log('financiamento encontrado ', financiamento);
-						
 						if (financiamento) {
 							setFinanciamentoSelecionado(financiamento);
 						}
 					}
 					
-					preencherCamposExistentes();
 					validarFormulario();
 				} catch (error) {
 					console.error('Erro ao inicializar modal:', error);
@@ -148,7 +170,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			
 			inicializarModal();
 		}
-	}, [isOpen]);
+	}, [isOpen, movimento, movimentosSelecionados]);
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -467,14 +489,20 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 										placeholder="Pesquisar plano de contas..."
 										onChange={handleSearchPlano}
 										value={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0 ? 'Multiplos Planos' : searchPlano}
-										disabled={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0}
+										disabled={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0 || movimentosSelecionados.length > 1}
 									/>
 									<FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
 								</div>
 								<button
 									type="button"
-									className="bg-orange-500 text-white px-3 rounded-r hover:bg-orange-600"
-									onClick={() => setRateioModalAberto(true)}
+									className={`px-3 rounded-r ${
+										movimentosSelecionados.length > 1
+											? 'bg-gray-300 cursor-not-allowed'
+											: 'bg-orange-500 hover:bg-orange-600 text-white'
+									}`}
+									onClick={() => movimentosSelecionados.length <= 1 && setRateioModalAberto(true)}
+									disabled={movimentosSelecionados.length > 1}
+									title={movimentosSelecionados.length > 1 ? 'Não é possível usar múltiplos planos em conciliação em lote' : 'Adicionar múltiplos planos'}
 								>
 									<FontAwesomeIcon icon={faPlus} className="font-bolder" />
 								</button>
@@ -730,24 +758,57 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 				overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-100"
 			>
 				<div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
-					<h2 className="text-xl font-semibold text-gray-800">Associação de Plano de Contas</h2>
+					<h2 className="text-xl font-semibold text-gray-800">
+						{movimentosSelecionados.length > 1 ? 'Associação de Plano de Contas em Lote' : 'Associação de Plano de Contas'}
+					</h2>
 					<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
 						<FontAwesomeIcon icon={faTimes} size="xl" />
 					</button>
 				</div>
 
 				<div className="p-4">
-					{movimento && movimento.valor && (
-						<div className="flex items-center justify-between border-gray-200 border text-gray-800 p-3 rounded-lg mb-4 shadow-sm text-sm">
-							<span className="flex items-center gap-2 overflow-hidden">
-								<span>{formatarData(movimento.dtMovimento)}</span>
-								<span>|</span>
-								<span className="truncate max-w-[430px]" title={movimento.historico}>
-									{movimento.historico}
+					{movimentosSelecionados.length > 1 ? (
+						<div className="mb-4">
+							<div className="flex items-center justify-between border-gray-200 border text-gray-800 p-3 rounded-lg mb-4 shadow-sm text-sm">
+								<span className="font-semibold">
+									{movimentosSelecionados.length} movimentos selecionados
 								</span>
-							</span>
-							<strong className={`${movimento.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatarMoeda(movimento.valor)}</strong>
+								<strong className={`${movimentosSelecionados[0].tipoMovimento === 'C' ? 'text-green-600' : 'text-red-600'}`}>
+									{movimentosSelecionados[0].tipoMovimento === 'C' ? 'Créditos' : 'Débitos'}
+								</strong>
+							</div>
+							<div className="max-h-40 overflow-y-auto border rounded-lg">
+								{movimentosSelecionados.map((mov, index) => (
+									<div key={index} className="flex items-center justify-between p-2 border-b last:border-b-0">
+										<span className="flex items-center gap-2 overflow-hidden">
+											<span>{formatarData(mov.dtMovimento)}</span>
+											<span>|</span>
+											<span className="truncate max-w-[430px]" title={mov.historico}>
+												{mov.historico}
+											</span>
+										</span>
+										<strong className={`${mov.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+											{formatarMoeda(mov.valor)}
+										</strong>
+									</div>
+								))}
+							</div>
 						</div>
+					) : (
+						movimento && movimento.valor && (
+							<div className="flex items-center justify-between border-gray-200 border text-gray-800 p-3 rounded-lg mb-4 shadow-sm text-sm">
+								<span className="flex items-center gap-2 overflow-hidden">
+									<span>{formatarData(movimento.dtMovimento)}</span>
+									<span>|</span>
+									<span className="truncate max-w-[430px]" title={movimento.historico}>
+										{movimento.historico}
+									</span>
+								</span>
+								<strong className={`${movimento.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+									{formatarMoeda(movimento.valor)}
+								</strong>
+							</div>
+						)
 					)}
 
 					<div className="flex items-center justify-center mb-6 flex w-full justify-center rounded-lg border overflow-hidden">
