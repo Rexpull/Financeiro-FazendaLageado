@@ -2,7 +2,7 @@ import { AuthController } from "../controllers/AuthController";
 import { SessionRepository } from "../repositories/SessionRepository";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*", // Permite requisições de qualquer origem
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
