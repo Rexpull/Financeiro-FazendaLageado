@@ -194,7 +194,7 @@ export class DashboardRepository {
         b.nome as banco,
         f.dataContrato as dataFinanciamento,
         f.valor,
-        CASE WHEN f.temGarantia = 1 THEN 'Com Garantia' ELSE 'Sem Garantia' END as tipo
+        CASE WHEN f.numeroGarantia IS NOT NULL AND f.numeroGarantia != '' THEN 'Com Garantia' ELSE 'Sem Garantia' END as tipo
       FROM Financiamento f
       JOIN pessoa p ON f.idPessoa = p.id
       LEFT JOIN banco b ON f.idBanco = b.id
@@ -223,10 +223,10 @@ export class DashboardRepository {
     const query = `
       SELECT 
         CASE 
-          WHEN taxaJuros <= 5 THEN 'Até 5%'
-          WHEN taxaJuros <= 10 THEN '5% a 10%'
-          WHEN taxaJuros <= 15 THEN '10% a 15%'
-          WHEN taxaJuros <= 20 THEN '15% a 20%'
+          WHEN taxaJurosAnual <= 5 THEN 'Até 5%'
+          WHEN taxaJurosAnual <= 10 THEN '5% a 10%'
+          WHEN taxaJurosAnual <= 15 THEN '10% a 15%'
+          WHEN taxaJurosAnual <= 20 THEN '15% a 20%'
           ELSE 'Acima de 20%'
         END as faixa,
         SUM(valor) as valor
@@ -248,8 +248,8 @@ export class DashboardRepository {
       SELECT 
         b.nome,
         SUM(f.valor) as total,
-        SUM(CASE WHEN f.temGarantia = 1 THEN f.valor ELSE 0 END) as comGarantia,
-        SUM(CASE WHEN f.temGarantia = 0 THEN f.valor ELSE 0 END) as semGarantia
+        SUM(CASE WHEN f.numeroGarantia IS NOT NULL AND f.numeroGarantia != '' THEN f.valor ELSE 0 END) as comGarantia,
+        SUM(CASE WHEN f.numeroGarantia IS NULL OR f.numeroGarantia = '' THEN f.valor ELSE 0 END) as semGarantia
       FROM Financiamento f
       LEFT JOIN banco b ON f.idBanco = b.id
       WHERE CAST(strftime('%Y', f.dataContrato) AS INTEGER) = ?
@@ -269,12 +269,12 @@ export class DashboardRepository {
     this.validarAno(ano);
     const query = `
       SELECT 
-        CAST(strftime('%m', pf.dataVencimento) AS INTEGER) as mes,
+        CAST(strftime('%m', pf.dt_vencimento) AS INTEGER) as mes,
         SUM(CASE WHEN pf.status = 'P' THEN pf.valor ELSE 0 END) as pagas,
         SUM(CASE WHEN pf.status = 'V' THEN pf.valor ELSE 0 END) as vencidas
-      FROM ParcelaFinanciamento pf
+      FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
-      WHERE CAST(strftime('%Y', pf.dataVencimento) AS INTEGER) = ?
+      WHERE CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) = ?
       GROUP BY mes
       ORDER BY mes
     `;
@@ -293,26 +293,26 @@ export class DashboardRepository {
       SELECT 
         SUM(CASE WHEN pf.status = 'P' THEN pf.valor ELSE 0 END) as totalPagas,
         SUM(CASE WHEN pf.status = 'V' THEN pf.valor ELSE 0 END) as totalVencidas
-      FROM ParcelaFinanciamento pf
+      FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
-      WHERE CAST(strftime('%Y', pf.dataVencimento) AS INTEGER) = ?
+      WHERE CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) = ?
     `;
     const totais = await this.db.prepare(queryTotais).bind(ano).first();
 
     // Buscar detalhes
     const queryDetalhes = `
       SELECT 
-        strftime('%m/%Y', pf.dataVencimento) as mes,
+        strftime('%m/%Y', pf.dt_vencimento) as mes,
         pf.valor,
         CASE 
           WHEN pf.status = 'P' THEN 'Paga'
           WHEN pf.status = 'V' THEN 'Vencida'
           ELSE 'Pendente'
         END as status
-      FROM ParcelaFinanciamento pf
+      FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
-      WHERE CAST(strftime('%Y', pf.dataVencimento) AS INTEGER) = ?
-      ORDER BY pf.dataVencimento DESC
+      WHERE CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) = ?
+      ORDER BY pf.dt_vencimento DESC
       LIMIT 50
     `;
     const detalhes = await this.db.prepare(queryDetalhes).bind(ano).all();

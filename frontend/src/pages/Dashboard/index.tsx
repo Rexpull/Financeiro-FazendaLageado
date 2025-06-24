@@ -370,7 +370,7 @@ const Dashboard = () => {
                 <NoData message="Nenhum dado de receitas ou despesas para o filtro selecionado." />
               )}
             </Paper>
-            <TableContainer component={Paper} sx={{ minHeight: 350, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <TableContainer component={Paper} sx={{ minHeight: 350, maxHeight:500, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               {dashboardData?.receitasDespesas?.detalhamento?.length ? (
                 <Table size="small">
                   <TableHead>
