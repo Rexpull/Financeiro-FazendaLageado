@@ -24,3 +24,6 @@ name = "financeiro-fazendalageado-staging"
 binding = "DB"
 database_name = "financeiro_db_staging"
 database_id = "7e37b1b4-9b57-4490-9228-4d6b034e6d37"
+
+[env.staging.vars]
+VITE_API_URL = "https://financeiro-fazendalageado-staging.workers.dev"
