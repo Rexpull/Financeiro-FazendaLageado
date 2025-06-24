@@ -211,7 +211,7 @@ export class FinanciamentoRepository {
 					f.valor_total,
 					f.valor_quitado,
 					(f.valor_total - f.valor_quitado) as valor_em_aberto
-				FROM financiamentos f
+				FROM Financiamento f
 				WHERE EXTRACT(YEAR FROM f.data_inicio) = $1
 				ORDER BY f.data_inicio
 			`;
@@ -244,7 +244,7 @@ export class FinanciamentoRepository {
 				SELECT 
 					p.nome as credor,
 					SUM(f.valor_total) as valor
-				FROM financiamentos f
+				FROM Financiamento f
 				JOIN pessoas p ON f.credor_id = p.id
 				WHERE EXTRACT(YEAR FROM f.data_inicio) = $1
 				GROUP BY p.nome

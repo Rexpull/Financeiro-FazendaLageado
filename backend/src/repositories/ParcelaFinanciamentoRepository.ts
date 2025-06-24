@@ -34,9 +34,36 @@ export class ParcelaFinanciamentoRepository {
 		return results.map(result => ({
 			id: result.id as number,
 			idMovimentoBancario: result.idMovimentoBancario as number,
+			idFinanciamento: result.idFinanciamento as number,
 			valor: result.valor as number,
+			status: result.status as 'Aberto' | 'Vencido' | 'Liquidado',
 			dt_vencimento: result.dt_vencimento as string,
+			dt_liquidacao: result.dt_liquidacao as string | null,
 			numParcela: result.numParcela as number
+		})) as ParcelaFinanciamento[];
+	}
+
+	async getParcelasDoAno(ano: string): Promise<ParcelaFinanciamento[]> {
+		const { results } = await this.db
+			.prepare(
+				`
+		  SELECT * FROM ParcelaFinanciamento
+		  WHERE STRFTIME('%Y', COALESCE(dt_liquidacao, dt_vencimento)) = ?
+		`
+			)
+			.bind(ano)
+			.all();
+
+		return results.map((p) => ({
+			id: p.id as number,
+			idMovimentoBancario: p.idMovimentoBancario as number | null,
+			idFinanciamento: p.idFinanciamento as number,
+			valor: p.valor as number,
+			status: p.status as 'Aberto' | 'Vencido' | 'Liquidado',
+			numParcela: p.numParcela as number,
+			dt_lancamento: p.dt_lancamento as string,
+			dt_vencimento: p.dt_vencimento as string,
+			dt_liquidacao: p.dt_liquidacao as string | null,
 		})) as ParcelaFinanciamento[];
 	}
 	

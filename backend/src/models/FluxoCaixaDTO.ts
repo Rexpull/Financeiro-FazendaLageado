@@ -1,4 +1,3 @@
-
 export interface FluxoCaixaMes {
 	receitas: {
 		[idPai: number]: {
@@ -20,7 +19,10 @@ export interface FluxoCaixaMes {
 		[idPlano: number]: number;
 	};
 	financiamentos: {
-		[idConta: number]: number;
+		[credorKey: string]: {
+			valor: number;
+			descricao: string;
+		};
 	};
 
 	pendentesSelecao?: { [idConta: number]: number };

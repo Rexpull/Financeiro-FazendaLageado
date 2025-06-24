@@ -564,14 +564,14 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 				{/* Botão fixo de conciliação */}
 				{movimentosSelecionados.length > 0 && (
-					<div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-50">
+					<div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50" style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}>
 						<div className="container mx-auto flex justify-between items-center">
-							<span className="text-gray-600">
+							<span className="text-gray-600 font-semibold text-lg">
 								{movimentosSelecionados.length} movimento(s) selecionado(s)
 							</span>
 							<button
 								onClick={handleConciliarSelecionados}
-								className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+								className="bg-blue-600 text-white text-lg px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"
 							>
 								Conciliar {movimentosSelecionados.length} Movimento(s)
 							</button>

@@ -1,40 +1,76 @@
-import { DashboardService } from "../services/dashboardService";
+import { DashboardRepository } from "../repositories/dashboardRepository";
 
 export class DashboardController {
-  private dashboardService: any;
+  private repository: DashboardRepository;
 
-  constructor(dashboardService: any) {
-    this.dashboardService = dashboardService;
+  constructor(repository: DashboardRepository) {
+    this.repository = repository;
   }
 
-  async handleRequest(req: any): Promise<Response> {
-    const url = new URL(req.url);
-    const { pathname } = url;
-    const { method } = req;
+  async handleRequest(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
 
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
+    if (method === "GET" && path === "/api/dashboard") {
+      const ano = parseInt(url.searchParams.get("ano") || new Date().getFullYear().toString());
 
-    if (method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders });
-    }
+      try {
+        const [
+          totaisAno,
+          receitasDespesasPorMes,
+          investimentosPorMes,
+          financiamentosPorMes,
+          financiamentosPorCredor,
+          financiamentosPorFaixaJuros,
+          financiamentosPorBanco,
+          parcelasFinanciamento,
+          receitasDespesas
+        ] = await Promise.all([
+          this.repository.getTotaisAno(ano),
+          this.repository.getReceitasDespesasPorMes(ano),
+          this.repository.getInvestimentosPorMes(ano),
+          this.repository.getFinanciamentosPorMes(ano),
+          this.repository.getFinanciamentosPorCredor(ano),
+          this.repository.getFinanciamentosPorFaixaJuros(ano),
+          this.repository.getFinanciamentosPorBanco(ano),
+          this.repository.getParcelasFinanciamento(ano),
+          this.repository.getReceitasDespesas(ano)
+        ]);
 
-    try {
-      if (method === "GET" && pathname.match(/\/api\/dashboard\/(\d{4})/)) {
-        const ano = parseInt(pathname.split("/").pop()!);
-        if (isNaN(ano)) {
-          return new Response(JSON.stringify({ error: "Ano inválido" }), { status: 400, headers: corsHeaders });
-        }
-        const data = await this.dashboardService.getDashboardData(ano);
-        return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({
+          totaisAno,
+          receitasDespesasPorMes,
+          investimentosPorMes,
+          financiamentosPorMes,
+          financiamentosPorCredor,
+          financiamentos: {
+            porFaixaJuros: financiamentosPorFaixaJuros,
+            porBanco: financiamentosPorBanco
+          },
+          parcelasFinanciamento,
+          receitasDespesas
+        }), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+          }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+          }
+        });
       }
-      return new Response("Rota não encontrada", { status: 404, headers: corsHeaders });
-    } catch (error) {
-      console.error("Erro ao buscar dados do dashboard:", error);
-      return new Response(JSON.stringify({ error: "Erro interno do servidor" }), { status: 500, headers: corsHeaders });
     }
+
+    return new Response("Not Found", { status: 404 });
   }
 } 

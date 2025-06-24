@@ -1,44 +1,57 @@
-import { ContaCorrente } from "../../../backend/src/models/ContaCorrente";
-import { toast } from "react-toastify";
+export interface ContaCorrente {
+  id: number;
+  nome: string;
+  numero: string;
+  inativo?: boolean;
+}
 
-const API_URL = import.meta.env.VITE_API_URL;
+interface ErrorResponse {
+  details?: string;
+  error?: string;
+}
+
+const API_URL = (import.meta as any).env?.VITE_API_URL || '';
 
 export const listarContas = async (): Promise<ContaCorrente[]> => {
   try {
     const res = await fetch(`${API_URL}/api/contas`);
-    if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
-    return await res.json();
+    if (!res.ok) throw new Error("Erro ao listar contas");
+    return res.json();
   } catch (error) {
-    toast.error("Erro ao listar contas!");
+    console.error("Erro ao listar contas:", error);
     throw error;
   }
 };
 
 export const salvarConta = async (conta: ContaCorrente): Promise<ContaCorrente> => {
-  const method = conta.id ? "PUT" : "POST";
-  const url = conta.id ? `${API_URL}/api/contas/${conta.id}` : `${API_URL}/api/contas`;
+  try {
+    const method = conta.id ? "PUT" : "POST";
+    const url = conta.id ? `${API_URL}/api/contas/${conta.id}` : `${API_URL}/api/contas`;
 
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(conta),
-  });
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(conta),
+    });
 
-  if (!res.ok) throw new Error("Erro ao salvar conta");
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({})) as ErrorResponse;
+      throw new Error(errorData?.details || errorData?.error || "Erro ao salvar conta");
+    }
 
-  toast.success(conta.id ? "Conta atualizada com sucesso!" : "Conta criada com sucesso!");
-
-  return await res.json();
+    return res.json();
+  } catch (error) {
+    console.error("Erro ao salvar conta:", error);
+    throw error;
+  }
 };
 
 export const excluirConta = async (id: number): Promise<void> => {
   try {
     const res = await fetch(`${API_URL}/api/contas/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Erro ao excluir conta");
-
-    toast.success("Conta excluída com sucesso!");
   } catch (error) {
-    toast.error("Erro ao excluir conta!");
+    console.error("Erro ao excluir conta:", error);
     throw error;
   }
 };
@@ -46,16 +59,28 @@ export const excluirConta = async (id: number): Promise<void> => {
 export const atualizarStatusConta = async (id: number, novoStatus: boolean): Promise<void> => {
   try {
     const res = await fetch(`${API_URL}/api/contas/${id}/status`, {
-      method: "PATCH",
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ativo: novoStatus }),
+      body: JSON.stringify({ inativo: novoStatus }),
     });
 
-    if (!res.ok) throw new Error("Erro ao atualizar status da conta");
-
-    toast.success(`Conta ${novoStatus ? "ativada" : "inativada"} com sucesso!`);
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({})) as ErrorResponse;
+      throw new Error(errorData?.details || errorData?.error || "Erro ao atualizar status da conta");
+    }
   } catch (error) {
-    toast.error("Erro ao atualizar status da conta!");
+    console.error("Erro ao atualizar status da conta:", error);
+    throw error;
+  }
+};
+
+export const getContasCorrentes = async (): Promise<ContaCorrente[]> => {
+  try {
+    const res = await fetch(`${API_URL}/api/contas`);
+    if (!res.ok) throw new Error("Erro ao buscar contas correntes");
+    return res.json();
+  } catch (error) {
+    console.error("Erro ao buscar contas correntes:", error);
     throw error;
   }
 };

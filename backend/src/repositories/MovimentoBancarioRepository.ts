@@ -1,6 +1,7 @@
 import { MovimentoBancario } from '../models/MovimentoBancario';
 import { ResultadoRepository } from './ResultadoRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
+import { FinanciamentoDetalhadoDTO } from '../models/FinanciamentoDetalhadoDTO';
 
 export class MovimentoBancarioRepository {
 	private db: D1Database;
@@ -624,5 +625,75 @@ export class MovimentoBancarioRepository {
 			idFinanciamento: result.idFinanciamento as number | undefined,
 			resultadoList: resultadoList,
 		};
+	}
+
+	async getDetalhesFinanciamento(credorKey: string, mes: number, ano: number): Promise<FinanciamentoDetalhadoDTO[]> {
+		const [credorType, credorIdStr] = credorKey.split('_');
+		const credorId = parseInt(credorIdStr, 10);
+
+		if (isNaN(credorId)) {
+			return [];
+		}
+
+		const primeiroDiaMes = new Date(ano, mes, 1).toISOString().split('T')[0];
+		const ultimoDiaMes = new Date(ano, mes + 1, 0).toISOString().split('T')[0];
+
+		let credorField = '';
+		if (credorType === 'p') {
+			credorField = 'f.idPessoa';
+		} else if (credorType === 'b') {
+			credorField = 'f.idBanco';
+		} else {
+			return [];
+		}
+
+		const sql = `
+			SELECT
+				f.id as idFinanciamento,
+				f.numeroContrato,
+				f.valor as valorFinanciamento,
+				p.nome as nomePessoa,
+				b.nome as nomeBanco,
+				pf.id as idParcela,
+				pf.numParcela,
+				pf.valor as valorParcela,
+				pf.dt_vencimento,
+				pf.dt_liquidacao,
+				pf.status
+			FROM parcelaFinanciamento pf
+			JOIN Financiamento f ON pf.idFinanciamento = f.id
+			LEFT JOIN Pessoa p ON f.idPessoa = p.id
+			LEFT JOIN Banco b ON f.idBanco = b.id
+			WHERE ${credorField} = ?
+			  AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) BETWEEN ? AND ?
+			ORDER BY f.id, pf.numParcela
+		`;
+
+		const { results } = await this.db.prepare(sql).bind(credorId, primeiroDiaMes, ultimoDiaMes).all();
+
+		const financiamentosMap = new Map<number, FinanciamentoDetalhadoDTO>();
+
+		for (const row of results as any[]) {
+			if (!financiamentosMap.has(row.idFinanciamento)) {
+				financiamentosMap.set(row.idFinanciamento, {
+					id: row.idFinanciamento,
+					numeroContrato: row.numeroContrato,
+					valorTotal: row.valorFinanciamento,
+					credor: row.nomePessoa || row.nomeBanco || 'Não identificado',
+					parcelas: [],
+				});
+			}
+
+			financiamentosMap.get(row.idFinanciamento)!.parcelas.push({
+				id: row.idParcela,
+				numParcela: row.numParcela,
+				valor: row.valorParcela,
+				dt_vencimento: row.dt_vencimento,
+				dt_liquidacao: row.dt_liquidacao,
+				status: row.status,
+			});
+		}
+
+		return Array.from(financiamentosMap.values());
 	}
 }

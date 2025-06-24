@@ -23,17 +23,18 @@ interface Props {
 
 const ModalDetalhamento: React.FC<Props> = ({ isOpen, onClose, movimentos, titulo }) => {
 	// console.log('detalhando movmientos:', movimentos);
-	const contas = Array.from(new Set(movimentos.map((m) => m.conta || 'Desconhecida')));
-	const [tabAtiva, setTabAtiva] = useState(contas[0]);
+	const contas = useMemo(() => Array.from(new Set(movimentos.map((m) => m.conta || 'Desconhecida'))), [movimentos]);
+	const [tabAtiva, setTabAtiva] = useState(contas.length > 0 ? contas[0] : '');
 	const [filtro, setFiltro] = useState('');
 
 	useEffect(() => {
-		if (isOpen && contas.length > 0) {
+		if (contas.length > 0) {
 			setTabAtiva(contas[0]);
 		}
-	}, [isOpen, contas]);
+	}, [contas]);
 
 	const movimentosFiltrados = useMemo(() => {
+		if (!tabAtiva) return [];
 		const lower = filtro.toLowerCase();
 		return movimentos.filter(
 			(m) =>
@@ -64,9 +65,13 @@ const ModalDetalhamento: React.FC<Props> = ({ isOpen, onClose, movimentos, titul
 			<div className="px-5 pt-4 space-y-3">
 				{/* Tabs */}
 				<div className="flex gap-2 flex-wrap">
-					<div className="flex items-end gap-3 relative w-auto whitespace-nowrap overflow-x-auto overflow-y-hidden no-scrollbar" onWheel={(e) => {
-    e.currentTarget.scrollLeft += e.deltaY;
-  }}>
+					<div
+						className="flex items-end gap-3 relative w-auto whitespace-nowrap overflow-x-auto overflow-y-hidden no-scrollbar"
+						onWheel={(e) => {
+							const target = e.currentTarget as HTMLDivElement;
+							target.scrollLeft += e.deltaY;
+						}}
+					>
 						<div className="flex border-b border-gray-300">
 							{contas.map((conta) => (
 								<button
@@ -88,7 +93,10 @@ const ModalDetalhamento: React.FC<Props> = ({ isOpen, onClose, movimentos, titul
 					type="text"
 					placeholder="Filtrar por data, descrição ou valor..."
 					value={filtro}
-					onChange={(e) => setFiltro(e.target.value)}
+					onChange={(e) => {
+						const target = e.target as HTMLInputElement;
+						setFiltro(target.value);
+					}}
 					className="w-full border px-3 py-2 rounded text-sm"
 				/>
 

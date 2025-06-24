@@ -2,12 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faSearchDollar } from '@fortawesome/free-solid-svg-icons';
 import { listarContas } from '../../../services/contaCorrenteService';
+import { listarPlanoContas } from '../../../services/planoContasService';
 import FiltroFluxoCaixaModal from './FiltroFluxoCaixaModal';
 import { buscarFluxoCaixa, buscarDetalhamento } from '../../../services/fluxoCaixaService';
 import { FluxoCaixaMes } from '../../../../../backend/src/models/FluxoCaixaDTO';
 import { formatarMoeda, formatarMoedaOuTraco, parseMoeda } from '../../../Utils/formataMoeda';
 import ModalDetalhamento from './ModalDetalhamento';
 import { MovimentoDetalhado } from '../../../../../backend/src/models/MovimentoDetalhado';
+import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
+import ModalDetalhamentoFinanciamento from './ModalDetalhamentoFinanciamento';
+import { FinanciamentoDetalhadoDTO } from '../../../../../backend/src/models/FinanciamentoDetalhadoDTO';
 
 const MovimentoBancarioTable: React.FC = () => {
 	const [dadosFluxo, setDadosFluxo] = useState<FluxoCaixaMes[]>([]);
@@ -26,12 +30,15 @@ const MovimentoBancarioTable: React.FC = () => {
 		'2': true,
 	});
 	const [contasCorrentes, setContasCorrentes] = useState<any[]>([]);
+	const [planosContas, setPlanosContas] = useState<PlanoConta[]>([]);
 	const [contasSelecionadas, setContasSelecionadas] = useState<string[]>([]);
 	const [anoSelecionado, setAnoSelecionado] = useState<string>(String(new Date().getFullYear()));
 	const [meses, setMeses] = useState<string[]>([]);
 	const [modalDetalhamentoAberto, setModalDetalhamentoAberto] = useState(false);
 	const [movimentosDetalhados, setMovimentosDetalhados] = useState<MovimentoDetalhado[]>([]);
 	const [tituloDetalhamento, setTituloDetalhamento] = useState<string>('');
+	const [modalFinanciamentoDetalhesAberto, setModalFinanciamentoDetalhesAberto] = useState(false);
+	const [financiamentosDetalhados, setFinanciamentosDetalhados] = useState<FinanciamentoDetalhadoDTO[]>([]);
 
 	interface Categoria {
 		label: string;
@@ -62,14 +69,43 @@ const MovimentoBancarioTable: React.FC = () => {
 			}
 		}
 
+		async function buscarPlanosContas() {
+			const planos = await listarPlanoContas();
+			setPlanosContas(planos);
+		}
+
 		buscarContas();
+		buscarPlanosContas();
 	}, []);
+
+	// Função para obter descrição do plano de contas
+	const getDescricaoPlanoConta = (idPlano: string): string => {
+		const plano = planosContas.find(p => p.id.toString() === idPlano);
+		return plano ? plano.descricao : `Plano ${idPlano}`;
+	};
+
+	// Função para obter descrição da conta corrente
+	const getDescricaoContaCorrente = (idConta: string): string => {
+		const conta = contasCorrentes.find((c) => c.id.toString() === idConta);
+		if (!conta) {
+			return `Conta ${idConta}`;
+		}
+
+		// Prioriza nomeBanco ou nome. Se não houver, usa 'Conta Corrente'.
+		const nomeBanco = conta.nomeBanco || conta.nome || 'Conta Corrente';
+		// Prioriza numConta ou numero. Se não houver, usa o ID.
+		const numConta = conta.numConta || conta.numero || idConta;
+		// Adiciona o responsável se existir.
+		const responsavel = conta.responsavel ? ` - ${conta.responsavel}` : '';
+
+		return `${nomeBanco} - ${numConta}${responsavel}`;
+	};
 
 	const gerarFluxo = async (contasParaGerar?: string[]) => {
 		try {
 			const contas = contasParaGerar || contasSelecionadas;
 			if (contas.length === 0) {
-				window.alert('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
+				console.error('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
 				return;
 			}
 
@@ -90,36 +126,36 @@ const MovimentoBancarioTable: React.FC = () => {
 			const subEntradas = Object.entries(receitas).map(([id, { descricao, filhos }]) => ({
 				id,
 				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, dadosFilho]) => ({
+				filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
 					id: idFilho,
-					descricao: (dadosFilho as any).descricao || `Plano ${idFilho}`,
+					descricao: getDescricaoPlanoConta(idFilho),
 				})),
 			}));
 
 			const subSaidas = Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
 				id,
 				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, dadosFilho]) => ({
+				filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
 					id: idFilho,
-					descricao: (dadosFilho as any).descricao || `Plano ${idFilho}`,
+					descricao: getDescricaoPlanoConta(idFilho),
 				})),
 			}));
 
-			const subFinanciamentos = Object.entries(dados[0]?.financiamentos || {}).map(([idConta, { descricao }]) => ({
+			const subFinanciamentos = Object.entries(dados[0]?.financiamentos || {}).map(([idConta, valor]) => ({
 				id: idConta,
-				descricao: descricao || `Conta ${idConta}`,
+				descricao: getDescricaoContaCorrente(idConta),
 				filhos: [],
 			}));
 
-			const subInvestimentos = Object.entries(dados[0]?.investimentos || {}).map(([idPlano, { descricao }]) => ({
+			const subInvestimentos = Object.entries(dados[0]?.investimentos || {}).map(([idPlano, valor]) => ({
 				id: idPlano,
-				descricao: descricao || `Plano ${idPlano}`,
+				descricao: getDescricaoPlanoConta(idPlano),
 				filhos: [],
 			}));
 
-			const subPendentes = Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, { descricao }]) => ({
+			const subPendentes = Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, valor]) => ({
 				id: idConta,
-				descricao: descricao || `Conta ${idConta}`,
+				descricao: getDescricaoContaCorrente(idConta),
 				filhos: [],
 			}));
 
@@ -136,6 +172,8 @@ const MovimentoBancarioTable: React.FC = () => {
 			}));
 		} catch (e) {
 			console.error('Erro ao gerar fluxo de caixa:', e);
+			const errorMessage = e instanceof Error ? e.message : 'Erro desconhecido ao gerar fluxo de caixa';
+			console.error(`Erro ao gerar fluxo de caixa: ${errorMessage}`);
 		}
 		setIsLoading(true);
 	};
@@ -178,10 +216,19 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const abrirDetalhamento = async (planoId: string, mes: number, tipo: string, descricao: string) => {
 		try {
-			const dados = await buscarDetalhamento(planoId, mes, tipo);
-			setMovimentosDetalhados(dados);
+			console.log('abrirDetalhamento', { planoId, mes, tipo, descricao });
+			const dados = await buscarDetalhamento(planoId, mes, tipo, anoSelecionado);
+			console.log('dados', dados);
 			setTituloDetalhamento(descricao);
-			setModalDetalhamentoAberto(true);
+			console.log('tipo', tipo);
+			if (tipo === 'financiamentos') {
+				console.log('dados financiamentos', dados);
+				setFinanciamentosDetalhados(dados as any);
+				setModalFinanciamentoDetalhesAberto(true);
+			} else {
+				setMovimentosDetalhados(dados as MovimentoDetalhado[]);
+				setModalDetalhamentoAberto(true);
+			}
 		} catch (error) {
 			console.error('Erro ao buscar detalhamento:', error);
 		}
@@ -190,13 +237,13 @@ const MovimentoBancarioTable: React.FC = () => {
 	const calcularTotais = (tipo: keyof FluxoCaixaMes): string[] => {
 		return dadosFluxo.map((mes) => {
 			if (tipo === 'financiamentos' || tipo === 'investimentos' || tipo === 'pendentesSelecao') {
-				const soma = Object.values(mes[tipo] ?? {}).reduce((a, b: any) => a + (typeof b === 'object' ? b.valor || 0 : b), 0);
+				const soma = Object.values(mes[tipo] ?? {}).reduce((a, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 
 				return 'R$ ' + formatarMoedaOuTraco(soma);
 			}
 			let total = 0;
 			Object.values(mes[tipo] ?? {}).forEach((subcat: any) => {
-				total += Object.values(subcat.filhos ?? {}).reduce((a: number, b: number) => a + b, 0);
+				total += Object.values(subcat.filhos ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 			});
 			return 'R$ ' + formatarMoedaOuTraco(total);
 		});
@@ -205,11 +252,11 @@ const MovimentoBancarioTable: React.FC = () => {
 	const calcularSaldoMes = (): string[] => {
 		return dadosFluxo.map((mes) => {
 			const receita = Object.values(mes.receitas ?? {}).reduce((acc, subcat: any) => {
-				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'object' ? b.valor || 0 : b), 0);
+				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 			}, 0);
 
 			const despesa = Object.values(mes.despesas ?? {}).reduce((acc, subcat: any) => {
-				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'object' ? b.valor || 0 : b), 0);
+				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 			}, 0);
 
 			return 'R$ ' + formatarMoeda(receita - despesa);
@@ -237,15 +284,20 @@ const MovimentoBancarioTable: React.FC = () => {
 						<td key={idx} className="text-center px-3 py-2 border border-gray-300" style={{ backgroundColor: valueCor }}>
 							{(() => {
 								let total = 0;
-								if (isFilhoDireto) {
+								if (tipo === 'financiamentos') {
+									total = Object.values(dadosFluxo[idx]?.financiamentos ?? {}).reduce(
+										(acc: number, item: any) => acc + (item.valor || 0),
+										0
+									);
+								} else if (isFilhoDireto) {
 									total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
-										(acc: number, item: any) => acc + (typeof item === 'object' ? item.valor || 0 : item),
+										(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
 										0
 									);
 								} else {
 									Object.values(dadosFluxo[idx]?.[tipo] ?? {}).forEach((subcat: any) => {
 										total += Object.values(subcat.filhos ?? {}).reduce(
-											(acc: number, filho: any) => acc + (typeof filho === 'object' ? filho.valor || 0 : filho),
+											(acc: number, filho: any) => acc + (typeof filho === 'number' ? filho : 0),
 											0
 										);
 									});
@@ -257,38 +309,86 @@ const MovimentoBancarioTable: React.FC = () => {
 				</tr>
 
 				{/* Se for movimentação direta (Financiamento, Investimento ou Pendentes) */}
-				{expandido[tipo] &&
-					isFilhoDireto &&
-					// Coletar filhos únicos ao longo dos 12 meses
+				{expandido[tipo] && isFilhoDireto && tipo === 'financiamentos' && (
 					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
-						const descricao = dadosFluxo.find((mes) => mes[tipo]?.[idFilho])?.[tipo]?.[idFilho]?.descricao || `Item ${idFilho}`;
-
+						const financiamentoInfo = (dadosFluxo.find((mes) => (mes.financiamentos as any)?.[idFilho])?.financiamentos as any)?.[idFilho];
+						const descricao = financiamentoInfo?.descricao || `Credor ${idFilho}`;
 						return (
 							<tr key={`filho-direto-${idFilho}`} className="bg-white border border-gray-200">
 								<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
 									<div className="ml-7">{descricao}</div>
 								</td>
-								{meses.map((_, idx) => (
-									<td
-										key={`valor-direto-${idFilho}-${idx}`}
-										className="text-center px-3 py-1 border border-gray-300 cursor-pointer hover:underline hover:text-blue-600"
-										onClick={() => abrirDetalhamento(idFilho, idx, tipo, descricao)}
-									>
-										{(() => {
-											const filhoValor = dadosFluxo[idx]?.[tipo]?.[idFilho]?.valor;
-											return filhoValor ? `R$ ${formatarMoeda(filhoValor)}` : 'R$ 0,00';
-										})()}
-									</td>
-								))}
+								{meses.map((_, idx) => {
+									const valorFinanciamento = (dadosFluxo[idx]?.financiamentos as any)?.[idFilho]?.valor;
+									return (
+										<td
+											key={`valor-direto-${idFilho}-${idx}`}
+											className="text-center px-3 py-1 border border-gray-300"
+										>
+											{valorFinanciamento ? (
+												<div
+													className="cursor-pointer hover:underline hover:text-blue-600"
+													onClick={() => abrirDetalhamento(idFilho, idx, 'financiamentos', descricao)}
+												>
+													{`R$ ${formatarMoeda(valorFinanciamento)}`}
+												</div>
+											) : (
+												'R$ 0,00'
+											)}
+										</td>
+									);
+								})}
 							</tr>
 						);
-					})}
+					})
+				)}
+
+				{/* Se for movimentação direta (Investimento ou Pendentes) */}
+				{expandido[tipo] && isFilhoDireto && tipo !== 'financiamentos' && (
+					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
+						let descricao = '';
+						if (tipo === 'investimentos') {
+							descricao = getDescricaoPlanoConta(idFilho);
+						} else if (tipo === 'pendentesSelecao') {
+							descricao = getDescricaoContaCorrente(idFilho);
+						} else {
+							descricao = `Item ${idFilho}`;
+						}
+						return (
+							<tr key={`filho-direto-${idFilho}`} className="bg-white border border-gray-200">
+								<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
+									<div className="ml-7">{descricao}</div>
+								</td>
+								{meses.map((_, idx) => {
+									const filhoValor = (dadosFluxo[idx]?.[tipo] as any)?.[idFilho];
+									return (
+										<td
+											key={`valor-direto-${idFilho}-${idx}`}
+											className="text-center px-3 py-1 border border-gray-300"
+										>
+											{filhoValor ? (
+												<div
+													className="cursor-pointer hover:underline hover:text-blue-600"
+													onClick={() => abrirDetalhamento(idFilho, idx, tipo, descricao)}
+												>
+													{`R$ ${formatarMoeda(filhoValor)}`}
+												</div>
+											) : (
+												'R$ 0,00'
+											)}
+										</td>
+									);
+								})}
+							</tr>
+						);
+					})
+				)}
 
 				{/* Se for Receitas/Despesas (normal com expandir/recolher subcategorias) */}
 				{expandido[tipo] &&
 					!isFilhoDireto &&
 					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idPai) => {
-						const pai = dadosFluxo.find((mes) => mes[tipo]?.[idPai])?.[tipo]?.[idPai];
+						const pai = (dadosFluxo.find((mes) => (mes[tipo] as any)?.[idPai])?.[tipo] as any)?.[idPai];
 						if (!pai) return null;
 
 						return (
@@ -301,8 +401,8 @@ const MovimentoBancarioTable: React.FC = () => {
 									{meses.map((_, idx) => (
 										<td key={`total-pai-${idPai}-${idx}`} className="text-center px-3 py-2 border border-gray-300 bg-gray-100">
 											{(() => {
-												const valorPai = Object.values(dadosFluxo[idx]?.[tipo]?.[idPai]?.filhos ?? {}).reduce(
-													(total: number, filho: any) => total + (filho.valor || 0),
+												const valorPai = Object.values((dadosFluxo[idx]?.[tipo] as any)?.[idPai]?.filhos ?? {}).reduce(
+													(total: number, filho: any) => total + (typeof filho === 'number' ? filho : 0),
 													0
 												);
 												return valorPai ? `R$ ${formatarMoeda(valorPai)}` : 'R$ 0,00';
@@ -312,24 +412,36 @@ const MovimentoBancarioTable: React.FC = () => {
 								</tr>
 
 								{expandidoSub[idPai] &&
-									Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo]?.[idPai]?.filhos ?? {})))).map((idFilho) => {
-										const filho = dadosFluxo.find((mes) => mes[tipo]?.[idPai]?.filhos?.[idFilho])?.[tipo]?.[idPai]?.filhos?.[idFilho];
+									Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys((mes[tipo] as any)?.[idPai]?.filhos ?? {})))).map((idFilho) => {
+										const filho = (dadosFluxo.find((mes) => (mes[tipo] as any)?.[idPai]?.filhos?.[idFilho])?.[tipo] as any)?.[
+											idPai
+										]?.filhos?.[idFilho];
 										if (!filho) return null;
+
+										const descricaoFilho = getDescricaoPlanoConta(idFilho);
 
 										return (
 											<tr key={`filho-${idPai}-${idFilho}`} className="bg-white border border-gray-200">
 												<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-													<div className="ml-7">{filho.descricao}</div>
+													<div className="ml-7">{descricaoFilho}</div>
 												</td>
 												{meses.map((_, idx) => (
 													<td
 														key={`valor-${idFilho}-${idx}`}
-														className="text-center px-3 py-1 border border-gray-300 cursor-pointer hover:underline hover:text-blue-600"
-														onClick={() => abrirDetalhamento(idFilho, idx, tipo, filho.descricao)}
+														className="text-center px-3 py-1 border border-gray-300"
 													>
 														{(() => {
-															const filhoValor = dadosFluxo[idx]?.[tipo]?.[idPai]?.filhos?.[idFilho]?.valor;
-															return filhoValor ? `R$ ${formatarMoeda(filhoValor)}` : 'R$ 0,00';
+															const filhoValor = (dadosFluxo[idx]?.[tipo] as any)?.[idPai]?.filhos?.[idFilho];
+															return filhoValor ? (
+																<div
+																	className="cursor-pointer hover:underline hover:text-blue-600"
+																	onClick={() => abrirDetalhamento(idFilho, idx, tipo, descricaoFilho)}
+																>
+																	{`R$ ${formatarMoeda(filhoValor)}`}
+																</div>
+															) : (
+																'R$ 0,00'
+															);
 														})()}
 													</td>
 												))}
@@ -522,6 +634,13 @@ const MovimentoBancarioTable: React.FC = () => {
 				isOpen={modalDetalhamentoAberto}
 				onClose={() => setModalDetalhamentoAberto(false)}
 				movimentos={movimentosDetalhados}
+				titulo={tituloDetalhamento}
+			/>
+
+			<ModalDetalhamentoFinanciamento
+				isOpen={modalFinanciamentoDetalhesAberto}
+				onClose={() => setModalFinanciamentoDetalhesAberto(false)}
+				financiamentos={financiamentosDetalhados}
 				titulo={tituloDetalhamento}
 			/>
 		</div>
