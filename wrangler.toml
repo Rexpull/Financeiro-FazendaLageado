@@ -1,5 +1,5 @@
 name = "financeiro-fazendalageado"
-main = "src/index.ts"
+main = "backend/src/index.ts"
 compatibility_date = "2024-02-06"
 compatibility_flags = ["nodejs_compat"]
 
@@ -10,3 +10,17 @@ database_id = "4172e157-80f8-4994-af1a-5c139d0b6389"
 
 [triggers]
 crons = ["0 6 1 * *"]  # Executa todo dia 1 do mês às 6h da manhã 
+
+# Ambiente de produção (padrão)
+[env.production]
+name = "financeiro-fazendalageado"
+
+
+# Ambiente de staging (homologação)
+[env.staging]
+name = "financeiro-fazendalageado-staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "financeiro_db_staging"
+database_id = "7e37b1b4-9b57-4490-9228-4d6b034e6d37"
