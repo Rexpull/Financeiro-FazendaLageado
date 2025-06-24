@@ -13,6 +13,7 @@ export class AuthController {
   // 🔹 Login e criação de sessão
   async login(identificador: string, senha: string, env: { JWT_SECRET: string }) {
     console.log("🔍 Tentativa de login para:", identificador);
+    console.log("JWT_SECRET:", env.JWT_SECRET);
 
     // 🔹 Busca pelo email ou nome de usuário
     const userContext = await this.sessionRepository.getByEmailOrUsuario(identificador);
