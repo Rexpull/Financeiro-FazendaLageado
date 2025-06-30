@@ -4,7 +4,7 @@ import { faPlus, faMinus, faSearchDollar } from '@fortawesome/free-solid-svg-ico
 import { listarContas } from '../../../services/contaCorrenteService';
 import { listarPlanoContas } from '../../../services/planoContasService';
 import FiltroFluxoCaixaModal from './FiltroFluxoCaixaModal';
-import { buscarFluxoCaixa, buscarDetalhamento } from '../../../services/fluxoCaixaService';
+import { buscarFluxoCaixa, buscarDetalhamento, buscarFluxoCaixaAnoAnterior } from '../../../services/fluxoCaixaService';
 import { FluxoCaixaMes } from '../../../../../backend/src/models/FluxoCaixaDTO';
 import { formatarMoeda, formatarMoedaOuTraco, parseMoeda } from '../../../Utils/formataMoeda';
 import ModalDetalhamento from './ModalDetalhamento';
@@ -12,9 +12,11 @@ import { MovimentoDetalhado } from '../../../../../backend/src/models/MovimentoD
 import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
 import ModalDetalhamentoFinanciamento from './ModalDetalhamentoFinanciamento';
 import { FinanciamentoDetalhadoDTO } from '../../../../../backend/src/models/FinanciamentoDetalhadoDTO';
+import FluxoCaixaGrafico from './FluxoCaixaGrafico';
 
 const MovimentoBancarioTable: React.FC = () => {
 	const [dadosFluxo, setDadosFluxo] = useState<FluxoCaixaMes[]>([]);
+	const [dadosFluxoAnterior, setDadosFluxoAnterior] = useState<FluxoCaixaMes[]>([]);
 	const [activeTab, setActiveTab] = useState<'tabela' | 'grafico'>('tabela');
 	const [modalPesquisaAberto, setModalPesquisaAberto] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
@@ -103,16 +105,17 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const gerarFluxo = async (contasParaGerar?: string[]) => {
 		try {
+			setIsLoading(false);
 			const contas = contasParaGerar || contasSelecionadas;
 			if (contas.length === 0) {
 				console.error('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
 				return;
 			}
-
-			setIsLoading(false);
-			console.log('Gerando fluxo com contas:', contas);
 			const dados = await buscarFluxoCaixa(anoSelecionado, contas);
+			const dadosAnterior = await buscarFluxoCaixaAnoAnterior(anoSelecionado, contas);
 			setDadosFluxo(dados);
+			setDadosFluxoAnterior(dadosAnterior);
+			setIsLoading(true);
 			console.log('Dados do fluxo de caixa:', dados);
 
 			const mesesDoAno = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(
@@ -174,8 +177,8 @@ const MovimentoBancarioTable: React.FC = () => {
 			console.error('Erro ao gerar fluxo de caixa:', e);
 			const errorMessage = e instanceof Error ? e.message : 'Erro desconhecido ao gerar fluxo de caixa';
 			console.error(`Erro ao gerar fluxo de caixa: ${errorMessage}`);
+			setIsLoading(true);
 		}
-		setIsLoading(true);
 	};
 
 	const toggleCategoria = (cat: string) => {
@@ -469,29 +472,34 @@ const MovimentoBancarioTable: React.FC = () => {
 							TABELA DOS DADOS
 						</button>
 						<button
-							className={`px-4 py-2 font-bold text-sm cursor-not-allowed pointer-none opacity-30 ${
+							className={`px-4 py-2 font-bold text-sm ${
 								activeTab === 'grafico' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'
 							}`}
 							onClick={() => setActiveTab('grafico')}
 						>
-							GRÁFICO DOS DADOS <span className="text-orange-500"> ( Em Breve )</span>
+							GRÁFICO DOS DADOS
 						</button>
 					</div>
 				</div>
 				<div className="flex justify-end items-center gap-3 w-full">
-					<button
-						className="bg-white border text-gray-800 font-medium px-4 py-1 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
-						onClick={() => recolherTodos()}
-					>
-						Recolher Todos <FontAwesomeIcon icon={faMinus} className="text-blue-500 font-bold" />
-					</button>
-					<button
-						className="bg-white border text-gray-800 font-medium px-4 py-1 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
-						onClick={() => expandirTodos()}
-					>
-						Expandir Todos <FontAwesomeIcon icon={faPlus} className="text-blue-500 font-bold" />
-					</button>
-					|
+					{activeTab === 'tabela' && (
+						<>
+							<button
+								className="bg-white border text-gray-800 font-medium px-4 py-1 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
+								onClick={() => recolherTodos()}
+							>
+								Recolher Todos <FontAwesomeIcon icon={faMinus} className="text-blue-500 font-bold" />
+							</button>
+							<button
+								className="bg-white border text-gray-800 font-medium px-4 py-1 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
+								onClick={() => expandirTodos()}
+							>
+								Expandir Todos <FontAwesomeIcon icon={faPlus} className="text-blue-500 font-bold" />
+							</button>
+							|
+						</>
+					)}
+					
 					<button
 						className="bg-primary text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-500"
 						onClick={() => setModalPesquisaAberto(true)}
@@ -500,121 +508,130 @@ const MovimentoBancarioTable: React.FC = () => {
 					</button>
 				</div>
 			</div>
-			<div
-				className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto max-w-full relative"
-				style={{ overflowX: 'auto', position: 'relative' }}
-			>
-				{!isLoading ? (
-					<div className="flex justify-center items-center h-64">
-						<div className="loader"></div>
-					</div>
-				) : (
-					<table className="table rounded-lg overflow-hidden w-full">
-						<thead>
-							<tr className="bg-gray-100 border border-gray-300">
-								<th className="text-center text-lg px-3 py-2 border border-gray-300 sticky left-0 bg-white z-10 ">Fluxo Mensal</th>
+			{activeTab === 'tabela' ? (
+				<div
+					className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto max-w-full relative"
+					style={{ overflowX: 'auto', position: 'relative' }}
+				>
+					{!isLoading ? (
+						<div className="flex justify-center items-center h-64">
+							<div className="loader"></div>
+						</div>
+					) : (
+						<table className="table rounded-lg overflow-hidden w-full">
+							<thead>
+								<tr className="bg-gray-100 border border-gray-300">
+									<th className="text-center text-lg px-3 py-2 border border-gray-300 sticky left-0 bg-white z-10 ">Fluxo Mensal</th>
 
-								{meses.map((mes) => (
-									<th
-										key={mes}
-										className="text-center text-md px-3 py-2 border border-gray-300 font-medium"
-										style={{ fontSize: '1rem', lineHeight: '1.50rem' }}
-									>
-										{mes}
-									</th>
-								))}
-							</tr>
-						</thead>
-						<tbody>
-							{/* Cabeçalho Saldo Inicial */}
-							<tr className="saldoInicial border border-gray-300 ">
-								<td className="sticky left-0 bg-white border border-gray-300 z-10 text-center">Saldo Inicial</td>
-								{dadosFluxo.map((mes, idx) => (
-									<td key={idx} className="text-center border border-gray-300">
-										{'R$ ' + formatarMoeda(mes.saldoInicial)}
-									</td>
-								))}
-							</tr>
+									{meses.map((mes) => (
+										<th
+											key={mes}
+											className="text-center text-md px-3 py-2 border border-gray-300 font-medium"
+											style={{ fontSize: '1rem', lineHeight: '1.50rem' }}
+										>
+											{mes}
+										</th>
+									))}
+								</tr>
+							</thead>
+							<tbody>
+								{/* Cabeçalho Saldo Inicial */}
+								<tr className="saldoInicial border border-gray-300 ">
+									<td className="sticky left-0 bg-white border border-gray-300 z-10 text-center">Saldo Inicial</td>
+									{dadosFluxo.map((mes, idx) => (
+										<td key={idx} className="text-center border border-gray-300">
+											{'R$ ' + formatarMoeda(mes.saldoInicial)}
+										</td>
+									))}
+								</tr>
 
-							{/* Categorias dinâmicas */}
-							{/* {Object.entries(categorias).map(([key, cat]) => renderCategoria(key, cat))} */}
+								{/* Categorias dinâmicas */}
+								{/* {Object.entries(categorias).map(([key, cat]) => renderCategoria(key, cat))} */}
 
-							{renderCategoria('receitas', 'Receitas', '#82b4ff', '#c7eafe')}
-							{renderCategoria('despesas', 'Despesas', '#ffbe82', '#ffe6bc')}
-							{renderCategoria('financiamentos', 'Financiamentos', '#ffc0c0', '#fce1e3')}
-							{renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
-							{renderCategoria('pendentesSelecao', 'Pendentes Seleção', '#e2e8f0', '#f8fafc')}
+								{renderCategoria('receitas', 'Receitas', '#82b4ff', '#c7eafe')}
+								{renderCategoria('despesas', 'Despesas', '#ffbe82', '#ffe6bc')}
+								{renderCategoria('financiamentos', 'Financiamentos', '#ffc0c0', '#fce1e3')}
+								{renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
+								{renderCategoria('pendentesSelecao', 'Pendentes Seleção', '#e2e8f0', '#f8fafc')}
 
-							{/* Totalizadores */}
-							<tr className="bg-gray-100 font-bold border border-gray-300" style={{ borderTop: '3px solid lightgrey' }}>
-								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo do mês (R x D)</td>
+								{/* Totalizadores */}
+								<tr className="bg-gray-100 font-bold border border-gray-300" style={{ borderTop: '3px solid lightgrey' }}>
+									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo do mês (R x D)</td>
 
-								{calcularSaldoMes().map((valor, idx) => (
-									<td key={idx} className="text-center border border-gray-300 bg-white">
-										{valor}
-									</td>
-								))}
-							</tr>
+									{calcularSaldoMes().map((valor, idx) => (
+										<td key={idx} className="text-center border border-gray-300 bg-white">
+											{valor}
+										</td>
+									))}
+								</tr>
 
-							<tr className="bg-gray-100 font-bold border border-gray-300">
-								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Financiamentos</td>
-								{calcularTotais('financiamentos').map((valor, idx) => (
-									<td key={idx} className="text-center border border-gray-300 bg-white">
-										{valor}
-									</td>
-								))}
-							</tr>
+								<tr className="bg-gray-100 font-bold border border-gray-300">
+									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Financiamentos</td>
+									{calcularTotais('financiamentos').map((valor, idx) => (
+										<td key={idx} className="text-center border border-gray-300 bg-white">
+											{valor}
+										</td>
+									))}
+								</tr>
 
-							<tr className="bg-gray-100 font-bold border border-gray-300">
-								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Investimentos</td>
-								{calcularTotais('investimentos').map((valor, idx) => (
-									<td key={idx} className="text-center border border-gray-300 bg-white">
-										{valor}
-									</td>
-								))}
-							</tr>
+								<tr className="bg-gray-100 font-bold border border-gray-300">
+									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Investimentos</td>
+									{calcularTotais('investimentos').map((valor, idx) => (
+										<td key={idx} className="text-center border border-gray-300 bg-white">
+											{valor}
+										</td>
+									))}
+								</tr>
 
-							<tr className="bg-gray-100 font-bold border border-gray-300">
-								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Pendências</td>
-								{calcularTotais('pendentesSelecao').map((valor, idx) => (
-									<td key={idx} className="text-center border border-gray-300 bg-white">
-										{valor}
-									</td>
-								))}
-							</tr>
+								<tr className="bg-gray-100 font-bold border border-gray-300">
+									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Pendências</td>
+									{calcularTotais('pendentesSelecao').map((valor, idx) => (
+										<td key={idx} className="text-center border border-gray-300 bg-white">
+											{valor}
+										</td>
+									))}
+								</tr>
 
-							<tr className="bg-gray-100 font-bold border border-gray-300">
-								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo Final</td>
-								{dadosFluxo.map((mes, idx) => (
-									<td
-										key={idx}
-										className={`text-center border border-gray-300 bg-white ${
-											mes.saldoFinal > 0 ? '!text-green-600' : mes.saldoFinal < 0 ? '!text-red-600' : 'text-gray-600'
-										}`}
-									>
-										{'R$ ' + formatarMoeda(mes.saldoFinal)}
-									</td>
-								))}
-							</tr>
+								<tr className="bg-gray-100 font-bold border border-gray-300">
+									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo Final</td>
+									{dadosFluxo.map((mes, idx) => (
+										<td
+											key={idx}
+											className={`text-center border border-gray-300 bg-white ${
+												mes.saldoFinal > 0 ? '!text-green-600' : mes.saldoFinal < 0 ? '!text-red-600' : 'text-gray-600'
+											}`}
+										>
+											{'R$ ' + formatarMoeda(mes.saldoFinal)}
+										</td>
+									))}
+								</tr>
 
-							<tr className="bg-gray-100 font-bold border border-gray-300">
-								<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Lucratividade</td>
+								<tr className="bg-gray-100 font-bold border border-gray-300">
+									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Lucratividade</td>
 
-								{dadosFluxo.map((mes, idx) => (
-									<td
-										key={idx}
-										className={`text-center border border-gray-300 bg-white ${
-											mes.lucro > 0 ? '!text-green-600' : mes.lucro < 0 ? '!text-red-600' : 'text-gray-600'
-										}`}
-									>
-										{'% ' + formatarMoeda(mes.lucro)}
-									</td>
-								))}
-							</tr>
-						</tbody>
-					</table>
-				)}
-			</div>
+									{dadosFluxo.map((mes, idx) => (
+										<td
+											key={idx}
+											className={`text-center border border-gray-300 bg-white ${
+												mes.lucro > 0 ? '!text-green-600' : mes.lucro < 0 ? '!text-red-600' : 'text-gray-600'
+											}`}
+										>
+											{'% ' + formatarMoeda(mes.lucro)}
+										</td>
+									))}
+								</tr>
+							</tbody>
+						</table>
+					)}
+				</div>
+			) : (
+				<FluxoCaixaGrafico
+					anoSelecionado={anoSelecionado}
+					dadosAtual={dadosFluxo}
+					dadosAnterior={dadosFluxoAnterior}
+					isLoading={!isLoading}
+				/>
+			)}
 			<FiltroFluxoCaixaModal
 				isOpen={modalPesquisaAberto}
 				onClose={() => setModalPesquisaAberto(false)}

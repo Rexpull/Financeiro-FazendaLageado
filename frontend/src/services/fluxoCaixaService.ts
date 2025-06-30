@@ -36,3 +36,16 @@ export const buscarDetalhamento = async (planoId: string, mes: number, tipo: str
 	console.log('Retorno buscarDetalhamento:', data);
 	return data;
 };
+
+export const buscarFluxoCaixaAnoAnterior = async (ano: string, contas: string[]): Promise<FluxoCaixaMes[]> => {
+	const res = await fetch(`${API_URL}/api/fluxoCaixa/anoAnterior`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ ano, contas }),
+	});
+	if (!res.ok) {
+		const errorData = await res.json().catch(() => ({ error: 'Erro desconhecido' })) as { error?: string; details?: string };
+		throw new Error(`Erro ao buscar fluxo de caixa do ano anterior: ${errorData.details || errorData.error || res.statusText}`);
+	}
+	return res.json();
+};

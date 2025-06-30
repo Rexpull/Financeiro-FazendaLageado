@@ -402,6 +402,194 @@ export class MovimentoBancarioController {
 				}
 			}
 
+			if (method === 'POST' && pathname === '/api/fluxoCaixa/anoAnterior') {
+				try {
+					const body = await req.json();
+					const { ano, contas } = body as { ano: string; contas: string[] };
+					const anoAnterior = (parseInt(ano) - 1).toString();
+					const contasNumber = contas.map(Number);
+					console.log('📊 Gerando fluxo de caixa do ano anterior:', anoAnterior, 'contas:', contas);
+
+					const todosMovimentos = await this.movBancarioRepository.getAllFiltrado(anoAnterior, contasNumber);
+					console.log('📥 Total movimentos carregados (ano anterior):', todosMovimentos.length);
+
+					const parcelas = await this.parcelaRepo.getParcelasDoAno(anoAnterior);
+					console.log('📥 Total parcelas de financiamento carregadas (ano anterior):', parcelas.length);
+
+					const planos = await this.planoContaRepository.getAll();
+					console.log('📥 Total planos carregados (ano anterior):', planos.length);
+
+					const contasCorrentes = await this.contaCorrenteRepository.getAll();
+					console.log('📥 Total contas correntes carregadas (ano anterior):', contasCorrentes.length);
+
+					const financiamentos = await this.financiamentoRepo.getAll();
+					const pessoas = await this.pessoaRepo.getAll();
+					const bancos = await this.bancoRepo.getAll();
+
+					const pendentesPorConta: { [idConta: number]: number } = {};
+
+					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
+
+					const movimentosFiltrados = todosMovimentos.filter((mov) => {
+						const planoContasIds = mov.resultadoList?.map((r) => r.idPlanoContas) || [];
+						const contemPlanoIgnorado = planoContasIds.some((id) => planosComPai170.includes(id));
+						if (contemPlanoIgnorado) {
+							return false;
+						}
+						return typeof mov.dtMovimento === 'string' && mov.dtMovimento.startsWith(anoAnterior) && contasNumber.includes(mov.idContaCorrente);
+					});
+
+					const dadosMensais: any[] = Array(12)
+						.fill(null)
+						.map(() => ({
+							receitas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
+							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
+							investimentos: {} as { [key: number]: number },
+							financiamentos: {} as { [key: string]: { valor: number; descricao: string } },
+							pendentesSelecao: {} as { [key: number]: number },
+							saldoInicial: 0,
+							saldoFinal: 0,
+							lucro: 0,
+						}));
+
+					for (const movimento of movimentosFiltrados) {
+						const mes = new Date(movimento.dtMovimento).getMonth();
+						if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
+							continue;
+						}
+						if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
+							const conta = movimento.idContaCorrente;
+							pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
+							if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+							}
+							dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+						}
+						if (movimento.resultadoList) {
+							for (const resultado of movimento.resultadoList) {
+								const plano = planos.find((p) => p.id === resultado.idPlanoContas);
+								const contaId = movimento.idContaCorrente;
+								if (!plano) {
+									if (!dadosMensais[mes].pendentesSelecao[contaId]) {
+										dadosMensais[mes].pendentesSelecao[contaId] = 0;
+									}
+									dadosMensais[mes].pendentesSelecao[contaId] += resultado.valor;
+									continue;
+								}
+								const tipoMov = plano.tipo;
+								const hierarquia = plano.hierarquia;
+								if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+									if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
+										dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
+									}
+									dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
+									continue;
+								} else if (tipoMov === 'custeio' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+									const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
+									if (!grupo) {
+										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+										}
+										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
+										continue;
+									}
+									const idPai = plano.idReferente;
+									if (!idPai) {
+										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+										}
+										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
+										continue;
+									}
+									if (!dadosMensais[mes][grupo][idPai]) {
+										dadosMensais[mes][grupo][idPai] = {
+											descricao: planos.find((p) => p.id === idPai)?.descricao || 'Outro',
+											filhos: {},
+										};
+									}
+									if (!dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas]) {
+										dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] = resultado.valor;
+									} else {
+										dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] += resultado.valor;
+									}
+								} else {
+									if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+									}
+									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
+								}
+							}
+						}
+					}
+
+					for (const parcela of parcelas) {
+						const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
+						const mes = dataEfetiva.getMonth();
+						const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
+						if (!financiamento) continue;
+						let credorKey = '';
+						let credorDescricao = 'Não identificado';
+						if (financiamento.idPessoa) {
+							const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
+							credorKey = `p_${financiamento.idPessoa}`;
+							credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
+						} else if (financiamento.idBanco) {
+							const banco = bancos.find((b) => b.id === financiamento.idBanco);
+							credorKey = `b_${financiamento.idBanco}`;
+							credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
+						}
+						if (!credorKey) continue;
+						if (!dadosMensais[mes].financiamentos[credorKey]) {
+							dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
+						}
+						dadosMensais[mes].financiamentos[credorKey].valor += parcela.valor;
+					}
+
+					for (let i = 0; i < dadosMensais.length; i++) {
+						const receitas = Object.values(dadosMensais[i].receitas ?? {})
+							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
+							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						const despesas = Object.values(dadosMensais[i].despesas ?? {})
+							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
+							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						const financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
+						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						if (i > 0) {
+							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;
+						}
+						dadosMensais[i].saldoFinal = dadosMensais[i].saldoInicial + (receitas - despesas) + investimentos + financiamentos + pendentes;
+						if (dadosMensais[i].saldoInicial === 0) {
+							if (dadosMensais[i].saldoFinal > 0) {
+								dadosMensais[i].lucro = 100;
+							} else if (dadosMensais[i].saldoFinal < 0) {
+								dadosMensais[i].lucro = -100;
+							} else {
+								dadosMensais[i].lucro = 0;
+							}
+						} else {
+							const variacao = ((dadosMensais[i].saldoFinal - dadosMensais[i].saldoInicial) / Math.abs(dadosMensais[i].saldoInicial)) * 100;
+							dadosMensais[i].lucro = Number(variacao.toFixed(1));
+						}
+					}
+
+					return new Response(JSON.stringify(dadosMensais), {
+						headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+						status: 200,
+					});
+				} catch (error) {
+					console.error('🚨 Erro ao gerar fluxo de caixa do ano anterior:', error);
+					return new Response(JSON.stringify({ 
+						error: 'Erro ao gerar fluxo de caixa do ano anterior', 
+						details: error instanceof Error ? error.message : 'Erro desconhecido',
+						stack: error instanceof Error ? error.stack : undefined
+					}), {
+						status: 500,
+						headers: corsHeaders,
+					});
+				}
+			}
+
 			if (method === 'PUT' && pathname.startsWith('/api/movBancario/')) {
 				const id = parseInt(pathname.split('/')[3]);
 				const body: MovimentoBancario = await req.json();
