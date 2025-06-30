@@ -14,6 +14,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.6.4",
     "@cloudflare/workers-types": "^4.20250129.0",
+    "@types/chart.js": "^2.9.41",
     "@types/dotenv": "^8.2.3",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.13.5",
@@ -43,6 +44,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "apexcharts": "^4.7.0",
     "bcryptjs": "^3.0.2",
+    "chart.js": "^4.5.0",
     "dotenv": "^16.4.7",
     "financeiro-fazendalageado": "file:",
     "form-data": "^4.0.2",
@@ -51,6 +53,7 @@
     "nodemailer": "^6.10.0",
     "react": "^19.0.0",
     "react-apexcharts": "^1.7.0",
+    "react-chartjs-2": "^5.3.0",
     "react-currency-input-field": "^3.10.0",
     "react-d3-tree": "^3.6.6",
     "react-dom": "^19.0.0",
