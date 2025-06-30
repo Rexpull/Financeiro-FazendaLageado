@@ -57,7 +57,7 @@ interface FormData {
 	idFinanciamento: number | null;
 }
 
-const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isOpen, onClose, movimento, planos = [], handleConcilia, movimentosSelecionados = [] }) => {
+const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onConciliaMultiplos?: (data: any) => void }> = ({ isOpen, onClose, movimento, planos = [], handleConcilia, movimentosSelecionados = [], onConciliaMultiplos }) => {
 	const [modalidadeMovimento, setModalidadeMovimento] = useState('padrao');
 	const [idPlanoContas, setIdPlanoContas] = useState<number | null>(null);
 	const [idPessoa, setIdPessoa] = useState<number | null>(null);
@@ -256,7 +256,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 		const newErrors: { [key: string]: string } = {};
 		if (modalidadeMovimento === 'padrao') {
 			const multiplosPlanos = rateios.length > 0 || (movimento.resultadoList && movimento.resultadoList.length > 1);
-
+			
+			// Permite um plano único para múltiplos movimentos ou múltiplos planos para um único movimento
 			if (!formData.idPlanoContas && !multiplosPlanos) {
 				newErrors.idPlanoContas = 'Selecione um plano de contas ou defina múltiplos!';
 			}
@@ -400,7 +401,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 			console.log('idPlanoContas ', idPlanoContas);
 			if (modalidadeMovimento === 'padrao') {
 				dados = {
-					idPlanoContas: parseInt(formData.idPlanoContas),
+					idPlanoContas: formData.idPlanoContas ? parseInt(formData.idPlanoContas.toString()) : null,
 					idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
 					idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
 					modalidadeMovimento,
@@ -421,7 +422,11 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 				};
 			}
 
-			handleConcilia(dados);
+			if (movimentosSelecionados.length > 1 && onConciliaMultiplos) {
+				onConciliaMultiplos(dados);
+			} else {
+				handleConcilia(dados);
+			}
 			onClose();
 		} catch (error) {
 			console.error('Erro ao salvar movimento:', error);
@@ -489,7 +494,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 										placeholder="Pesquisar plano de contas..."
 										onChange={handleSearchPlano}
 										value={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0 ? 'Multiplos Planos' : searchPlano}
-										disabled={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0 || movimentosSelecionados.length > 1}
+										disabled={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0}
 									/>
 									<FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
 								</div>
@@ -508,6 +513,22 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps> = ({ isO
 								</button>
 							</div>
 							{errors.idPlanoContas && <p className="text-red-500 text-xs col-span-2">{errors.idPlanoContas}</p>}
+							{rateios.length > 0 || (movimento.resultadoList ?? []).length > 0 && (
+								<p className="text-gray-500 text-xs col-span-2">
+									Múltiplos planos configurados para rateio
+								</p>
+							)}
+
+							{(movimento.resultadoList ?? []).length > 0 && (
+								<p className="text-gray-500 text-xs col-span-2">
+									Adicione múltiplos planos para conciliar em lote
+								</p>
+							)}
+							{movimentosSelecionados.length > 1 && (
+								<p className="text-gray-500 text-xs col-span-2">
+									Selecione um plano único para aplicar a todos os movimentos selecionados
+								</p>
+							)}
 
 							{showSuggestions && (
 								<ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">

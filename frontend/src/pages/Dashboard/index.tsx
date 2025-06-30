@@ -534,7 +534,7 @@ const Dashboard = () => {
             />
           </Box>
           <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
-          <TableContainer component={Paper} sx={{ minHeight: 350, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <TableContainer component={Paper} sx={{ minHeight: 350 }}>
             {dashboardData?.financiamentosPorCredor?.detalhamento?.length ? (
               <Table>
                 <TableHead>

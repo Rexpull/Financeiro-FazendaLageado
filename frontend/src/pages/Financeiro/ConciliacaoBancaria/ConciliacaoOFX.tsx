@@ -122,9 +122,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			console.log('data:', data);
 			const movimentoAtualizado: MovimentoBancario = {
 				...movimentoParaConciliar!,
-				idPlanoContas: data.idPlanoContas,
+				idPlanoContas: data.idPlanoContas || null,
 				modalidadeMovimento: data.modalidadeMovimento,
-				idPessoa: data.idPessoa ?? null,
+				idPessoa: data.idPessoa || null,
 			};
 
 			if (data.modalidadeMovimento === 'padrao') {
@@ -132,15 +132,13 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = null;
 				movimentoAtualizado.idFinanciamento = null;
-				
 			}
 
 			if (data.modalidadeMovimento === 'financiamento') {
-				movimentoAtualizado.idBanco = data.idBanco ?? null;
-				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? null;
-				movimentoAtualizado.parcelado = data.parcelado ?? false;
-				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? null;
-				
+				movimentoAtualizado.idBanco = data.idBanco || null;
+				movimentoAtualizado.numeroDocumento = data.numeroDocumento || null;
+				movimentoAtualizado.parcelado = data.parcelado || false;
+				movimentoAtualizado.idFinanciamento = data.idFinanciamento || null;
 			}
 
 			if(data.modalidadeMovimento === 'transferencia') {	
@@ -149,7 +147,6 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				movimentoAtualizado.idBanco = null;
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = null;
-
 			}
 
 			console.log('Movimento atualizado:', movimentoAtualizado);
@@ -221,23 +218,21 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 	const handleConciliaMultiplos = async (data: any) => {
 		try {
-			const movimentosAtualizados = [];
-			const erros = [];
+			const movimentosAtualizados: MovimentoBancario[] = [];
+			const erros: number[] = [];
 
 			for (const movimento of movimentosSelecionados) {
 				try {
-					const movimentoAtualizado = {
+					const movimentoAtualizado: MovimentoBancario = {
 						...movimento,
 						modalidadeMovimento: data.modalidadeMovimento,
-						idPlanoContas: data.idPlanoContas,
-						idPessoa: data.idPessoa,
-						idBanco: data.idBanco,
-						numeroDocumento: data.numeroDocumento,
-						parcelado: data.parcelado,
-						idFinanciamento: data.idFinanciamento,
-						idUsuario: usuario?.id || null,
-						conciliado: true,
-						dataConciliacao: new Date().toISOString()
+						idPlanoContas: data.idPlanoContas || null,
+						idPessoa: data.idPessoa || null,
+						idBanco: data.idBanco || null,
+						numeroDocumento: data.numeroDocumento || null,
+						parcelado: data.parcelado || false,
+						idFinanciamento: data.idFinanciamento || null,
+						idUsuario: movimento.idUsuario || null,
 					};
 
 					await salvarMovimentoBancario(movimentoAtualizado);
@@ -249,13 +244,13 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			}
 
 			// Atualiza a lista de movimentos
-			const movimentosAtualizadosList = movimentos.map(mov => {
+			const movimentosAtualizadosList = movimentosSendoConciliados.map(mov => {
 				const atualizado = movimentosAtualizados.find(m => m.id === mov.id);
 				return atualizado || mov;
 			});
 
-			setMovimentos(movimentosAtualizadosList.sort((a, b) => 
-				new Date(a.data).getTime() - new Date(b.data).getTime()
+			setMovimentosSendoConciliados(movimentosAtualizadosList.sort((a, b) => 
+				new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime()
 			));
 
 			// Limpa a seleção
@@ -264,6 +259,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 			// Fecha o modal
 			setMovimentoParaConciliar(null);
+			setModalConciliaIsOpen(false);
 
 			// Exibe mensagens de feedback
 			if (erros.length > 0) {

@@ -180,3 +180,19 @@ export const buscarSaldoContaCorrente = async (idConta: number, data: string) =>
 	if (!res.ok) throw new Error('Erro ao buscar saldo da conta');
 	return res.json();
 };
+
+export const buscarMovimentosPorIds = async (ids: number[]): Promise<MovimentoBancario[]> => {
+	try {
+		const res = await fetch(`${API_URL}/api/movBancario/porIds`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ids }),
+		});
+		
+		if (!res.ok) throw new Error('Erro ao buscar movimentos por IDs');
+		return res.json();
+	} catch (error) {
+		console.error('Erro ao buscar movimentos por IDs:', error);
+		throw error;
+	}
+};

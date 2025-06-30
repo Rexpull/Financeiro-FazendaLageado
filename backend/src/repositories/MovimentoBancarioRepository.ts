@@ -696,4 +696,57 @@ export class MovimentoBancarioRepository {
 
 		return Array.from(financiamentosMap.values());
 	}
+
+	async getByIds(ids: number[]): Promise<MovimentoBancario[]> {
+		if (ids.length === 0) return [];
+
+		const placeholders = ids.map(() => '?').join(',');
+		const { results } = await this.db
+			.prepare(
+				`
+				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
+					   numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
+					   criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
+					   idBanco, idPessoa, parcelado, idFinanciamento
+				FROM MovimentoBancario
+				WHERE id IN (${placeholders})
+				ORDER BY dtMovimento ASC
+			`
+			)
+			.bind(...ids)
+			.all();
+
+		const movimentos = await Promise.all(
+			results.map(async (result) => {
+				const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
+				return {
+					id: result.id as number,
+					dtMovimento: result.dtMovimento as string,
+					historico: result.historico as string,
+					idPlanoContas: result.idPlanoContas as number,
+					idContaCorrente: result.idContaCorrente as number,
+					valor: result.valor as number,
+					saldo: result.saldo as number,
+					ideagro: result.ideagro as boolean,
+					numeroDocumento: result.numero_documento as string,
+					descricao: result.descricao as string,
+					transfOrigem: result.transf_origem as number | null,
+					transfDestino: result.transf_destino as number | null,
+					identificadorOfx: result.identificador_ofx as string,
+					criadoEm: result.criado_em as string,
+					atualizadoEm: result.atualizado_em as string,
+					idUsuario: result.idUsuario as number,
+					tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+					modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
+					idBanco: result.idBanco as number,
+					idPessoa: result.idPessoa as number,
+					parcelado: result.parcelado === 1,
+					idFinanciamento: result.idFinanciamento as number | undefined,
+					resultadoList: resultadoList,
+				};
+			})
+		);
+
+		return movimentos;
+	}
 }

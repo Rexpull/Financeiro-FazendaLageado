@@ -33,6 +33,7 @@ import {
 	atualizarStatusIdeagro,
 	transferirMovimentoBancario,
 	buscarMovimentoBancarioById,
+	buscarMovimentosPorIds,
 } from '../../../services/movimentoBancarioService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import {
@@ -642,10 +643,21 @@ const MovimentoBancarioTable: React.FC = () => {
 									historicoImportacoes.map((item, index) => (
 										<button
 											key={index}
-											onClick={() => {
-												setHistoricoSelecionado({ movimentos: item.movimentos, totalizadores: item.totalizadores });
-												setModalConciliacaoHistoricoIsOpen(true);
-												setDropdownHistoricoAberto(false);
+											onClick={async () => {
+												try {
+													// Busca os movimentos atualizados do banco de dados
+													const movimentosAtualizados = await buscarMovimentosPorIds(item.idMovimentos);
+													
+													setHistoricoSelecionado({ 
+														movimentos: movimentosAtualizados, 
+														totalizadores: item.totalizadores 
+													});
+													setModalConciliacaoHistoricoIsOpen(true);
+													setDropdownHistoricoAberto(false);
+												} catch (error) {
+													console.error('Erro ao buscar movimentos atualizados:', error);
+													toast.error('Erro ao carregar movimentos do histórico');
+												}
 											}}
 											className="block w-full text-left text-sm border-b border-gray-200 px-4 py-2 hover:bg-gray-100"
 										>

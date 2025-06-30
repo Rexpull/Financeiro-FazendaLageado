@@ -523,6 +523,37 @@ export class MovimentoBancarioController {
 				}
 			}
 
+			if (method === 'POST' && pathname === '/api/movBancario/porIds') {
+				try {
+					const body: { ids: number[] } = await req.json();
+					console.log('🔍 Buscando movimentos por IDs:', body.ids);
+
+					if (!body.ids || !Array.isArray(body.ids) || body.ids.length === 0) {
+						return new Response(JSON.stringify({ error: 'IDs de movimentos são obrigatórios' }), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+
+					const movimentos = await this.movBancarioRepository.getByIds(body.ids);
+					console.log(`✅ Encontrados ${movimentos.length} movimentos`);
+
+					return new Response(JSON.stringify(movimentos), {
+						status: 200,
+						headers: corsHeaders,
+					});
+				} catch (error) {
+					console.error('🔥 Erro ao buscar movimentos por IDs:', error);
+					return new Response(JSON.stringify({ 
+						error: 'Erro ao buscar movimentos por IDs',
+						details: error instanceof Error ? error.message : 'Erro desconhecido'
+					}), {
+						status: 500,
+						headers: corsHeaders,
+					});
+				}
+			}
+
 			return new Response('Rota não encontrada', { status: 404, headers: corsHeaders });
 		} catch (error) {
 			console.error('🚨 Erro no servidor:', (error as Error).message);
