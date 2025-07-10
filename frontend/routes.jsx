@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import MainLayout from "./MainLayout"; // 🔹 Importa o layout principal
 import Dashboard from "./src/pages/Dashboard";
@@ -17,7 +17,7 @@ import { AuthProvider } from "./src/pages/Login/AuthContext";
 
 import LoadingScreen from "./src/components/LoadingScreen";
 
-const AppRoutes = () => {
+const AppRoutes = React.memo(() => {
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -27,27 +27,25 @@ const AppRoutes = () => {
       </AuthProvider>
     </BrowserRouter>
   );
-};
+});
 
-const MainLayoutWithLoading = () => {
+const MainLayoutWithLoading = React.memo(() => {
   const [isLoading, setIsLoading] = useState(false);
   const location = useLocation();
 
+  const handleNavigation = useCallback(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 300); // Reduzido de 500ms para 300ms
+
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
-    const handleNavigation = () => {
-      setIsLoading(true);
-      setTimeout(() => {
-        setIsLoading(false);
-      }, 500);
-    };
-
-    handleNavigation(); 
-
-    return () => {
-      
-      clearTimeout(handleNavigation);
-    };
-  }, [location]);
+    const cleanup = handleNavigation();
+    return cleanup;
+  }, [location.pathname]); // Mudança específica para pathname em vez de location completo
 
   return (
     <>
@@ -73,6 +71,9 @@ const MainLayoutWithLoading = () => {
       </Routes>
     </>
   );
-};
+});
+
+AppRoutes.displayName = 'AppRoutes';
+MainLayoutWithLoading.displayName = 'MainLayoutWithLoading';
 
 export default AppRoutes;

@@ -38,15 +38,34 @@ export class ResultadoRepository {
 		`);
 
 		for (const r of resultados) {
-			await stmt.bind(
-				r.dtMovimento, r.idPlanoContas, r.idContaCorrente,
-				r.idMovimentoBancario, r.idParcelaFinanciamento ?? null,
-				r.valor, r.tipo
-			).run();
+			// Tratar valores undefined antes de fazer o bind
+			const bindValues = [
+				r.dtMovimento || null,
+				r.idPlanoContas || null,
+				r.idContaCorrente || null,
+				r.idMovimentoBancario || null,
+				r.idParcelaFinanciamento ?? null,
+				r.valor || 0,
+				r.tipo || null
+			];
+			
+			await stmt.bind(...bindValues).run();
 		}
 	}
     
     async update(resultado: Resultado): Promise<void> {
+        // Tratar valores undefined antes de fazer o bind
+        const bindValues = [
+            resultado.dtMovimento || null,
+            resultado.idPlanoContas || null,
+            resultado.idContaCorrente || null,
+            resultado.idMovimentoBancario || null,
+            resultado.idParcelaFinanciamento ?? null,
+            resultado.valor || 0,
+            resultado.tipo || null,
+            resultado.id || null
+        ];
+        
         await this.db.prepare(`
             UPDATE Resultado SET
                 dtMovimento = ?,
@@ -57,11 +76,7 @@ export class ResultadoRepository {
                 valor = ?,
                 tipo = ?
             WHERE id = ?
-        `).bind(
-            resultado.dtMovimento, resultado.idPlanoContas, resultado.idContaCorrente,
-            resultado.idMovimentoBancario, resultado.idParcelaFinanciamento ?? null,
-            resultado.valor, resultado.tipo, resultado.id
-        ).run();
+        `).bind(...bindValues).run();
     }
 }
     

@@ -97,11 +97,18 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 	const movimentosFiltrados = (
 		status === 'pendentes' ? movimentosSendoConciliados.filter(isMovimentoPendente) : movimentosSendoConciliados
 	).filter((m) => {
+		// Verificação de segurança para evitar erros de undefined
+		if (!m || !m.historico) {
+			console.warn('Movimento inválido encontrado:', m);
+			return false;
+		}
+
 		const descricaoMatch = filtroDescricao === '' || m.historico.toLowerCase().includes(filtroDescricao.toLowerCase());
 		const valorMatch = filtroValor === '' || formatarMoeda(m.valor, 2).includes(filtroValor);
 		const dataMatch =
 			(!filtroDataInicio || new Date(m.dtMovimento) >= new Date(filtroDataInicio)) &&
 			(!filtroDataFim || new Date(m.dtMovimento) <= new Date(filtroDataFim));
+		
 		return descricaoMatch && valorMatch && dataMatch;
 	});
 
@@ -193,8 +200,23 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 	const handleSelecionarTodos = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.checked) {
+			// Verificação de segurança para evitar erro de undefined
+			if (movimentosFiltrados.length === 0) {
+				console.warn('Nenhum movimento disponível para seleção');
+				e.target.checked = false;
+				return;
+			}
+
 			const primeiroMovimento = movimentosFiltrados[0];
-			const todosMesmoTipo = movimentosFiltrados.every(m => m.tipoMovimento === primeiroMovimento.tipoMovimento);
+			
+			// Verificação adicional de segurança
+			if (!primeiroMovimento || !primeiroMovimento.tipoMovimento) {
+				console.warn('Primeiro movimento inválido:', primeiroMovimento);
+				e.target.checked = false;
+				return;
+			}
+
+			const todosMesmoTipo = movimentosFiltrados.every(m => m && m.tipoMovimento === primeiroMovimento.tipoMovimento);
 			
 			if (todosMesmoTipo) {
 				setTipoMovimentoSelecionado(primeiroMovimento.tipoMovimento);
@@ -286,7 +308,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			>
 				{/* Cabeçalho */}
 				<div className="flex justify-between items-center bg-gray-50 px-4 py-3 rounded-t-lg border-b">
-					<h2 className="text-xl font-semibold text-gray-800">Conciliação de Movimentos OFX</h2>
+					<h2 className="text-xl font-semibold text-gray-800">Conciliação de Movimentos OFX {movimentosSendoConciliados.length}</h2>
 					<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
 						<FontAwesomeIcon icon={faTimes} size="xl" />
 					</button>

@@ -2,7 +2,7 @@ import React from "react";
 import Sidebar from "./src/components/Sidebar";
 import { Outlet } from "react-router-dom"; // 🔹 Importa Outlet para renderizar páginas
 
-const MainLayout = () => {
+const MainLayout = React.memo(() => {
   return (
     <div className="flex">
       <Sidebar /> {/* 🔹 Sidebar presente em todas as páginas */}
@@ -16,6 +16,8 @@ const MainLayout = () => {
       </div>
     </div>
   );
-};
+});
+
+MainLayout.displayName = 'MainLayout';
 
 export default MainLayout;

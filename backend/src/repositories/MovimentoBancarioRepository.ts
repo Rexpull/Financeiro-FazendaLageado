@@ -235,6 +235,31 @@ export class MovimentoBancarioRepository {
 			idFinanciamento,
 		} = movimento;
 
+		// Tratar valores undefined antes de fazer o bind
+		const bindValues = [
+			dtMovimento || null,
+			historico || null,
+			idPlanoContas || null,
+			idContaCorrente || null,
+			valor || 0,
+			saldo || 0,
+			ideagro ? 1 : 0,
+			numeroDocumento || null,
+			descricao || null,
+			transfOrigem || null,
+			transfDestino || null,
+			identificadorOfx || null,
+			idUsuario || null,
+			tipoMovimento || null,
+			modalidadeMovimento || null,
+			new Date().toISOString(),
+			new Date().toISOString(),
+			idBanco || null,
+			idPessoa || null,
+			parcelado ? 1 : 0,
+			idFinanciamento || null
+		];
+
 		const { meta } = await this.db
 			.prepare(
 				`
@@ -247,29 +272,7 @@ export class MovimentoBancarioRepository {
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`
 			)
-			.bind(
-				dtMovimento,
-				historico,
-				idPlanoContas,
-				idContaCorrente,
-				valor,
-				saldo,
-				ideagro,
-				numeroDocumento,
-				descricao,
-				transfOrigem,
-				transfDestino,
-				identificadorOfx,
-				idUsuario,
-				tipoMovimento,
-				modalidadeMovimento,
-				new Date().toISOString(),
-				new Date().toISOString(),
-				idBanco,
-				idPessoa,
-				parcelado ? 1 : 0,
-				idFinanciamento
-			)
+			.bind(...bindValues)
 			.run();
 
 		const idMov = meta.last_row_id;
@@ -322,6 +325,29 @@ export class MovimentoBancarioRepository {
 			idFinanciamento,
 		} = movimento;
 
+		// Tratar valores undefined antes de fazer o bind
+		const bindValues = [
+			dtMovimento || null,
+			historico || null,
+			idPlanoContas || null,
+			idContaCorrente || null,
+			valor || 0,
+			saldo || 0,
+			ideagro ? 1 : 0,
+			numeroDocumento || null,
+			descricao || null,
+			transfOrigem || null,
+			transfDestino || null,
+			identificadorOfx || null,
+			tipoMovimento || null,
+			modalidadeMovimento || null,
+			idBanco || null,
+			idPessoa || null,
+			parcelado ? 1 : 0,
+			idFinanciamento || null,
+			id
+		];
+
 		await this.db
 			.prepare(
 				`
@@ -330,27 +356,7 @@ export class MovimentoBancarioRepository {
 			WHERE id = ?;
 		`
 			)
-			.bind(
-				dtMovimento,
-				historico,
-				idPlanoContas,
-				idContaCorrente,
-				valor,
-				saldo,
-				ideagro,
-				numeroDocumento,
-				descricao,
-				transfOrigem,
-				transfDestino,
-				identificadorOfx,
-				tipoMovimento,
-				modalidadeMovimento,
-				idBanco,
-				idPessoa,
-				parcelado ? 1 : 0,
-				idFinanciamento,
-				id
-			)
+			.bind(...bindValues)
 			.run();
 
 		console.log('🧹 Limpando resultados antigos...');

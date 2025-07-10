@@ -68,30 +68,53 @@ export const salvarMovimentosOFX = async (
 				idPessoa: mov.idPessoa ?? null,
 				idPlanoContas: mov.idPlanoContas ?? null,
 				idUsuario: mov.idUsuario ?? null,
+				idFinanciamento: mov.idFinanciamento ?? null,
+				tipoMovimento: mov.tipoMovimento ?? (mov.valor >= 0 ? 'C' : 'D'),
 				criadoEm: '',
 				atualizadoEm: '',
 			};
 
-			Object.keys(movComConta).forEach((key) => {
-				if (movComConta[key as keyof MovimentoBancario] === undefined) {
-					delete movComConta[key as keyof MovimentoBancario];
-				}
-			});
+			// Remover campos undefined e garantir valores válidos
+			const movLimpo = Object.fromEntries(
+				Object.entries(movComConta).filter(([_, value]) => value !== undefined)
+			) as MovimentoBancario;
+
+			// Garantir que campos obrigatórios tenham valores válidos
+			movLimpo.dtMovimento = movLimpo.dtMovimento || new Date().toISOString();
+			movLimpo.historico = movLimpo.historico || 'Movimento sem descrição';
+			movLimpo.valor = movLimpo.valor || 0;
+			movLimpo.saldo = movLimpo.saldo || 0;
+			movLimpo.ideagro = movLimpo.ideagro || false;
+			movLimpo.parcelado = movLimpo.parcelado || false;
+			movLimpo.identificadorOfx = movLimpo.identificadorOfx || crypto.randomUUID();
 
 			const response = await fetch(`${API_URL}/api/movBancario`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(movComConta),
+				body: JSON.stringify(movLimpo),
 			});
 
-			const data: MovimentoBancario = await response.json();
+			const data = await response.json();
 
 			if (response.ok && data?.id) {
-				movimentosFinal.push(data);
-				if (response.status === 200) {
-					encontrados++;
-				} else if (response.status === 201) {
-					novos++;
+				// Buscar o movimento completo pelo ID retornado
+				try {
+					const movimentoCompleto = await buscarMovimentoBancarioById(data.id);
+					movimentosFinal.push(movimentoCompleto);
+					
+					if (response.status === 200) {
+						encontrados++;
+					} else if (response.status === 201) {
+						novos++;
+					}
+				} catch (error) {
+					console.error('Erro ao buscar movimento completo:', error);
+					// Se não conseguir buscar o movimento completo, usar os dados básicos
+					movimentosFinal.push({
+						...movLimpo,
+						id: data.id,
+						message: data.message
+					});
 				}
 			} else {
 				console.warn('Movimento não salvo, response:', response.status, data);

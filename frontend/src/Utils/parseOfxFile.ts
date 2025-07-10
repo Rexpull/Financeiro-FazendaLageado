@@ -59,14 +59,30 @@ export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoBancari
         }
 
         movimentos.push({
-          dtMovimento, historico, valor, tipoMovimento, identificadorOfx,
+          dtMovimento, 
+          historico, 
+          valor, 
+          tipoMovimento, 
+          identificadorOfx,
           id: 0,
           idContaCorrente: 0,
           saldo: 0,
           ideagro: false,
           parcelado: false,
+          modalidadeMovimento: 'padrao',
           criadoEm: "",
-          atualizadoEm: ""
+          atualizadoEm: "",
+          // Garantir que campos opcionais tenham valores válidos
+          idPlanoContas: undefined,
+          idPessoa: undefined,
+          idBanco: undefined,
+          numeroDocumento: undefined,
+          descricao: undefined,
+          transfOrigem: undefined,
+          transfDestino: undefined,
+          idUsuario: undefined,
+          idFinanciamento: undefined,
+          resultadoList: undefined
         });
       });
 
