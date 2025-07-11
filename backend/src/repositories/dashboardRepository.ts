@@ -29,9 +29,17 @@ export class DashboardRepository {
     this.validarAno(ano);
     const query = `
       SELECT 
-        COALESCE(SUM(CASE WHEN pc.tipo = 'R' THEN r.valor ELSE 0 END), 0) as receitas,
-        COALESCE(SUM(CASE WHEN pc.tipo = 'D' THEN r.valor ELSE 0 END), 0) as despesas,
-        COALESCE(SUM(CASE WHEN pc.tipo = 'I' THEN r.valor ELSE 0 END), 0) as investimentos
+        COALESCE(SUM(CASE 
+          WHEN pc.tipo = 'investimento' THEN 0
+          WHEN pc.hierarquia LIKE '001%' THEN r.valor 
+          ELSE 0 
+        END), 0) as receitas,
+        COALESCE(SUM(CASE 
+          WHEN pc.tipo = 'investimento' THEN 0
+          WHEN pc.hierarquia LIKE '002%' THEN r.valor 
+          ELSE 0 
+        END), 0) as despesas,
+        COALESCE(SUM(CASE WHEN pc.tipo = 'investimento' THEN r.valor ELSE 0 END), 0) as investimentos
       FROM Resultado r
       JOIN planoContas pc ON r.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?
@@ -73,9 +81,17 @@ export class DashboardRepository {
     if (isNaN(mes) || mes < 1 || mes > 12) throw new Error("Mês inválido");
     const query = `
       SELECT 
-        COALESCE(SUM(CASE WHEN pc.tipo = 'R' THEN r.valor ELSE 0 END), 0) as receitas,
-        COALESCE(SUM(CASE WHEN pc.tipo = 'D' THEN r.valor ELSE 0 END), 0) as despesas,
-        COALESCE(SUM(CASE WHEN pc.tipo = 'I' THEN r.valor ELSE 0 END), 0) as investimentos
+        COALESCE(SUM(CASE 
+          WHEN pc.tipo = 'investimento' THEN 0
+          WHEN pc.hierarquia LIKE '001%' THEN r.valor 
+          ELSE 0 
+        END), 0) as receitas,
+        COALESCE(SUM(CASE 
+          WHEN pc.tipo = 'investimento' THEN 0
+          WHEN pc.hierarquia LIKE '002%' THEN r.valor 
+          ELSE 0 
+        END), 0) as despesas,
+        COALESCE(SUM(CASE WHEN pc.tipo = 'investimento' THEN r.valor ELSE 0 END), 0) as investimentos
       FROM Resultado r
       JOIN planoContas pc ON r.idPlanoContas = pc.id
       JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id
@@ -91,13 +107,19 @@ export class DashboardRepository {
     };
   }
 
-  async getReceitasDespesasPorMes(ano: number) {
+  async getReceitasDespesasPorMes(ano: number): Promise<{ labels: string[], receitas: number[], despesas: number[] }> {
     this.validarAno(ano);
     const query = `
       SELECT 
         CAST(strftime('%m', m.dtMovimento) AS INTEGER) as mes,
-        SUM(CASE WHEN pc.tipo = 'R' THEN m.valor ELSE 0 END) as receitas,
-        SUM(CASE WHEN pc.tipo = 'D' THEN m.valor ELSE 0 END) as despesas
+        SUM(CASE 
+          WHEN pc.hierarquia LIKE '001%' THEN m.valor 
+          ELSE 0 
+        END) as receitas,
+        SUM(CASE 
+          WHEN pc.hierarquia LIKE '002%' THEN m.valor 
+          ELSE 0 
+        END) as despesas
       FROM MovimentoBancario m
       JOIN planoContas pc ON m.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
@@ -119,7 +141,7 @@ export class DashboardRepository {
     };
   }
 
-  async getInvestimentosPorMes(ano: number) {
+  async getInvestimentosPorMes(ano: number): Promise<{ labels: string[], values: number[] }> {
     this.validarAno(ano);
     const query = `
       SELECT 
@@ -128,7 +150,7 @@ export class DashboardRepository {
       FROM MovimentoBancario m
       JOIN planoContas pc ON m.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
-      AND pc.tipo = 'I'
+      AND pc.tipo = 'investimento'
       GROUP BY mes
       ORDER BY mes
     `;
@@ -144,7 +166,7 @@ export class DashboardRepository {
     };
   }
 
-  async getFinanciamentosPorMes(ano: number) {
+  async getFinanciamentosPorMes(ano: number): Promise<{ labels: string[], quitado: number[], emAberto: number[] }> {
     this.validarAno(ano);
     const query = `
       SELECT 
@@ -171,7 +193,7 @@ export class DashboardRepository {
     };
   }
 
-  async getFinanciamentosPorCredor(ano: number) {
+  async getFinanciamentosPorCredor(ano: number): Promise<{ labels: string[], values: number[], quitados: number[], emAberto: number[], detalhamento: any[] }> {
     this.validarAno(ano);
     const query = `
       SELECT 
@@ -218,7 +240,7 @@ export class DashboardRepository {
     };
   }
 
-  async getFinanciamentosPorFaixaJuros(ano: number) {
+  async getFinanciamentosPorFaixaJuros(ano: number): Promise<{ labels: string[], values: any[] }> {
     this.validarAno(ano);
     const query = `
       SELECT 
@@ -242,7 +264,7 @@ export class DashboardRepository {
     }));
   }
 
-  async getFinanciamentosPorBanco(ano: number) {
+  async getFinanciamentosPorBanco(ano: number): Promise<{ labels: string[], values: any[] }> {
     this.validarAno(ano);
     const query = `
       SELECT 
@@ -265,7 +287,7 @@ export class DashboardRepository {
     }));
   }
 
-  async getParcelasFinanciamento(ano: number) {
+  async getParcelasFinanciamento(ano: number): Promise<{ labels: string[], pagas: number[], vencidas: number[], totalPagas: number, totalVencidas: number, detalhes: any[] }> {
     this.validarAno(ano);
     const query = `
       SELECT 
@@ -331,20 +353,37 @@ export class DashboardRepository {
     };
   }
 
-  async getReceitasDespesas(ano: number) {
+  async getReceitasDespesas(ano: number, mes?: number): Promise<{ receitas: number[], despesas: number[], detalhamento: Array<{ descricao: string, valor: number, data: string, classificacao: string }> }> {
     this.validarAno(ano);
+    
+    let whereClause = "WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?";
+    let params = [ano];
+    
+    if (mes && mes >= 1 && mes <= 12) {
+      whereClause += " AND CAST(strftime('%m', m.dtMovimento) AS INTEGER) = ?";
+      params.push(mes);
+    }
+    
     const query = `
       SELECT 
         CAST(strftime('%m', m.dtMovimento) AS INTEGER) as mes,
-        SUM(CASE WHEN pc.tipo = 'R' THEN m.valor ELSE 0 END) as receitas,
-        SUM(CASE WHEN pc.tipo = 'D' THEN m.valor ELSE 0 END) as despesas
+        SUM(CASE 
+          WHEN pc.tipo = 'investimento' THEN 0
+          WHEN pc.hierarquia LIKE '001%' THEN m.valor 
+          ELSE 0 
+        END) as receitas,
+        SUM(CASE 
+          WHEN pc.tipo = 'investimento' THEN 0
+          WHEN pc.hierarquia LIKE '002%' THEN m.valor 
+          ELSE 0 
+        END) as despesas
       FROM MovimentoBancario m
       JOIN planoContas pc ON m.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
+      ${whereClause}
       GROUP BY mes
       ORDER BY mes
     `;
-    const result = await this.db.prepare(query).bind(ano).all();
+    const result = await this.db.prepare(query).bind(...params).all();
     
     const receitas = Array(12).fill(0);
     const despesas = Array(12).fill(0);
@@ -354,33 +393,34 @@ export class DashboardRepository {
       despesas[idx] = row.despesas;
     });
 
-    // Buscar detalhamento
+    // Buscar detalhamento com filtro de mês e ignorar movimentações (003%)
+    let detalhamentoWhereClause = "WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?";
+    let detalhamentoParams = [ano];
+
+    if (mes && mes >= 1 && mes <= 12) {
+      detalhamentoWhereClause += " AND CAST(strftime('%m', m.dtMovimento) AS INTEGER) = ?";
+      detalhamentoParams.push(mes);
+    }
+
     const queryDetalhamento = `
       SELECT 
         pc.descricao,
-        m.valor,
-        strftime('%m/%Y', m.dtMovimento) as mes,
-        CASE 
-          WHEN pc.tipo = 'R' THEN 'Receita'
-          WHEN pc.tipo = 'D' THEN 'Despesa'
-          ELSE 'Outro'
-        END as classificacao
+        m.valor
       FROM MovimentoBancario m
       JOIN planoContas pc ON m.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
+      ${detalhamentoWhereClause}
+      AND pc.hierarquia NOT LIKE '003%'
       ORDER BY m.dtMovimento DESC
       LIMIT 100
     `;
-    const detalhamento = await this.db.prepare(queryDetalhamento).bind(ano).all();
+    const detalhamento = await this.db.prepare(queryDetalhamento).bind(...detalhamentoParams).all();
 
     return {
       receitas,
       despesas,
       detalhamento: detalhamento.results.map((row: any) => ({
         descricao: row.descricao,
-        valor: row.valor,
-        mes: row.mes,
-        classificacao: row.classificacao
+        valor: row.valor
       }))
     };
   }

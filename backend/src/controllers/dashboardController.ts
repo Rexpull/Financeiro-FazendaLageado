@@ -14,6 +14,7 @@ export class DashboardController {
 
     if (method === "GET" && path === "/api/dashboard") {
       const ano = parseInt(url.searchParams.get("ano") || new Date().getFullYear().toString());
+      const mes = url.searchParams.get("mes") ? parseInt(url.searchParams.get("mes")!) : undefined;
 
       try {
         const [
@@ -35,7 +36,7 @@ export class DashboardController {
           this.repository.getFinanciamentosPorFaixaJuros(ano),
           this.repository.getFinanciamentosPorBanco(ano),
           this.repository.getParcelasFinanciamento(ano),
-          this.repository.getReceitasDespesas(ano)
+          this.repository.getReceitasDespesas(ano, mes)
         ]);
 
         return new Response(JSON.stringify({

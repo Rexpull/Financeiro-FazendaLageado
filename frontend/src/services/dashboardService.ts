@@ -67,18 +67,23 @@ export interface DashboardData {
     detalhamento: Array<{
       descricao: string;
       valor: number;
-      mes: string;
+      data: string;
       classificacao: string;
     }>;
   };
 }
 
-export const getDashboardData = async (ano: number): Promise<DashboardData> => {
+export const getDashboardData = async (ano: number, mes?: number): Promise<DashboardData> => {
   try {
     const API_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_URL) ? (import.meta as any).env.VITE_API_URL : '';
     const params = new URLSearchParams({
       ano: String(ano)
     });
+    
+    if (mes) {
+      params.append('mes', String(mes));
+    }
+    
     const url = API_URL ? `${API_URL}/api/dashboard?${params.toString()}` : `/api/dashboard?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) {

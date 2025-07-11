@@ -138,8 +138,18 @@ const Dashboard = () => {
       setLoading(true);
       setError(null);
       try {
-        const dashboardData = await getDashboardData(anoSelecionado);
-        setDashboardData(dashboardData);
+        // Busca dados do ano para o gráfico
+        const dashboardDataAno = await getDashboardData(anoSelecionado);
+        // Busca detalhamento filtrando mês se houver
+        const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
+        const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
+        const dashboardDataDetalhe = await getDashboardData(anoSelecionado, mesParam);
+
+        // Junta os dados: gráfico do ano, detalhamento do mês/ano
+        setDashboardData({
+          ...dashboardDataAno,
+          receitasDespesas: dashboardDataDetalhe.receitasDespesas
+        });
       } catch (err) {
         setError('Erro ao carregar dados do dashboard');
         console.error(err);
@@ -149,7 +159,7 @@ const Dashboard = () => {
     };
 
     fetchData();
-  }, [anoSelecionado]);
+  }, [anoSelecionado, mesSelecionado]);
 
   const exportToExcel = (data: any[], fileName: string) => {
     const ws = XLSX.utils.json_to_sheet(data);
@@ -173,14 +183,22 @@ const Dashboard = () => {
 
   // Gráficos
   const receitasDespesasOptions = {
-    chart: { type: "bar", height: 350, stacked: false },
+    chart: { type: "bar", height: 350, stacked: true, toolbar: { show: false } },
     plotOptions: { bar: { horizontal: false, columnWidth: "55%", endingShape: "rounded" } },
     dataLabels: { enabled: false },
     stroke: { show: true, width: 2, colors: ["transparent"] },
     xaxis: { categories: dashboardData?.receitasDespesasPorMes?.labels || [] },
-    yaxis: { title: { text: "Valor (R$)" } },
+    yaxis: {
+      title: { text: "Valor (R$)" },
+      labels: {
+        formatter: (val: number) => formatCurrency(val),
+        style: { fontSize: '13px' }
+      }
+    },
     fill: { opacity: 1 },
     tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+    colors: ["#4caf50", "#f44336"],
+    legend: { position: 'top' }
   };
   const financiamentosJurosOptions = {
     chart: { type: "pie" },
@@ -301,35 +319,35 @@ const Dashboard = () => {
 
         {/* Cards de Totais */}
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 2, mb: 4 }}>
-          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
-            <Box>
+          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
+            <Box >
               <Typography variant="subtitle2">Total de Receitas</Typography>
-              <Typography variant="h5" fontWeight="bold" color="success.main" sx={{display: 'flex', alignItems: 'center', gap: 1}}>
-                {formatCurrency(totalReceitasMes)} <Typography variant="caption" color="text.secondary"> | <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalReceitasAno)})</span></Typography>
+              <Typography variant="h5" fontWeight="bold" color="success.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
+                {formatCurrency(totalReceitasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalReceitasAno)})</span></Typography>
               </Typography>
             </Box>
             <TrendingUpIcon color="success" sx={{ fontSize: 48 }} />
           </Paper>
-          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
+          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
             <Box>
               <Typography variant="subtitle2">Total de Despesas</Typography>
-              <Typography variant="h5" fontWeight="bold" color="error.main" sx={{display: 'flex', alignItems: 'center', gap: 1}}>
-                {formatCurrency(totalDespesasMes)} <Typography variant="caption" color="text.secondary"> | <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalDespesasAno)})</span></Typography>
+              <Typography variant="h5" fontWeight="bold" color="error.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
+                {formatCurrency(totalDespesasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalDespesasAno)})</span></Typography>
               </Typography>
             </Box>
             <TrendingDownIcon color="error" sx={{ fontSize: 48 }} />
           </Paper>
-          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
+          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
             <Box>
               <Typography variant="subtitle2">Total Investido</Typography>
-              <Typography variant="h5" fontWeight="bold" color="info.main" sx={{display: 'flex', alignItems: 'center', gap: 1}}>
-                {formatCurrency(totalInvestimentosMes)} <Typography variant="caption" color="text.secondary"> | <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalInvestimentosAno)})</span></Typography>
+              <Typography variant="h5" fontWeight="bold" color="info.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
+                {formatCurrency(totalInvestimentosMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalInvestimentosAno)})</span></Typography>
               </Typography>
             </Box>
             <SavingsIcon color="info" sx={{ fontSize: 48 }} />
           </Paper>
-          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
-            <Box>
+          <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
+            <Box sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', height: '100%', gap:1}}>
               <Typography variant="subtitle2">Contratos Ativos</Typography>
               <Typography variant="h5" fontWeight="bold">{dashboardData?.totaisAno?.financiamentos?.contratosAtivos || 0}</Typography>
             </Box>
@@ -340,7 +358,9 @@ const Dashboard = () => {
         {/* Seção de Receitas e Despesas */}
         <Box sx={{ mb: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', mb: 2 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Análise Anual de Receitas e Despesas</Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              Análise de Receitas e Despesas - {anoSelecionado}
+            </Typography>
             <Button
               variant="outlined"
               startIcon={<FileDownloadIcon />}
@@ -353,47 +373,60 @@ const Dashboard = () => {
           <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 2 }}>
             <Paper sx={{ p: 2, minHeight: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {dashboardData?.receitasDespesas?.receitas?.length || dashboardData?.receitasDespesas?.despesas?.length ? (
-                <Suspense fallback={<CircularProgress />}>
-                  <Chart
-                    options={receitasDespesasOptions}
-                    series={[
-                      { name: "Receitas", data: dashboardData?.receitasDespesas?.receitas || [] },
-                      { name: "Despesas", data: dashboardData?.receitasDespesas?.despesas || [] },
-                    ]}
-                    type="bar"
-                    height={350}
-                    style={{width: '100%'}}
-                  />
-                </Suspense>
-              ) : (
-                <NoData message="Nenhum dado de receitas ou despesas para o filtro selecionado." />
-              )}
+              <Suspense fallback={<CircularProgress />}>
+                <Chart
+                  options={receitasDespesasOptions}
+                  series={[
+                    { name: "Receitas", data: dashboardData?.receitasDespesasPorMes?.receitas || [] },
+                    { name: "Despesas", data: (dashboardData?.receitasDespesasPorMes?.despesas || []).map(v => Math.abs(v)) },
+                  ]}
+                  type="bar"
+                  height={350}
+                  style={{width: '100%'}}
+                />
+              </Suspense>
             </Paper>
-            <TableContainer component={Paper} sx={{ minHeight: 350, maxHeight:500, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <TableContainer component={Paper} sx={{ minHeight: 350, maxHeight:400, display: 'flex', flexDirection: 'column', justifyContent: 'start' }}>
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  {mesSelecionado
+                    ? `Detalhamento de ${mesSelecionado}/${anoSelecionado}`
+                    : `Detalhamento de ${anoSelecionado}`}
+                </Typography>
+              </Box>
               {dashboardData?.receitasDespesas?.detalhamento?.length ? (
                 <Table size="small">
                   <TableHead>
                     <TableRow>
                       <TableCell>Descrição</TableCell>
                       <TableCell>Valor</TableCell>
-                      <TableCell>Mês</TableCell>
-                      <TableCell>Classificação</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {dashboardData?.receitasDespesas?.detalhamento?.map((item, index) => (
                       <TableRow key={index}>
                         <TableCell>{item.descricao}</TableCell>
-                        <TableCell>{formatCurrency(item.valor)}</TableCell>
-                        <TableCell>{item.mes}</TableCell>
-                        <TableCell>{item.classificacao}</TableCell>
+                        <TableCell>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: item.valor >= 0 ? 'success.main' : 'error.main',
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            {formatCurrency(item.valor)}
+                          </Typography>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               ) : (
-                <NoData message="Nenhum detalhamento encontrado para o filtro selecionado." />
+                <NoData message={
+                  mesSelecionado
+                    ? `Nenhum movimento encontrado para ${mesSelecionado}/${anoSelecionado}.`
+                    : `Nenhum movimento encontrado para ${anoSelecionado}.`
+                } />
               )}
             </TableContainer>
           </Box>
@@ -473,7 +506,7 @@ const Dashboard = () => {
           </Box>
           <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
-            <Paper sx={{ p: 2, minHeight: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Paper sx={{ p: 2, minHeight: 350, display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
               {dashboardData?.financiamentos?.porFaixaJuros?.length ? (
                 <Suspense fallback={<CircularProgress />}>
                   <Chart
