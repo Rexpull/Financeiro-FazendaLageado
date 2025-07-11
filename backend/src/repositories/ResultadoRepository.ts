@@ -48,6 +48,13 @@ export class ResultadoRepository {
 				r.valor || 0,
 				r.tipo || null
 			];
+
+			// Verificar se há valores undefined no array
+			const hasUndefined = bindValues.some(value => value === undefined);
+			if (hasUndefined) {
+				console.error('❌ Valores undefined detectados no bindValues do Resultado:', bindValues);
+				throw new Error('Valores undefined não são suportados pelo D1 Database');
+			}
 			
 			await stmt.bind(...bindValues).run();
 		}
@@ -65,6 +72,13 @@ export class ResultadoRepository {
             resultado.tipo || null,
             resultado.id || null
         ];
+
+        // Verificar se há valores undefined no array
+        const hasUndefined = bindValues.some(value => value === undefined);
+        if (hasUndefined) {
+            console.error('❌ Valores undefined detectados no bindValues do Resultado update:', bindValues);
+            throw new Error('Valores undefined não são suportados pelo D1 Database');
+        }
         
         await this.db.prepare(`
             UPDATE Resultado SET

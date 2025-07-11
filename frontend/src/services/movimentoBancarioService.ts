@@ -15,13 +15,27 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 			movimento.valor = -Math.abs(movimento.valor);
 		}
 
+		// Limpar valores undefined antes de enviar
+		const movimentoLimpo = Object.fromEntries(
+			Object.entries(movimento).filter(([_, value]) => value !== undefined)
+		) as MovimentoBancario;
+
+		// Garantir valores padrão para campos obrigatórios
+		movimentoLimpo.dtMovimento = movimentoLimpo.dtMovimento || new Date().toISOString();
+		movimentoLimpo.historico = movimentoLimpo.historico || 'Movimento sem descrição';
+		movimentoLimpo.valor = movimentoLimpo.valor || 0;
+		movimentoLimpo.saldo = movimentoLimpo.saldo || 0;
+		movimentoLimpo.ideagro = movimentoLimpo.ideagro || false;
+		movimentoLimpo.parcelado = movimentoLimpo.parcelado || false;
+		movimentoLimpo.identificadorOfx = movimentoLimpo.identificadorOfx || crypto.randomUUID();
+
 		const method = movimento.id ? 'PUT' : 'POST';
 		const url = movimento.id ? `${API_URL}/api/movBancario/${movimento.id}` : `${API_URL}/api/movBancario`;
 
 		const res = await fetch(url, {
 			method,
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(movimento),
+			body: JSON.stringify(movimentoLimpo),
 		});
 
 		if (!res.ok) throw new Error('Erro ao salvar movimento bancário');
@@ -87,6 +101,13 @@ export const salvarMovimentosOFX = async (
 			movLimpo.ideagro = movLimpo.ideagro || false;
 			movLimpo.parcelado = movLimpo.parcelado || false;
 			movLimpo.identificadorOfx = movLimpo.identificadorOfx || crypto.randomUUID();
+
+			// Verificar se ainda há valores undefined após a limpeza
+			const hasUndefined = Object.values(movLimpo).some(value => value === undefined);
+			if (hasUndefined) {
+				console.error('❌ Valores undefined detectados após limpeza:', movLimpo);
+				throw new Error('Valores undefined não são suportados');
+			}
 
 			const response = await fetch(`${API_URL}/api/movBancario`, {
 				method: 'POST',

@@ -87,6 +87,20 @@ export class FinanciamentoRepository {
 				dataVencimentoUltimaParcela, totalJuros
 			});
 
+			const bindValues = [
+				idBanco, idPessoa, responsavel, dataContrato, valor,
+				taxaJurosAnual, taxaJurosMensal, numeroContrato,
+				numeroGarantia, observacao, dataVencimentoPrimeiraParcela,
+				dataVencimentoUltimaParcela, totalJuros
+			];
+
+			// Verificar se há valores undefined no array
+			const hasUndefined = bindValues.some(value => value === undefined);
+			if (hasUndefined) {
+				console.error('❌ Valores undefined detectados no bindValues do Financiamento:', bindValues);
+				throw new Error('Valores undefined não são suportados pelo D1 Database');
+			}
+
 			const { meta } = await this.db.prepare(`
 				INSERT INTO Financiamento (
 					idBanco, idPessoa, responsavel, dataContrato, valor,
@@ -95,12 +109,7 @@ export class FinanciamentoRepository {
 					dataVencimentoUltimaParcela, totalJuros
 				)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`).bind(
-				idBanco, idPessoa, responsavel, dataContrato, valor,
-				taxaJurosAnual, taxaJurosMensal, numeroContrato,
-				numeroGarantia, observacao, dataVencimentoPrimeiraParcela,
-				dataVencimentoUltimaParcela, totalJuros
-			).run();
+			`).bind(...bindValues).run();
 
 			return meta.last_row_id;
 		} catch (error) {
@@ -150,6 +159,30 @@ export class FinanciamentoRepository {
 				throw new Error(`Financiamento com ID ${id} não encontrado`);
 			}
 
+			const bindValues = [
+				idBanco,
+				idPessoa,
+				responsavel,
+				dataContrato,
+				valor,
+				taxaJurosAnual,
+				taxaJurosMensal,
+				numeroContrato,
+				numeroGarantia,
+				observacao,
+				dataVencimentoPrimeiraParcela,
+				dataVencimentoUltimaParcela,
+				totalJuros,
+				id
+			];
+
+			// Verificar se há valores undefined no array
+			const hasUndefined = bindValues.some(value => value === undefined);
+			if (hasUndefined) {
+				console.error('❌ Valores undefined detectados no bindValues do Financiamento update:', bindValues);
+				throw new Error('Valores undefined não são suportados pelo D1 Database');
+			}
+
 			const { success } = await this.db.prepare(`
 				UPDATE Financiamento
 				SET idBanco = ?, 
@@ -167,22 +200,7 @@ export class FinanciamentoRepository {
 					totalJuros = ?, 
 					atualizadoEm = CURRENT_TIMESTAMP
 				WHERE id = ?
-			`).bind(
-				idBanco,
-				idPessoa,
-				responsavel,
-				dataContrato,
-				valor,
-				taxaJurosAnual,
-				taxaJurosMensal,
-				numeroContrato,
-				numeroGarantia,
-				observacao,
-				dataVencimentoPrimeiraParcela,
-				dataVencimentoUltimaParcela,
-				totalJuros,
-				id
-			).run();
+			`).bind(...bindValues).run();
 
 			if (!success) {
 				throw new Error("Falha ao atualizar financiamento");

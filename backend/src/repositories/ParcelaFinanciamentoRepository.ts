@@ -108,16 +108,25 @@ export class ParcelaFinanciamentoRepository {
 				dt_liquidacao
 			});
 
+			const bindValues = [
+				idMovimentoBancario, idFinanciamento, valor, status,
+				numParcela, dt_lancamento, dt_vencimento, dt_liquidacao
+			];
+
+			// Verificar se há valores undefined no array
+			const hasUndefined = bindValues.some(value => value === undefined);
+			if (hasUndefined) {
+				console.error('❌ Valores undefined detectados no bindValues da ParcelaFinanciamento:', bindValues);
+				throw new Error('Valores undefined não são suportados pelo D1 Database');
+			}
+
 			const { meta } = await this.db.prepare(`
 				INSERT INTO parcelaFinanciamento (
 					idMovimentoBancario, idFinanciamento, valor, status,
 					numParcela, dt_lancamento, dt_vencimento, dt_liquidacao
 				)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			`).bind(
-				idMovimentoBancario, idFinanciamento, valor, status,
-				numParcela, dt_lancamento, dt_vencimento, dt_liquidacao
-			).run();
+			`).bind(...bindValues).run();
 
 			return meta.last_row_id;
 		} catch (error) {
@@ -136,6 +145,23 @@ export class ParcelaFinanciamentoRepository {
 			dt_liquidacao
 		} = parcela;
 
+		const bindValues = [
+			idMovimentoBancario, 
+			valor, 
+			dt_vencimento, 
+			numParcela,
+			status,
+			dt_liquidacao,
+			id
+		];
+
+		// Verificar se há valores undefined no array
+		const hasUndefined = bindValues.some(value => value === undefined);
+		if (hasUndefined) {
+			console.error('❌ Valores undefined detectados no bindValues da ParcelaFinanciamento update:', bindValues);
+			throw new Error('Valores undefined não são suportados pelo D1 Database');
+		}
+
 		await this.db.prepare(`
 			UPDATE parcelaFinanciamento
 			SET idMovimentoBancario = ?, 
@@ -145,15 +171,7 @@ export class ParcelaFinanciamentoRepository {
 				status = ?,
 				dt_liquidacao = ?
 			WHERE id = ?
-		`).bind(
-			idMovimentoBancario, 
-			valor, 
-			dt_vencimento, 
-			numParcela,
-			status,
-			dt_liquidacao,
-			id
-		).run();
+		`).bind(...bindValues).run();
 	}
 
 	async deleteById(id: number): Promise<void> {

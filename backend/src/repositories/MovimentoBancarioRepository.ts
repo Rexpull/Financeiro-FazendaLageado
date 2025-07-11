@@ -260,6 +260,13 @@ export class MovimentoBancarioRepository {
 			idFinanciamento || null
 		];
 
+		// Verificar se há valores undefined no array
+		const hasUndefined = bindValues.some(value => value === undefined);
+		if (hasUndefined) {
+			console.error('❌ Valores undefined detectados no bindValues:', bindValues);
+			throw new Error('Valores undefined não são suportados pelo D1 Database');
+		}
+
 		const { meta } = await this.db
 			.prepare(
 				`
@@ -347,6 +354,13 @@ export class MovimentoBancarioRepository {
 			idFinanciamento || null,
 			id
 		];
+
+		// Verificar se há valores undefined no array
+		const hasUndefined = bindValues.some(value => value === undefined);
+		if (hasUndefined) {
+			console.error('❌ Valores undefined detectados no bindValues:', bindValues);
+			throw new Error('Valores undefined não são suportados pelo D1 Database');
+		}
 
 		await this.db
 			.prepare(
