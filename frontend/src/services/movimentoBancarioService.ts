@@ -9,7 +9,7 @@ export const listarMovimentosBancarios = async (): Promise<MovimentoBancario[]> 
 	return res.json();
 };
 
-export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Promise<{ id: number }> => {
+export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Promise<MovimentoBancario> => {
 	try {
 		if (movimento.tipoMovimento === 'D' && movimento.valor > 0) {
 			movimento.valor = -Math.abs(movimento.valor);
@@ -39,12 +39,23 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 		});
 
 		if (!res.ok) throw new Error('Erro ao salvar movimento bancário');
-		toast.success(`Movimento criado com sucesso!`);
-
-		return res.json();
+		
+		const resultado = await res.json();
+		
+		// Se for uma atualização (PUT), retornar o movimento atualizado
+		if (movimento.id) {
+			// Buscar o movimento atualizado do backend
+			const movimentoAtualizado = await buscarMovimentoBancarioById(movimento.id);
+			toast.success(`Movimento atualizado com sucesso!`);
+			return movimentoAtualizado;
+		} else {
+			// Se for uma criação (POST), retornar o resultado
+			toast.success(`Movimento criado com sucesso!`);
+			return resultado;
+		}
 	} catch (error) {
 		console.error('Erro ao salvar movimento bancário:', error);
-		// toast.error(`Falha na criação no movimento!`);
+		throw error;
 	}
 };
 

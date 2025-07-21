@@ -48,7 +48,7 @@ export class ResultadoRepository {
 				r.valor || 0,
 				r.tipo || null
 			];
-
+			
 			// Verificar se há valores undefined no array
 			const hasUndefined = bindValues.some(value => value === undefined);
 			if (hasUndefined) {

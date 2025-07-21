@@ -34,6 +34,7 @@ const validarStatusParcela = (parcela: ParcelaFinanciamento): ParcelaFinanciamen
 };
 
 export const listarFinanciamentos = async (): Promise<Financiamento[]> => {
+  console.log('LISTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAR');
 	const res = await fetch(`${API_URL}/api/financiamento`);
 	if (!res.ok) throw new Error("Erro ao listar financiamentos");
 	return res.json();

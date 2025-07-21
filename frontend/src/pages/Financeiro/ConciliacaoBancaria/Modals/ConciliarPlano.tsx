@@ -99,8 +99,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		idFinanciamento: null
 	});
 
+	// useRef para controlar se o modal já foi inicializado
+	const modalInicializado = useRef(false);
+
 	useEffect(() => {
-		if (isOpen) {
+		if (isOpen && !modalInicializado.current) {
+			modalInicializado.current = true;
+			
 			if (movimentosSelecionados.length > 1) {
 				// Limpa todos os campos para conciliação em lote
 				setModalidadeMovimento('padrao');
@@ -151,6 +156,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			
 			const inicializarModal = async () => {
 				try {
+					console.log('Inicializando modal...');
 					const financiamentosList = await listarFinanciamentos();
 					setFinanciamentos(financiamentosList);
 					
@@ -161,7 +167,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 						}
 					}
 					
-					validarFormulario();
+					// Removido validarFormulario() daqui para evitar loop
 				} catch (error) {
 					console.error('Erro ao inicializar modal:', error);
 					toast.error('Erro ao carregar dados do modal');
@@ -170,7 +176,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			
 			inicializarModal();
 		}
-	}, [isOpen, movimento, movimentosSelecionados]);
+
+		// Reset do flag quando o modal fecha
+		if (!isOpen) {
+			modalInicializado.current = false;
+		}
+	}, [isOpen]);
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -181,7 +192,6 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				if (!cache.pessoas) cache.pessoas = await listarPessoas();
 
 				setParametros(cache.parametros);
-
 				setPlanosFetch(cache.planosConta.filter((p) => p.nivel === 3));
 				setBancos(cache.bancos);
 				setPessoas(cache.pessoas);
@@ -190,10 +200,10 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			}
 		};
 
-		if (isOpen) {
+		if (isOpen && modalInicializado.current) {
 			fetchData();
 		}
-	}, [isOpen]);
+	}, [isOpen, modalInicializado.current]);
 
 	const preencherCamposExistentes = () => {
 		setModalidadeMovimento(movimento.modalidadeMovimento || 'padrao');
@@ -271,27 +281,40 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		return Object.keys(newErrors).length === 0;
 	};
 
+	// useEffect para validação que só executa quando necessário
 	useEffect(() => {
-		if (modalidadeMovimento === 'financiamento' && parametros.length > 0) {
+		if (isOpen && modalInicializado.current) {
+			// Pequeno delay para garantir que todos os estados foram atualizados
+			const timeoutId = setTimeout(() => {
+				validarFormulario();
+			}, 200);
+
+			return () => clearTimeout(timeoutId);
+		}
+	}, [isOpen, modalInicializado.current, formData.idPlanoContas, modalidadeMovimento, financiamentoSelecionado?.id, rateios.length]);
+
+	// useEffect para configurar planos de financiamento automaticamente
+	useEffect(() => {
+		if (modalidadeMovimento === 'financiamento' && parametros.length > 0 && modalInicializado.current) {
 			if (movimento.tipoMovimento === 'C') {
 				const idPlano = parametros[0]?.idPlanoEntradaFinanciamentos;
-				if (idPlano) {
-					setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
+				if (idPlano && idPlano !== formData.idPlanoContas) {
+					setFormData((prev) => ({ ...prev, idPlanoContas: idPlano }));
 					setIdPlanoContas(idPlano);
 					const plano = planos.find((p) => p.id === idPlano);
 					setSearchPlano(plano ? plano.descricao : '');
 				}
 			} else {
 				const idPlano = parametros[0]?.idPlanoPagamentoFinanciamentos;
-				if (idPlano) {
-					setFormData((prev) => ({ ...prev, idPlanoContas: idPlano.toString() }));
+				if (idPlano && idPlano !== formData.idPlanoContas) {
+					setFormData((prev) => ({ ...prev, idPlanoContas: idPlano }));
 					setIdPlanoContas(idPlano);
 					const plano = planos.find((p) => p.id === idPlano);
 					setSearchPlano(plano ? plano.descricao : '');
 				}
 			}
 		}
-	}, [modalidadeMovimento, parametros, movimento.tipoMovimento, planos]);
+	}, [modalidadeMovimento, parametros.length, movimento.tipoMovimento, planos.length, formData.idPlanoContas, modalInicializado.current]);
 
 	useEffect(() => {
 		if (parcelado && movimento.valor > 0) {

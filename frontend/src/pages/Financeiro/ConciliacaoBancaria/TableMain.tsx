@@ -148,6 +148,22 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	}, [contaSelecionada, dataInicio, dataFim, movimentos]);
 
+	// useEffect adicional para garantir atualização quando movimentos mudarem
+	useEffect(() => {
+		if (contaSelecionada && dataInicio && dataFim && movimentos.length > 0) {
+			const lista = gerarListaComSaldos(dataInicio, dataFim);
+			
+			if (statusFiltro === 'pendentes') {
+				const apenasPendentes = lista.filter((m) => m.idPlanoContas === null || m.idPlanoContas === 0);
+				setFilteredMovimentos(apenasPendentes);
+				setMovimentosFiltradosComSaldo(apenasPendentes);
+			} else {
+				setFilteredMovimentos(lista);
+				setMovimentosFiltradosComSaldo(lista);
+			}
+		}
+	}, [movimentos, statusFiltro]);
+
 	const fetchMovimentos = async () => {
 		setIsLoading(true);
 		try {
@@ -488,7 +504,6 @@ const MovimentoBancarioTable: React.FC = () => {
 	const handleConcilia = async (data: any) => {
 		try {
 			console.log('🔍 Iniciando conciliação com dados:', data);
-			console.log('📊 Página atual antes da conciliação:', currentPage);
 
 			// Armazenar a página atual em uma constante
 			const paginaAtual = currentPage;
@@ -520,28 +535,21 @@ const MovimentoBancarioTable: React.FC = () => {
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = null;
 				movimentoAtualizado.idFinanciamento = null;
-
 				movimentoAtualizado.resultadoList = [];
 			}
 
 			const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 
-			const atualizarEstados = () => {
-				setMovimentos((prevMovimentos) => prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
+			// Atualizar apenas a lista principal de movimentos
+			// O useEffect cuidará de recalcular as listas filtradas
+			setMovimentos((prevMovimentos) => 
+				prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov))
+			);
 
-				setMovimentosFiltradosComSaldo((prevMovimentos) =>
-					prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov))
-				);
-
-				setFilteredMovimentos((prevMovimentos) => prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
-
-				setCurrentPage(paginaAtual);
-			};
-
-			atualizarEstados();
-
+			setCurrentPage(paginaAtual);
 			setModalConciliaIsOpen(false);
-			console.log('🔄 Página atualizada:', currentPage);
+			
+			console.log('✅ Movimento conciliado com sucesso:', movimentoSalvo);
 		} catch (error) {
 			console.error('❌ Erro ao conciliar movimento:', error);
 		}
