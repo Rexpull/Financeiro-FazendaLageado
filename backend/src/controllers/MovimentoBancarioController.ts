@@ -88,7 +88,7 @@ export class MovimentoBancarioController {
 					if (body.identificadorOfx) {
 						const existente = await this.movBancarioRepository.getByIdentificadorOfx(body.identificadorOfx);
 						if (existente) {
-							console.warn('⚠️ Movimento duplicado detectado pelo identificador_ofx');
+							console.warn('⚠️ Movimento duplicado detectado pelo identificador_ofx:', body.identificadorOfx);
 
 							return new Response(JSON.stringify(existente), {
 								status: 200,
@@ -98,24 +98,48 @@ export class MovimentoBancarioController {
 					}
 
 					const id = await this.movBancarioRepository.create(body);
-					console.log('✅ Movimento criado com ID:', id);
-					return new Response(JSON.stringify({ id, message: 'Movimento bancário criado com sucesso!' }), {
+					console.log('✅ Movimento criado com sucesso, ID:', id);
+
+					const movimentoCriado = await this.movBancarioRepository.getById(id);
+					return new Response(JSON.stringify(movimentoCriado), {
 						status: 201,
 						headers: corsHeaders,
 					});
 				} catch (error) {
-					console.error('🔥 Erro interno:', (error as Error).message, (error as Error).stack);
-					return new Response(
-						JSON.stringify({
-							error: 'Erro interno',
-							message: (error as Error).message,
-							stack: (error as Error).stack,
-						}),
-						{
-							status: 500,
+					console.error('❌ Erro ao criar movimento:', error);
+					return new Response(JSON.stringify({ error: 'Erro ao criar movimento bancário' }), {
+						status: 500,
+						headers: corsHeaders,
+					});
+				}
+			}
+
+			// 📌 POST - Processar movimentos em batch
+			if (method === 'POST' && pathname === '/api/movBancario/batch') {
+				try {
+					const body: { movimentos: MovimentoBancario[] } = await req.json();
+					console.log(`📥 Processando lote de ${body.movimentos.length} movimentos`);
+
+					if (!body.movimentos || !Array.isArray(body.movimentos) || body.movimentos.length === 0) {
+						return new Response(JSON.stringify({ error: 'Lista de movimentos inválida' }), {
+							status: 400,
 							headers: corsHeaders,
-						}
-					);
+						});
+					}
+
+					const resultado = await this.movBancarioRepository.createBatch(body.movimentos);
+					console.log(`✅ Lote processado: ${resultado.novos} novos, ${resultado.existentes} existentes`);
+
+					return new Response(JSON.stringify(resultado), {
+						status: 200,
+						headers: corsHeaders,
+					});
+				} catch (error) {
+					console.error('❌ Erro ao processar lote de movimentos:', error);
+					return new Response(JSON.stringify({ error: 'Erro ao processar lote de movimentos' }), {
+						status: 500,
+						headers: corsHeaders,
+					});
 				}
 			}
 
@@ -714,7 +738,10 @@ export class MovimentoBancarioController {
 			if (method === 'POST' && pathname === '/api/movBancario/porIds') {
 				try {
 					const body: { ids: number[] } = await req.json();
-					console.log('🔍 Buscando movimentos por IDs:', body.ids);
+					console.log('🔍 Buscando movimentos por IDs:', { 
+						totalIds: body.ids?.length || 0,
+						primeirosIds: body.ids?.slice(0, 5) || []
+					});
 
 					if (!body.ids || !Array.isArray(body.ids) || body.ids.length === 0) {
 						return new Response(JSON.stringify({ error: 'IDs de movimentos são obrigatórios' }), {
@@ -723,15 +750,44 @@ export class MovimentoBancarioController {
 						});
 					}
 
+					// Validar se não há muitos IDs (limite de segurança)
+					if (body.ids.length > 100) {
+						console.warn('⚠️ Tentativa de buscar muitos IDs:', body.ids.length);
+						return new Response(JSON.stringify({ 
+							error: 'Limite de IDs excedido. Máximo permitido: 100',
+							received: body.ids.length
+						}), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+
+					// Validação adicional para garantir que nenhum lote exceda o limite
+					if (body.ids.length > 100) {
+						console.error('🚨 CRÍTICO: Lote com mais de 100 IDs recebido:', body.ids.length);
+						return new Response(JSON.stringify({ 
+							error: 'Lote muito grande recebido. Máximo permitido: 100',
+							received: body.ids.length,
+							suggestion: 'Reduza o tamanho do lote no frontend'
+						}), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+
 					const movimentos = await this.movBancarioRepository.getByIds(body.ids);
-					console.log(`✅ Encontrados ${movimentos.length} movimentos`);
+					console.log(`✅ Encontrados ${movimentos.length} movimentos de ${body.ids.length} IDs solicitados`);
 
 					return new Response(JSON.stringify(movimentos), {
 						status: 200,
 						headers: corsHeaders,
 					});
 				} catch (error) {
-					console.error('🔥 Erro ao buscar movimentos por IDs:', error);
+					console.error('🔥 Erro ao buscar movimentos por IDs:', {
+						message: error instanceof Error ? error.message : 'Erro desconhecido',
+						stack: error instanceof Error ? error.stack : undefined,
+						error: error
+					});
 					return new Response(JSON.stringify({ 
 						error: 'Erro ao buscar movimentos por IDs',
 						details: error instanceof Error ? error.message : 'Erro desconhecido'

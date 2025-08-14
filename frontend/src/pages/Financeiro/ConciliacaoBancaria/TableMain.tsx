@@ -51,8 +51,10 @@ import { buscarPessoaById } from '../../../services/pessoaService';
 import { toast } from 'react-toastify';
 import { TotalizadoresOFX } from '../../../Utils/parseOfxFile';
 import ConciliacaoOFXModal from './ConciliacaoOFX';
+import { useLocation } from 'react-router-dom';
 
 const MovimentoBancarioTable: React.FC = () => {
+	const location = useLocation();
 	const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
 	const [filteredMovimentos, setFilteredMovimentos] = useState<MovimentoBancario[]>([]);
 	const [movimentosFiltradosComSaldo, setMovimentosFiltradosComSaldo] = useState<MovimentoBancario[]>([]);
@@ -97,6 +99,27 @@ const MovimentoBancarioTable: React.FC = () => {
 	// 🔹 Paginação
 	const [currentPage, setCurrentPage] = useState(1);
 	const [itemsPerPage, setItemsPerPage] = useState(15);
+
+	// 🔹 Capturar dados da navegação quando vier de notificação
+	useEffect(() => {
+		if (location.state?.fromNotification && location.state?.contaSelecionada) {
+			const contaDaNotificacao = location.state.contaSelecionada;
+			
+			// Atualizar a conta selecionada
+			setContaSelecionada(contaDaNotificacao);
+			localStorage.setItem('contaSelecionada', JSON.stringify(contaDaNotificacao));
+			
+			// Se vier com filtro de pendentes, aplicar automaticamente
+			if (location.state?.filtroPendentes) {
+				setStatusFiltro('pendentes');
+			}
+			
+			// Limpar o state da navegação para evitar reaplicação
+			window.history.replaceState({}, document.title);
+			
+			console.log('✅ Conta selecionada automaticamente da notificação:', contaDaNotificacao);
+		}
+	}, [location.state]);
 
 	useEffect(() => {
 		const now = new Date();

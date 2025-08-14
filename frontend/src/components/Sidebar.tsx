@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiUsers, FiDatabase, FiBarChart2, FiMenu, FiX, FiChevronDown, FiChevronRight  } from "react-icons/fi";
 import {  RiBarChartFill, RiSettings3Fill} from "react-icons/ri";
-import { IoMdNotificationsOutline } from "react-icons/io";
 import { FaUserCircle } from "react-icons/fa";
 import { Link, useLocation, useNavigate  } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faDoorOpen, faSearch, faUserEdit } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from "../pages/Login/AuthContext";
+import NotificacaoIcon from './NotificacaoIcon';
 
 import logoFazenda from "../assets/img/logo-FazendaLageado.svg";
 import logoDefaultPerfil from "../assets/img/defaultPerfil-Man1.svg";
@@ -16,7 +16,7 @@ const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredRoutes, setFilteredRoutes] = useState<string[]>([]);
+  const [filteredRoutes, setFilteredRoutes] = useState<{ path: string; label: string; }[]>([]);
   const [menuAberto, setMenuAberto] = useState(false);
   const { user, logout } = useAuth(); // Obtém os dados do usuário e função de logout
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -225,7 +225,7 @@ const Sidebar = () => {
           </button>
           {/* Notificações e Usuário */}
           <div className="flex items-center gap-4 relative">
-            <IoMdNotificationsOutline size={26} style={{opacity:'0.30'}}/>
+            <NotificacaoIcon />
             <span>|</span>
 
             {/* Imagem do perfil que abre o menu */}

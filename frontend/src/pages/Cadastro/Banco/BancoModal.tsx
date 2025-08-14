@@ -35,7 +35,7 @@ const BancoModal: React.FC<BancoModalProps> = ({
     if (!bancoData.codigo.trim()) {
       newErrors.codigo = "O código é obrigatório!";
     }
-
+ 
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {

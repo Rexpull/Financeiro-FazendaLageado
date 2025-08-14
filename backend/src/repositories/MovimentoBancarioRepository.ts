@@ -212,6 +212,47 @@ export class MovimentoBancarioRepository {
 		return movimentos;
 	}
 
+	async createBatch(movimentos: MovimentoBancario[]): Promise<{ movimentos: MovimentoBancario[], novos: number, existentes: number }> {
+		const movimentosProcessados: MovimentoBancario[] = [];
+		let novos = 0;
+		let existentes = 0;
+
+		console.log(`🔄 Processando lote de ${movimentos.length} movimentos`);
+
+		for (const movimento of movimentos) {
+			try {
+				// Verificar se o movimento já existe pelo identificador OFX
+				const movimentoExistente = await this.getByIdentificadorOfx(movimento.identificadorOfx);
+				
+				if (movimentoExistente) {
+					console.log(`📋 Movimento existente encontrado: ${movimento.identificadorOfx}`);
+					movimentosProcessados.push(movimentoExistente);
+					existentes++;
+					continue;
+				}
+
+				// Criar novo movimento
+				const idMov = await this.create(movimento);
+				console.log(`✅ Novo movimento criado: ID ${idMov}`);
+
+				// Buscar o movimento completo criado
+				const movimentoCompleto = await this.getById(idMov);
+				if (movimentoCompleto) {
+					movimentosProcessados.push(movimentoCompleto);
+					novos++;
+				}
+
+			} catch (error) {
+				console.error(`❌ Erro ao processar movimento ${movimento.identificadorOfx}:`, error);
+				// Continuar processando outros movimentos mesmo se houver erro
+				continue;
+			}
+		}
+
+		console.log(`🎉 Lote processado: ${novos} novos, ${existentes} existentes`);
+		return { movimentos: movimentosProcessados, novos, existentes };
+	}
+
 	async create(movimento: MovimentoBancario): Promise<number> {
 		const {
 			dtMovimento,
@@ -311,86 +352,191 @@ export class MovimentoBancarioRepository {
 		console.log('🔧 Atualizando movimento:', id);
 		console.log('📄 Dados recebidos:', JSON.stringify(movimento, null, 2));
 
-		const {
-			dtMovimento,
-			historico,
-			idPlanoContas,
-			idContaCorrente,
-			valor,
-			saldo,
-			ideagro,
-			numeroDocumento,
-			descricao,
-			transfOrigem,
-			transfDestino,
-			identificadorOfx,
-			tipoMovimento,
-			modalidadeMovimento,
-			idBanco,
-			idPessoa,
-			parcelado,
-			idFinanciamento,
-		} = movimento;
-
-		// Tratar valores undefined antes de fazer o bind
-		const bindValues = [
-			dtMovimento || null,
-			historico || null,
-			idPlanoContas || null,
-			idContaCorrente || null,
-			valor || 0,
-			saldo || 0,
-			ideagro ? 1 : 0,
-			numeroDocumento || null,
-			descricao || null,
-			transfOrigem || null,
-			transfDestino || null,
-			identificadorOfx || null,
-			tipoMovimento || null,
-			modalidadeMovimento || null,
-			idBanco || null,
-			idPessoa || null,
-			parcelado ? 1 : 0,
-			idFinanciamento || null,
-			id
-		];
-
-		// Verificar se há valores undefined no array
-		const hasUndefined = bindValues.some(value => value === undefined);
-		if (hasUndefined) {
-			console.error('❌ Valores undefined detectados no bindValues:', bindValues);
-			throw new Error('Valores undefined não são suportados pelo D1 Database');
+		// Buscar o movimento atual para comparar
+		const movimentoAtual = await this.getById(id);
+		if (!movimentoAtual) {
+			throw new Error(`Movimento com ID ${id} não encontrado`);
 		}
 
-		await this.db
-			.prepare(
-				`
+		// Criar objeto com apenas os campos que foram alterados
+		const camposAlterados: Partial<MovimentoBancario> = {};
+		
+		// Comparar e adicionar apenas campos alterados
+		if (movimento.dtMovimento !== undefined && movimento.dtMovimento !== movimentoAtual.dtMovimento) {
+			camposAlterados.dtMovimento = movimento.dtMovimento;
+		}
+		if (movimento.historico !== undefined && movimento.historico !== movimentoAtual.historico) {
+			camposAlterados.historico = movimento.historico;
+		}
+		if (movimento.idPlanoContas !== undefined && movimento.idPlanoContas !== movimentoAtual.idPlanoContas) {
+			camposAlterados.idPlanoContas = movimento.idPlanoContas;
+		}
+		if (movimento.idContaCorrente !== undefined && movimento.idContaCorrente !== movimentoAtual.idContaCorrente) {
+			camposAlterados.idContaCorrente = movimento.idContaCorrente;
+		}
+		if (movimento.valor !== undefined && movimento.valor !== movimentoAtual.valor) {
+			camposAlterados.valor = movimento.valor;
+		}
+		if (movimento.saldo !== undefined && movimento.saldo !== movimentoAtual.saldo) {
+			camposAlterados.saldo = movimento.saldo;
+		}
+		if (movimento.ideagro !== undefined && movimento.ideagro !== movimentoAtual.ideagro) {
+			camposAlterados.ideagro = movimento.ideagro;
+		}
+		if (movimento.numeroDocumento !== undefined && movimento.numeroDocumento !== movimentoAtual.numeroDocumento) {
+			camposAlterados.numeroDocumento = movimento.numeroDocumento;
+		}
+		if (movimento.descricao !== undefined && movimento.descricao !== movimentoAtual.descricao) {
+			camposAlterados.descricao = movimento.descricao;
+		}
+		if (movimento.transfOrigem !== undefined && movimento.transfOrigem !== movimentoAtual.transfOrigem) {
+			camposAlterados.transfOrigem = movimento.transfOrigem;
+		}
+		if (movimento.transfDestino !== undefined && movimento.transfDestino !== movimentoAtual.transfDestino) {
+			camposAlterados.transfDestino = movimento.transfDestino;
+		}
+		if (movimento.identificadorOfx !== undefined && movimento.identificadorOfx !== movimentoAtual.identificadorOfx) {
+			camposAlterados.identificadorOfx = movimento.identificadorOfx;
+		}
+		if (movimento.tipoMovimento !== undefined && movimento.tipoMovimento !== movimentoAtual.tipoMovimento) {
+			camposAlterados.tipoMovimento = movimento.tipoMovimento;
+		}
+		if (movimento.modalidadeMovimento !== undefined && movimento.modalidadeMovimento !== movimentoAtual.modalidadeMovimento) {
+			camposAlterados.modalidadeMovimento = movimento.modalidadeMovimento;
+		}
+		if (movimento.idBanco !== undefined && movimento.idBanco !== movimentoAtual.idBanco) {
+			camposAlterados.idBanco = movimento.idBanco;
+		}
+		if (movimento.idPessoa !== undefined && movimento.idPessoa !== movimentoAtual.idPessoa) {
+			camposAlterados.idPessoa = movimento.idPessoa;
+		}
+		if (movimento.parcelado !== undefined && movimento.parcelado !== movimentoAtual.parcelado) {
+			camposAlterados.parcelado = movimento.parcelado;
+		}
+		if (movimento.idFinanciamento !== undefined && movimento.idFinanciamento !== movimentoAtual.idFinanciamento) {
+			camposAlterados.idFinanciamento = movimento.idFinanciamento;
+		}
+
+		console.log('🔧 Campos que serão alterados:', camposAlterados);
+
+		// Se não há campos para alterar, retornar
+		if (Object.keys(camposAlterados).length === 0) {
+			console.log('ℹ️ Nenhum campo foi alterado');
+			return;
+		}
+
+		// Construir query dinamicamente baseada nos campos alterados
+		const setClauses: string[] = [];
+		const bindValues: any[] = [];
+
+		if (camposAlterados.dtMovimento !== undefined) {
+			setClauses.push('dtMovimento = ?');
+			bindValues.push(camposAlterados.dtMovimento);
+		}
+		if (camposAlterados.historico !== undefined) {
+			setClauses.push('historico = ?');
+			bindValues.push(camposAlterados.historico);
+		}
+		if (camposAlterados.idPlanoContas !== undefined) {
+			setClauses.push('idPlanoContas = ?');
+			bindValues.push(camposAlterados.idPlanoContas);
+		}
+		if (camposAlterados.idContaCorrente !== undefined) {
+			setClauses.push('idContaCorrente = ?');
+			bindValues.push(camposAlterados.idContaCorrente);
+		}
+		if (camposAlterados.valor !== undefined) {
+			setClauses.push('valor = ?');
+			bindValues.push(camposAlterados.valor);
+		}
+		if (camposAlterados.saldo !== undefined) {
+			setClauses.push('saldo = ?');
+			bindValues.push(camposAlterados.saldo);
+		}
+		if (camposAlterados.ideagro !== undefined) {
+			setClauses.push('ideagro = ?');
+			bindValues.push(camposAlterados.ideagro ? 1 : 0);
+		}
+		if (camposAlterados.numeroDocumento !== undefined) {
+			setClauses.push('numero_documento = ?');
+			bindValues.push(camposAlterados.numeroDocumento);
+		}
+		if (camposAlterados.descricao !== undefined) {
+			setClauses.push('descricao = ?');
+			bindValues.push(camposAlterados.descricao);
+		}
+		if (camposAlterados.transfOrigem !== undefined) {
+			setClauses.push('transf_origem = ?');
+			bindValues.push(camposAlterados.transfOrigem);
+		}
+		if (camposAlterados.transfDestino !== undefined) {
+			setClauses.push('transf_destino = ?');
+			bindValues.push(camposAlterados.transfDestino);
+		}
+		if (camposAlterados.identificadorOfx !== undefined) {
+			setClauses.push('identificador_ofx = ?');
+			bindValues.push(camposAlterados.identificadorOfx);
+		}
+		if (camposAlterados.tipoMovimento !== undefined) {
+			setClauses.push('tipoMovimento = ?');
+			bindValues.push(camposAlterados.tipoMovimento);
+		}
+		if (camposAlterados.modalidadeMovimento !== undefined) {
+			setClauses.push('modalidadeMovimento = ?');
+			bindValues.push(camposAlterados.modalidadeMovimento);
+		}
+		if (camposAlterados.idBanco !== undefined) {
+			setClauses.push('idBanco = ?');
+			bindValues.push(camposAlterados.idBanco);
+		}
+		if (camposAlterados.idPessoa !== undefined) {
+			setClauses.push('idPessoa = ?');
+			bindValues.push(camposAlterados.idPessoa);
+		}
+		if (camposAlterados.parcelado !== undefined) {
+			setClauses.push('parcelado = ?');
+			bindValues.push(camposAlterados.parcelado ? 1 : 0);
+		}
+		if (camposAlterados.idFinanciamento !== undefined) {
+			setClauses.push('idFinanciamento = ?');
+			bindValues.push(camposAlterados.idFinanciamento);
+		}
+
+		// Adicionar campo de atualização e ID
+		setClauses.push("atualizado_em = datetime('now')");
+		bindValues.push(id);
+
+		// Construir e executar query
+		const query = `
 			UPDATE MovimentoBancario
-			SET dtMovimento = ?, historico = ?, idPlanoContas = ?, idContaCorrente = ?, valor = ?, saldo = ?, ideagro = ?, numero_documento = ?, descricao = ?, transf_origem = ?, transf_destino = ?, identificador_ofx = ?, atualizado_em = datetime('now'), tipoMovimento = ?, modalidadeMovimento = ?,  idBanco = ?, idPessoa = ?, parcelado = ?, idFinanciamento = ?
+			SET ${setClauses.join(', ')}
 			WHERE id = ?;
-		`
-			)
-			.bind(...bindValues)
-			.run();
+		`;
+
+		console.log('🔧 Query de atualização:', query);
+		console.log('🔧 Valores para bind:', bindValues);
+
+		await this.db.prepare(query).bind(...bindValues).run();
 
 		console.log('🧹 Limpando resultados antigos...');
 		await this.resultadoRepo.deleteByMovimento(id);
 
+		// Processar resultados se necessário
 		let resultadoList = movimento.resultadoList;
 
 		if (!resultadoList || resultadoList.length === 0) {
-			if (idPlanoContas) {
-				const tipo = tipoMovimento || (valor >= 0 ? 'C' : 'D');
-				const valorAbs = Math.abs(valor);
+			if (camposAlterados.idPlanoContas) {
+				const tipo = camposAlterados.tipoMovimento || movimentoAtual.tipoMovimento || (movimentoAtual.valor >= 0 ? 'C' : 'D');
+				const valorAbs = Math.abs(movimentoAtual.valor);
 
 				console.log('⚠️ Nenhum resultado informado. Criando resultado padrão com:');
-				console.log(`📌 Plano: ${idPlanoContas}, Valor: ${valorAbs}, Tipo: ${tipo}`);
+				console.log(`📌 Plano: ${camposAlterados.idPlanoContas}, Valor: ${valorAbs}, Tipo: ${tipo}`);
 
 				resultadoList = [
 					{
-						dtMovimento,
-						idPlanoContas,
-						idContaCorrente,
+						dtMovimento: movimentoAtual.dtMovimento,
+						idPlanoContas: camposAlterados.idPlanoContas,
+						idContaCorrente: movimentoAtual.idContaCorrente,
 						idMovimentoBancario: id,
 						valor: valorAbs,
 						tipo,
@@ -400,22 +546,10 @@ export class MovimentoBancarioRepository {
 		}
 
 		if (resultadoList?.length) {
-			console.log(`📝 Salvando ${resultadoList.length} resultados para o movimento ID ${id}...`);
-			await this.resultadoRepo.createMany(
-				resultadoList.map((r) => ({
-					dtMovimento: r.dtMovimento,
-					idPlanoContas: r.idPlanoContas,
-					idContaCorrente: r.idContaCorrente,
-					idMovimentoBancario: id,
-					idParcelaFinanciamento: r.idParcelaFinanciamento ?? undefined,
-					valor: r.valor,
-					tipo: r.tipo,
-				}))
-			);
-			console.log('✅ Resultados atualizados com sucesso.');
-		} else {
-			console.warn('⚠️ Nenhum resultado foi salvo. (idPlanoContas ausente?)');
+			await this.resultadoRepo.createMany(resultadoList.map((r) => ({ ...r, idMovimentoBancario: id })));
 		}
+
+		console.log('✅ Movimento atualizado com sucesso');
 	}
 
 	async deleteById(id: number): Promise<void> {
@@ -720,10 +854,20 @@ export class MovimentoBancarioRepository {
 	async getByIds(ids: number[]): Promise<MovimentoBancario[]> {
 		if (ids.length === 0) return [];
 
+		console.log(`🔍 Repository: Buscando ${ids.length} movimentos por IDs`);
+		
+		// Validar se não há muitos IDs (limite de segurança)
+		if (ids.length > 100) {
+			throw new Error(`Limite de IDs excedido: ${ids.length} > 100`);
+		}
+
+		// Validação adicional para SQLite (limite conservador)
+		if (ids.length > 50) {
+			console.warn(`⚠️ Repository: Muitos IDs (${ids.length}), pode causar problemas com SQLite`);
+		}
+
 		const placeholders = ids.map(() => '?').join(',');
-		const { results } = await this.db
-			.prepare(
-				`
+		const query = `
 				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
 					   numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
 					   criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
@@ -731,10 +875,22 @@ export class MovimentoBancarioRepository {
 				FROM MovimentoBancario
 				WHERE id IN (${placeholders})
 				ORDER BY dtMovimento ASC
-			`
-			)
+		`;
+
+		console.log(`🔍 Repository: Executando query com ${ids.length} placeholders`);
+		
+		// Alertar se estiver próximo do limite do SQLite
+		if (ids.length > 50) {
+			console.warn(`⚠️ Repository: ${ids.length} placeholders pode estar próximo do limite do SQLite`);
+		}
+
+		try {
+			const { results } = await this.db
+				.prepare(query)
 			.bind(...ids)
 			.all();
+
+			console.log(`🔍 Repository: Query executada, ${results.length} resultados encontrados`);
 
 		const movimentos = await Promise.all(
 			results.map(async (result) => {
@@ -767,6 +923,16 @@ export class MovimentoBancarioRepository {
 			})
 		);
 
+			console.log(`✅ Repository: Processamento concluído, retornando ${movimentos.length} movimentos`);
 		return movimentos;
+		} catch (error) {
+			console.error('🔥 Repository: Erro ao executar query getByIds:', {
+				message: error instanceof Error ? error.message : 'Erro desconhecido',
+				stack: error instanceof Error ? error.stack : undefined,
+				idsCount: ids.length,
+				query: query.substring(0, 100) + '...'
+			});
+			throw error;
+		}
 	}
 }

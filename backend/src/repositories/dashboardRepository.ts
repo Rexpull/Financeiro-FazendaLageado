@@ -49,6 +49,7 @@ export class DashboardRepository {
     const despesas = result && typeof result.despesas === 'number' ? result.despesas : 0;
     const investimentos = result && typeof result.investimentos === 'number' ? result.investimentos : 0;
 
+    // Buscar financiamentos do ano (sem usar coluna status inexistente)
     const queryFin = `
       SELECT 
         COUNT(*) as contratosAtivos,
@@ -76,7 +77,7 @@ export class DashboardRepository {
     };
   }
 
-  async getTotaisMes(ano: number, mes: number, contas: number[]): Promise<{ receitas: number, despesas: number, investimentos: number }> {
+  async getTotaisMes(ano: number, mes: number, contas: number[]): Promise<{ receitas: number, despesas: number, investimentos: number, financiamentos: number }> {
     this.validarAno(ano);
     if (isNaN(mes) || mes < 1 || mes > 12) throw new Error("Mês inválido");
     const query = `
@@ -100,10 +101,23 @@ export class DashboardRepository {
         AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})
     `;
     const result = await this.db.prepare(query).bind(ano, mes, ...contas).first();
+    
+    // Buscar financiamentos do mês específico
+    const queryFin = `
+      SELECT 
+        COALESCE(SUM(valor),0) as totalFinanciado
+      FROM Financiamento
+      WHERE CAST(strftime('%Y', dataContrato) AS INTEGER) = ?
+        AND CAST(strftime('%m', dataContrato) AS INTEGER) = ?
+    `;
+    const fin = await this.db.prepare(queryFin).bind(ano, mes).first();
+    const financiamentos = fin && typeof fin.totalFinanciado === 'number' ? fin.totalFinanciado : 0;
+    
     return {
       receitas: result && typeof result.receitas === 'number' ? result.receitas : 0,
       despesas: result && typeof result.despesas === 'number' ? result.despesas : 0,
       investimentos: result && typeof result.investimentos === 'number' ? result.investimentos : 0,
+      financiamentos,
     };
   }
 
@@ -258,10 +272,13 @@ export class DashboardRepository {
       ORDER BY valor DESC
     `;
     const result = await this.db.prepare(query).bind(ano).all();
-    return result.results.map((row: any) => ({
-      faixa: row.faixa,
-      valor: row.valor
-    }));
+    return {
+      labels: result.results.map((row: any) => row.faixa),
+      values: result.results.map((row: any) => ({
+        faixa: row.faixa,
+        valor: row.valor
+      }))
+    };
   }
 
   async getFinanciamentosPorBanco(ano: number): Promise<{ labels: string[], values: any[] }> {
@@ -279,12 +296,15 @@ export class DashboardRepository {
       ORDER BY total DESC
     `;
     const result = await this.db.prepare(query).bind(ano).all();
-    return result.results.map((row: any) => ({
-      nome: row.nome || 'Banco não informado',
-      total: row.total,
-      comGarantia: row.comGarantia,
-      semGarantia: row.semGarantia
-    }));
+    return {
+      labels: result.results.map((row: any) => row.nome || 'Banco não informado'),
+      values: result.results.map((row: any) => ({
+        nome: row.nome || 'Banco não informado',
+        total: row.total,
+        comGarantia: row.comGarantia,
+        semGarantia: row.semGarantia
+      }))
+    };
   }
 
   async getParcelasFinanciamento(ano: number): Promise<{ labels: string[], pagas: number[], vencidas: number[], totalPagas: number, totalVencidas: number, detalhes: any[] }> {
@@ -292,8 +312,8 @@ export class DashboardRepository {
     const query = `
       SELECT 
         CAST(strftime('%m', pf.dt_vencimento) AS INTEGER) as mes,
-        SUM(CASE WHEN pf.status = 'P' THEN pf.valor ELSE 0 END) as pagas,
-        SUM(CASE WHEN pf.status = 'V' THEN pf.valor ELSE 0 END) as vencidas
+        SUM(CASE WHEN pf.status = 'Liquidado' THEN pf.valor ELSE 0 END) as pagas,
+        SUM(CASE WHEN pf.status = 'Vencido' THEN pf.valor ELSE 0 END) as vencidas
       FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
       WHERE CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) = ?
@@ -313,8 +333,8 @@ export class DashboardRepository {
     // Buscar totais
     const queryTotais = `
       SELECT 
-        SUM(CASE WHEN pf.status = 'P' THEN pf.valor ELSE 0 END) as totalPagas,
-        SUM(CASE WHEN pf.status = 'V' THEN pf.valor ELSE 0 END) as totalVencidas
+        SUM(CASE WHEN pf.status = 'Liquidado' THEN pf.valor ELSE 0 END) as totalPagas,
+        SUM(CASE WHEN pf.status = 'Vencido' THEN pf.valor ELSE 0 END) as totalVencidas
       FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
       WHERE CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) = ?
@@ -327,8 +347,8 @@ export class DashboardRepository {
         strftime('%m/%Y', pf.dt_vencimento) as mes,
         pf.valor,
         CASE 
-          WHEN pf.status = 'P' THEN 'Paga'
-          WHEN pf.status = 'V' THEN 'Vencida'
+          WHEN pf.status = 'Liquidado' THEN 'Paga'
+          WHEN pf.status = 'Vencido' THEN 'Vencida'
           ELSE 'Pendente'
         END as status
       FROM parcelaFinanciamento pf
@@ -343,8 +363,8 @@ export class DashboardRepository {
       labels: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
       pagas,
       vencidas,
-      totalPagas: totais?.totalPagas || 0,
-      totalVencidas: totais?.totalVencidas || 0,
+      totalPagas: totais && typeof totais.totalPagas === 'number' ? totais.totalPagas : 0,
+      totalVencidas: totais && typeof totais.totalVencidas === 'number' ? totais.totalVencidas : 0,
       detalhes: detalhes.results.map((row: any) => ({
         mes: row.mes,
         valor: row.valor,
@@ -405,7 +425,9 @@ export class DashboardRepository {
     const queryDetalhamento = `
       SELECT 
         pc.descricao,
-        m.valor
+        m.valor,
+        m.dtMovimento as data,
+        pc.hierarquia as classificacao
       FROM MovimentoBancario m
       JOIN planoContas pc ON m.idPlanoContas = pc.id
       ${detalhamentoWhereClause}
@@ -420,8 +442,353 @@ export class DashboardRepository {
       despesas,
       detalhamento: detalhamento.results.map((row: any) => ({
         descricao: row.descricao,
-        valor: row.valor
+        valor: row.valor,
+        data: row.data,
+        classificacao: row.classificacao
       }))
+    };
+  }
+
+  // Novo método: Parcelas a vencer por mês/ano com visualização futura
+  async getParcelasAVencer(ano?: number, mes?: number): Promise<{ 
+    labels: string[], 
+    valores: number[], 
+    totalVencimento: number,
+    detalhes: Array<{
+      mes: string,
+      ano: number,
+      valor: number,
+      quantidade: number,
+      financiamentos: Array<{
+        contrato: string,
+        tomador: string,
+        banco: string,
+        valor: number,
+        vencimento: string,
+        modalidade: string,
+        taxaJuros: number,
+        garantia: string
+      }>
+    }>
+  }> {
+    let whereClause = "WHERE pf.status = 'Aberto' AND pf.dt_vencimento >= date('now')";
+    let params: any[] = [];
+    
+    if (ano) {
+      whereClause += " AND CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) = ?";
+      params.push(ano);
+    }
+    
+    if (mes) {
+      whereClause += " AND CAST(strftime('%m', pf.dt_vencimento) AS INTEGER) = ?";
+      params.push(mes);
+    }
+
+    const query = `
+      SELECT 
+        strftime('%m/%Y', pf.dt_vencimento) as mes_ano,
+        CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) as ano,
+        SUM(pf.valor) as valor_total,
+        COUNT(*) as quantidade
+      FROM parcelaFinanciamento pf
+      JOIN Financiamento f ON pf.idFinanciamento = f.id
+      ${whereClause}
+      GROUP BY mes_ano, ano
+      ORDER BY pf.dt_vencimento
+    `;
+    
+    const result = await this.db.prepare(query).bind(...params).all();
+    
+    // Buscar detalhes das parcelas com informações completas para exportação
+    const queryDetalhes = `
+      SELECT 
+        strftime('%m/%Y', pf.dt_vencimento) as mes_ano,
+        CAST(strftime('%Y', pf.dt_vencimento) AS INTEGER) as ano,
+        pf.valor,
+        f.numeroContrato,
+        p.nome as tomador,
+        b.nome as banco,
+        pf.dt_vencimento,
+        f.taxaJurosAnual,
+        f.numeroGarantia,
+        'Parcela a Vencer' as modalidade
+      FROM parcelaFinanciamento pf
+      JOIN Financiamento f ON pf.idFinanciamento = f.id
+      LEFT JOIN pessoa p ON f.idPessoa = p.id
+      LEFT JOIN banco b ON f.idBanco = b.id
+      ${whereClause}
+      ORDER BY pf.dt_vencimento
+    `;
+    
+    const detalhes = await this.db.prepare(queryDetalhes).bind(...params).all();
+    
+    // Agrupar detalhes por mês/ano
+    const detalhesAgrupados = new Map<string, any>();
+    detalhes.results.forEach((row: any) => {
+      const key = row.mes_ano;
+      if (!detalhesAgrupados.has(key)) {
+        detalhesAgrupados.set(key, {
+          mes: row.mes_ano,
+          ano: row.ano,
+          valor: 0,
+          quantidade: 0,
+          financiamentos: []
+        });
+      }
+      
+      const grupo = detalhesAgrupados.get(key);
+      grupo.valor += row.valor;
+      grupo.quantidade += 1;
+      grupo.financiamentos.push({
+        contrato: row.numeroContrato,
+        tomador: row.tomador || 'N/A',
+        banco: row.banco || 'N/A',
+        valor: row.valor,
+        vencimento: row.dt_vencimento,
+        modalidade: row.modalidade,
+        taxaJuros: row.taxaJurosAnual || 0,
+        garantia: row.numeroGarantia || 'Sem Garantia'
+      });
+    });
+
+    const labels = result.results.map((row: any) => row.mes_ano);
+    const valores = result.results.map((row: any) => row.valor_total);
+    const totalVencimento = valores.reduce((sum, val) => sum + val, 0);
+
+    return {
+      labels,
+      valores,
+      totalVencimento,
+      detalhes: Array.from(detalhesAgrupados.values())
+    };
+  }
+
+  // Novo método: Contratos liquidados por mês/ano
+  async getContratosLiquidados(ano?: number, mes?: number): Promise<{
+    labels: string[],
+    valores: number[],
+    totalLiquidado: number,
+    detalhes: Array<{
+      mes: string,
+      ano: number,
+      valor: number,
+      quantidade: number,
+      contratos: Array<{
+        numero: string,
+        tomador: string,
+        banco: string,
+        valor: number,
+        dataLiquidacao: string,
+        modalidade: string,
+        taxaJuros: number,
+        garantia: string
+      }>
+    }>
+  }> {
+    let whereClause = "WHERE pf.status = 'Liquidado' AND pf.dt_liquidacao IS NOT NULL";
+    let params: any[] = [];
+    
+    if (ano) {
+      whereClause += " AND CAST(strftime('%Y', pf.dt_liquidacao) AS INTEGER) = ?";
+      params.push(ano);
+    }
+    
+    if (mes) {
+      whereClause += " AND CAST(strftime('%m', pf.dt_liquidacao) AS INTEGER) = ?";
+      params.push(mes);
+    }
+
+    const query = `
+      SELECT 
+        strftime('%m/%Y', pf.dt_liquidacao) as mes_ano,
+        CAST(strftime('%Y', pf.dt_liquidacao) AS INTEGER) as ano,
+        SUM(pf.valor) as valor_total,
+        COUNT(DISTINCT f.id) as quantidade_contratos
+      FROM parcelaFinanciamento pf
+      JOIN Financiamento f ON pf.idFinanciamento = f.id
+      ${whereClause}
+      GROUP BY mes_ano, ano
+      ORDER BY pf.dt_liquidacao DESC
+    `;
+    
+    const result = await this.db.prepare(query).bind(...params).all();
+    
+    // Buscar detalhes dos contratos liquidados com informações completas
+    const queryDetalhes = `
+      SELECT 
+        strftime('%m/%Y', pf.dt_liquidacao) as mes_ano,
+        CAST(strftime('%Y', pf.dt_liquidacao) AS INTEGER) as ano,
+        f.numeroContrato,
+        p.nome as tomador,
+        b.nome as banco,
+        f.valor,
+        pf.dt_liquidacao,
+        f.taxaJurosAnual,
+        f.numeroGarantia,
+        'Contrato Liquidado' as modalidade
+      FROM parcelaFinanciamento pf
+      JOIN Financiamento f ON pf.idFinanciamento = f.id
+      LEFT JOIN pessoa p ON f.idPessoa = p.id
+      LEFT JOIN banco b ON f.idBanco = b.id
+      ${whereClause}
+      ORDER BY pf.dt_liquidacao DESC
+    `;
+    
+    const detalhes = await this.db.prepare(queryDetalhes).bind(...params).all();
+    
+    // Agrupar detalhes por mês/ano
+    const detalhesAgrupados = new Map<string, any>();
+    detalhes.results.forEach((row: any) => {
+      const key = row.mes_ano;
+      if (!detalhesAgrupados.has(key)) {
+        detalhesAgrupados.set(key, {
+          mes: row.mes_ano,
+          ano: row.ano,
+          valor: 0,
+          quantidade: 0,
+          contratos: []
+        });
+      }
+      
+      const grupo = detalhesAgrupados.get(key);
+      grupo.valor += row.valor;
+      grupo.quantidade += 1;
+      grupo.contratos.push({
+        numero: row.numeroContrato,
+        tomador: row.tomador || 'N/A',
+        banco: row.banco || 'N/A',
+        valor: row.valor,
+        dataLiquidacao: row.dt_liquidacao,
+        modalidade: row.modalidade,
+        taxaJuros: row.taxaJurosAnual || 0,
+        garantia: row.numeroGarantia || 'Sem Garantia'
+      });
+    });
+
+    const labels = result.results.map((row: any) => row.mes_ano);
+    const valores = result.results.map((row: any) => row.valor_total);
+    const totalLiquidado = valores.reduce((sum, val) => sum + val, 0);
+
+    return {
+      labels,
+      valores,
+      totalLiquidado,
+      detalhes: Array.from(detalhesAgrupados.values())
+    };
+  }
+
+  // Novo método: Contratos novos por mês/ano
+  async getContratosNovos(ano?: number, mes?: number): Promise<{
+    labels: string[],
+    valores: number[],
+    totalNovos: number,
+    detalhes: Array<{
+      mes: string,
+      ano: number,
+      valor: number,
+      quantidade: number,
+      contratos: Array<{
+        numero: string,
+        tomador: string,
+        banco: string,
+        valor: number,
+        dataContrato: string,
+        modalidade: string,
+        taxaJuros: number,
+        garantia: string,
+        numeroParcelas: number
+      }>
+    }>
+  }> {
+    let whereClause = "WHERE 1=1";
+    let params: any[] = [];
+    
+    if (ano) {
+      whereClause += " AND CAST(strftime('%Y', f.dataContrato) AS INTEGER) = ?";
+      params.push(ano);
+    }
+    
+    if (mes) {
+      whereClause += " AND CAST(strftime('%m', f.dataContrato) AS INTEGER) = ?";
+      params.push(mes);
+    }
+
+    const query = `
+      SELECT 
+        strftime('%m/%Y', f.dataContrato) as mes_ano,
+        CAST(strftime('%Y', f.dataContrato) AS INTEGER) as ano,
+        SUM(f.valor) as valor_total,
+        COUNT(*) as quantidade
+      FROM Financiamento f
+      ${whereClause}
+      GROUP BY mes_ano, ano
+      ORDER BY f.dataContrato DESC
+    `;
+    
+    const result = await this.db.prepare(query).bind(...params).all();
+    
+    // Buscar detalhes dos contratos novos com informações completas
+    const queryDetalhes = `
+      SELECT 
+        strftime('%m/%Y', f.dataContrato) as mes_ano,
+        CAST(strftime('%Y', f.dataContrato) AS INTEGER) as ano,
+        f.numeroContrato,
+        p.nome as tomador,
+        b.nome as banco,
+        f.valor,
+        f.dataContrato,
+        f.taxaJurosAnual,
+        f.numeroGarantia,
+        'Contrato Novo' as modalidade,
+        (SELECT COUNT(*) FROM parcelaFinanciamento pf WHERE pf.idFinanciamento = f.id) as numeroParcelas
+      FROM Financiamento f
+      LEFT JOIN pessoa p ON f.idPessoa = p.id
+      LEFT JOIN banco b ON f.idBanco = b.id
+      ${whereClause}
+      ORDER BY f.dataContrato DESC
+    `;
+    
+    const detalhes = await this.db.prepare(queryDetalhes).bind(...params).all();
+    
+    // Agrupar detalhes por mês/ano
+    const detalhesAgrupados = new Map<string, any>();
+    detalhes.results.forEach((row: any) => {
+      const key = row.mes_ano;
+      if (!detalhesAgrupados.has(key)) {
+        detalhesAgrupados.set(key, {
+          mes: row.mes_ano,
+          ano: row.ano,
+          valor: 0,
+          quantidade: 0,
+          contratos: []
+        });
+      }
+      
+      const grupo = detalhesAgrupados.get(key);
+      grupo.valor += row.valor;
+      grupo.quantidade += 1;
+      grupo.contratos.push({
+        numero: row.numeroContrato,
+        tomador: row.tomador || 'N/A',
+        banco: row.banco || 'N/A',
+        valor: row.valor,
+        dataContrato: row.dataContrato,
+        modalidade: row.modalidade,
+        taxaJuros: row.taxaJurosAnual || 0,
+        garantia: row.numeroGarantia || 'Sem Garantia',
+        numeroParcelas: row.numeroParcelas || 0
+      });
+    });
+
+    const labels = result.results.map((row: any) => row.mes_ano);
+    const valores = result.results.map((row: any) => row.valor_total);
+    const totalNovos = valores.reduce((sum, val) => sum + val, 0);
+
+    return {
+      labels,
+      valores,
+      totalNovos,
+      detalhes: Array.from(detalhesAgrupados.values())
     };
   }
 } 

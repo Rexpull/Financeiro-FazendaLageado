@@ -8,6 +8,7 @@ import { handleRequest as handeMovimentoBancario } from "./routes/handeMovimento
 import { handleRequest as handleParcelaFinanciamento } from "./routes/handleParcelaFinanciamento";
 import { handleRequest as handleFinanciamento } from "./routes/handleFinanciamento";
 import { handleAuthRequest as handleAuthRequest } from "./routes/handleAuthRequest";
+import { handleRequest as handleNotificacaoRequest } from "./routes/handleNotifications";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,6 +46,8 @@ export default {
         return handleParcelaFinanciamento(req, env.DB);
       case pathname.startsWith("/api/financiamento"):
         return handleFinanciamento(req, env.DB);
+      case pathname.startsWith("/api/notificacoes"):
+        return handleNotificacaoRequest(req, env.DB);
       case pathname.startsWith("/api/auth"):
         return handleAuthRequest(req, env, env.DB);
       case pathname.startsWith("/api/dashboard"):

@@ -28,6 +28,8 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 		despesas: 0,
 		liquido: 0,
 		saldoFinal: 0,
+		dtInicialExtrato: '',
+		dtFinalExtrato: '',
 	});
 
 	const [novosMovimentos, setNovosMovimentos] = useState(0);
@@ -41,6 +43,18 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 		if (isOpen) {
 			setSelectedFile(null);
 			setError('');
+			setNovosMovimentos(0);
+			setExistentesMovimentos(0);
+			setMovimentosOFX([]);
+			setTotalizadores({
+				receitas: 0,
+				despesas: 0,
+				liquido: 0,
+				saldoFinal: 0,
+				dtInicialExtrato: '',
+				dtFinalExtrato: '',
+			});
+			setLoading(false);
 		}
 	}, [isOpen]);
 
@@ -94,24 +108,31 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 				return;
 			}
 
-			const movimentosAtualizados = await salvarMovimentosOFX(movimentosOFX, idContaCorrente, setCurrentIndex, (novos, existentes) => {
+			const resultado = await salvarMovimentosOFX(movimentosOFX, idContaCorrente, setCurrentIndex, (novos, existentes) => {
 				setNovosMovimentos(novos);
 				setExistentesMovimentos(existentes);
 			});
-			setMovimentosOFX(movimentosAtualizados);
-			setModalConciliacaoIsOpen(true);
 
+			// Atualizar movimentos com os dados retornados do batch
+			setMovimentosOFX(resultado.movimentos);
+			
+			// Salvar histórico
 			const novoHistorico = {
 				nomeArquivo: selectedFile?.name || 'Desconhecido',
 				data: new Date().toISOString(),
-				idMovimentos: movimentosAtualizados.map((m) => m.id),
-				movimentos: movimentosAtualizados,
+				idMovimentos: resultado.movimentos.map((m) => m.id),
+				movimentos: resultado.movimentos,
 				totalizadores,
+				novos: resultado.novos,
+				existentes: resultado.existentes,
 			};
 
 			let historico = JSON.parse(localStorage.getItem('historicoOFX') || '[]');
 			historico = [novoHistorico, ...historico].slice(0, 5);
 			localStorage.setItem('historicoOFX', JSON.stringify(historico));
+
+			toast.success(`Importação concluída! ${resultado.novos} novos, ${resultado.existentes} existentes.`);
+
 		} catch (error) {
 			toast.error('Erro ao salvar movimentos!');
 			console.error('Erro ao salvar movimentos:', error);
@@ -119,6 +140,13 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 			setLoading(false);
 		}
 	};
+
+	const handleContinuarConciliacao = () => {
+		setModalConciliacaoIsOpen(true);
+		onClose();
+	};
+
+	const totalImportado = novosMovimentos + existentesMovimentos;
 
 	return (
 		<>
@@ -132,7 +160,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 				{/* 🔹 Cabeçalho */}
 				<div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
 					<h2 className="text-xl font-semibold text-gray-800">Buscar Arquivo OFX</h2>
-					<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+					<button disabled={loading || (novosMovimentos > 0 || existentesMovimentos > 0)} onClick={onClose} className="text-gray-500 hover:text-gray-700">
 						<FontAwesomeIcon icon={faTimes} size="xl" />
 					</button>
 				</div>
@@ -141,7 +169,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 				<div className="p-4">
 					<label className="block text-sm font-medium text-gray-700 mb-2">Arquivo OFX</label>
 					<input
-						disabled={loading}
+						disabled={loading || (novosMovimentos > 0 || existentesMovimentos > 0)}
 						type="file"
 						accept=".ofx"
 						className="w-full p-2 border border-gray-300 rounded bg-white cursor-pointer"
@@ -149,33 +177,43 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 					/>
 					{error && <p className="text-red-500 text-xs mt-2">{error}</p>}
 				</div>
+				{loading && totalImportado >= 0 && (
+				<div className="flex flex-col items-center justify-center mb-3 mt-4 gap-2 w-full px-6">
+					<span className="text-red-600 font-medium">
+						Importando movimento {currentIndex} de {totalMovimentos}
+					</span>
+					<div className="w-full bg-gray-200 rounded-full h-4">
+						<div
+							className="bg-red-500 h-4 rounded-full transition-all duration-300"
+							style={{ width: `${(currentIndex / totalMovimentos) * 100}%` }}
+						/>
+					</div>
 
-				{loading && (
-					<div className="flex flex-col items-center justify-center mb-3 mt-4 gap-2 w-full px-6">
-						<span className="text-red-600 font-medium">
-							Importando movimento {currentIndex} de {totalMovimentos}
-						</span>
-						<div className="w-full bg-gray-200 rounded-full h-4">
-							<div
-								className="bg-red-500 h-4 rounded-full transition-all duration-300"
-								style={{ width: `${(currentIndex / totalMovimentos) * 100}%` }}
-							/>
+					<div className="flex justify-center gap-3 items-center text-center text-sm mt-2 text-gray-600">
+						<div>
+							Movimentos novos importados: <strong>{novosMovimentos}</strong>
 						</div>
-
-						<div className="flex justify-center gap-3 items-center text-center text-sm mt-2 text-gray-600">
-							<div>
-								Movimentos novos importados: <strong>{novosMovimentos}</strong>
-							</div>
-							|
-							<div>
-								Movimentos já existentes: <strong>{existentesMovimentos}</strong>
-							</div>
+						|
+						<div>
+							Movimentos já existentes: <strong>{existentesMovimentos}</strong>
 						</div>
 					</div>
+				</div>
 				)}
-
 				{/* 🔹 Botão de Importação */}
 				<div className="p-4 flex justify-end border-t">
+					
+					{(novosMovimentos > 0 || existentesMovimentos > 0) && (			
+					<button
+						onClick={handleContinuarConciliacao}
+						className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+						disabled={loading}
+					>
+						<FontAwesomeIcon icon={faSave} />
+						Continuar para Conciliação
+					</button>
+						)} 
+						{!loading && (totalImportado === 0) && (
 					<button
 						className={`text-white font-semibold px-5 py-2 rounded flex items-center gap-2 transition ${
 							selectedFile ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-300 cursor-not-allowed'
@@ -186,7 +224,9 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 						<FontAwesomeIcon icon={faSave} />
 						Importar
 					</button>
+						)}
 				</div>
+				
 			</Modal>
 			<SelectContaCorrente isOpen={modalContaIsOpen} onClose={() => setModalContaIsOpen(false)} onSelect={handleSelectConta} />
 			<ConciliacaoOFXModal

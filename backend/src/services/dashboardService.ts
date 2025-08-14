@@ -11,7 +11,7 @@ export class DashboardService {
     this.parcelaFinanciamentoRepository = new ParcelaFinanciamentoRepository(db);
   }
 
-  async getDashboardData(ano: number) {
+  async getDashboardData(ano: number, mes?: number) {
     // Busca totais do ano
     const totaisAno = await this.dashboardRepository.getTotaisAno(ano);
 
@@ -19,30 +19,50 @@ export class DashboardService {
     const receitasDespesas = await this.dashboardRepository.getReceitasDespesasPorMes(ano);
     const investimentos = await this.dashboardRepository.getInvestimentosPorMes(ano);
 
-    // Busca totais do mês atual
-    const mesAtual = new Date().getMonth() + 1;
-    const totaisMes = await this.dashboardRepository.getTotaisMes(ano, mesAtual);
+    // Busca totais do mês atual ou mês especificado
+    const mesAtual = mes || new Date().getMonth() + 1;
+    const totaisMes = await this.dashboardRepository.getTotaisMes(ano, mesAtual, []); // Array vazio para contas
+
+    // Busca dados de financiamentos
+    const financiamentosPorMes = await this.dashboardRepository.getFinanciamentosPorMes(ano);
+    const financiamentosPorCredor = await this.dashboardRepository.getFinanciamentosPorCredor(ano);
+    const financiamentosPorFaixaJuros = await this.dashboardRepository.getFinanciamentosPorFaixaJuros(ano);
+    const financiamentosPorBanco = await this.dashboardRepository.getFinanciamentosPorBanco(ano);
+    const parcelasFinanciamento = await this.dashboardRepository.getParcelasFinanciamento(ano);
 
     // Monta o objeto de retorno igual ao frontend espera
     return {
+      totaisAno: {
+        receitas: totaisAno.receitas,
+        despesas: totaisAno.despesas,
+        investimentos: totaisAno.investimentos,
+        financiamentos: totaisAno.financiamentos,
+      },
       totais: {
         receitas: totaisMes.receitas,
         despesas: totaisMes.despesas,
         investimentos: totaisMes.investimentos,
-        financiamentos: totaisAno.financiamentos,
+        financiamentos: {
+          contratosAtivos: totaisAno.financiamentos.contratosAtivos,
+          totalFinanciado: totaisMes.financiamentos,
+          totalQuitado: 0,
+          totalEmAberto: totaisMes.financiamentos,
+        },
       },
-      receitasDespesas: {
-        ...receitasDespesas,
-        detalhamento: [], // Preencher se necessário
-      },
-      investimentos,
+      receitasDespesasPorMes: receitasDespesas,
+      investimentosPorMes: investimentos,
+      financiamentosPorMes,
+      financiamentosPorCredor,
       financiamentos: {
-        labels: [], quitado: [], emAberto: [], novosContratos: [], liquidacoes: [], acumuladoAno: 0, porTipo: {}, porBanco: [], porFaixaJuros: []
+        porFaixaJuros: financiamentosPorFaixaJuros.values,
+        porBanco: financiamentosPorBanco.values
       },
-      financiamentosPorCredor: {
-        labels: [], values: [], quitados: [], emAberto: [], detalhamento: []
-      },
-      parcelasFinanciamento: undefined
+      parcelasFinanciamento,
+      receitasDespesas: {
+        receitas: [],
+        despesas: [],
+        detalhamento: []
+      }
     };
   }
 } 

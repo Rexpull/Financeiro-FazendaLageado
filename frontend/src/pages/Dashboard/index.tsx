@@ -22,7 +22,7 @@ import {
   TextField
 } from "@mui/material";
 import BreadCrumb from "../../components/BreadCrumb";
-import { getDashboardData, DashboardData } from "../../services/dashboardService";
+import { getDashboardData, DashboardData, getParcelasAVencer, getContratosLiquidados, getContratosNovos, ParcelasAVencer, ContratosLiquidados, ContratosNovos } from "../../services/dashboardService";
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import SavingsIcon from '@mui/icons-material/Savings';
@@ -61,6 +61,10 @@ const Dashboard = () => {
   const [bancoSelecionado, setBancoSelecionado] = useState<string>("");
   const [tomadorSelecionado, setTomadorSelecionado] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'parcelas-vencer' | 'contratos-liquidados' | 'contratos-novos'>('parcelas-vencer');
+  const [parcelasAVencer, setParcelasAVencer] = useState<ParcelasAVencer | null>(null);
+  const [contratosLiquidados, setContratosLiquidados] = useState<ContratosLiquidados | null>(null);
+  const [contratosNovos, setContratosNovos] = useState<ContratosNovos | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     totaisAno: {
       receitas: 0,
@@ -161,6 +165,36 @@ const Dashboard = () => {
     fetchData();
   }, [anoSelecionado, mesSelecionado]);
 
+  // Novo useEffect para carregar dados dos filtros rápidos
+  useEffect(() => {
+    const fetchFiltrosRapidos = async () => {
+      try {
+        const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
+        const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
+
+        // Carregar dados baseado na aba ativa
+        switch (activeTab) {
+          case 'parcelas-vencer':
+            const parcelasData = await getParcelasAVencer(anoSelecionado, mesParam);
+            setParcelasAVencer(parcelasData);
+            break;
+          case 'contratos-liquidados':
+            const liquidadosData = await getContratosLiquidados(anoSelecionado, mesParam);
+            setContratosLiquidados(liquidadosData);
+            break;
+          case 'contratos-novos':
+            const novosData = await getContratosNovos(anoSelecionado, mesParam);
+            setContratosNovos(novosData);
+            break;
+        }
+      } catch (err) {
+        console.error('Erro ao carregar filtros rápidos:', err);
+      }
+    };
+
+    fetchFiltrosRapidos();
+  }, [activeTab, anoSelecionado, mesSelecionado]);
+
   const exportToExcel = (data: any[], fileName: string) => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -176,10 +210,12 @@ const Dashboard = () => {
   const totalReceitasAno = dashboardData?.receitasDespesasPorMes.receitas.reduce((a: number, b: number) => a + (b || 0), 0) || 0;
   const totalDespesasAno = dashboardData?.receitasDespesasPorMes.despesas.reduce((a: number, b: number) => a + (b || 0), 0) || 0;
   const totalInvestimentosAno = dashboardData?.investimentosPorMes.values.reduce((a: number, b: number) => a + (b || 0), 0) || 0;
+  const totalFinanciamentosAno = dashboardData?.totaisAno?.financiamentos?.totalFinanciado || 0;
 
   const totalReceitasMes = mesIdx >= 0 ? (dashboardData?.receitasDespesasPorMes.receitas[mesIdx] || 0) : totalReceitasAno;
   const totalDespesasMes = mesIdx >= 0 ? (dashboardData?.receitasDespesasPorMes.despesas[mesIdx] || 0) : totalDespesasAno;
   const totalInvestimentosMes = mesIdx >= 0 ? (dashboardData?.investimentosPorMes.values[mesIdx] || 0) : totalInvestimentosAno;
+  const totalFinanciamentosMes = mesIdx >= 0 ? (dashboardData?.financiamentosPorMes?.emAberto?.[mesIdx] || 0) : totalFinanciamentosAno;
 
   // Gráficos
   const receitasDespesasOptions = {
@@ -348,8 +384,10 @@ const Dashboard = () => {
           </Paper>
           <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
             <Box sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', height: '100%', gap:1}}>
-              <Typography variant="subtitle2">Contratos Ativos</Typography>
-              <Typography variant="h5" fontWeight="bold">{dashboardData?.totaisAno?.financiamentos?.contratosAtivos || 0}</Typography>
+              <Typography variant="subtitle2">Total Financiado</Typography>
+              <Typography variant="h5" fontWeight="bold" color="warning.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
+                {formatCurrency(totalFinanciamentosMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalFinanciamentosAno)})</span></Typography>
+              </Typography>
             </Box>
             <PaidIcon color="warning" sx={{ fontSize: 48 }} />
           </Paper>
@@ -552,51 +590,267 @@ const Dashboard = () => {
           </Box>
         </Box>
 
-        {/* Seção de Financiamentos por Tomador */}
+        {/* Nova Seção: Filtros Rápidos de Financiamentos */}
         <Box sx={{ mb: 4 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Financiamentos por Tomador</Typography>
-            <Autocomplete
-              options={dashboardData?.financiamentosPorCredor?.labels || []}
-              getOptionLabel={option => option}
-              value={tomadorSelecionado || null}
-              onChange={(_, newValue) => setTomadorSelecionado(newValue || "")}
-              renderInput={params => <TextField {...params} label="Filtrar por Tomador" size="small" sx={{backgroundColor: 'white', minWidth: 200}} />}
-              disabled={!dashboardData?.financiamentosPorCredor?.labels?.length}
-              clearOnEscape
-            />
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Filtros Rápidos de Financiamentos</Typography>
+          
+          {/* Abas para os diferentes filtros */}
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, pb: 2 }}>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button 
+                variant={activeTab === 'parcelas-vencer' ? 'contained' : 'outlined'}
+                onClick={() => setActiveTab('parcelas-vencer')}
+                startIcon={<TrendingUpIcon />}
+              >
+                Parcelas a Vencer
+              </Button>
+              <Button 
+                variant={activeTab === 'contratos-liquidados' ? 'contained' : 'outlined'}
+                onClick={() => setActiveTab('contratos-liquidados')}
+                startIcon={<PaidIcon />}
+              >
+                Contratos Liquidados
+              </Button>
+              <Button 
+                variant={activeTab === 'contratos-novos' ? 'contained' : 'outlined'}
+                onClick={() => setActiveTab('contratos-novos')}
+                startIcon={<InsertChartOutlinedIcon />}
+              >
+                Contratos Novos
+              </Button>
+            </Box>
           </Box>
-          <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
-          <TableContainer component={Paper} sx={{ minHeight: 350 }}>
-            {dashboardData?.financiamentosPorCredor?.detalhamento?.length ? (
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Tomador</TableCell>
-                    <TableCell>Banco</TableCell>
-                    <TableCell>Data</TableCell>
-                    <TableCell>Valor</TableCell>
-                    <TableCell>Tipo</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {dashboardData?.financiamentosPorCredor?.detalhamento
-                    ?.filter(item => !tomadorSelecionado || item.tomador === tomadorSelecionado)
-                    ?.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.tomador}</TableCell>
-                      <TableCell>{item.banco}</TableCell>
-                      <TableCell>{new Date(item.dataFinanciamento).toLocaleDateString()}</TableCell>
-                      <TableCell>{formatCurrency(item.valor)}</TableCell>
-                      <TableCell>{item.tipo}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <NoData icon={<PersonOutlineIcon sx={{ fontSize: 60, color: 'grey.400' }} />} message="Nenhum financiamento por tomador encontrado." />
-            )}
-          </TableContainer>
+
+          {/* Conteúdo das abas */}
+          {activeTab === 'parcelas-vencer' && (
+            <Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  Parcelas a Vencer - Total: {formatCurrency(parcelasAVencer?.totalVencimento || 0)}
+                </Typography>
+                <Button
+                  variant="outlined"
+                  startIcon={<FileDownloadIcon />}
+                  onClick={() => {
+                    const dadosParaExportar = parcelasAVencer?.detalhes?.flatMap(item => 
+                      item.financiamentos.map(fin => ({
+                        'Mês/Ano': item.mes,
+                        'Contrato': fin.contrato,
+                        'Tomador': fin.tomador,
+                        'Banco': fin.banco,
+                        'Valor': fin.valor,
+                        'Vencimento': fin.vencimento,
+                        'Modalidade': fin.modalidade,
+                        'Taxa de Juros (%)': fin.taxaJuros,
+                        'Garantia': fin.garantia
+                      }))
+                    ) || [];
+                    exportToExcel(dadosParaExportar, 'parcelas_a_vencer');
+                  }}
+                  disabled={!parcelasAVencer?.detalhes?.length}
+                >
+                  Exportar Excel
+                </Button>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 2 }}>
+                <Paper sx={{ p: 2, minHeight: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {parcelasAVencer?.labels?.length ? (
+                    <Suspense fallback={<CircularProgress />}>
+                      <Chart
+                        options={{
+                          chart: { type: 'bar', height: 350 },
+                          xaxis: { categories: parcelasAVencer.labels },
+                          yaxis: { title: { text: "Valor (R$)" } },
+                          tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+                          colors: ['#ff9800']
+                        }}
+                        series={[{ name: "Valor a Vencer", data: parcelasAVencer.valores }]}
+                        type="bar"
+                        height={350}
+                        style={{width: '100%'}}
+                      />
+                    </Suspense>
+                  ) : (
+                    <NoData message="Nenhuma parcela a vencer encontrada." />
+                  )}
+                </Paper>
+                <TableContainer component={Paper} sx={{ minHeight: 350, maxHeight: 400 }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Mês/Ano</TableCell>
+                        <TableCell>Valor</TableCell>
+                        <TableCell>Qtd</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {parcelasAVencer?.detalhes?.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{item.mes}</TableCell>
+                          <TableCell>{formatCurrency(item.valor)}</TableCell>
+                          <TableCell>{item.quantidade}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            </Box>
+          )}
+
+          {activeTab === 'contratos-liquidados' && (
+            <Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  Contratos Liquidados - Total: {formatCurrency(contratosLiquidados?.totalLiquidado || 0)}
+                </Typography>
+                <Button
+                  variant="outlined"
+                  startIcon={<FileDownloadIcon />}
+                  onClick={() => {
+                    const dadosParaExportar = contratosLiquidados?.detalhes?.flatMap(item => 
+                      item.contratos.map(contr => ({
+                        'Mês/Ano': item.mes,
+                        'Contrato': contr.numero,
+                        'Tomador': contr.tomador,
+                        'Banco': contr.banco,
+                        'Valor': contr.valor,
+                        'Data Liquidação': contr.dataLiquidacao,
+                        'Modalidade': contr.modalidade,
+                        'Taxa de Juros (%)': contr.taxaJuros,
+                        'Garantia': contr.garantia
+                      }))
+                    ) || [];
+                    exportToExcel(dadosParaExportar, 'contratos_liquidados');
+                  }}
+                  disabled={!contratosLiquidados?.detalhes?.length}
+                >
+                  Exportar Excel
+                </Button>
+              </Box>
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 2 }}>
+                <Paper sx={{ p: 2, minHeight: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {contratosLiquidados?.labels?.length ? (
+                    <Suspense fallback={<CircularProgress />}>
+                      <Chart
+                        options={{
+                          chart: { type: 'bar', height: 350 },
+                          xaxis: { categories: contratosLiquidados.labels },
+                          yaxis: { title: { text: "Valor (R$)" } },
+                          tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+                          colors: ['#4caf50']
+                        }}
+                        series={[{ name: "Valor Liquidado", data: contratosLiquidados.valores }]}
+                        type="bar"
+                        height={350}
+                        style={{width: '100%'}}
+                      />
+                    </Suspense>
+                  ) : (
+                    <NoData message="Nenhum contrato liquidado encontrado." />
+                  )}
+                </Paper>
+                <TableContainer component={Paper} sx={{ minHeight: 350, maxHeight: 400 }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Mês/Ano</TableCell>
+                        <TableCell>Valor</TableCell>
+                        <TableCell>Qtd</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {contratosLiquidados?.detalhes?.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{item.mes}</TableCell>
+                          <TableCell>{formatCurrency(item.valor)}</TableCell>
+                          <TableCell>{item.quantidade}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            </Box>
+          )}
+
+          {activeTab === 'contratos-novos' && (
+            <Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  Contratos Novos - Total: {formatCurrency(contratosNovos?.totalNovos || 0)}
+                </Typography>
+                <Button
+                  variant="outlined"
+                  startIcon={<FileDownloadIcon />}
+                  onClick={() => {
+                    const dadosParaExportar = contratosNovos?.detalhes?.flatMap(item => 
+                      item.contratos.map(contr => ({
+                        'Mês/Ano': item.mes,
+                        'Contrato': contr.numero,
+                        'Tomador': contr.tomador,
+                        'Banco': contr.banco,
+                        'Valor': contr.valor,
+                        'Data Contrato': contr.dataContrato,
+                        'Modalidade': contr.modalidade,
+                        'Taxa de Juros (%)': contr.taxaJuros,
+                        'Garantia': contr.garantia,
+                        'Número de Parcelas': contr.numeroParcelas
+                      }))
+                    ) || [];
+                    exportToExcel(dadosParaExportar, 'contratos_novos');
+                  }}
+                  disabled={!contratosNovos?.detalhes?.length}
+                >
+                  Exportar Excel
+                </Button>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 2 }}>
+                <Paper sx={{ p: 2, minHeight: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {contratosNovos?.labels?.length ? (
+                    <Suspense fallback={<CircularProgress />}>
+                      <Chart
+                        options={{
+                          chart: { type: 'bar', height: 350 },
+                          xaxis: { categories: contratosNovos.labels },
+                          yaxis: { title: { text: "Valor (R$)" } },
+                          tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+                          colors: ['#2196f3']
+                        }}
+                        series={[{ name: "Valor dos Contratos", data: contratosNovos.valores }]}
+                        type="bar"
+                        height={350}
+                        style={{width: '100%'}}
+                      />
+                    </Suspense>
+                  ) : (
+                    <NoData message="Nenhum contrato novo encontrado." />
+                  )}
+                </Paper>
+                <TableContainer component={Paper} sx={{ minHeight: 350, maxHeight: 400 }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Mês/Ano</TableCell>
+                        <TableCell>Valor</TableCell>
+                        <TableCell>Qtd</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {contratosNovos?.detalhes?.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{item.mes}</TableCell>
+                          <TableCell>{formatCurrency(item.valor)}</TableCell>
+                          <TableCell>{item.quantidade}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            </Box>
+          )}
         </Box>
       </Box>
     </div>

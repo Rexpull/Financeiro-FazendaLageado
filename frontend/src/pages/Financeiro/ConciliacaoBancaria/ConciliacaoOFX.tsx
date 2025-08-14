@@ -157,17 +157,26 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			}
 
 			console.log('Movimento atualizado:', movimentoAtualizado);
-			await salvarMovimentoBancario(movimentoAtualizado);
+			const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 
-			const novaLista = movimentosSendoConciliados.map((m) =>
-				m.id === movimentoAtualizado.id
-					? {
-							...m,
-							...movimentoAtualizado,
-							planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
-					  }
-					: m
-			);
+			// Atualizar apenas o movimento específico na lista
+			const novaLista = movimentosSendoConciliados.map((m) => {
+				if (m.id === movimentoAtualizado.id || m.identificadorOfx === movimentoAtualizado.identificadorOfx) {
+					return {
+						...m,
+						idPlanoContas: resultadoSalvo.idPlanoContas,
+						modalidadeMovimento: resultadoSalvo.modalidadeMovimento,
+						idPessoa: resultadoSalvo.idPessoa,
+						idBanco: resultadoSalvo.idBanco,
+						parcelado: resultadoSalvo.parcelado,
+						numeroDocumento: resultadoSalvo.numeroDocumento,
+						idFinanciamento: resultadoSalvo.idFinanciamento,
+						resultadoList: resultadoSalvo.resultadoList,
+						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
+					};
+				}
+				return m;
+			});
 
 			novaLista.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());
 			setMovimentosSendoConciliados(novaLista);
@@ -257,18 +266,34 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 						idUsuario: movimento.idUsuario || null,
 					};
 
-					await salvarMovimentoBancario(movimentoAtualizado);
-					movimentosAtualizados.push(movimentoAtualizado);
+					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
+					movimentosAtualizados.push(resultadoSalvo);
 				} catch (error) {
 					console.error(`Erro ao conciliar movimento ${movimento.id}:`, error);
 					erros.push(movimento.id);
 				}
 			}
 
-			// Atualiza a lista de movimentos
+			// Atualiza a lista de movimentos apenas com os campos alterados
 			const movimentosAtualizadosList = movimentosSendoConciliados.map(mov => {
-				const atualizado = movimentosAtualizados.find(m => m.id === mov.id);
-				return atualizado || mov;
+				const atualizado = movimentosAtualizados.find(m => 
+					m.id === mov.id || m.identificadorOfx === mov.identificadorOfx
+				);
+				
+				if (atualizado) {
+					return {
+						...mov,
+						idPlanoContas: atualizado.idPlanoContas,
+						modalidadeMovimento: atualizado.modalidadeMovimento,
+						idPessoa: atualizado.idPessoa,
+						idBanco: atualizado.idBanco,
+						numeroDocumento: atualizado.numeroDocumento,
+						parcelado: atualizado.parcelado,
+						idFinanciamento: atualizado.idFinanciamento,
+						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
+					};
+				}
+				return mov;
 			});
 
 			setMovimentosSendoConciliados(movimentosAtualizadosList.sort((a, b) => 
@@ -308,7 +333,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			>
 				{/* Cabeçalho */}
 				<div className="flex justify-between items-center bg-gray-50 px-4 py-3 rounded-t-lg border-b">
-					<h2 className="text-xl font-semibold text-gray-800">Conciliação de Movimentos OFX {movimentosSendoConciliados.length}</h2>
+					<h2 className="text-xl font-semibold text-gray-800">Conciliação de Movimentos OFX - {movimentosSendoConciliados.length}</h2>
 					<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
 						<FontAwesomeIcon icon={faTimes} size="xl" />
 					</button>

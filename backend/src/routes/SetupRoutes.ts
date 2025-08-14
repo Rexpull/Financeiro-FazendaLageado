@@ -31,6 +31,108 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
       return new Response(JSON.stringify({ error: "Tabela 'banco' não encontrada" }), { status: 500, headers: corsHeaders });
     }
 
+    // 📌 GET - Notificações de conciliação
+    if (method === "GET" && pathname === "/api/notificacoes/conciliacao") {
+      console.log("📡 Buscando notificações de conciliação...");
+      
+      try {
+        // Primeiro, vamos verificar se as tabelas existem
+        const tableCheck = await DB.prepare(`
+          SELECT name FROM sqlite_master 
+          WHERE type='table' AND name IN ('ContaCorrente', 'banco', 'MovimentoBancario')
+        `).all();
+        
+        console.log("🔍 Tabelas disponíveis:", tableCheck.results.map((t: any) => t.name));
+        
+        // Verificar se há dados nas tabelas
+        const contaCheck = await DB.prepare("SELECT COUNT(*) as total FROM ContaCorrente").first();
+        const bancoCheck = await DB.prepare("SELECT COUNT(*) as total FROM banco").first();
+        const movimentoCheck = await DB.prepare("SELECT COUNT(*) as total FROM MovimentoBancario").first();
+        
+        console.log("📊 Contagem de registros:", {
+          contasCorrente: contaCheck?.total || 0,
+          bancos: bancoCheck?.total || 0,
+          movimentos: movimentoCheck?.total || 0
+        });
+        
+        // Query principal para notificações
+        const query = `
+          SELECT 
+            cc.id as idContaCorrente,
+            cc.responsavel as nomeConta,
+            COALESCE(b.nome, 'Banco não informado') as nomeBanco,
+            cc.numConta,
+            COUNT(mb.id) as quantidadePendentes,
+            MIN(mb.dtMovimento) as dataInicial,
+            MAX(mb.dtMovimento) as dataFinal
+          FROM ContaCorrente cc
+          LEFT JOIN banco b ON cc.idBanco = b.id
+          LEFT JOIN MovimentoBancario mb ON cc.id = mb.idContaCorrente
+          WHERE mb.idPlanoContas IS NULL 
+            AND mb.dtMovimento IS NOT NULL
+          GROUP BY cc.id, cc.responsavel, b.nome, cc.numConta
+          HAVING quantidadePendentes > 0
+          ORDER BY quantidadePendentes DESC, dataFinal DESC
+        `;
+        
+        console.log("🔍 Executando query:", query);
+        
+        const { results } = await DB.prepare(query).all();
+        console.log("✅ Notificações encontradas:", results.length);
+        console.log("📋 Dados das notificações:", results);
+        
+        return new Response(JSON.stringify(results), { 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        });
+      } catch (dbError) {
+        console.error("❌ Erro ao buscar notificações:", dbError);
+        return new Response(JSON.stringify({ 
+          error: "Erro ao buscar notificações", 
+          details: dbError instanceof Error ? dbError.message : 'Erro desconhecido',
+          stack: dbError instanceof Error ? dbError.stack : undefined
+        }), { 
+          status: 500, 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
+    // 📌 GET - Total de notificações
+    if (method === "GET" && pathname === "/api/notificacoes/total") {
+      console.log("📡 Buscando total de notificações...");
+      
+      try {
+        const query = `
+          SELECT COUNT(*) as total
+          FROM MovimentoBancario mb
+          WHERE mb.idPlanoContas IS NULL 
+            AND mb.dtMovimento IS NOT NULL
+        `;
+        
+        console.log("🔍 Executando query de total:", query);
+        
+        const result = await DB.prepare(query).first();
+        const total = result && typeof result.total === 'number' ? result.total : 0;
+        
+        console.log("✅ Total de notificações:", total);
+        console.log("📊 Resultado bruto:", result);
+        
+        return new Response(JSON.stringify({ total }), { 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        });
+      } catch (dbError) {
+        console.error("❌ Erro ao buscar total de notificações:", dbError);
+        return new Response(JSON.stringify({ 
+          error: "Erro ao buscar total de notificações", 
+          details: dbError instanceof Error ? dbError.message : 'Erro desconhecido',
+          stack: dbError instanceof Error ? dbError.stack : undefined
+        }), { 
+          status: 500, 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
     // 📌 GET - Listar bancos
     if (method === "GET" && pathname === "/api/bancos") {
       console.log("📡 Buscando bancos no banco de dados...");
