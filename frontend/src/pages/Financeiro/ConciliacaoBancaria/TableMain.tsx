@@ -95,6 +95,9 @@ const MovimentoBancarioTable: React.FC = () => {
 		movimentos: MovimentoBancario[];
 		totalizadores: TotalizadoresOFX;
 	} | null>(null);
+	
+	// Modal de confirmação para limpar histórico
+	const [modalConfirmarLimparHistoricoIsOpen, setModalConfirmarLimparHistoricoIsOpen] = useState(false);
 
 	// 🔹 Paginação
 	const [currentPage, setCurrentPage] = useState(1);
@@ -667,7 +670,15 @@ const MovimentoBancarioTable: React.FC = () => {
 
 						{dropdownHistoricoAberto && (
 							<div className="absolute top-10 right-0 mt-1 bg-white border rounded shadow-lg z-50 w-72">
-								<div className="text-xs font-semibold text-gray-500 px-4 py-2 border-b border-gray-200">Últimas Importações</div>
+								<div className="text-xs font-semibold text-gray-500 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+									<span>Últimas Importações</span>
+									<button
+										onClick={() => setModalConfirmarLimparHistoricoIsOpen(true)}
+										className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50"
+									>
+										Limpar
+									</button>
+								</div>
 								{historicoImportacoes.length === 0 ? (
 									<div className="text-sm text-gray-600 px-4 py-2">Nenhum histórico encontrado.</div>
 								) : (
@@ -954,6 +965,24 @@ const MovimentoBancarioTable: React.FC = () => {
 					</div>
 				</div>
 			)}
+
+			{/* Modal de confirmação para limpar histórico */}
+			<DialogModal
+				isOpen={modalConfirmarLimparHistoricoIsOpen}
+				onClose={() => setModalConfirmarLimparHistoricoIsOpen(false)}
+				onConfirm={() => {
+					localStorage.removeItem('historicoOFX');
+					setHistoricoImportacoes([]);
+					setDropdownHistoricoAberto(false);
+					setModalConfirmarLimparHistoricoIsOpen(false);
+					toast.success('Histórico de importações limpo com sucesso!');
+				}}
+				title="Confirmar Limpeza"
+				type="warn"
+				message="Tem certeza que deseja limpar todo o histórico de importações OFX? Esta ação não pode ser desfeita."
+				confirmLabel="Sim, Limpar"
+				cancelLabel="Cancelar"
+			/>
 		</div>
 	);
 };
