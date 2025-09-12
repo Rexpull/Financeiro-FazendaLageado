@@ -61,6 +61,10 @@ const ParametroPage = () => {
           searchTerm = "002";  // Despesa
         } else if (searchTerm && searchTerm === "T"){
           searchTerm = "003";  // Transferência
+        } else if (searchTerm && searchTerm === "FD"){
+          searchTerm = "004.002"; // Financiamentos Despesas
+        } else if (searchTerm && searchTerm === "FR"){
+          searchTerm = "004.001"; // Financiamentos Receitas
         } else {
           searchTerm = "003"; // Transferência
         }
@@ -153,7 +157,7 @@ const ParametroPage = () => {
                             />
                             {showSuggestions.entrada && (
                                 <ul className="absolute bg-white rounded w-full shadow-lg max-w-md mt-1 z-10">
-                                    {filterPlanos("custeio", "R").map((plano) => (
+                                    {filterPlanos("custeio", "FR").map((plano) => (
                                         <li
                                             key={plano.id}
                                             className="p-2 hover:bg-gray-100 cursor-pointer"
@@ -192,7 +196,7 @@ const ParametroPage = () => {
                             />
                             {showSuggestions.pagamento && (
                                 <ul className="absolute bg-white rounded w-full shadow-lg max-w-md mt-1 z-10">
-                                    {filterPlanos("custeio", "D").map((plano) => (
+                                    {filterPlanos("custeio", "FD").map((plano) => (
                                         <li
                                             key={plano.id}
                                             className="p-2 hover:bg-gray-100 cursor-pointer"
