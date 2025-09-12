@@ -75,7 +75,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [deleteMovimentoId, setDeleteMovimentoId] = useState<number | null>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
-	const [planos, setPlanos] = useState<{ id: number; descricao: string; tipo: string }[]>([]);
+	const [planos, setPlanos] = useState<any[]>([]);
 	const [isExporting, setIsExporting] = useState(false);
 
 	const [dataInicio, setDataInicio] = useState<string>('');
@@ -153,7 +153,7 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	}, [contaSelecionada]);
 
-	const handleSelectConta = (conta) => {
+	const handleSelectConta = (conta: any) => {
 		setContaSelecionada(conta);
 		localStorage.setItem('contaSelecionada', JSON.stringify(conta));
 		let contaAtt = localStorage.getItem('contaSelecionada');
@@ -215,7 +215,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
 			const dadosParaExportar = await Promise.all(
 				dadosCompletos.map(async (mov) => {
-					const multiplosPlanos = mov.resultadoList?.length > 1;
+					const multiplosPlanos = mov.resultadoList && mov.resultadoList.length > 1;
 					const planoDescricao = multiplosPlanos ? 'Múltiplos Planos' : planos.find((p) => p.id === mov.idPlanoContas)?.descricao || '';
 
 					let bancoNome = '';
@@ -356,7 +356,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const handleTransferir = async (data: any) => {
 		try {
 			const usuario = JSON.parse(localStorage.getItem('user') || '{}');
-			const contaDestino = data.contas.find((c) => c.id === parseInt(data.idContaDestino));
+			const contaDestino = data.contas.find((c: any) => c.id === parseInt(data.idContaDestino));
 			if (!contaDestino) throw new Error('Conta destino não encontrada');
 
 			const payload = {
@@ -542,25 +542,25 @@ const MovimentoBancarioTable: React.FC = () => {
 			};
 
 			if (data.modalidadeMovimento === 'padrao') {
-				movimentoAtualizado.idBanco = null;
+				movimentoAtualizado.idBanco = undefined;
 				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = null;
-				movimentoAtualizado.idFinanciamento = null;
+				movimentoAtualizado.numeroDocumento = undefined;
+				movimentoAtualizado.idFinanciamento = undefined;
 			}
 
 			if (data.modalidadeMovimento === 'financiamento') {
-				movimentoAtualizado.idBanco = data.idBanco ?? null;
+				movimentoAtualizado.idBanco = data.idBanco ?? undefined;
 				movimentoAtualizado.idPessoa = data.idPessoa ?? null;
-				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? null;
+				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? undefined;
 				movimentoAtualizado.parcelado = data.parcelado ?? false;
-				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? null;
+				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? undefined;
 			}
 
 			if (data.modalidadeMovimento === 'transferencia') {
-				movimentoAtualizado.idBanco = null;
+				movimentoAtualizado.idBanco = undefined;
 				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = null;
-				movimentoAtualizado.idFinanciamento = null;
+				movimentoAtualizado.numeroDocumento = undefined;
+				movimentoAtualizado.idFinanciamento = undefined;
 				movimentoAtualizado.resultadoList = [];
 			}
 
@@ -588,8 +588,8 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	return (
 		<div>
-			<div className="flex justify-between items-end gap-5 mb-4">
-				<div className="flex items-end gap-3 relative w-auto whitespace-nowrap" ref={menuRef}>
+			<div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 lg:gap-5 mb-4">
+				<div className="flex flex-col sm:flex-row items-start sm:items-end gap-3 relative w-full lg:w-auto" ref={menuRef}>
 					<div className="relative w-auto whitespace-nowrap">
 						<button
 							className="bg-gray-50 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded-md border border-gray-300 hover:bg-gray-100"
@@ -641,25 +641,31 @@ const MovimentoBancarioTable: React.FC = () => {
 						)}
 					</div>
 				</div>
-				<div className="flex justify-end items-center gap-3 w-full">
+				<div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-3 w-full">
 					<button
-						className="bg-gray-200 text-black font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-gray-300"
+						className="bg-gray-200 text-black font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-gray-300 text-sm sm:text-base"
 						onClick={() => setModalFiltroMovimentosIsOpen(true)}
 					>
-						Pesquisar <FontAwesomeIcon icon={faSearch} className="ml-3 font-bold" />
+						<span className="hidden sm:inline">Pesquisar</span>
+						<span className="sm:hidden">Filtrar</span>
+						<FontAwesomeIcon icon={faSearch} className="ml-2 sm:ml-3 font-bold" />
 					</button>
 					<button
-						className="bg-suport text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-400"
+						className="bg-suport text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-400 text-sm sm:text-base"
 						onClick={() => openModal()}
 					>
-						Lançar Manual <FontAwesomeIcon icon={faPlus} className="ml-3 font-bold" />
+						<span className="hidden sm:inline">Lançar Manual</span>
+						<span className="sm:hidden">Lançar</span>
+						<FontAwesomeIcon icon={faPlus} className="ml-2 sm:ml-3 font-bold" />
 					</button>
 					<div className="flex relative">
 						<button
-							className="bg-primary text-white font-bold px-4 py-2 flex items-center rounded-l hover:bg-orange-500"
+							className="bg-primary text-white font-bold px-4 py-2 flex items-center rounded-l hover:bg-orange-500 text-sm sm:text-base"
 							onClick={() => setModalImportOFXIsOpen(true)}
 						>
-							Buscar OFX <FontAwesomeIcon icon={faFileArchive} className="ml-3" />
+							<span className="hidden sm:inline">Buscar OFX</span>
+							<span className="sm:hidden">OFX</span>
+							<FontAwesomeIcon icon={faFileArchive} className="ml-2 sm:ml-3" />
 						</button>
 						<button
 							className="rounded-r-md font-bold text-white bg-primary border-l-2 border-gray-300 text-lg px-2 py-2 flex items-center"
@@ -669,7 +675,7 @@ const MovimentoBancarioTable: React.FC = () => {
 						</button>
 
 						{dropdownHistoricoAberto && (
-							<div className="absolute top-10 right-0 mt-1 bg-white border rounded shadow-lg z-50 w-72">
+							<div className="absolute top-10 right-0 mt-1 bg-white border rounded shadow-lg z-50 w-72 max-w-[calc(100vw-2rem)]">
 								<div className="text-xs font-semibold text-gray-500 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
 									<span>Últimas Importações</span>
 									<button
@@ -723,18 +729,19 @@ const MovimentoBancarioTable: React.FC = () => {
 					</div>
 				) : (
 					<>
-						<table className="w-full border-collapse">
-							<thead>
-								<tr className="bg-gray-200">
-									<th className="pl-5 p-2 text-left truncate">Data do Movimento</th>
-									<th className="p-2 text-left">Histórico</th>
-									<th className="p-2 text-center">Plano Contas</th>
-									<th className="p-2 text-center">Valor R$</th>
-
-									<th className="p-2 text-center">Saldo R$</th>
-									<th className="p-2 pr-11 text-right">IdeAgri</th>
-								</tr>
-							</thead>
+						{/* Tabela Desktop */}
+						<div className="hidden lg:block overflow-x-auto">
+							<table className="w-full border-collapse">
+								<thead>
+									<tr className="bg-gray-200">
+										<th className="pl-5 p-2 text-left truncate">Data do Movimento</th>
+										<th className="p-2 text-left">Histórico</th>
+										<th className="p-2 text-center">Plano Contas</th>
+										<th className="p-2 text-center">Valor R$</th>
+										<th className="p-2 text-center">Saldo R$</th>
+										<th className="p-2 pr-11 text-right">IdeAgri</th>
+									</tr>
+								</thead>
 							<tbody>
 								{currentItems.length === 2 ? (
 									<tr>
@@ -757,7 +764,7 @@ const MovimentoBancarioTable: React.FC = () => {
 													<>
 														<td
 															className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
-																movBancario.resultadoList?.length > 1
+																movBancario.resultadoList && movBancario.resultadoList.length > 1
 																	? 'text-blue-600 font-semibold'
 																	: !planos.find((p) => p.id === movBancario.idPlanoContas)
 																	? 'text-orange-500 font-semibold'
@@ -766,7 +773,7 @@ const MovimentoBancarioTable: React.FC = () => {
 															style={{ textUnderlineOffset: '2px' }}
 															onClick={() => openModalConcilia(movBancario)}
 														>
-															{movBancario.resultadoList?.length > 1
+															{movBancario.resultadoList && movBancario.resultadoList.length > 1
 																? 'Múltiplos Planos'
 																: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
 														</td>
@@ -836,28 +843,153 @@ const MovimentoBancarioTable: React.FC = () => {
 									})
 								)}
 							</tbody>
-						</table>
+							</table>
+						</div>
+
+						{/* Cards Mobile */}
+						<div className="lg:hidden">
+							{currentItems.length === 2 ? (
+								<div className="text-center py-8 text-gray-600 text-lg font-medium">
+									Nenhum movimento encontrado!
+								</div>
+							) : (
+								<div className="space-y-3 p-4">
+									{currentItems.map((movBancario) => {
+										const isSaldo = movBancario.id === -1 || movBancario.id === -2;
+										return (
+											<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+												{/* Header do card */}
+												<div className="flex justify-between items-start mb-3">
+													<div className="flex-1">
+														<div className="text-sm font-medium text-gray-900">
+															{formatarData(movBancario.dtMovimento)}
+														</div>
+														<div className="text-xs text-gray-500 mt-1">
+															{movBancario.historico}
+														</div>
+													</div>
+													{!isSaldo && (
+														<div className="flex items-center gap-2">
+															<label className="relative inline-flex items-center cursor-pointer">
+																<input
+																	type="checkbox"
+																	className="sr-only peer"
+																	checked={movBancario.ideagro}
+																	onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
+																/>
+																<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+															</label>
+															<button
+																className="text-gray-700 hover:text-black p-1"
+																onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+															>
+																<FontAwesomeIcon icon={faEllipsisV} />
+															</button>
+														</div>
+													)}
+												</div>
+
+												{/* Conteúdo do card */}
+												{!isSaldo ? (
+													<>
+														<div className="grid grid-cols-2 gap-3 mb-3">
+															<div>
+																<div className="text-xs text-gray-500">Plano de Contas</div>
+																<div 
+																	className={`text-sm cursor-pointer underline hover:text-gray-500 ${
+																		movBancario.resultadoList && movBancario.resultadoList.length > 1
+																			? 'text-blue-600 font-semibold'
+																			: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																			? 'text-orange-500 font-semibold'
+																			: ''
+																	}`}
+																	onClick={() => openModalConcilia(movBancario)}
+																>
+																	{movBancario.resultadoList && movBancario.resultadoList.length > 1
+																		? 'Múltiplos Planos'
+																		: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+																</div>
+															</div>
+															<div>
+																<div className="text-xs text-gray-500">Valor</div>
+																<div className={`text-sm font-semibold ${
+																	movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+																}`}>
+																	{formatarMoeda(movBancario.valor)}
+																</div>
+															</div>
+														</div>
+														<div>
+															<div className="text-xs text-gray-500">Saldo</div>
+															<div className="text-sm font-medium">{formatarMoeda(movBancario.saldo)}</div>
+														</div>
+													</>
+												) : (
+													<div>
+														<div className="text-xs text-gray-500">Saldo</div>
+														<div className={`text-lg font-semibold ${
+															movBancario.saldo >= 0 ? 'text-green-600' : 'text-red-600'
+														}`}>
+															{formatarMoeda(movBancario.saldo)}
+														</div>
+													</div>
+												)}
+
+												{/* Menu de ações mobile */}
+												{menuAtivoId === movBancario.id && !isSaldo && (
+													<div className="mt-3 pt-3 border-t border-gray-200">
+														<div className="flex gap-2">
+															<button
+																className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
+																onClick={() => {
+																	setMovimentoSelecionado(movBancario);
+																	setModalDetalheOpen(true);
+																	setMenuAtivoId(null);
+																}}
+															>
+																<FontAwesomeIcon icon={faInfoCircle} />
+																Informação
+															</button>
+															<button
+																className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
+																onClick={() => {
+																	handleDelete(movBancario.id);
+																	setMenuAtivoId(null);
+																}}
+															>
+																<FontAwesomeIcon icon={faTrash} />
+																Excluir
+															</button>
+														</div>
+													</div>
+												)}
+											</div>
+										);
+									})}
+								</div>
+							)}
+						</div>
 						{/* 🔹 Paginação */}
-						<div className="flex justify-center items-center my-2 mx-2">
-							<span className="text-gray-800 text-base w-auto whitespace-nowrap ml-2">
-								{movimentos.length} <span className="text-sm">Registros</span>
+						<div className="flex flex-col sm:flex-row justify-between items-center my-4 mx-2 gap-3">
+							<span className="text-gray-800 text-sm sm:text-base">
+								{movimentos.length} <span className="text-xs sm:text-sm">Registros</span>
 							</span>
 
-							<div className="flex items-center gap-2 w-full justify-end">
+							<div className="flex items-center gap-2">
 								<button
-									className="px-3 py-1 border rounded mx-1"
+									className="px-2 sm:px-3 py-1 border rounded text-sm"
 									disabled={currentPage === 1}
 									onClick={() => setCurrentPage(currentPage - 1)}
 								>
 									<FontAwesomeIcon icon={faChevronLeft} />
 								</button>
 
-								<span className="px-3 py-1">
+								<span className="px-2 sm:px-3 py-1 text-sm">
 									{currentPage} / {totalPages}
 								</span>
 
 								<button
-									className="px-3 py-1 border rounded mx-1"
+									className="px-2 sm:px-3 py-1 border rounded text-sm"
 									disabled={currentPage === totalPages}
 									onClick={() => setCurrentPage(currentPage + 1)}
 								>
@@ -865,7 +997,7 @@ const MovimentoBancarioTable: React.FC = () => {
 								</button>
 
 								<select
-									className="border border-gray-400 p-1 rounded"
+									className="border border-gray-400 p-1 rounded text-sm"
 									value={itemsPerPage}
 									onChange={(e) => setItemsPerPage(Number(e.target.value))}
 								>
