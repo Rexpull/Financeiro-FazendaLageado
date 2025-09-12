@@ -217,8 +217,8 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 			isOpen={isOpen}
 			onRequestClose={onClose}
 			shouldCloseOnOverlayClick={false}
-			className="bg-white rounded-lg shadow-lg w-full max-w-[1300px] mx-auto z-150"
-			overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-150"
+			className="bg-white rounded-lg shadow-lg w-full max-w-[1300px] mx-auto z-150 max-h-[90vh] overflow-y-auto"
+			overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-150 p-4"
 			contentLabel="Modal Financiamento"
 		>
 			<div className="flex justify-between items-center bg-yellow-100 px-4 py-3 rounded-t-lg border-b">
@@ -229,14 +229,14 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					<FontAwesomeIcon icon={faTimes} size="lg" />
 				</button>
 			</div>
-			<div className="p-6 flex justify-between items-start gap-2 ">
-				<div className="grid grid-cols-2 gap-4 border-r mr-4 pr-6 w-full">
+			<div className="p-4 sm:p-6 flex flex-col lg:flex-row justify-between items-start gap-4 lg:gap-2">
+				<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:border-r lg:mr-4 lg:pr-6 w-full">
 					<div>
-						<label>
+						<label className="text-sm sm:text-base">
 							Responsável <span className="text-red-500">*</span>
 						</label>
 						<input
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							placeholder="Digite o nome do responsável"
 							value={form.responsavel || ''}
 							onChange={(e) => handleInputChange('responsavel', e.target.value)}
@@ -245,12 +245,12 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					</div>
 
 					<div>
-						<label>
+						<label className="text-sm sm:text-base">
 							Data do Contrato <span className="text-red-500">*</span>
 						</label>
 						<input
 							type="date"
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							value={form.dataContrato || ''}
 							onChange={(e) => handleInputChange('dataContrato', e.target.value)}
 						/>
@@ -258,11 +258,11 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					</div>
 
 					<div>
-						<label>
+						<label className="text-sm sm:text-base">
 							Valor <span className="text-red-500">*</span>
 						</label>
 						<CurrencyInput
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							value={form.valor || '0,00'}
 							decimalsLimit={2}
 							prefix="R$ "
@@ -275,11 +275,11 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					</div>
 
 					<div>
-						<label>
+						<label className="text-sm sm:text-base">
 							Número do Contrato <span className="text-red-500">*</span>
 						</label>
 						<input
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							placeholder="Digite o número do contrato"
 							value={form.numeroContrato || ''}
 							onChange={(e) => handleInputChange('numeroContrato', e.target.value)}
@@ -288,9 +288,9 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					</div>
 
 					<div>
-						<label>Banco <span className="text-gray-500">(opcional)</span></label>
+						<label className="text-sm sm:text-base">Banco <span className="text-gray-500">(opcional)</span></label>
 						<select
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							value={form.idBanco?.toString() || ''}
 							onChange={(e) => {
 								handleInputChange('idBanco', e.target.value ? parseInt(e.target.value) : null);
@@ -308,9 +308,9 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					</div>
 
 					<div>
-						<label>Pessoa <span className="text-gray-500">(opcional)</span></label>
+						<label className="text-sm sm:text-base">Pessoa <span className="text-gray-500">(opcional)</span></label>
 						<select
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							value={form.idPessoa?.toString() || ''}
 							onChange={(e) => {
 								handleInputChange('idPessoa', e.target.value ? parseInt(e.target.value) : null);
@@ -330,9 +330,9 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					{errors.bancoPessoa && <p className="text-red-500 text-xs col-span-2">{errors.bancoPessoa}</p>}
 
 					<div>
-						<label>Total de Juros do Contrato</label>
+						<label className="text-sm sm:text-base">Total de Juros do Contrato</label>
 						<CurrencyInput
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							value={form.taxaJurosAnual || '0,00'}
 							decimalsLimit={2}
 							prefix="R$ "
@@ -344,19 +344,19 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					</div>
 
 					<div>
-						<label>Número da Garantia</label>
+						<label className="text-sm sm:text-base">Número da Garantia</label>
 						<input
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							value={form.numeroGarantia || ''}
 							placeholder="Digite o número da garantia"
 							onChange={(e) => handleInputChange('numeroGarantia', e.target.value)}
 						/>
 					</div>
 
-					<div className="col-span-2">
-						<label>Observação</label>
+					<div className="col-span-1 sm:col-span-2">
+						<label className="text-sm sm:text-base">Observação</label>
 						<textarea
-							className="w-full p-2 bg-white border border-gray-300 rounded"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
 							placeholder="Digite a observação"
 							value={form.observacao || ''}
 							onChange={(e) => handleInputChange('observacao', e.target.value)}
@@ -365,17 +365,17 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 
 					{errors.parcelas && <p className="text-red-500 text-xs col-span-2">{errors.parcelas}</p>}
 
-					<div className="col-span-2 flex justify-end mt-6 gap-3">
+					<div className="col-span-1 sm:col-span-2 flex flex-col sm:flex-row justify-end mt-6 gap-3">
 						<button 
 							onClick={onClose} 
-							className="text-gray-600 font-semibold hover:bg-gray-200 px-4 py-2 rounded"
+							className="text-gray-600 font-semibold hover:bg-gray-200 px-4 py-2 rounded text-sm sm:text-base"
 							disabled={isLoading}
 						>
 							Cancelar
 						</button>
 						<button 
 							onClick={handleSave} 
-							className="bg-primary hover:bg-orange-600 font-semibold text-white px-4 py-2 rounded flex items-center"
+							className="bg-primary hover:bg-orange-600 font-semibold text-white px-4 py-2 rounded flex items-center justify-center text-sm sm:text-base"
 							disabled={isLoading}
 						>
 							{isLoading ? (
@@ -385,94 +385,100 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 								</>
 							) : (
 								<>
-									{financiamentoData?.id ? 'Confirmar Edição' : 'Salvar e Criar'} <FontAwesomeIcon icon={faSave} className='ml-2' />
+									<span className="hidden sm:inline">{financiamentoData?.id ? 'Confirmar Edição' : 'Salvar e Criar'}</span>
+									<span className="sm:hidden">{financiamentoData?.id ? 'Confirmar' : 'Salvar'}</span>
+									<FontAwesomeIcon icon={faSave} className='ml-2' />
 								</>
 							)}
 						</button>
 					</div>
 				</div>
 
-				<div className="grid grid-cols-2 gap-4 w-full">
-					<div className="col-span-2">
-						<label className="font-semibold ">Gerar Parcelas</label>
-						<div className="border-t w-full pt-4 mt-2 flex gap-3 items-end">
+				<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+					<div className="col-span-1 sm:col-span-2">
+						<label className="font-semibold text-sm sm:text-base">Gerar Parcelas</label>
+						<div className="border-t w-full pt-4 mt-2 flex flex-col sm:flex-row gap-3 items-end">
 							<input
 								type="number"
 								min={1}
 								value={numParcelas}
 								onChange={(e) => setNumParcelas(parseInt(e.target.value))}
 								placeholder="Qtde parcelas"
-								className="border p-2 rounded flex-1"
+								className="border p-2 rounded flex-1 text-sm"
 							/>
 							<input
 								type="date"
 								value={dataVencimentoInicial}
 								onChange={(e) => setDataVencimentoInicial(e.target.value)}
-								className="border p-2 rounded  flex-1"
+								className="border p-2 rounded flex-1 text-sm"
 							/>
 							<select
 								value={tipoParcelamento}
 								onChange={(e) => setTipoParcelamento(e.target.value as 'mensal' | 'anual')}
-								className="border p-2 rounded flex-1"
+								className="border p-2 rounded flex-1 text-sm"
 							>
 								<option value="mensal">Mensal</option>
 								<option value="anual">Anual</option>
 							</select>
 							<button
 								onClick={gerarParcelas}
-								className="bg-primary text-white px-4 py-2 rounded hover:bg-orange-500 transition w-fit"
+								className="bg-primary text-white px-4 py-2 rounded hover:bg-orange-500 transition w-full sm:w-fit text-sm"
 								title="Gerar Parcelas"
 							>
-								<FontAwesomeIcon icon={faGear} />
+								<span className="hidden sm:inline">Gerar Parcelas</span>
+								<span className="sm:hidden">Gerar</span>
+								<FontAwesomeIcon icon={faGear} className="ml-2" />
 							</button>
 						</div>
 					</div>
 
-					<div className="col-span-2 max-h-64 overflow-y-auto mt-4">
-						<table className="w-full border">
-							<thead className="bg-gray-100">
-								<tr>
-									<th className="p-2">Parcela</th>
-									<th>Vencimento</th>
-									<th>Valor</th>
-								</tr>
-							</thead>
-							<tbody>
-								{form.parcelasList?.length === 0 ? (
+					<div className="col-span-1 sm:col-span-2 max-h-64 overflow-y-auto mt-4">
+						<div className="overflow-x-auto">
+							<table className="w-full border min-w-[400px]">
+								<thead className="bg-gray-100">
 									<tr>
-										<td colSpan={3} className="text-center py-3 text-gray-500 italic">
-											Nenhuma parcela encontrada
-										</td>
+										<th className="p-2 text-xs sm:text-sm">Parcela</th>
+										<th className="p-2 text-xs sm:text-sm">Vencimento</th>
+										<th className="p-2 text-xs sm:text-sm">Valor</th>
 									</tr>
-								) : (
-									form.parcelasList?.map((parcela, index) => (
-										<tr key={index} className="text-center border-t">
-											<td className="p-1">{parcela.numParcela}</td>
-											<td className="p-1">
-												<input
-													type="date"
-													value={parcela.dt_vencimento}
-													onChange={(e) => handleParcelaChange(index, 'dt_vencimento', e.target.value)}
-													className="border p-1 rounded"
-												/>
-											</td>
-											<td className="p-1">
-												<CurrencyInput
-													className="w-full p-1 border border-gray-300 rounded"
-													value={parcela.valor?.toString().replace('.', ',') || '0,00'}
-													decimalsLimit={2}
-													prefix="R$ "
-													decimalSeparator=","
-													groupSeparator="."
-													fixedDecimalLength={2}
-													onValueChange={(value) => handleParcelaChange(index, 'valor', value || '0.00')}
-												/>
+								</thead>
+								<tbody>
+									{form.parcelasList?.length === 0 ? (
+										<tr>
+											<td colSpan={3} className="text-center py-3 text-gray-500 italic text-xs sm:text-sm">
+												Nenhuma parcela encontrada
 											</td>
 										</tr>
-									))
-								)}
-							</tbody>
-						</table>
+									) : (
+										form.parcelasList?.map((parcela, index) => (
+											<tr key={index} className="text-center border-t">
+												<td className="p-1 text-xs sm:text-sm">{parcela.numParcela}</td>
+												<td className="p-1">
+													<input
+														type="date"
+														value={parcela.dt_vencimento}
+														onChange={(e) => handleParcelaChange(index, 'dt_vencimento', e.target.value)}
+														className="border p-1 rounded text-xs sm:text-sm w-full"
+													/>
+												</td>
+												<td className="p-1">
+													<CurrencyInput
+														className="w-full p-1 border border-gray-300 rounded text-xs sm:text-sm"
+														value={parcela.valor?.toString().replace('.', ',') || '0,00'}
+														decimalsLimit={2}
+														prefix="R$ "
+														decimalSeparator=","
+														groupSeparator="."
+														fixedDecimalLength={2}
+														onValueChange={(value) => handleParcelaChange(index, 'valor', value || '0.00')}
+													/>
+												</td>
+											</tr>
+										))
+									)}
+								</tbody>
+							</table>
+						</div>
 					</div>
 				</div>
 			</div>

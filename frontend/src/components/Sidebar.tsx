@@ -85,8 +85,18 @@ const Sidebar = () => {
 
   return (
     <div className="flex ">
+      {/* Overlay para mobile */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+      
       {/* Sidebar */}
-      <div className={`sidebar bg-gray-100 h-screen p-3 sm:hidden lg:block fixed top-0 left-0 w-64 h-screen z-40`} style={{ display: isOpen ? "block" : "none", minHeight: '100vh', height:'100%'}}>
+      <div className={`sidebar bg-gray-100 h-screen p-3 fixed top-0 left-0 w-64 h-screen z-40 transform transition-transform duration-300 ease-in-out ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      } lg:translate-x-0`} style={{ minHeight: '100vh', height:'100%'}}>
         {/* Logo */}
         <div className="flex items-center justify-between mt-1" style={{position: 'relative'}} >
           <img src={logoFazenda} alt="Logo sidebFazenda Lageado"  className="logoSidebar" />
@@ -217,7 +227,7 @@ const Sidebar = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 p-5 navBar-header ml-64">
+      <div className="flex-1 p-4 lg:p-5 navBar-header lg:ml-64">
         <div className="flex justify-between items-center" style={{gap:'15px'}}>
           {/* Botão para abrir sidebar no mobile */}
           <button className="lg:hidden" onClick={() => setIsOpen(true)}>

@@ -99,8 +99,8 @@ const PlanoContasTable: React.FC = () => {
 				<TreeNode
 					key={plano.id}
 					label={
-						<div className="border border-gray-400 bg-white px-4 py-2 rounded shadow text-center hover:bg-orange-50 min-w-[140px]">
-							<div className="font-bold">{plano.descricao}</div>
+						<div className="border border-gray-400 bg-white px-2 sm:px-4 py-2 rounded shadow text-center hover:bg-orange-50 min-w-[120px] sm:min-w-[140px]">
+							<div className="font-bold text-xs sm:text-sm">{plano.descricao}</div>
 							<div className="text-xs text-gray-500">{plano.hierarquia}</div>
 							<div className="text-xs text-gray-400 capitalize">{plano.tipo.toLowerCase()}</div>
 						</div>
@@ -209,10 +209,10 @@ const PlanoContasTable: React.FC = () => {
 
 	return (
 		<div>
-			<div className="flex justify-between items-center gap-5 mb-4">
-				<div className="flex border-b border-gray-300 ">
+			<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-5 mb-4">
+				<div className="flex border-b border-gray-300 overflow-x-auto">
 					<button
-						className={`px-4 py-2 font-bold text-sm text-nowrap ${
+						className={`px-3 sm:px-4 py-2 font-bold text-xs sm:text-sm text-nowrap whitespace-nowrap ${
 							activeTab === 'tabela' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'
 						}`}
 						onClick={() => setActiveTab('tabela')}
@@ -220,7 +220,7 @@ const PlanoContasTable: React.FC = () => {
 						TABELA DOS DADOS
 					</button>
 					<button
-						className={`px-4 py-2 font-bold text-sm text-nowrap ${
+						className={`px-3 sm:px-4 py-2 font-bold text-xs sm:text-sm text-nowrap whitespace-nowrap ${
 							activeTab === 'arvore' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'
 						}`}
 						onClick={() => setActiveTab('arvore')}
@@ -229,58 +229,59 @@ const PlanoContasTable: React.FC = () => {
 					</button>
 				</div>
 
-				<div className="flex justify-end items-center gap-5 w-full">
+				<div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-3 w-full">
 					{activeTab === 'tabela' ? (
 						<>
-							<div className="relative flex items-center gap-2 w-auto whitespace-nowrap">
-								<label className="flex items-center text-gray-600 font-medium mr-2 cursor-pointer">
-									Ocultar Inativos:
+							<div className="relative flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+								<div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+									<label className="flex items-center text-gray-600 font-medium text-xs sm:text-sm cursor-pointer">
+										Ocultar Inativos:
+										<input
+											type="checkbox"
+											className="ml-2 cursor-pointer"
+											checked={ocultarInativos}
+											onChange={() => setOcultarInativos(!ocultarInativos)}
+										/>
+									</label>
+									<span className="hidden sm:inline">|</span>
+									<label className="flex items-center text-gray-600 font-medium text-xs sm:text-sm cursor-pointer">
+										Mostrar Hierarquia:
+										<input
+											type="checkbox"
+											className="ml-2 cursor-pointer"
+											checked={mostrarHierarquia}
+											onChange={() => setMostrarHierarquia(!mostrarHierarquia)}
+										/>
+									</label>
+								</div>
+								<div className="relative w-full sm:w-64">
+									<span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-600">
+										<FontAwesomeIcon icon={faSearch} />
+									</span>
 									<input
-										type="checkbox"
-										className="ml-2 cursor-pointer"
-										style={{ marginTop: '0.1rem' }}
-										checked={ocultarInativos}
-										onChange={() => setOcultarInativos(!ocultarInativos)}
+										type="text"
+										className="border border-gray-400 p-2 pl-10 pr-4 rounded w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+										placeholder="Filtrar por hierarquia ou descrição"
+										value={searchTerm}
+										onChange={(e) => setSearchTerm(e.target.value)}
 									/>
-								</label>
-								|
-								<label className="flex items-center text-gray-600 font-medium mr-2 cursor-pointer">
-									Mostrar Hierarquia:
-									<input
-										type="checkbox"
-										className="ml-2 cursor-pointer"
-										style={{ marginTop: '0.1rem' }}
-										checked={mostrarHierarquia}
-										onChange={() => setMostrarHierarquia(!mostrarHierarquia)}
-									/>
-								</label>
-							</div>
-							<div className="relative">
-								<span className="absolute inset-y-0 left-0 flex items-center " style={{ paddingLeft: '0.75rem', color: '#666666' }}>
-									<FontAwesomeIcon icon={faSearch} />
-								</span>
-								<input
-									type="text"
-									className="border border-gray-400 p-2 pl-10 pr-4 rounded w-full hover:border-gray-500 focus:outline-none focus:border-blue-500"
-									style={{ width: '300px' }}
-									placeholder="Filtrar por hierarquia ou descrição"
-									value={searchTerm}
-									onChange={(e) => setSearchTerm(e.target.value)}
-								/>
+								</div>
 							</div>
 						</>
 					) : (
 						<></>
 					)}
 					<button
-						className="bg-primary text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-400"
+						className="bg-primary text-white font-bold px-3 sm:px-4 py-2 flex justify-center items-center rounded hover:bg-orange-400 text-sm lg:text-base"
 						onClick={() => openModal()}
 					>
-						Adicionar Plano de Contas <FontAwesomeIcon icon={faPlus} className="ml-3 font-bold" />
+						<span className="hidden sm:inline">Adicionar Plano de Contas</span>
+						<span className="sm:hidden">Adicionar</span>
+						<FontAwesomeIcon icon={faPlus} className="ml-2" />
 					</button>
 				</div>
 			</div>
-			<div className="bg-gray-50 shadow-md rounded-lg overflow-hidden border border-gray-200 " style={{ maxWidth: 'calc(100vw - 315px)' }}>
+			<div className="bg-gray-50 shadow-md rounded-lg overflow-hidden border border-gray-200 w-full">
 				{isLoading ? (
 					<div className="flex justify-center items-center h-64">
 						<div className="loader"></div>
@@ -289,7 +290,8 @@ const PlanoContasTable: React.FC = () => {
 					<>
 						{activeTab === 'tabela' ? (
 							<>
-								<table className="w-full border-collapse">
+								<div className="overflow-x-auto">
+									<table className="w-full border-collapse min-w-[600px]">
 									<thead>
 										<tr className="bg-gray-200">
 											{['nivel', ...(mostrarHierarquia ? ['hierarquia'] : []), 'descricao', 'tipo'].map((column) => (
@@ -349,28 +351,29 @@ const PlanoContasTable: React.FC = () => {
 											))
 										)}
 									</tbody>
-								</table>
+									</table>
+								</div>
 								{/* 🔹 Paginação */}
-								<div className="flex justify-center items-center my-2 mx-2">
-									<span className="text-gray-800 text-base w-auto whitespace-nowrap ml-2">
-										{planos.length} <span className="text-sm">Registros</span>
+								<div className="flex flex-col sm:flex-row justify-between items-center my-4 mx-2 gap-3">
+									<span className="text-gray-800 text-sm sm:text-base">
+										{planos.length} <span className="text-xs sm:text-sm">Registros</span>
 									</span>
 
-									<div className="flex items-center gap-2 w-full justify-end">
+									<div className="flex items-center gap-2">
 										<button
-											className="px-3 py-1 border rounded mx-1"
+											className="px-2 sm:px-3 py-1 border rounded text-sm"
 											disabled={currentPage === 1}
 											onClick={() => setCurrentPage(currentPage - 1)}
 										>
 											<FontAwesomeIcon icon={faChevronLeft} />
 										</button>
 
-										<span className="px-3 py-1">
+										<span className="px-2 sm:px-3 py-1 text-sm">
 											{currentPage} / {totalPages}
 										</span>
 
 										<button
-											className="px-3 py-1 border rounded mx-1"
+											className="px-2 sm:px-3 py-1 border rounded text-sm"
 											disabled={currentPage === totalPages}
 											onClick={() => setCurrentPage(currentPage + 1)}
 										>
@@ -378,7 +381,7 @@ const PlanoContasTable: React.FC = () => {
 										</button>
 
 										<select
-											className="border border-gray-400 p-1 rounded"
+											className="border border-gray-400 p-1 rounded text-sm"
 											value={itemsPerPage}
 											onChange={(e) => setItemsPerPage(Number(e.target.value))}
 										>
@@ -392,15 +395,15 @@ const PlanoContasTable: React.FC = () => {
 								</div>
 							</>
 						) : (
-							<div className="p-4">
-								<div className="flex justify-between items-center mb-4">
+							<div className="p-2 sm:p-4">
+								<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
 									{/* Select de tipo */}
 									<div className="flex items-center gap-2">
-										<span className="font-semibold text-gray-700">Tipo:</span>
+										<span className="font-semibold text-gray-700 text-sm sm:text-base">Tipo:</span>
 										<select
 											value={tipoSelecionado}
 											onChange={(e) => setTipoSelecionado(e.target.value as 'despesa' | 'receita' | 'movimentacao')}
-											className="border rounded px-3 py-1 text-gray-700"
+											className="border rounded px-2 sm:px-3 py-1 text-gray-700 text-sm"
 										>
 											<option value="despesa">Despesa</option>
 											<option value="receita">Receita</option>
@@ -411,16 +414,16 @@ const PlanoContasTable: React.FC = () => {
 
 								{/* Container da arvore */}
 								<div
-									className="arvorePlanos overflow-auto border bg-gray-100 rounded p-6 shadow"
-									style={{ width: '100%', height: '600px' }}
+									className="arvorePlanos overflow-auto border bg-gray-100 rounded p-3 sm:p-6 shadow"
+									style={{ width: '100%', height: '400px' }}
 								>
 									<Tree
 										lineWidth={'2px'}
 										lineColor={'#bbb'}
 										lineBorderRadius={'10px'}
 										label={
-											<div className="border border-gray-400 bg-white px-4 py-2 rounded shadow text-center hover:bg-orange-50 min-w-[140px]">
-												<div className="font-bold">{rootPlano?.descricao ?? 'Plano de Contas'}</div>
+											<div className="border border-gray-400 bg-white px-2 sm:px-4 py-2 rounded shadow text-center hover:bg-orange-50 min-w-[120px] sm:min-w-[140px]">
+												<div className="font-bold text-xs sm:text-sm">{rootPlano?.descricao ?? 'Plano de Contas'}</div>
 												<div className="text-xs text-gray-500">{rootPlano?.hierarquia}</div>
 												<div className="text-xs text-gray-400 capitalize">{rootPlano?.tipo?.toLowerCase()}</div>
 											</div>

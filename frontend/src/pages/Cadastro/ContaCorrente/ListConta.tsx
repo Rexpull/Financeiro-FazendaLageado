@@ -231,12 +231,12 @@ const ListConta: React.FC = () => {
   return (
     <div>
       {/* 🔹 Barra de busca e botão de adicionar */}
-        <div className="flex justify-between items-end gap-5 mb-4 border-b pb-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 lg:gap-5 mb-4 border-b pb-4">
             <div className="relative w-auto whitespace-nowrap">
-                <span className="text-gray-600 font-medium mr-2">Ordenar por:</span>
+                <span className="text-gray-600 font-medium mr-2 text-sm lg:text-base">Ordenar por:</span>
 
                 <select
-                className="bg-transparent text-black font-semibold text-lg focus:outline-none appearance-none pr-6 border-b border-gray-400"
+                className="bg-transparent text-black font-semibold text-sm lg:text-lg focus:outline-none appearance-none pr-6 border-b border-gray-400"
                 
                 value={sortOption}
                 onChange={(e) => setSortOption(e.target.value)}
@@ -253,24 +253,26 @@ const ListConta: React.FC = () => {
                 </span>
             </div>
 
-            <div className="flex justify-end items-center gap-5 w-full">
-                <div className=" relative w-full max-w-md">
+            <div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-3 w-full">
+                <div className="relative w-full">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-600">
                         <FontAwesomeIcon icon={faSearch} />
                     </span>
                     <input
                         type="text"
-                        className="border border-gray-400 p-2 pl-10 pr-4 rounded w-full min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
+                        className="border border-gray-400 p-2 pl-10 pr-4 rounded w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all text-sm"
                         placeholder="Pesquisar por Banco, Agência, Conta ou Responsável"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
                 <button 
-                className="bg-primary text-white font-bold h-11 px-4 pt-0 pb-0 flex items-center rounded hover:bg-orange-400"
+                className="bg-primary text-white font-bold h-10 px-4 flex items-center justify-center rounded hover:bg-orange-400 text-sm lg:text-base"
                 onClick={() => openModal()}
                 >
-                Nova Conta Corrente <FontAwesomeIcon icon={faPlus} className="ml-3" />
+                <span className="hidden sm:inline">Nova Conta Corrente</span>
+                <span className="sm:hidden">Nova Conta</span>
+                <FontAwesomeIcon icon={faPlus} className="ml-2" />
                 </button>
             </div>
         </div>
@@ -283,14 +285,14 @@ const ListConta: React.FC = () => {
 
       {/* 🔹 Listagem de Contas no Formato de Cards */}
       {!isLoading && (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
         {filteredContas.length === 0 ? (
         <div className="col-span-full flex flex-col items-center gap-2">
           <img 
           src={noData}
           alt="Sem dados"
-          className="object-contain" style={{width:"25em", height:"25em"}}/> 
-          <p className="text-gray-900 font-bold text-center col-span-full " style={{fontSize:"1.2em", marginTop: "-40px", marginBottom: "150px"}}>Nenhuma conta encontrada!</p>
+          className="object-contain w-48 h-48 sm:w-80 sm:h-80 lg:w-96 lg:h-96"/> 
+          <p className="text-gray-900 font-bold text-center col-span-full text-lg sm:text-xl lg:text-2xl mt-4 mb-8">Nenhuma conta encontrada!</p>
       </div>
 
           

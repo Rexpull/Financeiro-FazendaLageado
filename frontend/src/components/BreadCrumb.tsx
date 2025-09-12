@@ -9,21 +9,16 @@ interface BreadCrumbProps {
 
 const BreadCrumb: React.FC<BreadCrumbProps> = ({ grupo, pagina }) => {
   return (
-    <div className="flex items-end mb-7 ">
-
+    <div className="flex items-end mb-4 lg:mb-7">
       {grupo && (
         <>
-        <span className="text-gray-400 font-medium">
+          <span className="text-gray-400 font-medium text-sm sm:text-base">
             <span>{grupo}</span>
             <FontAwesomeIcon icon={faChevronRight} className="mx-2 text-xs" />
-
-        </span>
-          
+          </span>
         </>
       )}
-
-<span className="text-gray-900 text-2xl font-medium">{pagina}</span>
-
+      <span className="text-gray-900 text-lg sm:text-xl lg:text-2xl font-medium">{pagina}</span>
     </div>
   );
 };

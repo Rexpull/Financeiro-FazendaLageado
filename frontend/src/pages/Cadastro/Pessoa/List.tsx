@@ -203,18 +203,20 @@ const ListConta: React.FC = () => {
 
   return (
     <div>
-        <div className="flex justify-between items-end gap-5 mb-4 border-b pb-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 lg:gap-5 mb-4 border-b pb-4">
           <div className="relative">
               <div className="relative w-auto whitespace-nowrap">
                 <button 
-                className="bg-gray-200 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded hover:bg-gray-300"
+                className="bg-gray-200 font-bold h-10 px-4 pt-0 pb-0 flex items-center rounded hover:bg-gray-300 text-sm lg:text-base"
                 onClick={() => setFiltroMenu(!filtroMenu)}
                 >
-                Adicionar Filtro <FontAwesomeIcon icon={faPlus} className="ml-3" />
+                <span className="hidden sm:inline">Adicionar Filtro</span>
+                <span className="sm:hidden">Filtros</span>
+                <FontAwesomeIcon icon={faPlus} className="ml-2" />
                 </button>
               </div>
               {filtroMenu && (
-                <div className="absolute bg-white shadow-md font-medium rounded-md border mt-2 pb-1  z-10" style={{width: "11rem"}}>
+                <div className="absolute bg-white shadow-md font-medium rounded-md border mt-2 pb-1 z-10 w-44 max-w-[calc(100vw-2rem)]">
                   <p className="font-bold text-sm text-gray-800 mb-1 px-2 py-1 bg-gray-200"> <FontAwesomeIcon icon={faUsers}/>  Tipo</p>
                   <label className="flex ml-3 items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={filtrosAtivos.tipo.includes("Cliente")} onChange={() => toggleFiltro("tipo", "Cliente")} /> Cliente
@@ -236,54 +238,56 @@ const ListConta: React.FC = () => {
                 </div>
               )}
             </div>
-            <div className="flex justify-end items-center gap-5 w-full">
-                <div className=" relative w-full max-w-md">
+            <div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-3 w-full">
+                <div className="relative w-full">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-600">
                         <FontAwesomeIcon icon={faSearch} />
                     </span>
                     <input
                         type="text"
-                        className="border border-gray-400 h-10 py-2 pl-10 pr-4 rounded w-full min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
+                        className="border border-gray-400 h-10 py-2 pl-10 pr-4 rounded w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all text-sm"
                         placeholder="Pesquisar por Nome, CPF/CNPJ, Email ou Telefone"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
                 <button 
-                className="bg-primary text-white font-bold h-10 px-6 pt-0 pb-0 flex items-center rounded hover:bg-orange-400"
+                className="bg-primary text-white font-bold h-10 px-4 flex items-center justify-center rounded hover:bg-orange-400 text-sm lg:text-base"
                 onClick={() => openModal()}
                 >
-                Nova Pessoa <FontAwesomeIcon icon={faPlus} className="ml-3" />
+                <span className="hidden sm:inline">Nova Pessoa</span>
+                <span className="sm:hidden">Nova</span>
+                <FontAwesomeIcon icon={faPlus} className="ml-2" />
                 </button>
             </div>
         </div>
 
-        <div className="flex justify-between items-start w-full">
-          <div id="filtersActiveDiv"className="flex w-full justify-start items-center">
-            <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full gap-3">
+          <div id="filtersActiveDiv" className="flex w-full justify-start items-center">
+            <div className="flex flex-wrap gap-2">
               {filtrosAtivos.tipo.map((tipo) => (
-                <div key={tipo} className="bg-white text-gray-800 px-3 py-1 font-medium border gap-2 rounded-md flex items-center">
+                <div key={tipo} className="bg-white text-gray-800 px-2 sm:px-3 py-1 font-medium border gap-1 sm:gap-2 rounded-md flex items-center text-xs sm:text-sm">
                   <span className="text-gray-500"> Tipo: </span> 
                   <span className="font-bold"> {tipo} </span> 
-                  <FontAwesomeIcon icon={faTimes} className="ml-2 cursor-pointer" onClick={() => removerFiltro("tipo", tipo)} />
+                  <FontAwesomeIcon icon={faTimes} className="ml-1 sm:ml-2 cursor-pointer" onClick={() => removerFiltro("tipo", tipo)} />
                 </div>
               ))}
               {filtrosAtivos.status.map((status) => (
-                <div key={status} className="bg-white text-gray-800 px-3 py-1 font-medium border gap-2 rounded-md flex items-center">
+                <div key={status} className="bg-white text-gray-800 px-2 sm:px-3 py-1 font-medium border gap-1 sm:gap-2 rounded-md flex items-center text-xs sm:text-sm">
                   <span className="text-gray-500"> Status: </span> 
                   <span className="font-bold"> {status} </span> 
-                  <FontAwesomeIcon icon={faTimes} className="ml-2 cursor-pointer" onClick={() => removerFiltro("status", status)} />
+                  <FontAwesomeIcon icon={faTimes} className="ml-1 sm:ml-2 cursor-pointer" onClick={() => removerFiltro("status", status)} />
                 </div>
               ))}
               {filtrosAtivos.tipo.length === 0 && filtrosAtivos.status.length === 0 && (  
-                <div className="bg-white text-gray-800 px-3 py-1 font-medium  gap-2 rounded-md flex items-center">
+                <div className="bg-white text-gray-800 px-2 sm:px-3 py-1 font-medium gap-1 sm:gap-2 rounded-md flex items-center text-xs sm:text-sm">
                   <span className="text-gray-500"> Sem Filtros Ativos </span> 
                 </div>
               )}
             </div>
           </div>
           <div className="flex items-center text-gray-600 whitespace-nowrap">
-            <span className="text-gray-500 font-medium">{filteredPessoas.length} Resultado(s)</span>
+            <span className="text-gray-500 font-medium text-sm sm:text-base">{filteredPessoas.length} Resultado(s)</span>
           </div>
         </div>
 
@@ -296,14 +300,14 @@ const ListConta: React.FC = () => {
       }
 
       {/* 🔹 Listagem de Pessoas no Formato de Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
         {filteredPessoas.length === 0 ? (
             <div className="col-span-full flex flex-col items-center gap-2">
                 <img 
                 src={noData}
                 alt="Sem dados"
-                className="object-contain" style={{width:"25em", height:"25em"}}/> 
-                <p className="text-gray-900 font-bold text-center col-span-full " style={{fontSize:"1.2em", marginTop: "-40px", marginBottom: "150px"}}>Nenhuma pessoa encontrada!</p>
+                className="object-contain w-48 h-48 sm:w-80 sm:h-80 lg:w-96 lg:h-96"/> 
+                <p className="text-gray-900 font-bold text-center col-span-full text-lg sm:text-xl lg:text-2xl mt-4 mb-8">Nenhuma pessoa encontrada!</p>
             </div>
         ) : (
           filteredPessoas.map((pessoa) => (

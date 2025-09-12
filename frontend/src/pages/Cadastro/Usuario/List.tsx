@@ -195,54 +195,56 @@ const ListUsuario: React.FC = () => {
   return (
     <div>
       {/* 🔹 Barra de busca e botão de adicionar */}
-      <div className="flex justify-between items-center mb-4 border-b pb-4 w-full">
-        <div className="flex items-center justify-start gap-5">
-          <div className={`border rounded pt-1 p-3 overflow-hidden relative transition-all duration-200
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-5 mb-4 border-b pb-4 w-full">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+          <div className={`border rounded pt-1 p-2 sm:p-3 overflow-hidden relative transition-all duration-200
             ${selectedFilter === "todos" ? "border-orange-300 shadow-md" : "border-gray-300 bg-white"} 
             ${totalCount === 0 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`} 
-            style={{width: "10rem", background: '#FFF5F3'}} 
+            style={{width: "8rem", background: '#FFF5F3'}} 
             onClick={() => handleFilterClick("todos")}>
-              <span className="font-medium text-xl" style={{pointerEvents:'none'}}>Total</span> <br/>
-              <span className="text-xl font-bold text-orange-500" style={{pointerEvents:'none'}}>{totalCount}</span>
-              <img src={allUsers} alt="Usuários" className="absolute w-15 ml-2 right-0 bottom-0 " style={{pointerEvents:'none'}}/>
+              <span className="font-medium text-sm sm:text-xl" style={{pointerEvents:'none'}}>Total</span> <br/>
+              <span className="text-lg sm:text-xl font-bold text-orange-500" style={{pointerEvents:'none'}}>{totalCount}</span>
+              <img src={allUsers} alt="Usuários" className="absolute w-12 sm:w-15 ml-1 sm:ml-2 right-0 bottom-0 " style={{pointerEvents:'none'}}/>
           </div>
 
-          <div className={`border rounded pt-1 p-3 overflow-hidden relative transition-all duration-200
+          <div className={`border rounded pt-1 p-2 sm:p-3 overflow-hidden relative transition-all duration-200
             ${selectedFilter === "ativos" ? "border-orange-300 shadow-md" : "border-gray-300 bg-white"}
             ${activeCount === 0 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-            style={{width: "10rem", background: '#FFF5F3'}}
+            style={{width: "8rem", background: '#FFF5F3'}}
             onClick={() => handleFilterClick("ativos")}>
-              <span className="font-medium text-xl" style={{pointerEvents:'none'}}>Ativos</span> <br/>
-              <span className="text-xl font-bold text-orange-500" style={{pointerEvents:'none'}}>{activeCount}</span>
-              <img src={activeUsers} alt="Usuários" className="absolute w-20 ml-2 right-0 bottom-0 " style={{pointerEvents:'none'}}/>
+              <span className="font-medium text-sm sm:text-xl" style={{pointerEvents:'none'}}>Ativos</span> <br/>
+              <span className="text-lg sm:text-xl font-bold text-orange-500" style={{pointerEvents:'none'}}>{activeCount}</span>
+              <img src={activeUsers} alt="Usuários" className="absolute w-16 sm:w-20 ml-1 sm:ml-2 right-0 bottom-0 " style={{pointerEvents:'none'}}/>
           </div>
 
-          <div className={`border rounded pt-1 p-3 overflow-hidden relative transition-all duration-200
+          <div className={`border rounded pt-1 p-2 sm:p-3 overflow-hidden relative transition-all duration-200
             ${selectedFilter === "inativos" ? "border-orange-300 shadow-md" : "border-gray-300 bg-white"}
             ${inactiveCount === 0 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-            style={{width: "10rem", background: '#FFF5F3'}}
+            style={{width: "8rem", background: '#FFF5F3'}}
             onClick={() => handleFilterClick("inativos")}>
-              <span className="font-medium text-xl" style={{pointerEvents:'none'}}>Inativos</span> <br/>
-              <span className="text-xl font-bold text-orange-500" style={{pointerEvents:'none'}}>{inactiveCount}</span>
-              <img src={inactiveUsers} alt="Usuários" className="absolute w-15 ml-2 right-0 bottom-0 " style={{pointerEvents:'none'}}/>
+              <span className="font-medium text-sm sm:text-xl" style={{pointerEvents:'none'}}>Inativos</span> <br/>
+              <span className="text-lg sm:text-xl font-bold text-orange-500" style={{pointerEvents:'none'}}>{inactiveCount}</span>
+              <img src={inactiveUsers} alt="Usuários" className="absolute w-12 sm:w-15 ml-1 sm:ml-2 right-0 bottom-0 " style={{pointerEvents:'none'}}/>
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-5 w-full">
-          <div className="relative w-full max-w-md">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+          <div className="relative w-full">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-600">
               <FontAwesomeIcon icon={faSearch} />
             </span>
             <input
               type="text"
-              className="border border-gray-400 h-10 py-2 pl-10 pr-4 rounded w-full min-w-max placeholder-shown:w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all"
+              className="border border-gray-400 h-10 py-2 pl-10 pr-4 rounded w-full hover:border-gray-500 focus:outline-none focus:border-blue-500 transition-all text-sm"
               placeholder="Pesquisar por Nome, Email, Telefone"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="bg-primary text-white font-bold h-10 px-6 flex items-center rounded hover:bg-orange-400" onClick={() => openModal()}>
-            Novo Usuário <FontAwesomeIcon icon={faPlus} className="ml-3" />
+          <button className="bg-primary text-white font-bold h-10 px-4 flex items-center justify-center rounded hover:bg-orange-400 text-sm lg:text-base" onClick={() => openModal()}>
+            <span className="hidden sm:inline">Novo Usuário</span>
+            <span className="sm:hidden">Novo</span>
+            <FontAwesomeIcon icon={faPlus} className="ml-2" />
           </button>
         </div>
       </div>
@@ -254,14 +256,14 @@ const ListUsuario: React.FC = () => {
       }
 
       {/* 🔹 Lista de Usuários */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
         {!isLoading && filteredUsuarios.length === 0 ? (
           <div className="col-span-full flex flex-col items-center gap-2">
             <img 
             src={noData}
             alt="Sem dados"
-            className="object-contain" style={{width:"25em", height:"25em"}}/> 
-            <p className="text-gray-900 font-bold text-center col-span-full " style={{fontSize:"1.2em", marginTop: "-40px", marginBottom: "150px"}}>Nenhum usuário encontrado!</p>
+            className="object-contain w-48 h-48 sm:w-80 sm:h-80 lg:w-96 lg:h-96"/> 
+            <p className="text-gray-900 font-bold text-center col-span-full text-lg sm:text-xl lg:text-2xl mt-4 mb-8">Nenhum usuário encontrado!</p>
         </div>
         ) : (
           filteredUsuarios.map((usuario) => (
@@ -309,16 +311,17 @@ const ListUsuario: React.FC = () => {
               <div className="flex flex-col items-center mt-6">
                 <img className="w-20 h-20 rounded-full object-cover" src={usuario.foto_perfil || defaultAvatar} alt="Foto de perfil" />
                 
-                <span className="text-lg font-bold mt-1 mb-1">{usuario.nome}</span>
-                <p className="text-sm text-gray-600">{usuario.email || "Sem Email"}</p>
-                <p className="text-sm text-gray-600">{formatarTelefone(usuario.telefone ?? "") || "Sem Telefone"}</p>
+                <span className="text-base sm:text-lg font-bold mt-1 mb-1 text-center">{usuario.nome}</span>
+                <p className="text-xs sm:text-sm text-gray-600 text-center">{usuario.email || "Sem Email"}</p>
+                <p className="text-xs sm:text-sm text-gray-600 text-center">{formatarTelefone(usuario.telefone ?? "") || "Sem Telefone"}</p>
 
                 <hr className="w-full my-2"/>
                 
                   <div className="flex justify-center gap-3 items-center mt-1">
-                    <div className="flex items-center gap-2 text-red-400 py-1 px-2 font-bold bg-red-50 border rounded" style={{fontSize:"0.8em"}}>
+                    <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-red-400 py-1 px-2 font-bold bg-red-50 border rounded text-xs">
                       <FontAwesomeIcon icon={faCalendarDays} />
-                       Cadastrado desde: {formatarData(usuario.dt_cadastro).toLocaleDateString()}
+                       <span className="text-center">Cadastrado desde:</span>
+                       <span className="text-center">{formatarData(usuario.dt_cadastro).toLocaleDateString()}</span>
                     </div>
                   </div> 
               </div>
