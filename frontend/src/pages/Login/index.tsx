@@ -4,6 +4,7 @@ import artLogin from "../../assets/img/loginArt.svg"
 import logoFazenda from "../../assets/img/logo-FazendaLageado.svg";
 import dashedGreen from "../../assets/img/dashedArt-green.svg"
 import bgGrass from  "../../assets/img/loginBg-grass.jpg"
+import footerBg from "../../assets/img/footer-bg.webp"
 import { log } from "console";
 
 const Login: React.FC = () => {
@@ -27,13 +28,16 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="container-login" style={{ height: "100%" }}>
+    <div className="container-login" style={{ height: "100vh", position: "relative" }}>
+      {/* Background de montanhas fixo */}
+      <img src={footerBg} alt="Patos Valley" width={240} height={72} style={{ height: "45vh" }} className="absolute bottom-0 w-full mx-auto" />
 
-      <div className="content-login" style={{ maxHeight: "750px" }}>
+
+      <div className="content-login" style={{ maxHeight: "750px", position: "relative", zIndex: 1 }}>
         <div className="login-container-image" style={{ height: "100%" }}>
           <div className="login-div" style={{ height: "100%", width: "100%", borderRadius: "25px 0 0 25px" }}>
             <div className="login-image-child" style={{ position: "relative", pointerEvents: 'none' }}>
-              <div className="background-image" loading="lazy"></div>
+              <div className="background-image" loading="lazy"></div> 
               <img src={artLogin} style={{ width: "65%", float: "left", zIndex: 2 }} className="LogoBg" />
               <div className="spanBg" style={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column", paddingTop: "30px" }}>
                 <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column" }}>
@@ -53,11 +57,11 @@ const Login: React.FC = () => {
             </div>
           </div>
         </div>
-        <div id="page-container" className="fade in" style={{ position: "relative",  overflowY: "hidden" }}>
+        <div id="page-container" className="fade in" style={{ position: "relative", overflowY: "hidden" }}>
           <div style={{ position: "absolute", top: 0, right: 0, borderRadius: "0 20px 0 0", overflow: "hidden" }}>
-            <img src={dashedGreen} alt="Bolha Vermelha" style={{ pointerEvents: "none", width: "100px", transform: "translate(5px, -5px)" }} className="bubbleRed" />
+            <img src={dashedGreen} alt="Bolha Verde" style={{ pointerEvents: "none", width: "100px", transform: "translate(5px, -5px)" }} className="bubbleRed" />
           </div>
-          <img src={dashedGreen} alt="Bolha Roxa" style={{ pointerEvents: "none", position: "absolute", bottom: "-5%", left: "-11%", width: "23%", float: "right" }} />
+          <img src={dashedGreen} alt="Bolha Verde" style={{ pointerEvents: "none", position: "absolute", bottom: "-5%", left: "-11%", width: "23%", float: "right" }} />
           <div className="login-container-info">
             <div className="login login-v2 animated flipInX" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px", marginBottom: "55px" }} data-pageload-addclass="animated flipInX">
               <div className="login-header">
@@ -106,8 +110,6 @@ const Login: React.FC = () => {
                           <span>Entrando...</span>
                         </div>
                       )} 
-
-
                     </button>
                   </div>
                   {erro.includes("E-mail ou senha inválidos") && (
@@ -115,9 +117,7 @@ const Login: React.FC = () => {
                     <strong style={{ color: "#ff4646" }}>Ops... Falha na autenticação, tente novamente</strong>
                   </div>
                   )}
-                  
                 </form>
-                
               </div>
             </div>
           </div>

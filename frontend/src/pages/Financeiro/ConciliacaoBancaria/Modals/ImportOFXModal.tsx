@@ -8,6 +8,7 @@ import { parseOFXFile, TotalizadoresOFX } from '../../../../Utils/parseOfxFile';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { toast } from 'react-toastify';
 import { salvarMovimentosOFX } from '../../../../services/movimentoBancarioService';
+import { criarHistoricoImportacao } from '../../../../services/historicoImportacaoOFXService';
 
 Modal.setAppElement('#root');
 
@@ -116,20 +117,33 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 			// Atualizar movimentos com os dados retornados do batch
 			setMovimentosOFX(resultado.movimentos);
 			
-			// Salvar histórico
-			const novoHistorico = {
-				nomeArquivo: selectedFile?.name || 'Desconhecido',
-				data: new Date().toISOString(),
-				idMovimentos: resultado.movimentos.map((m) => m.id),
-				movimentos: resultado.movimentos,
-				totalizadores,
-				novos: resultado.novos,
-				existentes: resultado.existentes,
-			};
+			// Salvar histórico no banco de dados
+			try {
+				const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
+				const idUsuario = usuarioLogado.id;
 
-			let historico = JSON.parse(localStorage.getItem('historicoOFX') || '[]');
-			historico = [novoHistorico, ...historico].slice(0, 5);
-			localStorage.setItem('historicoOFX', JSON.stringify(historico));
+				if (!idUsuario) {
+					console.warn('⚠️ Usuário não logado, não será possível salvar histórico');
+					toast.warning('Usuário não identificado. Histórico não será salvo.');
+				} else {
+					const historicoData = {
+						idUsuario,
+						nomeArquivo: selectedFile?.name || 'Desconhecido',
+						dataImportacao: new Date().toISOString(),
+						idMovimentos: resultado.movimentos.map((m) => m.id),
+						totalizadores,
+						novosMovimentos: resultado.novos,
+						existentesMovimentos: resultado.existentes,
+						idContaCorrente: idContaCorrente,
+					};
+
+					await criarHistoricoImportacao(historicoData);
+					console.log('✅ Histórico de importação salvo no banco de dados');
+				}
+			} catch (historicoError) {
+				console.error('❌ Erro ao salvar histórico:', historicoError);
+				toast.warning('Importação concluída, mas histórico não foi salvo.');
+			}
 
 			toast.success(`Importação concluída! ${resultado.novos} novos, ${resultado.existentes} existentes.`);
 

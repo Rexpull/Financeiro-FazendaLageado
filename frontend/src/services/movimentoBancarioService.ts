@@ -348,3 +348,28 @@ export const buscarMovimentosPorIds = async (ids: number[]): Promise<MovimentoBa
 		throw error;
 	}
 };
+
+export const atualizarContaMovimentosOFX = async (idMovimentos: number[], novaContaId: number): Promise<{ atualizados: number }> => {
+	try {
+		console.log(`🔄 Atualizando conta de ${idMovimentos.length} movimentos para conta ${novaContaId}`);
+		
+		const res = await fetch(`${API_URL}/api/movBancario/update-conta-ofx`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ idMovimentos, novaContaId }),
+		});
+		
+		if (!res.ok) {
+			const errorData = await res.json();
+			throw new Error(errorData.error || 'Erro ao atualizar conta dos movimentos OFX');
+		}
+		
+		const resultado = await res.json() as { atualizados: number };
+		console.log(`✅ ${resultado.atualizados} movimentos atualizados com sucesso`);
+		
+		return resultado;
+	} catch (error) {
+		console.error('❌ Erro ao atualizar conta dos movimentos OFX:', error);
+		throw error;
+	}
+};

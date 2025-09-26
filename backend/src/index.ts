@@ -48,6 +48,8 @@ export default {
         return handleFinanciamento(req, env.DB);
       case pathname.startsWith("/api/notificacoes"):
         return handleNotificacaoRequest(req, env.DB);
+      case pathname.startsWith("/api/historico-importacao-ofx"):
+        return handleBancoRequest(req, env.DB);
       case pathname.startsWith("/api/auth"):
         return handleAuthRequest(req, env, env.DB);
       case pathname.startsWith("/api/dashboard"):

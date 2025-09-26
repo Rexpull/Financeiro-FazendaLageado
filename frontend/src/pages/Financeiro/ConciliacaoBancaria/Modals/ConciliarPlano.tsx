@@ -437,7 +437,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				};
 				console.log('financiamento sendo enviado:', dados)
 			} else if (modalidadeMovimento === 'transferencia') {
-				const idPlano = transferenciaPlanoMode === 'transferencia' ? parametros[0]?.idPlanoTransferenciaEntreContas : 172; //Id plano de contas de aplicação de fundos (Tô com preguiça de parametrizar)
+				const idPlano = transferenciaPlanoMode === 'transferencia' ? parametros[0]?.idPlanoTransferenciaEntreContas : 233; //Id plano de contas de aplicação de fundos (Tô com preguiça de parametrizar)
 				
 				dados = {
 					idPlanoContas: idPlano,
@@ -779,12 +779,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									</span>
 								)}
 							</div>
-							<span>Aplicação de Fundos</span>
+							<span>Aplicação/Resgate em fundos</span>
 						</label>
 					</div>
 					<FontAwesomeIcon icon={faMoneyBillTransfer} size="3x" />
 					<p className="mt-2 font-medium">
-						{transferenciaPlanoMode === 'transferencia' ? 'Mera transferência entre contas próprias da Fazenda' : 'Aplicação de fundos'} <br />
+						{transferenciaPlanoMode === 'transferencia' ? 'Mera transferência entre contas próprias da Fazenda' : 'Aplicação/Resgate em fundos'} <br />
 						na qual será ignorada no Fluxo de Caixa!
 					</p>
 				</div>

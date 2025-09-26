@@ -3,16 +3,18 @@
     display: flex;
     justify-content: center;
     align-items: center;
-
     box-shadow: 0 10px 40px #777777;
-    height: 100%;
+    height: 100vh;
     background: #fff9f4;
-    
     background-size: cover;
     background-position-y: bottom;
-    position: absolute;
-    z-index: -1;
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    overflow-x: hidden;
 }
+
+/* Background de montanhas fixo */
 
 .content-login {
     box-shadow: 0px 10px 50px #0000003d;
@@ -285,92 +287,224 @@ input:-webkit-autofill:active{
 
 }
 
-@media only screen and (max-width: 1050px) {
+@media only screen and (max-width: 1200px) {
     .content-login {
-        height: 85%;
-        width: 80%;
+        height: 80%;
+        width: 85%;
     }
     .LogoBg{
-        width: 42% !important;
+        width: 50% !important;
+    }
+    .spanBgTitle{
+        font-size: 35px !important;
+    }
+    .spanBgSubTitle{
+        font-size: 20px !important;
     }
 }
 
-
-@media only screen and (max-width: 900px) {
-
+@media only screen and (max-width: 1050px) {
     .content-login {
-        height: 95%;
+        height: 85%;
         width: 90%;
     }
     .LogoBg{
-        width: 42% !important;
+        width: 45% !important;
+    }
+    .spanBgTitle{
+        font-size: 30px !important;
+    }
+    .spanBgSubTitle{
+        font-size: 18px !important;
+    }
+}
+
+@media only screen and (max-width: 900px) {
+    .content-login {
+        height: 90%;
+        width: 95%;
+    }
+    .LogoBg{
+        width: 40% !important;
+    }
+    .spanBgTitle{
+        font-size: 28px !important;
+    }
+    .spanBgSubTitle{
+        font-size: 16px !important;
     }
 }
 
 @media only screen and (max-width: 800px) {
+    .container-login {
+        padding: 10px;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    
     .area {
         /*display: none;*/
     }
+    
     .content-login {
         flex-direction: column;
         width: 100%;
-        height: 100%;
+        height: auto;
+        min-height: 100vh;
+        border-radius: 15px;
+        margin: 0;
     }
+    
     .LogoBg{
-        width: 33% !important;
+        width: 40% !important;
     }
+    
     .spanBg{
         padding-top: 15px !important;
     }
+    
     .spanBgTitle{
-        font-size: 25px !important;
+        font-size: 24px !important;
+        text-align: center;
     }
+    
     .spanBgSubTitle{
-        font-size: 15px !important;
+        font-size: 14px !important;
+        text-align: center;
     }
 
     #page-container{
         width: 100% !important;
         z-index: 1;
-        height: 101% !important;
-        padding-bottom: 20px !important;
-        border-radius: 20px 20px 0 0 !important;
+        height: auto !important;
+        padding: 20px !important;
+        border-radius: 15px 15px 0 0 !important;
+        min-height: 50vh;
     }
+    
     .logoFullMetre{
-        display: none;
+        width: 60% !important;
+        display: block !important;
     }
+    
     .background-image{
-        border-radius: 0;
-        padding-top: 60px;
+        border-radius: 15px 15px 0 0;
+        padding-top: 40px;
     }
+    
     .login-image-child>div::after{
-        border-radius: 0;
+        border-radius: 15px 15px 0 0;
     }
+    
     .login-container-image{
-        margin-bottom: -16px;
+        margin-bottom: 0;
         width: 100% !important;
         padding: 0 !important;
         box-shadow: none !important;
         height: auto !important;
     }
+    
     .bubbleRed{
-        /*width: 70px !important;*/
+        width: 60px !important;
     }
+    
     .login-v2{
-        gap: 10px !important;
-        margin-bottom: 35px;
+        gap: 15px !important;
+        margin-bottom: 20px;
     }
+    
     .login-div{
-        padding: 15% 0 !important;
+        padding: 10% 0 !important;
+    }
+    
+    .form-login{
+        font-size: 16px !important;
+        padding: 12px !important;
+    }
+    
+    .btn-login{
+        height: 45px;
+        font-size: 16px;
+    }
+    
+    .span-form{
+        font-size: 14px;
+    }
+    
+    .mountain-background{
+        height: 150px;
+    }
+}
+
+@media only screen and (max-width: 500px) {
+    .container-login {
+        padding: 5px;
+    }
+    
+    .content-login {
+        border-radius: 10px;
+    }
+    
+    .LogoBg{
+        width: 35% !important;
+    }
+    
+    .spanBgTitle{
+        font-size: 20px !important;
+    }
+    
+    .spanBgSubTitle{
+        font-size: 12px !important;
+    }
+    
+    .logoFullMetre{
+        width: 50% !important;
+    }
+    
+    .form-login{
+        font-size: 14px !important;
+        padding: 10px !important;
+    }
+    
+    .btn-login{
+        height: 40px;
+        font-size: 14px;
+    }
+    
+    .span-form{
+        font-size: 13px;
+    }
+    
+    .mountain-background{
+        height: 120px;
+    }
+    
+    .bubbleRed{
+        width: 50px !important;
     }
 }
 
 @media only screen and (max-width: 400px) {
-
-    .bubbleRed{
-        width: 75px !important;
+    .spanBgTitle{
+        font-size: 18px !important;
     }
-
+    
+    .spanBgSubTitle{
+        font-size: 11px !important;
+    }
+    
+    .form-login{
+        font-size: 13px !important;
+    }
+    
+    .btn-login{
+        height: 38px;
+        font-size: 13px;
+    }
+    
+    .mountain-background{
+        height: 100px;
+    }
 }
 
 .button--loading::after {

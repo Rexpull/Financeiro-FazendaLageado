@@ -34,6 +34,7 @@ import {
 	transferirMovimentoBancario,
 	buscarMovimentoBancarioById,
 	buscarMovimentosPorIds,
+	atualizarContaMovimentosOFX,
 } from '../../../services/movimentoBancarioService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import {
@@ -52,6 +53,7 @@ import { toast } from 'react-toastify';
 import { TotalizadoresOFX } from '../../../Utils/parseOfxFile';
 import ConciliacaoOFXModal from './ConciliacaoOFX';
 import { useLocation } from 'react-router-dom';
+import { listarHistoricoImportacoes, limparHistoricoImportacoes } from '../../../services/historicoImportacaoOFXService';
 
 const MovimentoBancarioTable: React.FC = () => {
 	const location = useLocation();
@@ -98,6 +100,10 @@ const MovimentoBancarioTable: React.FC = () => {
 	
 	// Modal de confirmação para limpar histórico
 	const [modalConfirmarLimparHistoricoIsOpen, setModalConfirmarLimparHistoricoIsOpen] = useState(false);
+	
+	// Estados para edição de conta do histórico OFX
+	const [modalEditarContaIsOpen, setModalEditarContaIsOpen] = useState(false);
+	const [historicoParaEditarConta, setHistoricoParaEditarConta] = useState<any | null>(null);
 
 	// 🔹 Paginação
 	const [currentPage, setCurrentPage] = useState(1);
@@ -135,8 +141,25 @@ const MovimentoBancarioTable: React.FC = () => {
 	}, []);
 
 	useEffect(() => {
-		const dados = JSON.parse(localStorage.getItem('historicoOFX') || '[]');
-		setHistoricoImportacoes(dados);
+		const carregarHistorico = async () => {
+			try {
+				const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
+				const idUsuario = usuarioLogado.id;
+
+				if (idUsuario) {
+					const historico = await listarHistoricoImportacoes(idUsuario);
+					setHistoricoImportacoes(historico);
+				} else {
+					console.warn('⚠️ Usuário não logado, histórico não será carregado');
+					setHistoricoImportacoes([]);
+				}
+			} catch (error) {
+				console.error('❌ Erro ao carregar histórico:', error);
+				setHistoricoImportacoes([]);
+			}
+		};
+
+		carregarHistorico();
 	}, [modalImportOFXIsOpen]);
 
 	useEffect(() => {
@@ -581,6 +604,35 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
+	const handleAtualizarContaHistorico = async (novaContaId: number) => {
+		if (!historicoParaEditarConta) return;
+
+		try {
+			setIsSaving(true);
+			console.log(`🔄 Atualizando conta de ${historicoParaEditarConta.idMovimentos.length} movimentos para conta ${novaContaId}`);
+
+			const resultado = await atualizarContaMovimentosOFX(historicoParaEditarConta.idMovimentos, novaContaId);
+			
+			console.log(`✅ ${resultado.atualizados} movimentos atualizados com sucesso`);
+			toast.success(` movimentos atualizados para a nova conta!`);
+			
+			// Fechar modal e limpar estados
+			setModalEditarContaIsOpen(false);
+			setHistoricoParaEditarConta(null);
+			
+			// Recarregar movimentos para refletir as mudanças
+			await listarMovimentosBancarios().then(data => {
+				atualizarListasMovimentos(data);
+			});
+			
+		} catch (error) {
+			console.error('❌ Erro ao atualizar conta dos movimentos:', error);
+			toast.error('Erro ao atualizar conta dos movimentos');
+		} finally {
+			setIsSaving(false);
+		}
+	};
+
 	const indexOfLastItem = currentPage * itemsPerPage;
 	const indexOfFirstItem = indexOfLastItem - itemsPerPage;
 	const currentItems = movimentosFiltradosComSaldo.slice(indexOfFirstItem, indexOfLastItem);
@@ -675,7 +727,7 @@ const MovimentoBancarioTable: React.FC = () => {
 						</button>
 
 						{dropdownHistoricoAberto && (
-							<div className="absolute top-10 right-0 mt-1 bg-white border rounded shadow-lg z-50 w-72 max-w-[calc(100vw-2rem)]">
+							<div className="absolute top-10 right-0 mt-1 bg-white border rounded shadow-lg z-50 w-80 max-w-[calc(100vw-2rem)]">
 								<div className="text-xs font-semibold text-gray-500 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
 									<span>Últimas Importações</span>
 									<button
@@ -689,32 +741,49 @@ const MovimentoBancarioTable: React.FC = () => {
 									<div className="text-sm text-gray-600 px-4 py-2">Nenhum histórico encontrado.</div>
 								) : (
 									historicoImportacoes.map((item, index) => (
-										<button
+										<div
 											key={index}
-											onClick={async () => {
-												try {
-													// Busca os movimentos atualizados do banco de dados
-													const movimentosAtualizados = await buscarMovimentosPorIds(item.idMovimentos);
-													
-													setHistoricoSelecionado({ 
-														movimentos: movimentosAtualizados, 
-														totalizadores: item.totalizadores 
-													});
-													setModalConciliacaoHistoricoIsOpen(true);
-													setDropdownHistoricoAberto(false);
-												} catch (error) {
-													console.error('Erro ao buscar movimentos atualizados:', error);
-													toast.error('Erro ao carregar movimentos do histórico');
-												}
-											}}
 											className="block w-full text-left text-sm border-b border-gray-200 px-4 py-2 hover:bg-gray-100"
 										>
-											<div className="font-semibold truncate">{item.nomeArquivo}</div>
-											<div className="flex justify-between items-center mt-1">
-												<div className="text-xs text-gray-500">{new Date(item.data).toLocaleString('pt-BR')}</div>
-												<div className="text-xs text-gray-400">{item.idMovimentos.length} movimentos</div>
+											<div className="flex justify-between items-start gap-2">
+												<button
+													onClick={async () => {
+														try {
+															// Busca os movimentos atualizados do banco de dados
+															const movimentosAtualizados = await buscarMovimentosPorIds(item.idMovimentos);
+															
+															setHistoricoSelecionado({ 
+																movimentos: movimentosAtualizados, 
+																totalizadores: item.totalizadores 
+															});
+															setModalConciliacaoHistoricoIsOpen(true);
+															setDropdownHistoricoAberto(false);
+														} catch (error) {
+															console.error('Erro ao buscar movimentos atualizados:', error);
+															toast.error('Erro ao carregar movimentos do histórico');
+														}
+													}}
+													className="flex-1 text-left min-w-0"
+												>
+													<div className="font-semibold truncate">{item.nomeArquivo}</div>
+													<div className="flex justify-between items-center mt-1">
+														<div className="text-xs text-gray-500">{new Date(item.dataImportacao).toLocaleString('pt-BR')}</div>
+														<div className="text-xs text-gray-400">{item.idMovimentos.length} movimentos</div>
+													</div>
+												</button>
+												<button
+													onClick={() => {
+														setHistoricoParaEditarConta(item);
+														setModalEditarContaIsOpen(true);
+														setDropdownHistoricoAberto(false);
+													}}
+													className="flex-shrink-0 p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+													title="Editar conta"
+												>
+													<FontAwesomeIcon icon={faPencil} size="sm" />
+												</button>
 											</div>
-										</button>
+										</div>
 									))
 								)}
 							</div>
@@ -1102,18 +1171,42 @@ const MovimentoBancarioTable: React.FC = () => {
 			<DialogModal
 				isOpen={modalConfirmarLimparHistoricoIsOpen}
 				onClose={() => setModalConfirmarLimparHistoricoIsOpen(false)}
-				onConfirm={() => {
-					localStorage.removeItem('historicoOFX');
-					setHistoricoImportacoes([]);
-					setDropdownHistoricoAberto(false);
-					setModalConfirmarLimparHistoricoIsOpen(false);
-					toast.success('Histórico de importações limpo com sucesso!');
+				onConfirm={async () => {
+					try {
+						const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
+						const idUsuario = usuarioLogado.id;
+
+						if (idUsuario) {
+							await limparHistoricoImportacoes(idUsuario);
+							setHistoricoImportacoes([]);
+							setDropdownHistoricoAberto(false);
+							setModalConfirmarLimparHistoricoIsOpen(false);
+							toast.success('Histórico de importações limpo com sucesso!');
+						} else {
+							toast.error('Usuário não identificado. Não foi possível limpar o histórico.');
+						}
+					} catch (error) {
+						console.error('❌ Erro ao limpar histórico:', error);
+						toast.error('Erro ao limpar histórico de importações');
+					}
 				}}
 				title="Confirmar Limpeza"
 				type="warn"
 				message="Tem certeza que deseja limpar todo o histórico de importações OFX? Esta ação não pode ser desfeita."
 				confirmLabel="Sim, Limpar"
 				cancelLabel="Cancelar"
+			/>
+
+			{/* Modal para editar conta do histórico OFX */}
+			<SelectContaCorrente
+				isOpen={modalEditarContaIsOpen}
+				onClose={() => {
+					setModalEditarContaIsOpen(false);
+					setHistoricoParaEditarConta(null);
+				}}
+				onSelect={(conta) => {
+					handleAtualizarContaHistorico(conta.id);
+				}}
 			/>
 		</div>
 	);

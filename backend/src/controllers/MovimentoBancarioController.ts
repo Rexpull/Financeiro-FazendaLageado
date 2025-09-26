@@ -143,6 +143,42 @@ export class MovimentoBancarioController {
 				}
 			}
 
+			// 📌 PATCH - Atualizar conta de movimentos OFX
+			if (method === 'PATCH' && pathname === '/api/movBancario/update-conta-ofx') {
+				try {
+					const body: { idMovimentos: number[], novaContaId: number } = await req.json();
+					console.log(`📥 Atualizando conta de ${body.idMovimentos.length} movimentos para conta ${body.novaContaId}`);
+
+					if (!body.idMovimentos || !Array.isArray(body.idMovimentos) || body.idMovimentos.length === 0) {
+						return new Response(JSON.stringify({ error: 'Lista de IDs de movimentos inválida' }), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+
+					if (!body.novaContaId || body.novaContaId <= 0) {
+						return new Response(JSON.stringify({ error: 'ID da nova conta inválido' }), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+
+					const resultado = await this.movBancarioRepository.updateContaMovimentosOFX(body.idMovimentos, body.novaContaId);
+					console.log(`✅ Conta atualizada para ${resultado.atualizados} movimentos`);
+
+					return new Response(JSON.stringify(resultado), {
+						status: 200,
+						headers: corsHeaders,
+					});
+				} catch (error) {
+					console.error('❌ Erro ao atualizar conta dos movimentos OFX:', error);
+					return new Response(JSON.stringify({ error: 'Erro ao atualizar conta dos movimentos OFX' }), {
+						status: 500,
+						headers: corsHeaders,
+					});
+				}
+			}
+
 			if (method === 'GET' && pathname === '/api/fluxoCaixa/detalhar') {
 				const urlObj = new URL(req.url);
 				const tipo = urlObj.searchParams.get('tipo') || '';

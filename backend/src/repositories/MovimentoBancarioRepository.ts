@@ -419,9 +419,13 @@ export class MovimentoBancarioRepository {
 
 		console.log('🔧 Campos que serão alterados:', camposAlterados);
 
-		// Se não há campos para alterar, retornar
-		if (Object.keys(camposAlterados).length === 0) {
-			console.log('ℹ️ Nenhum campo foi alterado');
+		// Verificar se há resultadoList para processar
+		const temResultadoList = movimento.resultadoList && movimento.resultadoList.length > 0;
+		console.log('🔍 Tem resultadoList para processar?', temResultadoList);
+
+		// Se não há campos para alterar E não há resultadoList, retornar
+		if (Object.keys(camposAlterados).length === 0 && !temResultadoList) {
+			console.log('ℹ️ Nenhum campo foi alterado e não há resultadoList para processar');
 			return;
 		}
 
@@ -502,21 +506,26 @@ export class MovimentoBancarioRepository {
 			bindValues.push(camposAlterados.idFinanciamento);
 		}
 
-		// Adicionar campo de atualização e ID
-		setClauses.push("atualizado_em = datetime('now')");
-		bindValues.push(id);
+		// Se há campos para atualizar, executar query
+		if (setClauses.length > 0) {
+			// Adicionar campo de atualização e ID
+			setClauses.push("atualizado_em = datetime('now')");
+			bindValues.push(id);
 
-		// Construir e executar query
-		const query = `
-			UPDATE MovimentoBancario
-			SET ${setClauses.join(', ')}
-			WHERE id = ?;
-		`;
+			// Construir e executar query
+			const query = `
+				UPDATE MovimentoBancario
+				SET ${setClauses.join(', ')}
+				WHERE id = ?;
+			`;
 
-		console.log('🔧 Query de atualização:', query);
-		console.log('🔧 Valores para bind:', bindValues);
+			console.log('🔧 Query de atualização:', query);
+			console.log('🔧 Valores para bind:', bindValues);
 
-		await this.db.prepare(query).bind(...bindValues).run();
+			await this.db.prepare(query).bind(...bindValues).run();
+		} else {
+			console.log('ℹ️ Nenhum campo da tabela para atualizar, apenas processando resultadoList');
+		}
 
 		console.log('🧹 Limpando resultados antigos...');
 		await this.resultadoRepo.deleteByMovimento(id);
@@ -524,7 +533,12 @@ export class MovimentoBancarioRepository {
 		// Processar resultados se necessário
 		let resultadoList = movimento.resultadoList;
 
+		console.log('🔍 Processando resultadoList:', JSON.stringify(resultadoList, null, 2));
+		console.log('🔍 resultadoList existe?', !!resultadoList);
+		console.log('🔍 resultadoList.length:', resultadoList?.length);
+
 		if (!resultadoList || resultadoList.length === 0) {
+			console.log('⚠️ Nenhum resultadoList fornecido, verificando se precisa criar resultado padrão...');
 			if (camposAlterados.idPlanoContas) {
 				const tipo = camposAlterados.tipoMovimento || movimentoAtual.tipoMovimento || (movimentoAtual.valor >= 0 ? 'C' : 'D');
 				const valorAbs = Math.abs(movimentoAtual.valor);
@@ -543,10 +557,19 @@ export class MovimentoBancarioRepository {
 					},
 				];
 			}
+		} else {
+			console.log('✅ resultadoList fornecido, processando múltiplos planos...');
 		}
 
 		if (resultadoList?.length) {
+			console.log(`📝 Criando ${resultadoList.length} resultados:`);
+			resultadoList.forEach((r, index) => {
+				console.log(`  ${index + 1}. Plano: ${r.idPlanoContas}, Valor: ${r.valor}, Tipo: ${r.tipo}`);
+			});
 			await this.resultadoRepo.createMany(resultadoList.map((r) => ({ ...r, idMovimentoBancario: id })));
+			console.log('✅ Resultados criados com sucesso');
+		} else {
+			console.log('⚠️ Nenhum resultado para processar');
 		}
 
 		console.log('✅ Movimento atualizado com sucesso');
@@ -569,6 +592,71 @@ export class MovimentoBancarioRepository {
 			)
 			.bind(ideagro ? 1 : 0, id)
 			.run();
+	}
+
+	async updateContaMovimentosOFX(idMovimentos: number[], novaContaId: number): Promise<{ atualizados: number }> {
+		console.log(`🔄 Atualizando conta de ${idMovimentos.length} movimentos para conta ${novaContaId}`);
+		
+		if (!idMovimentos || idMovimentos.length === 0) {
+			throw new Error('Lista de IDs de movimentos não pode estar vazia');
+		}
+
+		if (!novaContaId || novaContaId <= 0) {
+			throw new Error('ID da nova conta deve ser válido');
+		}
+
+		// Processar em lotes para evitar erro "too many SQL variables"
+		const BATCH_SIZE = 10; // Reduzido para 10 para máxima segurança com SQLite
+		let totalAtualizados = 0;
+		const totalLotes = Math.ceil(idMovimentos.length / BATCH_SIZE);
+		
+		console.log(`📦 Processando ${idMovimentos.length} movimentos em ${totalLotes} lotes de ${BATCH_SIZE}`);
+		
+		for (let i = 0; i < idMovimentos.length; i += BATCH_SIZE) {
+			const batch = idMovimentos.slice(i, i + BATCH_SIZE);
+			const numeroLote = Math.floor(i / BATCH_SIZE) + 1;
+			
+			console.log(`🔍 Processando lote ${numeroLote}/${totalLotes}: ${batch.length} movimentos`);
+			
+				try {
+					// Criar placeholders para a query IN
+					const placeholders = batch.map(() => '?').join(',');
+
+					const sql = `
+						UPDATE MovimentoBancario
+						SET idContaCorrente = ?, atualizado_em = datetime('now')
+						WHERE id IN (${placeholders})
+					`;
+
+					const params = [novaContaId, ...batch];
+
+					console.log(`📝 Executando lote ${numeroLote}/${totalLotes}:`, sql);
+					console.log(`📝 Parâmetros do lote ${numeroLote} (${params.length} parâmetros):`, params);
+					console.log(`📝 IDs no lote ${numeroLote}:`, batch);
+
+					const result = await this.db.prepare(sql).bind(...params).run();
+
+					const atualizadosNoLote = (result as any).changes || 0;
+					totalAtualizados += atualizadosNoLote;
+
+					console.log(`✅ Lote ${numeroLote}/${totalLotes} processado: ${atualizadosNoLote} movimentos atualizados`);
+
+					// Pequena pausa entre lotes para evitar sobrecarga
+					if (numeroLote < totalLotes) {
+						await new Promise(resolve => setTimeout(resolve, 10));
+					}
+
+				} catch (error) {
+					console.error(`❌ Erro no lote ${numeroLote}/${totalLotes}:`, error);
+					console.error(`❌ Batch que falhou:`, batch);
+					console.error(`❌ Parâmetros que falharam:`, [novaContaId, ...batch]);
+					throw new Error(`Falha no lote ${numeroLote}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+				}
+		}
+		
+		console.log(`🎉 Processamento concluído: ${totalAtualizados} movimentos atualizados em ${totalLotes} lotes`);
+		
+		return { atualizados: totalAtualizados };
 	}
 
 	async getPlanoTransferencia(): Promise<number> {

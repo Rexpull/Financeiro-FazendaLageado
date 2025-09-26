@@ -191,6 +191,30 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
       return new Response(JSON.stringify({ message: "Banco excluído com sucesso!" }), { status: 200, headers: corsHeaders });
     }
 
+    // 📌 Rotas para Histórico de Importações OFX
+    if (pathname.startsWith("/api/historico-importacao-ofx")) {
+      console.log("🔍 Rota de histórico de importações detectada:", pathname);
+      
+      try {
+        const { HistoricoImportacaoOFXController } = await import("../controllers/HistoricoImportacaoOFXController");
+        const { HistoricoImportacaoOFXRepository } = await import("../repositories/HistoricoImportacaoOFXRepository");
+        
+        console.log("✅ Módulos carregados com sucesso");
+        
+        const historicoRepository = new HistoricoImportacaoOFXRepository(DB);
+        const historicoController = new HistoricoImportacaoOFXController(historicoRepository);
+        
+        console.log("✅ Controller criado, processando requisição...");
+        return await historicoController.handleRequest(req);
+      } catch (importError) {
+        console.error("❌ Erro ao importar módulos:", importError);
+        return new Response(JSON.stringify({ error: "Erro ao carregar módulos do histórico" }), {
+          status: 500,
+          headers: corsHeaders,
+        });
+      }
+    }
+
     console.warn("⚠ Rota não encontrada:", pathname);
     return new Response("Rota não encontrada", { status: 404, headers: corsHeaders });
 

@@ -210,7 +210,7 @@ const PlanoContasTable: React.FC = () => {
 	return (
 		<div>
 			<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-5 mb-4">
-				<div className="flex border-b border-gray-300 overflow-x-auto">
+				<div className="flex border-b border-gray-300">
 					<button
 						className={`px-3 sm:px-4 py-2 font-bold text-xs sm:text-sm text-nowrap whitespace-nowrap ${
 							activeTab === 'tabela' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'
