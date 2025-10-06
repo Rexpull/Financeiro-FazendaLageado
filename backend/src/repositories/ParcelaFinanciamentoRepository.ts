@@ -84,6 +84,11 @@ export class ParcelaFinanciamentoRepository {
 		})) as ParcelaFinanciamento[];
 	  }
 
+	async deleteByMovimentoBancario(idMovimentoBancario: number): Promise<void> {
+		await this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario = ?`)
+			.bind(idMovimentoBancario).run();
+	}
+
 	async create(parcela: ParcelaFinanciamento): Promise<number> {
 		try {
 			const {

@@ -2,14 +2,17 @@ import { MovimentoBancario } from '../models/MovimentoBancario';
 import { ResultadoRepository } from './ResultadoRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 import { FinanciamentoDetalhadoDTO } from '../models/FinanciamentoDetalhadoDTO';
+import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository';
 
 export class MovimentoBancarioRepository {
 	private db: D1Database;
 	private resultadoRepo: ResultadoRepository;
+	private parcelaRepo: ParcelaFinanciamentoRepository;
 
 	constructor(db: D1Database) {
 		this.db = db;
 		this.resultadoRepo = new ResultadoRepository(db);
+		this.parcelaRepo = new ParcelaFinanciamentoRepository(db);
 	}
 
 	async getMovimentosPorDetalhamento(planoId: number, mes: number, tipo: string): Promise<MovimentoDetalhado[]> {
@@ -576,9 +579,26 @@ export class MovimentoBancarioRepository {
 	}
 
 	async deleteById(id: number): Promise<void> {
-		await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(id).run();
-
-		await this.resultadoRepo.deleteByMovimento(id);
+		console.log(`🗑 Iniciando exclusão em cascata do movimento ID ${id}`);
+		
+		try {
+			// 1. Primeiro, remover registros da tabela Resultado que referenciam este movimento
+			console.log(`🧹 Removendo resultados relacionados ao movimento ${id}`);
+			await this.resultadoRepo.deleteByMovimento(id);
+			
+			// 2. Remover registros da tabela parcelaFinanciamento que referenciam este movimento
+			console.log(`🧹 Removendo parcelas de financiamento relacionadas ao movimento ${id}`);
+			await this.parcelaRepo.deleteByMovimentoBancario(id);
+			
+			// 3. Por último, remover o movimento bancário principal
+			console.log(`🗑 Removendo movimento bancário principal ID ${id}`);
+			await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(id).run();
+			
+			console.log(`✅ Exclusão em cascata concluída com sucesso para movimento ID ${id}`);
+		} catch (error) {
+			console.error(`❌ Erro durante exclusão em cascata do movimento ${id}:`, error);
+			throw error;
+		}
 	}
 
 	async updateIdeagro(id: number, ideagro: boolean): Promise<void> {

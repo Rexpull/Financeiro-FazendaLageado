@@ -808,7 +808,6 @@ const MovimentoBancarioTable: React.FC = () => {
 										<th className="p-2 text-center">Plano Contas</th>
 										<th className="p-2 text-center">Valor R$</th>
 										<th className="p-2 text-center">Saldo R$</th>
-										<th className="p-2 pr-11 text-right">IdeAgri</th>
 									</tr>
 								</thead>
 							<tbody>
@@ -855,15 +854,6 @@ const MovimentoBancarioTable: React.FC = () => {
 														</td>
 														<td className="p-2 text-center capitalize">{formatarMoeda(movBancario.saldo)}</td>
 														<td className="p-2 justify-end mr-1 capitalize flex items-center gap-6 relative">
-															<label className="relative inline-flex items-center cursor-pointer">
-																<input
-																	type="checkbox"
-																	className="sr-only peer"
-																	checked={movBancario.ideagro}
-																	onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
-																/>
-																<div className="w-9 h-5 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
-															</label>
 
 															<button
 																className="text-gray-700 hover:text-black px-2"
