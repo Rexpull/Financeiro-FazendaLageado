@@ -30,6 +30,7 @@ import {
 	listarMovimentosBancarios,
 	salvarMovimentoBancario,
 	excluirMovimentoBancario,
+	excluirTodosMovimentosBancarios,
 	atualizarStatusIdeagro,
 	transferirMovimentoBancario,
 	buscarMovimentoBancarioById,
@@ -74,6 +75,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [isSaving, setIsSaving] = useState(false);
 	const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 	const [confirmDeleteParcelaModalOpen, setConfirmDeleteParcelaModalOpen] = useState(false);
+	const [confirmDeleteAllModalOpen, setConfirmDeleteAllModalOpen] = useState(false);
 	const [deleteMovimentoId, setDeleteMovimentoId] = useState<number | null>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
@@ -503,6 +505,32 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
+	const handleDeleteAllConfirm = async () => {
+		if (!contaSelecionada?.id) {
+			console.error(`❌ Conta selecionada inválida:`, contaSelecionada);
+			return;
+		}
+		
+		console.log(`🚀 Iniciando exclusão em massa para conta:`, contaSelecionada);
+		
+		try {
+			setIsSaving(true);
+			const resultado = await excluirTodosMovimentosBancarios(contaSelecionada.id);
+			
+			// Limpar todos os movimentos da conta atual
+			setMovimentos([]);
+			setFilteredMovimentos([]);
+			setMovimentosFiltradosComSaldo([]);
+			
+			setConfirmDeleteAllModalOpen(false);
+			console.log(`✅ Exclusão em massa concluída: ${resultado.excluidos} movimentos excluídos`);
+		} catch (error) {
+			console.error('❌ Erro ao excluir movimentos em massa:', error);
+		} finally {
+			setIsSaving(false);
+		}
+	};
+
 	const handleDelete = async (id: number) => {
 		const temParcelas = await verificarParcelasAssociadas(id);
 		setDeleteMovimentoId(id);
@@ -672,6 +700,12 @@ const MovimentoBancarioTable: React.FC = () => {
 									<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
 										<FontAwesomeIcon icon={faExchange} className="mr-2" />
 										Transferir
+									</p>
+								</button>
+								<button onClick={() => setConfirmDeleteAllModalOpen(true)}>
+									<p className="font-bold text-sm rounded text-left text-red-600 mb-1 px-2 py-1 hover:bg-red-50">
+										<FontAwesomeIcon icon={faTrash} className="mr-2" />
+										Excluir Todos
 									</p>
 								</button>
 								<button>
@@ -1092,6 +1126,17 @@ const MovimentoBancarioTable: React.FC = () => {
 				type="warn"
 				message="Tem certeza que deseja excluir este Movimento Bancário?"
 				confirmLabel="Excluir"
+				cancelLabel="Cancelar"
+			/>
+
+			<DialogModal
+				isOpen={confirmDeleteAllModalOpen}
+				onClose={() => setConfirmDeleteAllModalOpen(false)}
+				onConfirm={handleDeleteAllConfirm}
+				title="⚠️ ATENÇÃO - EXCLUSÃO EM MASSA"
+				type="error"
+				message={`Tem CERTEZA ABSOLUTA que deseja excluir TODOS os movimentos bancários da conta "${contaSelecionada?.numConta} - ${contaSelecionada?.bancoNome}"?\n\nEsta ação é IRREVERSÍVEL e excluirá:\n• Todos os movimentos bancários\n• Todos os resultados relacionados\n• Todas as parcelas de financiamento associadas`}
+				confirmLabel="EXCLUIR TODOS"
 				cancelLabel="Cancelar"
 			/>
 

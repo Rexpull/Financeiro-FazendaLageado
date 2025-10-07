@@ -241,6 +241,34 @@ export const excluirMovimentoBancario = async (id: number): Promise<void> => {
 	}
 };
 
+export const excluirTodosMovimentosBancarios = async (idContaCorrente: number): Promise<{ excluidos: number }> => {
+	try {
+		console.log(`🚀 Enviando requisição de exclusão em massa para conta corrente ID: ${idContaCorrente}`);
+		
+		const res = await fetch(`${API_URL}/api/movBancario/deleteAll/${idContaCorrente}`, {
+			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json' },
+		});
+		
+		console.log(`📡 Resposta recebida:`, res.status, res.statusText);
+		
+		if (!res.ok) {
+			const errorData = await res.json();
+			console.error(`❌ Erro na resposta:`, errorData);
+			throw new Error(errorData.error || 'Erro ao excluir movimentos em massa');
+		}
+		
+		const result = await res.json();
+		console.log(`✅ Resultado da exclusão:`, result);
+		toast.success(result.message);
+		return { excluidos: result.excluidos };
+	} catch (error) {
+		console.error(`❌ Erro na exclusão em massa:`, error);
+		toast.error(`Falha na exclusão em massa: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+		throw error;
+	}
+};
+
 export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Promise<any> => {
 	try {
 		const res = await fetch(`${API_URL}/api/movBancario/${id}`, {

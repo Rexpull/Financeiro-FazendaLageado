@@ -62,7 +62,13 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 	const handleParcelaChange = (index: number, field: keyof ParcelaFinanciamento, value: any) => {
 		const updatedParcelas = [...(form.parcelasList || [])];
 		if (field === 'valor') {
-			updatedParcelas[index][field] = value || '0,00';
+			// Se o valor for uma string com vírgula, converter para número
+			if (typeof value === 'string') {
+				const valorNumerico = parseFloat(value.replace(/\./g, '').replace(',', '.'));
+				updatedParcelas[index][field] = isNaN(valorNumerico) ? 0 : valorNumerico;
+			} else {
+				updatedParcelas[index][field] = Number(value) || 0;
+			}
 		} else {
 			updatedParcelas[index][field] = value;
 		}
@@ -183,15 +189,24 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 				
 				// Cria as novas parcelas
 				const parcelasSalvas: ParcelaFinanciamento[] = [];
+				console.log(`🔄 Processando ${form.parcelasList?.length || 0} parcelas para financiamento ID ${id}`);
+				
 				for (const parcela of form.parcelasList) {
 					try {
+						console.log(`💾 Salvando parcela ${parcela.numParcela}:`, {
+							valorOriginal: parcela.valor,
+							tipoValor: typeof parcela.valor,
+							parcelaCompleta: parcela
+						});
+						
 						const parcelaComId = await salvarParcelaFinanciamento({
 							...parcela,
 							idFinanciamento: id
 						});
 						parcelasSalvas.push(parcelaComId);
+						console.log(`✅ Parcela ${parcela.numParcela} salva com sucesso`);
 					} catch (error) {
-						console.error(`Erro ao salvar parcela ${parcela.numParcela}:`, error);
+						console.error(`❌ Erro ao salvar parcela ${parcela.numParcela}:`, error);
 						toast.error(`Erro ao salvar parcela ${parcela.numParcela}. Tente novamente.`);
 						return;
 					}

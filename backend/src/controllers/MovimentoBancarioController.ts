@@ -663,6 +663,105 @@ export class MovimentoBancarioController {
 				});
 			}
 
+			// Exclusão em massa de todos os movimentos de uma conta corrente
+			if (method === 'DELETE' && pathname.startsWith('/api/movBancario/deleteAll/')) {
+				console.log(`🚀🚀🚀 ENTRANDO NO MÉTODO DELETE ALL - ${new Date().toISOString()} 🚀🚀🚀`);
+				console.log(`🔍 URL completa:`, pathname);
+				console.log(`🔍 Method:`, method);
+				console.log(`🔍 Request URL:`, req.url);
+				console.log(`🔍 Request headers:`, Object.fromEntries(req.headers.entries()));
+				try {
+					// Extrair ID da URL: /api/movBancario/deleteAll/38
+					const pathParts = pathname.split('/');
+					console.log(`🔍 Partes da URL:`, pathParts);
+					console.log(`🔍 Quantidade de partes:`, pathParts.length);
+					console.log(`🔍 Todas as partes:`, pathParts.map((part, index) => `${index}: "${part}"`));
+					
+					// Tentar diferentes índices para encontrar o ID
+					let idContaCorrenteStr = pathParts[4];
+					console.log(`🔍 ID extraído da URL (índice 4):`, idContaCorrenteStr, `Tipo:`, typeof idContaCorrenteStr);
+					
+					// Se não encontrou no índice 4, tentar outros índices
+					if (!idContaCorrenteStr || idContaCorrenteStr.trim() === '') {
+						console.log(`🔍 Tentando outros índices...`);
+						for (let i = 0; i < pathParts.length; i++) {
+							const part = pathParts[i];
+							console.log(`🔍 Índice ${i}: "${part}"`);
+							if (part && !isNaN(Number(part)) && Number(part) > 0) {
+								idContaCorrenteStr = part;
+								console.log(`🔍 ID encontrado no índice ${i}: ${idContaCorrenteStr}`);
+								break;
+							}
+						}
+					}
+					
+					if (!idContaCorrenteStr || idContaCorrenteStr.trim() === '') {
+						console.error(`❌ ID não encontrado na URL:`, pathname);
+						return new Response(JSON.stringify({ error: 'ID da conta corrente é obrigatório na URL' }), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+					
+					// Converter para número com validação mais robusta
+					console.log(`🔍 Antes do parseInt - String: "${idContaCorrenteStr}"`);
+					console.log(`🔍 Antes do parseInt - Trimmed: "${idContaCorrenteStr.trim()}"`);
+					console.log(`🔍 Antes do parseInt - Length: ${idContaCorrenteStr.trim().length}`);
+					
+					const idContaCorrenteNumero = parseInt(idContaCorrenteStr.trim(), 10);
+					console.log(`🔍 ID convertido:`, idContaCorrenteNumero, `Tipo:`, typeof idContaCorrenteNumero);
+					console.log(`🔍 isNaN check:`, isNaN(idContaCorrenteNumero));
+					console.log(`🔍 > 0 check:`, idContaCorrenteNumero > 0);
+					console.log(`🔍 === 38 check:`, idContaCorrenteNumero === 38);
+					
+					if (isNaN(idContaCorrenteNumero) || idContaCorrenteNumero <= 0) {
+						console.error(`❌ ID inválido 2:`, idContaCorrenteStr, `convertido para:`, idContaCorrenteNumero);
+						console.error(`❌ Debug info:`, {
+							originalString: idContaCorrenteStr,
+							trimmedString: idContaCorrenteStr.trim(),
+							parsedNumber: idContaCorrenteNumero,
+							isNaN: isNaN(idContaCorrenteNumero),
+							isPositive: idContaCorrenteNumero > 0
+						});
+						return new Response(JSON.stringify({ 
+							error: 'Erro no servidor', 
+							details: `ID inválido: ${idContaCorrenteNumero}` 
+						}), {
+							status: 500,
+							headers: corsHeaders,
+						});
+					}
+					
+					console.log(`✅ ID da conta corrente válido: ${idContaCorrenteNumero}`);
+
+					console.log(`🗑 Iniciando exclusão em massa de todos os movimentos da conta corrente ${idContaCorrenteNumero}`);
+					console.log(`🔍 Chamando repository.deleteAllByContaCorrente com ID:`, idContaCorrenteNumero, `tipo:`, typeof idContaCorrenteNumero);
+					
+					const resultado = await this.movBancarioRepository.deleteAllByContaCorrente(idContaCorrenteNumero);
+					console.log(`✅ Exclusão em massa concluída: ${resultado.excluidos} movimentos excluídos`);
+
+					return new Response(JSON.stringify({ 
+						message: `Exclusão em massa concluída! ${resultado.excluidos} movimentos foram excluídos.`,
+						excluidos: resultado.excluidos
+					}), {
+						status: 200,
+						headers: corsHeaders,
+					});
+				} catch (error) {
+					console.error('❌ Erro na exclusão em massa:', error);
+					console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
+					console.error('❌ Error type:', typeof error);
+					console.error('❌ Error constructor:', error?.constructor?.name);
+					return new Response(JSON.stringify({ 
+						error: 'Erro ao excluir movimentos em massa',
+						details: error instanceof Error ? error.message : 'Erro desconhecido'
+					}), {
+						status: 500,
+						headers: corsHeaders,
+					});
+				}
+			}
+
 			if (method === 'DELETE' && pathname.startsWith('/api/movBancario/')) {
 				const id = parseInt(pathname.split('/')[3]);
 				console.log(`🗑 Excluindo movimento ID ${id}`);
@@ -674,6 +773,7 @@ export class MovimentoBancarioController {
 					headers: corsHeaders,
 				});
 			}
+
 
 			if (method === 'PATCH' && pathname.startsWith('/api/movBancario/')) {
 				const id = parseInt(pathname.split('/')[3]);

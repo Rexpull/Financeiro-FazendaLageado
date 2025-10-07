@@ -579,6 +579,16 @@ export class MovimentoBancarioRepository {
 	}
 
 	async deleteById(id: number): Promise<void> {
+		console.log(`🚀 ENTRANDO NO deleteById - ID: ${id} (tipo: ${typeof id})`);
+		console.log(`🔍 Stack trace do deleteById:`, new Error().stack);
+		
+		// Validar se o ID é válido
+		if (isNaN(id) || id <= 0) {
+			console.error(`❌ ID inválido no deleteById: ${id} (tipo: ${typeof id})`);
+			console.error(`❌ Stack trace do erro:`, new Error().stack);
+			throw new Error(`ID inválido: ${id}`);
+		}
+		
 		console.log(`🗑 Iniciando exclusão em cascata do movimento ID ${id}`);
 		
 		try {
@@ -597,6 +607,79 @@ export class MovimentoBancarioRepository {
 			console.log(`✅ Exclusão em cascata concluída com sucesso para movimento ID ${id}`);
 		} catch (error) {
 			console.error(`❌ Erro durante exclusão em cascata do movimento ${id}:`, error);
+			throw error;
+		}
+	}
+
+	async deleteAllByContaCorrente(idContaCorrente: number): Promise<{ excluidos: number }> {
+		console.log(`🚀🚀🚀 INICIANDO deleteAllByContaCorrente - ID: ${idContaCorrente} 🚀🚀🚀`);
+		
+		try {
+			// SOLUÇÃO ULTRA SIMPLES - Excluir diretamente sem usar deleteById
+			console.log(`🔍 Buscando movimentos para conta corrente ID: ${idContaCorrente}`);
+			
+			// Buscar todos os movimentos
+			const movimentos = await this.db.prepare(`
+				SELECT id FROM MovimentoBancario WHERE idContaCorrente = ?
+			`).bind(idContaCorrente).all();
+			
+			console.log(`📊 Resultado da query:`, movimentos);
+			console.log(`📊 Tipo:`, typeof movimentos);
+			console.log(`📊 Results:`, movimentos.results);
+			console.log(`📊 Quantidade:`, movimentos.results?.length || 0);
+			
+			if (!movimentos.results || movimentos.results.length === 0) {
+				console.log(`ℹ️ Nenhum movimento encontrado`);
+				return { excluidos: 0 };
+			}
+			
+			let excluidos = 0;
+			
+			// Excluir cada movimento diretamente sem usar deleteById
+			for (let i = 0; i < movimentos.results.length; i++) {
+				const movimento = movimentos.results[i];
+				console.log(`🔄 Processando movimento ${i + 1}:`, movimento);
+				
+				// Extrair ID de forma ultra simples
+				const movimentoId = movimento.id;
+				console.log(`🔍 ID extraído: ${movimentoId} (tipo: ${typeof movimentoId})`);
+				
+				// Validar ID
+				if (!movimentoId || isNaN(Number(movimentoId)) || Number(movimentoId) <= 0) {
+					console.error(`❌ ID inválido: ${movimentoId}`);
+					continue;
+				}
+				
+				const idNumerico = Number(movimentoId);
+				console.log(`✅ ID numérico: ${idNumerico}`);
+				
+				try {
+					// Excluir resultados relacionados
+					console.log(`🧹 Excluindo resultados para movimento ${idNumerico}`);
+					await this.resultadoRepo.deleteByMovimento(idNumerico);
+					
+					// Excluir parcelas relacionadas
+					console.log(`🧹 Excluindo parcelas para movimento ${idNumerico}`);
+					await this.parcelaRepo.deleteByMovimentoBancario(idNumerico);
+					
+					// Excluir movimento principal
+					console.log(`🗑 Excluindo movimento principal ${idNumerico}`);
+					await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(idNumerico).run();
+					
+					excluidos++;
+					console.log(`✅ Movimento ${idNumerico} excluído com sucesso`);
+					
+				} catch (error) {
+					console.error(`❌ Erro ao excluir movimento ${idNumerico}:`, error);
+					continue;
+				}
+			}
+			
+			console.log(`🎉 Exclusão concluída: ${excluidos} movimentos excluídos`);
+			return { excluidos };
+			
+		} catch (error) {
+			console.error(`❌ Erro geral:`, error);
 			throw error;
 		}
 	}
