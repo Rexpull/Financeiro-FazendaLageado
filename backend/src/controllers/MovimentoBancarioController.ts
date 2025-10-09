@@ -117,6 +117,35 @@ export class MovimentoBancarioController {
 				});
 			}
 
+			if (method === 'GET' && pathname === '/api/movBancario/export-pdf') {
+				console.log('📥 Requisição GET /api/movBancario/export-pdf recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+
+				console.log('🔍 Parâmetros de exportação PDF:', { contaId, dataInicio, dataFim, status });
+
+				const pdfBuffer = await this.movBancarioRepository.exportToPDF({
+					contaId,
+					dataInicio,
+					dataFim,
+					status
+				});
+
+				console.log('📤 Retornando arquivo PDF de', pdfBuffer.length, 'bytes');
+
+				return new Response(pdfBuffer as any, { // Cast para compatibilidade com Response
+					headers: {
+						...corsHeaders,
+						'Content-Type': 'application/pdf',
+						'Content-Disposition': 'attachment; filename="movimentos_bancarios.pdf"'
+					}
+				});
+			}
+
 			if (method === 'GET' && pathname.startsWith('/api/movBancario/')) {
 				const pathParts = pathname.split('/');
 				if (pathParts.length === 4 && !isNaN(Number(pathParts[3]))) {

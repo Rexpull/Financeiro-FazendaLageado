@@ -30,6 +30,7 @@ import {
 	listarMovimentosBancarios,
 	listarMovimentosBancariosPaginado,
 	exportarMovimentosBancariosExcel,
+	exportarMovimentosBancariosPDF,
 	salvarMovimentoBancario,
 	excluirMovimentoBancario,
 	excluirTodosMovimentosBancarios,
@@ -292,6 +293,37 @@ const MovimentoBancarioTable: React.FC = () => {
 		} catch (error) {
 			console.error('Erro ao exportar Excel:', error);
 			toast.error('Erro ao gerar o Excel. Verifique os dados e tente novamente.');
+		} finally {
+			setIsExporting(false);
+		}
+	};
+
+	const exportarParaPDF = async () => {
+		try {
+			setAcoesMenu(false);
+			setIsExporting(true);
+
+			const blob = await exportarMovimentosBancariosPDF(
+				contaSelecionada?.id,
+				dataInicio,
+				dataFim,
+				statusFiltro
+			);
+
+			// Criar link para download
+			const url = window.URL.createObjectURL(blob);
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = `MovimentosBancarios_${dataInicio}_a_${dataFim}.pdf`;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			window.URL.revokeObjectURL(url);
+
+			toast.success('PDF gerado com sucesso!');
+		} catch (error) {
+			console.error('Erro ao exportar PDF:', error);
+			toast.error('Erro ao gerar o PDF. Verifique os dados e tente novamente.');
 		} finally {
 			setIsExporting(false);
 		}
@@ -625,11 +657,8 @@ const MovimentoBancarioTable: React.FC = () => {
 										Excluir Todos
 									</p>
 								</button>
-								<button>
-									<p
-										className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100"
-										style={{ opacity: '0.5' }}
-									>
+								<button onClick={exportarParaPDF} disabled={filteredMovimentos && filteredMovimentos.length <= 0}>
+									<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
 										<FontAwesomeIcon icon={faFilePdf} className="mr-2" />
 										Imprimir PDF
 									</p>
@@ -769,64 +798,64 @@ const MovimentoBancarioTable: React.FC = () => {
 									</tr>
 								) : (
 									currentItems.map((movBancario) => (
-										<tr key={movBancario.id} className="border-b">
-											<td className="pl-5 p-2 text-left truncate">{formatarData(movBancario.dtMovimento)}</td>
-											<td className="p-2 text-left max-w-[490px] truncate">
-												<span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
-												<Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
-											</td>
-											<td
-												className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
-													movBancario.resultadoList && movBancario.resultadoList.length > 1
-														? 'text-blue-600 font-semibold'
-														: !planos.find((p) => p.id === movBancario.idPlanoContas)
-														? 'text-orange-500 font-semibold'
-														: ''
-												}`}
-												style={{ textUnderlineOffset: '2px' }}
-												onClick={() => openModalConcilia(movBancario)}
-											>
-												{movBancario.resultadoList && movBancario.resultadoList.length > 1
-													? 'Múltiplos Planos'
-													: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
-											</td>
-											<td
-												className={`p-2 text-center font-semibold capitalize ${
-													movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
-												}`}
-											>
-												{formatarMoeda(movBancario.valor)}
-											</td>
-											<td className="p-2 justify-end mr-1 capitalize flex items-center gap-6 relative">
-												<button
-													className="text-gray-700 hover:text-black px-2"
-													onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
-												>
-													<FontAwesomeIcon icon={faEllipsisV} />
-												</button>
+											<tr key={movBancario.id} className="border-b">
+												<td className="pl-5 p-2 text-left truncate">{formatarData(movBancario.dtMovimento)}</td>
+												<td className="p-2 text-left max-w-[490px] truncate">
+													<span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
+													<Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
+												</td>
+														<td
+															className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
+																movBancario.resultadoList && movBancario.resultadoList.length > 1
+																	? 'text-blue-600 font-semibold'
+																	: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																	? 'text-orange-500 font-semibold'
+																	: ''
+															}`}
+															style={{ textUnderlineOffset: '2px' }}
+															onClick={() => openModalConcilia(movBancario)}
+														>
+															{movBancario.resultadoList && movBancario.resultadoList.length > 1
+																? 'Múltiplos Planos'
+																: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+														</td>
+														<td
+															className={`p-2 text-center font-semibold capitalize ${
+																movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+															}`}
+														>
+															{formatarMoeda(movBancario.valor)}
+														</td>
+														<td className="p-2 justify-end mr-1 capitalize flex items-center gap-6 relative">
+															<button
+																className="text-gray-700 hover:text-black px-2"
+																onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+															>
+																<FontAwesomeIcon icon={faEllipsisV} />
+															</button>
 
-												{menuAtivoId === movBancario.id && (
-													<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-33 font-semibold">
-														<button
-															className="w-full px-4 py-2 hover:bg-gray-100 text-left text-blue-600"
-															style={{ textWrap: 'nowrap' }}
-															onClick={() => {
-																setMovimentoSelecionado(movBancario);
-																setModalDetalheOpen(true);
-															}}
-														>
-															<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
-														</button>
-														<button
-															className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
-															onClick={() => handleDelete(movBancario.id)}
-														>
-															<FontAwesomeIcon icon={faTrash} className="mr-1" /> Excluir
-														</button>
-													</div>
-												)}
-											</td>
-										</tr>
+															{menuAtivoId === movBancario.id && (
+																<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-33 font-semibold">
+																	<button
+																		className="w-full px-4 py-2 hover:bg-gray-100 text-left text-blue-600"
+																		style={{ textWrap: 'nowrap' }}
+																		onClick={() => {
+																			setMovimentoSelecionado(movBancario);
+																			setModalDetalheOpen(true);
+																		}}
+																	>
+																		<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
+																	</button>
+																	<button
+																		className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
+																		onClick={() => handleDelete(movBancario.id)}
+																	>
+																		<FontAwesomeIcon icon={faTrash} className="mr-1" /> Excluir
+																	</button>
+																</div>
+															)}
+														</td>
+											</tr>
 									))
 								)}
 							</tbody>
@@ -842,94 +871,94 @@ const MovimentoBancarioTable: React.FC = () => {
 							) : (
 								<div className="space-y-3 p-4">
 									{currentItems.map((movBancario) => (
-										<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-											{/* Header do card */}
-											<div className="flex justify-between items-start mb-3">
-												<div className="flex-1">
-													<div className="text-sm font-medium text-gray-900">
-														{formatarData(movBancario.dtMovimento)}
+											<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+												{/* Header do card */}
+												<div className="flex justify-between items-start mb-3">
+													<div className="flex-1">
+														<div className="text-sm font-medium text-gray-900">
+															{formatarData(movBancario.dtMovimento)}
+														</div>
+														<div className="text-xs text-gray-500 mt-1">
+															{movBancario.historico}
+														</div>
 													</div>
-													<div className="text-xs text-gray-500 mt-1">
-														{movBancario.historico}
-													</div>
+														<div className="flex items-center gap-2">
+															<label className="relative inline-flex items-center cursor-pointer">
+																<input
+																	type="checkbox"
+																	className="sr-only peer"
+																	checked={movBancario.ideagro}
+																	onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
+																/>
+																<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+															</label>
+															<button
+																className="text-gray-700 hover:text-black p-1"
+																onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+															>
+																<FontAwesomeIcon icon={faEllipsisV} />
+															</button>
+														</div>
 												</div>
-												<div className="flex items-center gap-2">
-													<label className="relative inline-flex items-center cursor-pointer">
-														<input
-															type="checkbox"
-															className="sr-only peer"
-															checked={movBancario.ideagro}
-															onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
-														/>
-														<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
-													</label>
-													<button
-														className="text-gray-700 hover:text-black p-1"
-														onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
-													>
-														<FontAwesomeIcon icon={faEllipsisV} />
-													</button>
-												</div>
-											</div>
 
-											{/* Conteúdo do card */}
-											<div className="grid grid-cols-2 gap-3 mb-3">
-												<div>
-													<div className="text-xs text-gray-500">Plano de Contas</div>
-													<div 
-														className={`text-sm cursor-pointer underline hover:text-gray-500 ${
-															movBancario.resultadoList && movBancario.resultadoList.length > 1
-																? 'text-blue-600 font-semibold'
-																: !planos.find((p) => p.id === movBancario.idPlanoContas)
-																? 'text-orange-500 font-semibold'
-																: ''
-														}`}
-														onClick={() => openModalConcilia(movBancario)}
-													>
-														{movBancario.resultadoList && movBancario.resultadoList.length > 1
-															? 'Múltiplos Planos'
-															: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
-													</div>
-												</div>
-												<div>
-													<div className="text-xs text-gray-500">Valor</div>
-													<div className={`text-sm font-semibold ${
-														movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
-													}`}>
-														{formatarMoeda(movBancario.valor)}
-													</div>
-												</div>
-											</div>
+												{/* Conteúdo do card */}
+														<div className="grid grid-cols-2 gap-3 mb-3">
+															<div>
+																<div className="text-xs text-gray-500">Plano de Contas</div>
+																<div 
+																	className={`text-sm cursor-pointer underline hover:text-gray-500 ${
+																		movBancario.resultadoList && movBancario.resultadoList.length > 1
+																			? 'text-blue-600 font-semibold'
+																			: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																			? 'text-orange-500 font-semibold'
+																			: ''
+																	}`}
+																	onClick={() => openModalConcilia(movBancario)}
+																>
+																	{movBancario.resultadoList && movBancario.resultadoList.length > 1
+																		? 'Múltiplos Planos'
+																		: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+																</div>
+															</div>
+															<div>
+																<div className="text-xs text-gray-500">Valor</div>
+																<div className={`text-sm font-semibold ${
+																	movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+																}`}>
+																	{formatarMoeda(movBancario.valor)}
+																</div>
+															</div>
+														</div>
 
-											{/* Menu de ações mobile */}
+												{/* Menu de ações mobile */}
 											{menuAtivoId === movBancario.id && (
-												<div className="mt-3 pt-3 border-t border-gray-200">
-													<div className="flex gap-2">
-														<button
-															className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
-															onClick={() => {
-																setMovimentoSelecionado(movBancario);
-																setModalDetalheOpen(true);
-																setMenuAtivoId(null);
-															}}
-														>
-															<FontAwesomeIcon icon={faInfoCircle} />
-															Informação
-														</button>
-														<button
-															className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
-															onClick={() => {
-																handleDelete(movBancario.id);
-																setMenuAtivoId(null);
-															}}
-														>
-															<FontAwesomeIcon icon={faTrash} />
-															Excluir
-														</button>
+													<div className="mt-3 pt-3 border-t border-gray-200">
+														<div className="flex gap-2">
+															<button
+																className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
+																onClick={() => {
+																	setMovimentoSelecionado(movBancario);
+																	setModalDetalheOpen(true);
+																	setMenuAtivoId(null);
+																}}
+															>
+																<FontAwesomeIcon icon={faInfoCircle} />
+																Informação
+															</button>
+															<button
+																className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
+																onClick={() => {
+																	handleDelete(movBancario.id);
+																	setMenuAtivoId(null);
+																}}
+															>
+																<FontAwesomeIcon icon={faTrash} />
+																Excluir
+															</button>
+														</div>
 													</div>
-												</div>
-											)}
-										</div>
+												)}
+											</div>
 									))}
 								</div>
 							)}

@@ -1379,4 +1379,168 @@ export class MovimentoBancarioRepository {
 			throw error;
 		}
 	}
+
+	async exportToPDF(filters: {
+		contaId?: number;
+		dataInicio?: string;
+		dataFim?: string;
+		status?: string;
+	}): Promise<Uint8Array> {
+		try {
+			console.log('🔍 Repository: Iniciando exportação PDF com filtros:', filters);
+
+			// Construir query base
+			let whereConditions: string[] = [];
+			let params: any[] = [];
+
+			if (filters.contaId) {
+				whereConditions.push('mb.idContaCorrente = ?');
+				params.push(filters.contaId);
+			}
+
+			if (filters.dataInicio) {
+				whereConditions.push('mb.dtMovimento >= ?');
+				params.push(filters.dataInicio + ' 00:00:00');
+			}
+
+			if (filters.dataFim) {
+				whereConditions.push('mb.dtMovimento <= ?');
+				params.push(filters.dataFim + ' 23:59:59');
+			}
+
+			if (filters.status === 'pendentes') {
+				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+			}
+
+			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+			// Query para buscar dados com informações da conta
+			const query = `
+				SELECT 
+					mb.*,
+					cc.numConta,
+					b.nome as bancoNome,
+					pc.descricao as planoDescricao,
+					p.nome as pessoaNome,
+					cc.responsavel
+				FROM MovimentoBancario mb
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				LEFT JOIN Banco b ON cc.idBanco = b.id
+				LEFT JOIN PlanoContas pc ON mb.idPlanoContas = pc.id
+				LEFT JOIN Pessoa p ON mb.idPessoa = p.id
+				${whereClause}
+				ORDER BY mb.dtMovimento DESC
+			`;
+
+			const { results } = await this.db
+				.prepare(query)
+				.bind(...params)
+				.all();
+
+			console.log(`📊 Repository: ${results.length} movimentos encontrados para PDF`);
+
+			// Importar bibliotecas PDF
+			const jsPDF = (await import('jspdf')).default;
+			const autoTable = (await import('jspdf-autotable')).default;
+
+			// Criar documento PDF
+			const doc = new jsPDF('l', 'mm', 'a4'); // Landscape para mais espaço
+
+			// Configurar fonte
+			doc.setFont('helvetica');
+
+			// Cabeçalho do documento
+			doc.setFontSize(20);
+			doc.setTextColor(40, 40, 40);
+			doc.text('RELATÓRIO DE MOVIMENTOS BANCÁRIOS', 20, 20);
+
+			// Informações da conta e período
+			doc.setFontSize(12);
+			doc.setTextColor(60, 60, 60);
+			
+			let yPos = 35;
+			if (results.length > 0) {
+				const primeiroMovimento = results[0] as any;
+				doc.text(`Conta: ${primeiroMovimento.numConta} - ${primeiroMovimento.bancoNome}`, 20, yPos);
+				yPos += 8;
+				doc.text(`Responsável: ${primeiroMovimento.responsavel || 'N/A'}`, 20, yPos);
+				yPos += 8;
+			}
+			
+			doc.text(`Período: ${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`, 20, yPos);
+			yPos += 8;
+			doc.text(`Status: ${filters.status === 'pendentes' ? 'Apenas Pendentes' : 'Todos os Movimentos'}`, 20, yPos);
+			yPos += 8;
+			doc.text(`Total de movimentos: ${results.length}`, 20, yPos);
+			yPos += 8;
+			doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 20, yPos);
+			yPos += 8;
+			doc.text(`Gerado por: Sistema Financeiro Fazenda Lageado`, 20, yPos);
+
+			// Preparar dados para a tabela
+			const dadosTabela = results.map((result: any) => [
+				new Date(result.dtMovimento).toLocaleDateString('pt-BR'),
+				result.historico || '',
+				result.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+				`R$ ${Math.abs(result.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+				result.planoDescricao || 'Não conciliado',
+				result.pessoaNome || '',
+				result.statusConciliacao || 'Pendente'
+			]);
+
+			// Configurar tabela
+			autoTable(doc, {
+				startY: yPos + 10,
+				head: [['Data', 'Histórico', 'Tipo', 'Valor', 'Plano de Contas', 'Pessoa', 'Status']],
+				body: dadosTabela,
+				theme: 'grid',
+				headStyles: {
+					fillColor: [41, 128, 185],
+					textColor: 255,
+					fontSize: 10,
+					fontStyle: 'bold'
+				},
+				bodyStyles: {
+					fontSize: 9,
+					textColor: [50, 50, 50]
+				},
+				alternateRowStyles: {
+					fillColor: [245, 245, 245]
+				},
+				margin: { left: 20, right: 20 },
+				tableWidth: 'auto',
+				columnStyles: {
+					0: { cellWidth: 20 }, // Data
+					1: { cellWidth: 50 }, // Histórico
+					2: { cellWidth: 15 }, // Tipo
+					3: { cellWidth: 20 }, // Valor
+					4: { cellWidth: 35 }, // Plano de Contas
+					5: { cellWidth: 25 }, // Pessoa
+					6: { cellWidth: 20 }  // Status
+				},
+				didDrawPage: (data) => {
+					// Rodapé em cada página
+					doc.setFontSize(8);
+					doc.setTextColor(100, 100, 100);
+					doc.text(
+						`Página ${data.pageNumber} - Sistema Financeiro Fazenda Lageado`,
+						data.settings.margin.left,
+						doc.internal.pageSize.height - 10
+					);
+				}
+			});
+
+			// Converter para buffer (compatível com Cloudflare Workers)
+			const pdfArrayBuffer = doc.output('arraybuffer');
+			const pdfBuffer = new Uint8Array(pdfArrayBuffer);
+
+			console.log(`✅ Repository: PDF gerado com sucesso, ${pdfBuffer.length} bytes`);
+
+			return pdfBuffer as any; // Cast para compatibilidade com tipo Buffer
+
+		} catch (error) {
+			console.error('🔥 Repository: Erro na exportação PDF:', error);
+			throw error;
+		}
+	}
 }

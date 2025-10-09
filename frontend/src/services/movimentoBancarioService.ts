@@ -54,8 +54,32 @@ export const exportarMovimentosBancariosExcel = async (
 		...(status && { status })
 	});
 	
+	console.log('🌐 Service: Enviando requisição Excel para:', `${API_URL}/api/movBancario/export?${params}`);
+	console.log('🌐 Service: Parâmetros Excel enviados:', { contaId, dataInicio, dataFim, status });
+	
 	const res = await fetch(`${API_URL}/api/movBancario/export?${params}`);
-	if (!res.ok) throw new Error(`Erro ao exportar movimentos bancários`);
+	if (!res.ok) throw new Error(`Erro ao exportar movimentos bancários para Excel`);
+	return res.blob();
+};
+
+export const exportarMovimentosBancariosPDF = async (
+	contaId?: number,
+	dataInicio?: string,
+	dataFim?: string,
+	status?: string
+): Promise<Blob> => {
+	const params = new URLSearchParams({
+		...(contaId && { contaId: contaId.toString() }),
+		...(dataInicio && { dataInicio }),
+		...(dataFim && { dataFim }),
+		...(status && { status })
+	});
+	
+	console.log('🌐 Service: Enviando requisição PDF para:', `${API_URL}/api/movBancario/export-pdf?${params}`);
+	console.log('🌐 Service: Parâmetros PDF enviados:', { contaId, dataInicio, dataFim, status });
+	
+	const res = await fetch(`${API_URL}/api/movBancario/export-pdf?${params}`);
+	if (!res.ok) throw new Error(`Erro ao exportar movimentos bancários para PDF`);
 	return res.blob();
 };
 
