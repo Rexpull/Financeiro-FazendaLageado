@@ -9,6 +9,56 @@ export const listarMovimentosBancarios = async (): Promise<MovimentoBancario[]> 
 	return res.json();
 };
 
+export const listarMovimentosBancariosPaginado = async (
+	page: number = 1,
+	limit: number = 50,
+	contaId?: number,
+	dataInicio?: string,
+	dataFim?: string,
+	status?: string
+): Promise<{
+	movimentos: MovimentoBancario[];
+	total: number;
+	totalPages: number;
+	currentPage: number;
+	hasNext: boolean;
+	hasPrev: boolean;
+}> => {
+	const params = new URLSearchParams({
+		page: page.toString(),
+		limit: limit.toString(),
+		...(contaId && { contaId: contaId.toString() }),
+		...(dataInicio && { dataInicio }),
+		...(dataFim && { dataFim }),
+		...(status && { status })
+	});
+	
+	console.log('🌐 Service: Enviando requisição para:', `${API_URL}/api/movBancario/paginado?${params}`);
+	console.log('🌐 Service: Parâmetros enviados:', { page, limit, contaId, dataInicio, dataFim, status });
+	
+	const res = await fetch(`${API_URL}/api/movBancario/paginado?${params}`);
+	if (!res.ok) throw new Error(`Erro ao listar movimentos bancários paginados`);
+	return res.json();
+};
+
+export const exportarMovimentosBancariosExcel = async (
+	contaId?: number,
+	dataInicio?: string,
+	dataFim?: string,
+	status?: string
+): Promise<Blob> => {
+	const params = new URLSearchParams({
+		...(contaId && { contaId: contaId.toString() }),
+		...(dataInicio && { dataInicio }),
+		...(dataFim && { dataFim }),
+		...(status && { status })
+	});
+	
+	const res = await fetch(`${API_URL}/api/movBancario/export?${params}`);
+	if (!res.ok) throw new Error(`Erro ao exportar movimentos bancários`);
+	return res.blob();
+};
+
 export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Promise<MovimentoBancario> => {
 	try {
 		if (movimento.tipoMovimento === 'D' && movimento.valor > 0) {

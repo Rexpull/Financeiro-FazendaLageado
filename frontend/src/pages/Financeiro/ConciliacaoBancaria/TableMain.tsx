@@ -28,6 +28,8 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import {
 	listarMovimentosBancarios,
+	listarMovimentosBancariosPaginado,
+	exportarMovimentosBancariosExcel,
 	salvarMovimentoBancario,
 	excluirMovimentoBancario,
 	excluirTodosMovimentosBancarios,
@@ -60,7 +62,6 @@ const MovimentoBancarioTable: React.FC = () => {
 	const location = useLocation();
 	const [movimentos, setMovimentos] = useState<MovimentoBancario[]>([]);
 	const [filteredMovimentos, setFilteredMovimentos] = useState<MovimentoBancario[]>([]);
-	const [movimentosFiltradosComSaldo, setMovimentosFiltradosComSaldo] = useState<MovimentoBancario[]>([]);
 	const [modalIsOpen, setModalIsOpen] = useState(false);
 	const [acoesMenu, setAcoesMenu] = useState(false);
 	const [modalImportOFXIsOpen, setModalImportOFXIsOpen] = useState(false);
@@ -110,6 +111,10 @@ const MovimentoBancarioTable: React.FC = () => {
 	// 🔹 Paginação
 	const [currentPage, setCurrentPage] = useState(1);
 	const [itemsPerPage, setItemsPerPage] = useState(15);
+	const [totalPages, setTotalPages] = useState(1);
+	const [totalMovimentos, setTotalMovimentos] = useState(0);
+	const [hasNext, setHasNext] = useState(false);
+	const [hasPrev, setHasPrev] = useState(false);
 
 	// 🔹 Capturar dados da navegação quando vier de notificação
 	useEffect(() => {
@@ -132,12 +137,12 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	}, [location.state]);
 
+	// useEffect para definir datas iniciais (mês atual)
 	useEffect(() => {
 		const now = new Date();
 		const inicio = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
 		const fim = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-		console.log('setando inicio:' + inicio);
-		console.log('setando fim:' + fim);
+		console.log('📅 Definindo datas iniciais:', { inicio, fim });
 		setDataInicio(inicio);
 		setDataFim(fim);
 	}, []);
@@ -164,13 +169,24 @@ const MovimentoBancarioTable: React.FC = () => {
 		carregarHistorico();
 	}, [modalImportOFXIsOpen]);
 
+	// useEffect para carregar planos de contas
 	useEffect(() => {
-		if (contaSelecionada) {
-			fetchMovimentos();
-		}
-
 		listarPlanoContas().then((planos) => setPlanos(planos));
-	}, [contaSelecionada]);
+	}, []);
+
+	// useEffect principal para carregar dados quando conta e filtros estiverem prontos
+	useEffect(() => {
+		if (contaSelecionada && dataInicio && dataFim) {
+			console.log('🚀 Carregando dados iniciais:', { 
+				contaId: contaSelecionada.id,
+				dataInicio, 
+				dataFim, 
+				statusFiltro, 
+				itemsPerPage
+			});
+			fetchMovimentos(1);
+		}
+	}, [contaSelecionada, dataInicio, dataFim, statusFiltro, itemsPerPage]);
 
 	useEffect(() => {
 		if (!contaSelecionada) {
@@ -189,40 +205,62 @@ const MovimentoBancarioTable: React.FC = () => {
 		setFilteredMovimentos(movimentos.filter((m) => m.idContaCorrente === parsedConta?.id));
 	};
 
-	useEffect(() => {
-		if (contaSelecionada && dataInicio && dataFim && movimentos.length > 0) {
-			const lista = gerarListaComSaldos(dataInicio, dataFim);
-			setFilteredMovimentos(lista);
-			setMovimentosFiltradosComSaldo(lista);
-			setCurrentPage(1);
-			setIsLoading(false);
-		}
-	}, [contaSelecionada, dataInicio, dataFim, movimentos]);
 
-	// useEffect adicional para garantir atualização quando movimentos mudarem
-	useEffect(() => {
-		if (contaSelecionada && dataInicio && dataFim && movimentos.length > 0) {
-			const lista = gerarListaComSaldos(dataInicio, dataFim);
-			
-			if (statusFiltro === 'pendentes') {
-				const apenasPendentes = lista.filter((m) => m.idPlanoContas === null || m.idPlanoContas === 0);
-				setFilteredMovimentos(apenasPendentes);
-				setMovimentosFiltradosComSaldo(apenasPendentes);
-			} else {
-				setFilteredMovimentos(lista);
-				setMovimentosFiltradosComSaldo(lista);
-			}
-		}
-	}, [movimentos, statusFiltro]);
-
-	const fetchMovimentos = async () => {
+	const fetchMovimentos = async (page: number = 1) => {
 		setIsLoading(true);
 		try {
-			const data = await listarMovimentosBancarios();
-			atualizarListasMovimentos(data);
-			setCurrentPage(1);
+			if (!contaSelecionada) {
+				console.log('⚠️ Conta não selecionada, limpando dados');
+				setMovimentos([]);
+				setFilteredMovimentos([]);
+				setTotalPages(0);
+				setTotalMovimentos(0);
+				setHasNext(false);
+				setHasPrev(false);
+				return;
+			}
+
+			if (!dataInicio || !dataFim) {
+				console.log('⚠️ Datas não definidas ainda, aguardando...', { dataInicio, dataFim });
+				return;
+			}
+
+			console.log('🔍 Buscando movimentos com filtros:', {
+				page,
+				itemsPerPage,
+				contaId: contaSelecionada.id,
+				dataInicio,
+				dataFim,
+				statusFiltro
+			});
+
+			const result = await listarMovimentosBancariosPaginado(
+				page,
+				itemsPerPage,
+				contaSelecionada.id,
+				dataInicio,
+				dataFim,
+				statusFiltro
+			);
+
+			console.log('📊 Resultado da busca:', result);
+
+			setMovimentos(result.movimentos);
+			setFilteredMovimentos(result.movimentos);
+			setTotalPages(result.totalPages);
+			setTotalMovimentos(result.total);
+			setHasNext(result.hasNext);
+			setHasPrev(result.hasPrev);
+			setCurrentPage(result.currentPage);
 		} catch (error) {
-			console.error('Erro ao buscar Movimentos Bancários:', error);
+			console.error('❌ Erro ao buscar Movimentos Bancários:', error);
+			// Em caso de erro, limpar os dados
+			setMovimentos([]);
+			setFilteredMovimentos([]);
+			setTotalPages(0);
+			setTotalMovimentos(0);
+			setHasNext(false);
+			setHasPrev(false);
 		} finally {
 			setIsLoading(false);
 		}
@@ -232,70 +270,24 @@ const MovimentoBancarioTable: React.FC = () => {
 		try {
 			setAcoesMenu(false);
 			setIsExporting(true);
-			console.log('movimentos sendo exportados pro Excel', movimentosFiltradosComSaldo);
 
-			const dadosCompletos = await Promise.all(
-				movimentosFiltradosComSaldo.filter((m) => m.id > 0).map((m) => buscarMovimentoBancarioById(m.id))
+			const blob = await exportarMovimentosBancariosExcel(
+				contaSelecionada?.id,
+				dataInicio,
+				dataFim,
+				statusFiltro
 			);
 
-			const dadosParaExportar = await Promise.all(
-				dadosCompletos.map(async (mov) => {
-					const multiplosPlanos = mov.resultadoList && mov.resultadoList.length > 1;
-					const planoDescricao = multiplosPlanos ? 'Múltiplos Planos' : planos.find((p) => p.id === mov.idPlanoContas)?.descricao || '';
+			// Criar link para download
+			const url = window.URL.createObjectURL(blob);
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = `MovimentosBancarios_${dataInicio}_a_${dataFim}.xlsx`;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			window.URL.revokeObjectURL(url);
 
-					let bancoNome = '';
-					if (mov.idBanco) {
-						const banco = await buscarBancoById(mov.idBanco);
-						bancoNome = banco?.nome || '';
-					}
-
-					let pessoaNome = '';
-					if (mov.idPessoa) {
-						const pessoa = await buscarPessoaById(mov.idPessoa);
-						pessoaNome = pessoa?.nome || '';
-					}
-
-					const pessoa = mov.idPessoa ? buscarPessoaById(mov.idPessoa) : '';
-
-					return {
-						'Data do Movimento': formatarData(mov.dtMovimento),
-						Histórico: mov.historico,
-						Tipo: mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
-						Modalidade: mov.modalidadeMovimento,
-						'Plano de Contas': planoDescricao,
-						Rateado: multiplosPlanos ? 'Sim' : 'Não',
-						'Valor R$': mov.valor,
-						IdeAgri: mov.ideagro ? 'Sim' : 'Não',
-						Pessoa: pessoaNome,
-						Banco: bancoNome,
-						Parcelado: mov.parcelado ? 'Sim' : 'Não',
-						'Nº Documento': mov.modalidadeMovimento === 'financiamento' ? mov.numeroDocumento : '',
-					};
-				})
-			);
-
-			const wb = XLSX.utils.book_new();
-			const contaCorrente = `${contaSelecionada?.numConta} - ${contaSelecionada?.bancoNome} - ${contaSelecionada?.responsavel}`;
-			const periodo = `${dataInicio} até ${dataFim}`;
-			const dataExportacao = new Date().toLocaleString();
-
-			const header = [
-				['Exportado em:', dataExportacao],
-				['Período:', periodo],
-				['Conta Corrente:', contaCorrente],
-				['Tipo de Consulta:', statusFiltro === 'pendentes' ? 'Apenas Pendentes' : 'Todos os Movimentos'],
-				[],
-			];
-
-			const ws = XLSX.utils.aoa_to_sheet(header);
-
-			XLSX.utils.sheet_add_json(ws, dadosParaExportar, {
-				origin: 'A6',
-				skipHeader: false,
-			});
-
-			XLSX.utils.book_append_sheet(wb, ws, 'Movimentos');
-			XLSX.writeFile(wb, `MovimentosBancarios_${dataInicio}_a_${dataFim}.xlsx`);
 			toast.success('Excel gerado com sucesso!');
 		} catch (error) {
 			console.error('Erro ao exportar Excel:', error);
@@ -305,65 +297,6 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
-	const gerarListaComSaldos = (dataInicio: string, dataFim: string) => {
-		if (!contaSelecionada) return [];
-
-		const movimentosConta = movimentos
-			.filter((m) => m.idContaCorrente === contaSelecionada.id)
-			.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());
-
-		const dataInicioDate = new Date(dataInicio + 'T00:00:00');
-		const dataFimDate = new Date(dataFim + 'T23:59:59');
-
-		const movimentosAnteriores = movimentosConta.filter((m) => new Date(m.dtMovimento) < dataInicioDate);
-		const movimentosPeriodo = movimentosConta.filter(
-			(m) => new Date(m.dtMovimento) >= dataInicioDate && new Date(m.dtMovimento) <= dataFimDate
-		);
-
-		const saldoAnterior = movimentosAnteriores.reduce((acc, m) => acc + m.valor, 0);
-
-		let saldoAtual = saldoAnterior;
-
-		const movimentosCalculados = movimentosPeriodo.map((mov) => {
-			saldoAtual += mov.valor;
-			return {
-				...mov,
-				saldo: saldoAtual,
-			};
-		});
-
-		const saldoFinal = saldoAtual;
-
-		const registroSaldoAnterior = {
-			id: -1,
-			dtMovimento: dataInicio.slice(0, 10) + ' 00:00:00',
-			historico: 'Saldo Anterior',
-			idPlanoContas: 0,
-			valor: saldoAnterior,
-			saldo: saldoAnterior,
-			ideagro: false,
-			idContaCorrente: contaSelecionada.id,
-			identificadorOfx: '',
-			criadoEm: new Date().toISOString(),
-			atualizadoEm: new Date().toISOString(),
-		};
-
-		const registroSaldoFinal = {
-			id: -2,
-			dtMovimento: dataFim.slice(0, 10) + ' 23:59:59',
-			historico: 'Saldo Final do período',
-			idPlanoContas: 0,
-			valor: saldoFinal,
-			saldo: saldoFinal,
-			ideagro: false,
-			idContaCorrente: contaSelecionada.id,
-			identificadorOfx: '',
-			criadoEm: new Date().toISOString(),
-			atualizadoEm: new Date().toISOString(),
-		};
-
-		return [registroSaldoAnterior, ...movimentosCalculados, registroSaldoFinal];
-	};
 
 	const handleImportFile = (file: File) => {
 		console.log('Arquivo importado:', file);
@@ -371,11 +304,12 @@ const MovimentoBancarioTable: React.FC = () => {
 	};
 
 	const handleSearchFilters = (filters: { dataInicio: string; dataFim: string; status: string }) => {
+		console.log('🔍 Aplicando filtros:', filters);
 		setDataInicio(filters.dataInicio);
 		setDataFim(filters.dataFim);
 		setStatusFiltro(filters.status);
-
-		atualizarListasMovimentos(movimentos, filters);
+		setCurrentPage(1);
+		// O useEffect vai detectar a mudança e chamar fetchMovimentos automaticamente
 	};
 
 	const handleTransferir = async (data: any) => {
@@ -399,7 +333,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			await transferirMovimentoBancario(payload);
 
 			setModalTransferirIsOpen(false);
-			fetchMovimentos();
+			fetchMovimentos(currentPage);
 		} catch (error) {
 			console.error('Erro ao transferir:', error);
 		}
@@ -486,7 +420,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			}
 
 			setModalIsOpen(false);
-			fetchMovimentos();
+			fetchMovimentos(currentPage);
 		} catch (error) {
 			console.error('Erro ao salvar movimento bancário:', error);
 		} finally {
@@ -520,7 +454,6 @@ const MovimentoBancarioTable: React.FC = () => {
 			// Limpar todos os movimentos da conta atual
 			setMovimentos([]);
 			setFilteredMovimentos([]);
-			setMovimentosFiltradosComSaldo([]);
 			
 			setConfirmDeleteAllModalOpen(false);
 			console.log(`✅ Exclusão em massa concluída: ${resultado.excluidos} movimentos excluídos`);
@@ -553,29 +486,15 @@ const MovimentoBancarioTable: React.FC = () => {
 		try {
 			await atualizarStatusIdeagro(id, novoStatus);
 
-			await fetchMovimentos();
+			await fetchMovimentos(currentPage);
 		} catch (error) {
 			console.error('Erro ao atualizar status do movimento:', error);
 		}
 	};
 
-	const atualizarListasMovimentos = (novaLista: MovimentoBancario[], filtros?: { dataInicio: string; dataFim: string; status: string }) => {
+	const atualizarListasMovimentos = (novaLista: MovimentoBancario[]) => {
 		setMovimentos(novaLista);
-
-		const dataInicioAtual = filtros?.dataInicio || dataInicio;
-		const dataFimAtual = filtros?.dataFim || dataFim;
-		const statusAtual = filtros?.status || statusFiltro;
-
-		const listaComSaldos = gerarListaComSaldos(dataInicioAtual, dataFimAtual);
-
-		if (statusAtual === 'pendentes') {
-			const apenasPendentes = listaComSaldos.filter((m) => m.idPlanoContas === null || m.idPlanoContas === 0);
-			setFilteredMovimentos(apenasPendentes);
-			setMovimentosFiltradosComSaldo(apenasPendentes);
-		} else {
-			setFilteredMovimentos(listaComSaldos);
-			setMovimentosFiltradosComSaldo(listaComSaldos);
-		}
+		setFilteredMovimentos(novaLista);
 	};
 
 	const handleConcilia = async (data: any) => {
@@ -626,6 +545,9 @@ const MovimentoBancarioTable: React.FC = () => {
 			setCurrentPage(paginaAtual);
 			setModalConciliaIsOpen(false);
 			
+			// Recarregar dados da página atual
+			await fetchMovimentos(paginaAtual);
+			
 			console.log('✅ Movimento conciliado com sucesso:', movimentoSalvo);
 		} catch (error) {
 			console.error('❌ Erro ao conciliar movimento:', error);
@@ -649,9 +571,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			setHistoricoParaEditarConta(null);
 			
 			// Recarregar movimentos para refletir as mudanças
-			await listarMovimentosBancarios().then(data => {
-				atualizarListasMovimentos(data);
-			});
+			await fetchMovimentos(currentPage);
 			
 		} catch (error) {
 			console.error('❌ Erro ao atualizar conta dos movimentos:', error);
@@ -661,10 +581,7 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
-	const indexOfLastItem = currentPage * itemsPerPage;
-	const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-	const currentItems = movimentosFiltradosComSaldo.slice(indexOfFirstItem, indexOfLastItem);
-	const totalPages = Math.ceil(movimentosFiltradosComSaldo.length / itemsPerPage);
+	const currentItems = filteredMovimentos;
 
 	return (
 		<div>
@@ -717,7 +634,7 @@ const MovimentoBancarioTable: React.FC = () => {
 										Imprimir PDF
 									</p>
 								</button>
-								<button onClick={exportarParaExcel} disabled={movimentosFiltradosComSaldo && movimentosFiltradosComSaldo.length <= 2}>
+								<button onClick={exportarParaExcel} disabled={filteredMovimentos && filteredMovimentos.length <= 0}>
 									<p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100">
 										<FontAwesomeIcon icon={faFileExcel} className="mr-2" />
 										Imprimir Excel
@@ -841,99 +758,76 @@ const MovimentoBancarioTable: React.FC = () => {
 										<th className="p-2 text-left">Histórico</th>
 										<th className="p-2 text-center">Plano Contas</th>
 										<th className="p-2 text-center">Valor R$</th>
-										<th className="p-2 text-center">Saldo R$</th>
 									</tr>
 								</thead>
 							<tbody>
-								{currentItems.length === 2 ? (
+								{currentItems.length === 0 ? (
 									<tr>
-										<td colSpan={6} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
+										<td colSpan={5} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
 											Nenhum movimento encontrado!
 										</td>
 									</tr>
 								) : (
-									currentItems.map((movBancario) => {
-										const isSaldo = movBancario.id === -1 || movBancario.id === -2;
-										return (
-											<tr key={movBancario.id} className="border-b">
-												<td className="pl-5 p-2 text-left truncate">{formatarData(movBancario.dtMovimento)}</td>
-												<td className="p-2 text-left max-w-[490px] truncate">
-													<span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
-													<Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
-												</td>
+									currentItems.map((movBancario) => (
+										<tr key={movBancario.id} className="border-b">
+											<td className="pl-5 p-2 text-left truncate">{formatarData(movBancario.dtMovimento)}</td>
+											<td className="p-2 text-left max-w-[490px] truncate">
+												<span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
+												<Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
+											</td>
+											<td
+												className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
+													movBancario.resultadoList && movBancario.resultadoList.length > 1
+														? 'text-blue-600 font-semibold'
+														: !planos.find((p) => p.id === movBancario.idPlanoContas)
+														? 'text-orange-500 font-semibold'
+														: ''
+												}`}
+												style={{ textUnderlineOffset: '2px' }}
+												onClick={() => openModalConcilia(movBancario)}
+											>
+												{movBancario.resultadoList && movBancario.resultadoList.length > 1
+													? 'Múltiplos Planos'
+													: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+											</td>
+											<td
+												className={`p-2 text-center font-semibold capitalize ${
+													movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+												}`}
+											>
+												{formatarMoeda(movBancario.valor)}
+											</td>
+											<td className="p-2 justify-end mr-1 capitalize flex items-center gap-6 relative">
+												<button
+													className="text-gray-700 hover:text-black px-2"
+													onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+												>
+													<FontAwesomeIcon icon={faEllipsisV} />
+												</button>
 
-												{!isSaldo ? (
-													<>
-														<td
-															className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
-																movBancario.resultadoList && movBancario.resultadoList.length > 1
-																	? 'text-blue-600 font-semibold'
-																	: !planos.find((p) => p.id === movBancario.idPlanoContas)
-																	? 'text-orange-500 font-semibold'
-																	: ''
-															}`}
-															style={{ textUnderlineOffset: '2px' }}
-															onClick={() => openModalConcilia(movBancario)}
+												{menuAtivoId === movBancario.id && (
+													<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-33 font-semibold">
+														<button
+															className="w-full px-4 py-2 hover:bg-gray-100 text-left text-blue-600"
+															style={{ textWrap: 'nowrap' }}
+															onClick={() => {
+																setMovimentoSelecionado(movBancario);
+																setModalDetalheOpen(true);
+															}}
 														>
-															{movBancario.resultadoList && movBancario.resultadoList.length > 1
-																? 'Múltiplos Planos'
-																: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
-														</td>
-														<td
-															className={`p-2 text-center font-semibold capitalize ${
-																movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
-															}`}
+															<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
+														</button>
+														<button
+															className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
+															onClick={() => handleDelete(movBancario.id)}
 														>
-															{formatarMoeda(movBancario.valor)}
-														</td>
-														<td className="p-2 text-center capitalize">{formatarMoeda(movBancario.saldo)}</td>
-														<td className="p-2 justify-end mr-1 capitalize flex items-center gap-6 relative">
-
-															<button
-																className="text-gray-700 hover:text-black px-2"
-																onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
-															>
-																<FontAwesomeIcon icon={faEllipsisV} />
-															</button>
-
-															{menuAtivoId === movBancario.id && (
-																<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-33 font-semibold">
-																	<button
-																		className="w-full px-4 py-2 hover:bg-gray-100 text-left text-blue-600"
-																		style={{ textWrap: 'nowrap' }}
-																		onClick={() => {
-																			setMovimentoSelecionado(movBancario);
-																			setModalDetalheOpen(true);
-																		}}
-																	>
-																		<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
-																	</button>
-																	<button
-																		className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
-																		onClick={() => handleDelete(movBancario.id)}
-																	>
-																		<FontAwesomeIcon icon={faTrash} className="mr-1" /> Excluir
-																	</button>
-																</div>
-															)}
-														</td>
-													</>
-												) : (
-													<>
-														<td className="p-2"></td>
-														<td className="p-2"></td>
-														<td
-															className={`p-2 text-center font-semibold capitalize ${
-																movBancario.saldo >= 0 ? 'text-green-600' : 'text-red-600'
-															}`}
-														>
-															{formatarMoeda(movBancario.saldo)}
-														</td>
-													</>
+															<FontAwesomeIcon icon={faTrash} className="mr-1" /> Excluir
+														</button>
+													</div>
 												)}
-											</tr>
-										);
-									})
+											</td>
+										</tr>
+									))
 								)}
 							</tbody>
 							</table>
@@ -941,138 +835,119 @@ const MovimentoBancarioTable: React.FC = () => {
 
 						{/* Cards Mobile */}
 						<div className="lg:hidden">
-							{currentItems.length === 2 ? (
+							{currentItems.length === 0 ? (
 								<div className="text-center py-8 text-gray-600 text-lg font-medium">
 									Nenhum movimento encontrado!
 								</div>
 							) : (
 								<div className="space-y-3 p-4">
-									{currentItems.map((movBancario) => {
-										const isSaldo = movBancario.id === -1 || movBancario.id === -2;
-										return (
-											<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-												{/* Header do card */}
-												<div className="flex justify-between items-start mb-3">
-													<div className="flex-1">
-														<div className="text-sm font-medium text-gray-900">
-															{formatarData(movBancario.dtMovimento)}
-														</div>
-														<div className="text-xs text-gray-500 mt-1">
-															{movBancario.historico}
-														</div>
+									{currentItems.map((movBancario) => (
+										<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+											{/* Header do card */}
+											<div className="flex justify-between items-start mb-3">
+												<div className="flex-1">
+													<div className="text-sm font-medium text-gray-900">
+														{formatarData(movBancario.dtMovimento)}
 													</div>
-													{!isSaldo && (
-														<div className="flex items-center gap-2">
-															<label className="relative inline-flex items-center cursor-pointer">
-																<input
-																	type="checkbox"
-																	className="sr-only peer"
-																	checked={movBancario.ideagro}
-																	onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
-																/>
-																<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
-															</label>
-															<button
-																className="text-gray-700 hover:text-black p-1"
-																onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
-															>
-																<FontAwesomeIcon icon={faEllipsisV} />
-															</button>
-														</div>
-													)}
+													<div className="text-xs text-gray-500 mt-1">
+														{movBancario.historico}
+													</div>
 												</div>
-
-												{/* Conteúdo do card */}
-												{!isSaldo ? (
-													<>
-														<div className="grid grid-cols-2 gap-3 mb-3">
-															<div>
-																<div className="text-xs text-gray-500">Plano de Contas</div>
-																<div 
-																	className={`text-sm cursor-pointer underline hover:text-gray-500 ${
-																		movBancario.resultadoList && movBancario.resultadoList.length > 1
-																			? 'text-blue-600 font-semibold'
-																			: !planos.find((p) => p.id === movBancario.idPlanoContas)
-																			? 'text-orange-500 font-semibold'
-																			: ''
-																	}`}
-																	onClick={() => openModalConcilia(movBancario)}
-																>
-																	{movBancario.resultadoList && movBancario.resultadoList.length > 1
-																		? 'Múltiplos Planos'
-																		: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
-																</div>
-															</div>
-															<div>
-																<div className="text-xs text-gray-500">Valor</div>
-																<div className={`text-sm font-semibold ${
-																	movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
-																}`}>
-																	{formatarMoeda(movBancario.valor)}
-																</div>
-															</div>
-														</div>
-														<div>
-															<div className="text-xs text-gray-500">Saldo</div>
-															<div className="text-sm font-medium">{formatarMoeda(movBancario.saldo)}</div>
-														</div>
-													</>
-												) : (
-													<div>
-														<div className="text-xs text-gray-500">Saldo</div>
-														<div className={`text-lg font-semibold ${
-															movBancario.saldo >= 0 ? 'text-green-600' : 'text-red-600'
-														}`}>
-															{formatarMoeda(movBancario.saldo)}
-														</div>
-													</div>
-												)}
-
-												{/* Menu de ações mobile */}
-												{menuAtivoId === movBancario.id && !isSaldo && (
-													<div className="mt-3 pt-3 border-t border-gray-200">
-														<div className="flex gap-2">
-															<button
-																className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
-																onClick={() => {
-																	setMovimentoSelecionado(movBancario);
-																	setModalDetalheOpen(true);
-																	setMenuAtivoId(null);
-																}}
-															>
-																<FontAwesomeIcon icon={faInfoCircle} />
-																Informação
-															</button>
-															<button
-																className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
-																onClick={() => {
-																	handleDelete(movBancario.id);
-																	setMenuAtivoId(null);
-																}}
-															>
-																<FontAwesomeIcon icon={faTrash} />
-																Excluir
-															</button>
-														</div>
-													</div>
-												)}
+												<div className="flex items-center gap-2">
+													<label className="relative inline-flex items-center cursor-pointer">
+														<input
+															type="checkbox"
+															className="sr-only peer"
+															checked={movBancario.ideagro}
+															onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
+														/>
+														<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+													</label>
+													<button
+														className="text-gray-700 hover:text-black p-1"
+														onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+													>
+														<FontAwesomeIcon icon={faEllipsisV} />
+													</button>
+												</div>
 											</div>
-										);
-									})}
+
+											{/* Conteúdo do card */}
+											<div className="grid grid-cols-2 gap-3 mb-3">
+												<div>
+													<div className="text-xs text-gray-500">Plano de Contas</div>
+													<div 
+														className={`text-sm cursor-pointer underline hover:text-gray-500 ${
+															movBancario.resultadoList && movBancario.resultadoList.length > 1
+																? 'text-blue-600 font-semibold'
+																: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																? 'text-orange-500 font-semibold'
+																: ''
+														}`}
+														onClick={() => openModalConcilia(movBancario)}
+													>
+														{movBancario.resultadoList && movBancario.resultadoList.length > 1
+															? 'Múltiplos Planos'
+															: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+													</div>
+												</div>
+												<div>
+													<div className="text-xs text-gray-500">Valor</div>
+													<div className={`text-sm font-semibold ${
+														movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+													}`}>
+														{formatarMoeda(movBancario.valor)}
+													</div>
+												</div>
+											</div>
+
+											{/* Menu de ações mobile */}
+											{menuAtivoId === movBancario.id && (
+												<div className="mt-3 pt-3 border-t border-gray-200">
+													<div className="flex gap-2">
+														<button
+															className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
+															onClick={() => {
+																setMovimentoSelecionado(movBancario);
+																setModalDetalheOpen(true);
+																setMenuAtivoId(null);
+															}}
+														>
+															<FontAwesomeIcon icon={faInfoCircle} />
+															Informação
+														</button>
+														<button
+															className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
+															onClick={() => {
+																handleDelete(movBancario.id);
+																setMenuAtivoId(null);
+															}}
+														>
+															<FontAwesomeIcon icon={faTrash} />
+															Excluir
+														</button>
+													</div>
+												</div>
+											)}
+										</div>
+									))}
 								</div>
 							)}
 						</div>
 						{/* 🔹 Paginação */}
 						<div className="flex flex-col sm:flex-row justify-between items-center my-4 mx-2 gap-3">
 							<span className="text-gray-800 text-sm sm:text-base">
-								{movimentos.length} <span className="text-xs sm:text-sm">Registros</span>
+								{totalMovimentos} <span className="text-xs sm:text-sm">Registros</span>
 							</span>
 
 							<div className="flex items-center gap-2">
 								<button
 									className="px-2 sm:px-3 py-1 border rounded text-sm"
-									disabled={currentPage === 1}
-									onClick={() => setCurrentPage(currentPage - 1)}
+									disabled={!hasPrev || isLoading}
+									onClick={() => {
+										console.log('⬅️ Navegando para página anterior:', currentPage - 1);
+										fetchMovimentos(currentPage - 1);
+									}}
 								>
 									<FontAwesomeIcon icon={faChevronLeft} />
 								</button>
@@ -1083,8 +958,11 @@ const MovimentoBancarioTable: React.FC = () => {
 
 								<button
 									className="px-2 sm:px-3 py-1 border rounded text-sm"
-									disabled={currentPage === totalPages}
-									onClick={() => setCurrentPage(currentPage + 1)}
+									disabled={!hasNext || isLoading}
+									onClick={() => {
+										console.log('➡️ Navegando para próxima página:', currentPage + 1);
+										fetchMovimentos(currentPage + 1);
+									}}
 								>
 									<FontAwesomeIcon icon={faChevronRight} />
 								</button>
@@ -1092,7 +970,12 @@ const MovimentoBancarioTable: React.FC = () => {
 								<select
 									className="border border-gray-400 p-1 rounded text-sm"
 									value={itemsPerPage}
-									onChange={(e) => setItemsPerPage(Number(e.target.value))}
+									onChange={(e) => {
+										console.log('🔄 Alterando itemsPerPage para:', e.target.value);
+										setItemsPerPage(Number(e.target.value));
+										setCurrentPage(1);
+										// O useEffect vai detectar a mudança e chamar fetchMovimentos automaticamente
+									}}
 								>
 									{[5, 10, 15, 30, 50, 100].map((size) => (
 										<option key={size} value={size}>

@@ -3,6 +3,7 @@ import { ResultadoRepository } from './ResultadoRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 import { FinanciamentoDetalhadoDTO } from '../models/FinanciamentoDetalhadoDTO';
 import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository';
+import * as XLSX from 'xlsx';
 
 export class MovimentoBancarioRepository {
 	private db: D1Database;
@@ -1123,6 +1124,258 @@ export class MovimentoBancarioRepository {
 				idsCount: ids.length,
 				query: query.substring(0, 100) + '...'
 			});
+			throw error;
+		}
+	}
+
+	async getPaginado(filters: {
+		page: number;
+		limit: number;
+		contaId?: number;
+		dataInicio?: string;
+		dataFim?: string;
+		status?: string;
+	}): Promise<{
+		movimentos: MovimentoBancario[];
+		total: number;
+		totalPages: number;
+		currentPage: number;
+		hasNext: boolean;
+		hasPrev: boolean;
+	}> {
+		try {
+			console.log('🔍 Repository: Iniciando busca paginada com filtros:', filters);
+
+			// Construir query base
+			let whereConditions: string[] = [];
+			let params: any[] = [];
+
+			if (filters.contaId) {
+				whereConditions.push('mb.idContaCorrente = ?');
+				params.push(filters.contaId);
+			}
+
+			if (filters.dataInicio) {
+				whereConditions.push('mb.dtMovimento >= ?');
+				params.push(filters.dataInicio + ' 00:00:00');
+			}
+
+			if (filters.dataFim) {
+				whereConditions.push('mb.dtMovimento <= ?');
+				params.push(filters.dataFim + ' 23:59:59');
+			}
+
+			if (filters.status === 'pendentes') {
+				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+			}
+
+			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+			// Query para contar total
+			const countQuery = `
+				SELECT COUNT(*) as total
+				FROM MovimentoBancario mb
+				${whereClause}
+			`;
+
+			const countResult = await this.db
+				.prepare(countQuery)
+				.bind(...params)
+				.first();
+
+			const total = countResult?.total as number || 0;
+			const totalPages = Math.ceil(total / filters.limit);
+			const offset = (filters.page - 1) * filters.limit;
+
+			console.log(`📊 Repository: Total de registros encontrados: ${total}, páginas: ${totalPages}`);
+
+			// Query principal com paginação
+			const mainQuery = `
+				SELECT 
+					mb.*,
+					GROUP_CONCAT(
+						CASE 
+							WHEN r.idPlanoContas IS NOT NULL 
+							THEN json_object('id', r.idPlanoContas, 'valor', r.valor, 'descricao', pc.descricao)
+							ELSE NULL 
+						END
+					) as resultadoList
+				FROM MovimentoBancario mb
+				LEFT JOIN Resultado r ON mb.id = r.idMovimentoBancario
+				LEFT JOIN PlanoContas pc ON r.idPlanoContas = pc.id
+				${whereClause}
+				GROUP BY mb.id
+				ORDER BY mb.dtMovimento DESC
+				LIMIT ? OFFSET ?
+			`;
+
+			const { results } = await this.db
+				.prepare(mainQuery)
+				.bind(...params, filters.limit, offset)
+				.all();
+
+			// Processar resultados
+			const movimentos = await Promise.all(
+				results.map(async (result: any) => {
+					let resultadoList: any[] = [];
+					if (result.resultadoList) {
+						try {
+							resultadoList = result.resultadoList
+								.split(',')
+								.map((item: string) => JSON.parse(item))
+								.filter((item: any) => item !== null);
+						} catch (error) {
+							console.warn('⚠️ Erro ao processar resultadoList:', error);
+							resultadoList = [];
+						}
+					}
+
+					return {
+						id: result.id as number,
+						dtMovimento: result.dtMovimento as string,
+						historico: result.historico as string,
+						valor: result.valor as number,
+						idPlanoContas: result.idPlanoContas as number | undefined,
+						saldo: result.saldo as number,
+						ideagro: result.ideagro === 1,
+						idContaCorrente: result.idContaCorrente as number,
+						descricao: result.descricao as string,
+						transfOrigem: result.transf_origem as number | null,
+						transfDestino: result.transf_destino as number | null,
+						identificadorOfx: result.identificador_ofx as string,
+						criadoEm: result.criado_em as string,
+						atualizadoEm: result.atualizado_em as string,
+						idUsuario: result.idUsuario as number,
+						tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+						modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
+						idBanco: result.idBanco as number,
+						idPessoa: result.idPessoa as number,
+						parcelado: result.parcelado === 1,
+						idFinanciamento: result.idFinanciamento as number | undefined,
+						resultadoList: resultadoList,
+					};
+				})
+			);
+
+			console.log(`✅ Repository: Retornando ${movimentos.length} movimentos da página ${filters.page}`);
+
+			return {
+				movimentos,
+				total,
+				totalPages,
+				currentPage: filters.page,
+				hasNext: filters.page < totalPages,
+				hasPrev: filters.page > 1
+			};
+
+		} catch (error) {
+			console.error('🔥 Repository: Erro na busca paginada:', error);
+			throw error;
+		}
+	}
+
+	async exportToExcel(filters: {
+		contaId?: number;
+		dataInicio?: string;
+		dataFim?: string;
+		status?: string;
+	}): Promise<Buffer> {
+		try {
+			console.log('📊 Repository: Iniciando exportação Excel com filtros:', filters);
+
+			// Construir query base
+			let whereConditions: string[] = [];
+			let params: any[] = [];
+
+			if (filters.contaId) {
+				whereConditions.push('mb.idContaCorrente = ?');
+				params.push(filters.contaId);
+			}
+
+			if (filters.dataInicio) {
+				whereConditions.push('mb.dtMovimento >= ?');
+				params.push(filters.dataInicio + ' 00:00:00');
+			}
+
+			if (filters.dataFim) {
+				whereConditions.push('mb.dtMovimento <= ?');
+				params.push(filters.dataFim + ' 23:59:59');
+			}
+
+			if (filters.status === 'pendentes') {
+				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+			}
+
+			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+			// Query para buscar todos os movimentos que atendem aos filtros
+			const query = `
+				SELECT 
+					mb.*,
+					pc.descricao as planoDescricao,
+					b.nome as bancoNome,
+					p.nome as pessoaNome,
+					cc.numConta,
+					cc.responsavel
+				FROM MovimentoBancario mb
+				LEFT JOIN PlanoContas pc ON mb.idPlanoContas = pc.id
+				LEFT JOIN Banco b ON mb.idBanco = b.id
+				LEFT JOIN Pessoa p ON mb.idPessoa = p.id
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				${whereClause}
+				ORDER BY mb.dtMovimento DESC
+			`;
+
+			const { results } = await this.db
+				.prepare(query)
+				.bind(...params)
+				.all();
+
+			console.log(`📊 Repository: Encontrados ${results.length} movimentos para exportação`);
+
+			// Preparar dados para Excel
+			const dadosParaExportar = results.map((mov: any) => ({
+				'Data do Movimento': new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+				'Histórico': mov.historico,
+				'Tipo': mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+				'Modalidade': mov.modalidadeMovimento || 'Padrão',
+				'Plano de Contas': mov.planoDescricao || 'Não definido',
+				'Valor R$': mov.valor,
+				'IdeAgri': mov.ideagro ? 'Sim' : 'Não',
+				'Pessoa': mov.pessoaNome || '',
+				'Banco': mov.bancoNome || '',
+				'Parcelado': mov.parcelado ? 'Sim' : 'Não',
+				'Nº Documento': mov.modalidadeMovimento === 'financiamento' ? mov.numeroDocumento : '',
+				'Conta': `${mov.numConta || ''} - ${mov.responsavel || ''}`,
+			}));
+
+			// Criar workbook
+			const wb = XLSX.utils.book_new();
+			const ws = XLSX.utils.json_to_sheet(dadosParaExportar);
+
+			// Adicionar cabeçalho com informações da exportação
+			const header = [
+				['Exportado em:', new Date().toLocaleString('pt-BR')],
+				['Período:', `${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`],
+				['Status:', filters.status === 'pendentes' ? 'Apenas Pendentes' : 'Todos os Movimentos'],
+				['Total de registros:', results.length],
+				[],
+			];
+
+			const headerWs = XLSX.utils.aoa_to_sheet(header);
+			XLSX.utils.sheet_add_json(headerWs, dadosParaExportar, { origin: 'A6', skipHeader: false });
+
+			XLSX.utils.book_append_sheet(wb, headerWs, 'Movimentos');
+
+			// Converter para buffer
+			const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+			console.log(`✅ Repository: Excel gerado com sucesso, ${excelBuffer.length} bytes`);
+
+			return excelBuffer;
+
+		} catch (error) {
+			console.error('🔥 Repository: Erro na exportação Excel:', error);
 			throw error;
 		}
 	}

@@ -59,6 +59,64 @@ export class MovimentoBancarioController {
 				return new Response(JSON.stringify(movBancario), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 			}
 
+			if (method === 'GET' && pathname === '/api/movBancario/paginado') {
+				console.log('📥 Requisição GET /api/movBancario/paginado recebida');
+				
+				const searchParams = url.searchParams;
+				const page = parseInt(searchParams.get('page') || '1');
+				const limit = parseInt(searchParams.get('limit') || '50');
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+
+				console.log('🔍 Parâmetros de paginação:', { page, limit, contaId, dataInicio, dataFim, status });
+
+				const result = await this.movBancarioRepository.getPaginado({
+					page,
+					limit,
+					contaId,
+					dataInicio,
+					dataFim,
+					status
+				});
+
+				console.log('📤 Retornando', result.movimentos.length, 'movimentos de', result.total, 'total');
+
+				return new Response(JSON.stringify(result), { 
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+				});
+			}
+
+			if (method === 'GET' && pathname === '/api/movBancario/export') {
+				console.log('📥 Requisição GET /api/movBancario/export recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+
+				console.log('🔍 Parâmetros de exportação:', { contaId, dataInicio, dataFim, status });
+
+				const excelBuffer = await this.movBancarioRepository.exportToExcel({
+					contaId,
+					dataInicio,
+					dataFim,
+					status
+				});
+
+				console.log('📤 Retornando arquivo Excel de', excelBuffer.length, 'bytes');
+
+				return new Response(excelBuffer as any, {
+					headers: {
+						...corsHeaders,
+						'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+						'Content-Disposition': 'attachment; filename="movimentos_bancarios.xlsx"'
+					}
+				});
+			}
+
 			if (method === 'GET' && pathname.startsWith('/api/movBancario/')) {
 				const pathParts = pathname.split('/');
 				if (pathParts.length === 4 && !isNaN(Number(pathParts[3]))) {
