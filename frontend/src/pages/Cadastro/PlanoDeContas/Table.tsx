@@ -86,7 +86,7 @@ const PlanoContasTable: React.FC = () => {
 		setExpandedNodes(allIds);
 	}, [planos]);
 
-	const renderTree = (parentId: number | null): JSX.Element[] => {
+	const renderTree = (parentId: number | null): React.ReactElement[] => {
 		const children = planosFiltrados.filter((p) => p.idReferente === parentId);
 
 		if (!children.length) return [];
@@ -105,7 +105,6 @@ const PlanoContasTable: React.FC = () => {
 							<div className="text-xs text-gray-400 capitalize">{plano.tipo.toLowerCase()}</div>
 						</div>
 					}
-					style={{ borderLeft: hasChildren && isExpanded ? '2px solid #bbb' : 'none' }} // Adjusted styling
 				>
 					{hasChildren && isExpanded && renderTree(plano.id)}
 				</TreeNode>
@@ -133,6 +132,10 @@ const PlanoContasTable: React.FC = () => {
 			filtered.sort((a, b) => {
 				let valA = a[sortColumn as keyof PlanoConta];
 				let valB = b[sortColumn as keyof PlanoConta];
+
+				// Tratar valores nulos/undefined
+				if (valA == null) valA = '';
+				if (valB == null) valB = '';
 
 				if (typeof valA === 'string') valA = valA.toLowerCase();
 				if (typeof valB === 'string') valB = valB.toLowerCase();
@@ -208,8 +211,8 @@ const PlanoContasTable: React.FC = () => {
 	const totalPages = Math.ceil(filteredPlanos.length / itemsPerPage);
 
 	return (
-		<div>
-			<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-5 mb-4">
+		<div className="plano-contas-container" style={{ overflowX: 'hidden', maxWidth: 'calc(100vw - 300px)', width: '100%' }}>
+			<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-5 mb-4" style={{ maxWidth: '100%', width: '100%' }}>
 				<div className="flex border-b border-gray-300">
 					<button
 						className={`px-3 sm:px-4 py-2 font-bold text-xs sm:text-sm text-nowrap whitespace-nowrap ${
@@ -414,23 +417,34 @@ const PlanoContasTable: React.FC = () => {
 
 								{/* Container da arvore */}
 								<div
-									className="arvorePlanos overflow-auto border bg-gray-100 rounded p-3 sm:p-6 shadow"
-									style={{ width: '100%', height: '400px' }}
+									className="arvorePlanos border bg-gray-100 rounded p-3 sm:p-6 shadow"
+									style={{ 
+										width: '100%', 
+										height: '400px', 
+										overflowX: 'auto', 
+										overflowY: 'auto',
+										maxWidth: '100%',
+										boxSizing: 'border-box',
+										position: 'relative',
+										minWidth: 0
+									}}
 								>
-									<Tree
-										lineWidth={'2px'}
-										lineColor={'#bbb'}
-										lineBorderRadius={'10px'}
-										label={
-											<div className="border border-gray-400 bg-white px-2 sm:px-4 py-2 rounded shadow text-center hover:bg-orange-50 min-w-[120px] sm:min-w-[140px]">
-												<div className="font-bold text-xs sm:text-sm">{rootPlano?.descricao ?? 'Plano de Contas'}</div>
-												<div className="text-xs text-gray-500">{rootPlano?.hierarquia}</div>
-												<div className="text-xs text-gray-400 capitalize">{rootPlano?.tipo?.toLowerCase()}</div>
-											</div>
-										}
-									>
-										{renderTree(rootPlano?.id || null)}
-									</Tree>
+									<div style={{ minWidth: 'fit-content', width: 'max-content' }}>
+										<Tree
+											lineWidth={'2px'}
+											lineColor={'#bbb'}
+											lineBorderRadius={'10px'}
+											label={
+												<div className="border border-gray-400 bg-white px-2 sm:px-4 py-2 rounded shadow text-center hover:bg-orange-50 min-w-[120px] sm:min-w-[140px]">
+													<div className="font-bold text-xs sm:text-sm">{rootPlano?.descricao ?? 'Plano de Contas'}</div>
+													<div className="text-xs text-gray-500">{rootPlano?.hierarquia}</div>
+													<div className="text-xs text-gray-400 capitalize">{rootPlano?.tipo?.toLowerCase()}</div>
+												</div>
+											}
+										>
+											{renderTree(rootPlano?.id || null)}
+										</Tree>
+									</div>
 								</div>
 							</div>
 						)}

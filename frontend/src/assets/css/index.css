@@ -335,6 +335,65 @@ th {
     display: none !important;
 }
 
+.arvorePlanos {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    min-width: 0 !important;
+}
+
+/* Garantir que o conteúdo da árvore não cause overflow na página */
+.arvorePlanos svg {
+    max-width: none !important;
+    overflow: visible !important;
+}
+
+/* Permitir que o conteúdo da árvore se expanda dentro do container */
+.arvorePlanos > * {
+    min-width: fit-content !important;
+}
+
+/* Prevenir overflow horizontal na página quando há árvore */
+body:has(.arvorePlanos) {
+    overflow-x: hidden !important;
+}
+
+/* Garantir que o container principal não cause overflow */
+.plano-contas-container {
+    overflow-x: hidden !important;
+    max-width: calc(100vw - 330px) !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Forçar todos os elementos filhos a respeitarem os limites */
+.plano-contas-container * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Garantir que o header e botões não ultrapassem os limites */
+.plano-contas-container .flex {
+    max-width: 100% !important;
+    flex-wrap: wrap !important;
+}
+
+/* Garantir que botões não sejam empurrados para fora */
+.plano-contas-container button {
+    flex-shrink: 1 !important;
+    min-width: 0 !important;
+}
+
+/* Permitir que a árvore funcione normalmente dentro do container */
+.arvorePlanos .css-8itdc1,
+.arvorePlanos .css-to7de5,
+.arvorePlanos .css-1vs3jbz {
+    min-width: fit-content !important;
+}
+
 .no-scrollbar {
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none;  /* IE 10+ */
