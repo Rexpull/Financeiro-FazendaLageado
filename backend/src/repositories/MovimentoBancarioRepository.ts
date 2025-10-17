@@ -107,7 +107,7 @@ export class MovimentoBancarioRepository {
 		const { results } = await this.db
 			.prepare(
 				`
-			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_Documento, descricao, transf_origem, transf_destino, identificador_ofx, criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento
+			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_Documento, descricao, transf_origem, transf_destino, identificador_ofx, criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 			FROM MovimentoBancario
 		`
 			)
@@ -136,6 +136,7 @@ export class MovimentoBancarioRepository {
 					idPessoa: result.idPessoa as number,
 					parcelado: result.parcelado === 1,
 					idFinanciamento: result.idFinanciamento as number | undefined,
+					idCentroCustos: result.idCentroCustos as number | undefined,
 					resultadoList: resultadoList,
 				};
 			})
@@ -420,6 +421,9 @@ export class MovimentoBancarioRepository {
 		if (movimento.idFinanciamento !== undefined && movimento.idFinanciamento !== movimentoAtual.idFinanciamento) {
 			camposAlterados.idFinanciamento = movimento.idFinanciamento;
 		}
+		if (movimento.idCentroCustos !== undefined && movimento.idCentroCustos !== movimentoAtual.idCentroCustos) {
+			camposAlterados.idCentroCustos = movimento.idCentroCustos;
+		}
 
 		console.log('🔧 Campos que serão alterados:', camposAlterados);
 
@@ -508,6 +512,10 @@ export class MovimentoBancarioRepository {
 		if (camposAlterados.idFinanciamento !== undefined) {
 			setClauses.push('idFinanciamento = ?');
 			bindValues.push(camposAlterados.idFinanciamento);
+		}
+		if (camposAlterados.idCentroCustos !== undefined) {
+			setClauses.push('idCentroCustos = ?');
+			bindValues.push(camposAlterados.idCentroCustos);
 		}
 
 		// Se há campos para atualizar, executar query
@@ -876,7 +884,7 @@ export class MovimentoBancarioRepository {
 				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
 					numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
 					criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
-					idBanco, idPessoa, parcelado, idFinanciamento
+					idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 				FROM MovimentoBancario
 				WHERE identificador_ofx = ?
 			`
@@ -912,6 +920,7 @@ export class MovimentoBancarioRepository {
 			idPessoa: result.idPessoa,
 			parcelado: result.parcelado === 1,
 			idFinanciamento: result.idFinanciamento as number | undefined,
+			idCentroCustos: result.idCentroCustos as number | undefined,
 			resultadoList: resultadoList,
 		} as MovimentoBancario;
 	}
@@ -932,7 +941,7 @@ export class MovimentoBancarioRepository {
 				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
 					   numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
 					   criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
-					   idBanco, idPessoa, parcelado, idFinanciamento
+					   idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 				FROM MovimentoBancario
 				WHERE id = ?
 			`
@@ -969,6 +978,7 @@ export class MovimentoBancarioRepository {
 			idPessoa: result.idPessoa as number,
 			parcelado: result.parcelado === 1,
 			idFinanciamento: result.idFinanciamento as number | undefined,
+			idCentroCustos: result.idCentroCustos as number | undefined,
 			resultadoList: resultadoList,
 		};
 	}
@@ -1063,7 +1073,7 @@ export class MovimentoBancarioRepository {
 				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
 					   numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
 					   criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
-					   idBanco, idPessoa, parcelado, idFinanciamento
+					   idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 				FROM MovimentoBancario
 				WHERE id IN (${placeholders})
 				ORDER BY dtMovimento ASC
@@ -1110,6 +1120,7 @@ export class MovimentoBancarioRepository {
 					idPessoa: result.idPessoa as number,
 					parcelado: result.parcelado === 1,
 					idFinanciamento: result.idFinanciamento as number | undefined,
+					idCentroCustos: result.idCentroCustos as number | undefined,
 					resultadoList: resultadoList,
 				};
 			})

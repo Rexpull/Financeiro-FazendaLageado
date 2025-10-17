@@ -6,13 +6,15 @@ import { MovimentoBancario } from '../../../../../../backend/src/models/Moviment
 import { listarPlanoContas } from '../../../../services/planoContasService';
 import { listarBancos } from '../../../../services/bancoService';
 import { listarPessoas } from '../../../../services/pessoaService';
-import { PlanoConta } from '../../../../../../backend/src/models/PlanoConta';
+import { listarCentroCustos } from '../../../../services/centroCustosService';
 import { listarParametros } from '../../../../services/parametroService';
+import { PlanoConta } from '../../../../../../backend/src/models/PlanoConta';
 import { Parametro } from '../../../../../../backend/src/models/Parametro';
 import { Banco } from '../../../../../../backend/src/models/Banco';
 import { Pessoa } from '../../../../../../backend/src/models/Pessoa';
-import ModalRateioPlano from './ModalRateioPlano';
+import { CentroCustos } from '../../../../../../backend/src/models/CentroCustos';
 import { Resultado } from '../../../../../../backend/src/models/Resultado';
+import ModalRateioPlano from './ModalRateioPlano';
 import ModalFinanciamento from '../../Financiamento/ModalFinanciamento';
 import { listarFinanciamentos, salvarFinanciamento } from '../../../../services/financiamentoService';
 import { Financiamento } from '../../../../../../backend/src/models/Financiamento';
@@ -30,11 +32,13 @@ const cache: {
 	bancos: Banco[] | null;
 	pessoas: Pessoa[] | null;
 	planosConta: PlanoConta[] | null;
+	centroCustos: CentroCustos[] | null;
 } = {
 	parametros: null,
 	bancos: null,
 	pessoas: null,
 	planosConta: null,
+	centroCustos: null,
 };
 
 interface ConciliaPlanoContasModalProps {
@@ -52,6 +56,7 @@ interface FormData {
 	bancoSelecionado: string;
 	idPessoa: number | null;
 	idBanco: number | null;
+	idCentroCustos: number | null;
 	parcelado: boolean;
 	numeroDocumento: string;
 	idFinanciamento: number | null;
@@ -59,6 +64,11 @@ interface FormData {
 
 const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onConciliaMultiplos?: (data: any) => void }> = ({ isOpen, onClose, movimento, planos = [], handleConcilia, movimentosSelecionados = [], onConciliaMultiplos }) => {
 	const [modalidadeMovimento, setModalidadeMovimento] = useState('padrao');
+	const [idCentroCustos, setIdCentroCustos] = useState<number | null>(null);
+	const [centroCustos, setCentroCustos] = useState<{ id: number; descricao: string }[]>([]);
+	const [searchCentroCustos, setSearchCentroCustos] = useState('');
+	const [showCentroCustosSuggestions, setShowCentroCustosSuggestions] = useState(false);
+	const centroCustosRef = useRef(null);
 	const [idPlanoContas, setIdPlanoContas] = useState<number | null>(null);
 	const [idPessoa, setIdPessoa] = useState<number | null>(null);
 	const [idBanco, setIdBanco] = useState<number | null>(null);
@@ -96,7 +106,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		idBanco: null,
 		parcelado: false,
 		numeroDocumento: '',
-		idFinanciamento: null
+		idFinanciamento: null,
+		idCentroCustos: null
 	});
 
 	// useRef para controlar se o modal já foi inicializado
@@ -112,6 +123,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				setIdPlanoContas(null);
 				setIdPessoa(null);
 				setIdBanco(null);
+				setIdCentroCustos(null);
+				setSearchCentroCustos('');
 				setNumeroDocumento('');
 				setParcelado(false);
 				setParcelas([]);
@@ -125,9 +138,10 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					bancoSelecionado: '',
 					idPessoa: null,
 					idBanco: null,
+					idCentroCustos: null,
 					parcelado: false,
 					numeroDocumento: '',
-					idFinanciamento: null
+					idFinanciamento: null,
 				});
 			} else {
 				// Mantém o comportamento existente para um único movimento
@@ -135,6 +149,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				setIdPlanoContas(movimento.idPlanoContas || null);
 				setIdPessoa(movimento.idPessoa || null);
 				setIdBanco(movimento.idBanco || null);
+				setIdCentroCustos(movimento.idCentroCustos || null);
+				setSearchCentroCustos(movimento.idCentroCustos ? centroCustos.find(c => c.id === movimento.idCentroCustos)?.descricao || '' : '');
 				setNumeroDocumento(movimento.numeroDocumento || '');
 				setParcelado(movimento.parcelado || false);
 				setParcelas([]);
@@ -148,9 +164,10 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					bancoSelecionado: movimento.idBanco ? movimento.idBanco.toString() : '',
 					idPessoa: movimento.idPessoa || null,
 					idBanco: movimento.idBanco || null,
+					idCentroCustos: movimento.idCentroCustos || null,
 					parcelado: movimento.parcelado || false,
 					numeroDocumento: movimento.numeroDocumento || '',
-					idFinanciamento: movimento.idFinanciamento || null
+					idFinanciamento: movimento.idFinanciamento || null,
 				});
 			}
 			
@@ -190,11 +207,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				if (!cache.planosConta) cache.planosConta = await listarPlanoContas();
 				if (!cache.bancos) cache.bancos = await listarBancos();
 				if (!cache.pessoas) cache.pessoas = await listarPessoas();
+				if (!cache.centroCustos) cache.centroCustos = await listarCentroCustos();
 
 				setParametros(cache.parametros);
 				setPlanosFetch(cache.planosConta.filter((p) => p.nivel === 3));
 				setBancos(cache.bancos);
 				setPessoas(cache.pessoas);
+				setCentroCustos(cache.centroCustos);
 			} catch (error) {
 				console.error('Erro ao buscar dados:', error);
 			}
@@ -217,7 +236,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				idBanco: movimento.idBanco || null,
 				parcelado: movimento.parcelado || false,
 				numeroDocumento: movimento.numeroDocumento || '',
-				idFinanciamento: movimento.idFinanciamento || null
+				idFinanciamento: movimento.idFinanciamento || null,
+				idCentroCustos: movimento.idCentroCustos || null
 			});
 			setIdPlanoContas(movimento.idPlanoContas || null);
 			const plano = planos.find((p) => p.id === movimento.idPlanoContas);
@@ -232,7 +252,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				idBanco: movimento.idBanco || null,
 				parcelado: movimento.parcelado || false,
 				numeroDocumento: movimento.numeroDocumento || '',
-				idFinanciamento: movimento.idFinanciamento || null
+				idFinanciamento: movimento.idFinanciamento || null,
+				idCentroCustos: movimento.idCentroCustos || null
 			});
 
 			setNumeroDocumento(movimento.numeroDocumento || '');
@@ -253,6 +274,23 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		setRateios(convertidos);
 		setRateioModalAberto(false);
 	};
+
+	const handleSearchCentroCustos = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const value = e.target.value;
+		setSearchCentroCustos(value);
+		setShowCentroCustosSuggestions(value.length > 0);
+	};
+
+	const selectCentroCustos = (centroCustos: CentroCustos) => {
+		setIdCentroCustos(centroCustos.id);
+		setSearchCentroCustos(centroCustos.descricao);
+		setShowCentroCustosSuggestions(false);
+		setFormData((prev: FormData) => ({ ...prev, idCentroCustos: centroCustos.id }));
+	};
+
+	const filteredCentroCustos = centroCustos.filter(centro =>
+		centro.descricao.toLowerCase().includes(searchCentroCustos.toLowerCase())
+	);
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 		const target = e.target as HTMLInputElement;
@@ -420,19 +458,21 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		try {
 			let dados = {};
 
-			console.log('formData ', formData);
-			console.log('idPlanoContas ', idPlanoContas);
-			if (modalidadeMovimento === 'padrao') {
+		console.log('formData ', formData);
+		console.log('idPlanoContas ', idPlanoContas);
+		if (modalidadeMovimento === 'padrao') {
 				dados = {
 					idPlanoContas: formData.idPlanoContas ? parseInt(formData.idPlanoContas.toString()) : null,
 					idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
 					idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
+					idCentroCustos: formData.idCentroCustos,
 					modalidadeMovimento,
 				};
 			} else if (modalidadeMovimento === 'financiamento') {
 				dados = {
 					idPlanoContas: idPlanoContas,
 					idFinanciamento: financiamentoSelecionado?.id,
+					idCentroCustos: formData.idCentroCustos,
 					modalidadeMovimento,
 				};
 				console.log('financiamento sendo enviado:', dados)
@@ -581,6 +621,34 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								))}
 							</select>
 						</div>
+					</div>
+					
+					<div className="grid grid-cols-2 gap-4 mb-4">
+						<div ref={centroCustosRef} className="relative">
+							<label className="block text-sm font-medium text-gray-700 mb-1">
+								Centro de Custos <span className="text-gray-500">(opcional)</span>
+							</label>
+							<div className="relative">
+								<input
+									type="text"
+									className="w-full p-2 border border-gray-300 rounded"
+									placeholder="Pesquisar centro de custos..."
+									onChange={handleSearchCentroCustos}
+									value={searchCentroCustos}
+								/>
+								<FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
+							</div>
+							{showCentroCustosSuggestions && (
+								<ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
+									{filteredCentroCustos.map((centro) => (
+										<li key={centro.id} className="p-2 hover:bg-gray-200 text-sm cursor-pointer" onClick={() => selectCentroCustos(centro)}>
+											{centro.descricao}
+										</li>
+									))}
+								</ul>
+							)}
+						</div>
+						<div></div>
 					</div>
 				</>
 			);

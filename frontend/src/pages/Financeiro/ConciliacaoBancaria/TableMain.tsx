@@ -440,6 +440,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				atualizadoEm: new Date().toISOString(),
 				idUsuario: usuario?.id,
 				identificadorOfx: formData.identificadorOfx || crypto.randomUUID(),
+				idCentroCustos: parseInt(formData.idCentroCustos),
 			};
 			console.log('Movimento a ser salvo:', movimentoCompleto);
 
@@ -541,6 +542,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				idPlanoContas: data.idPlanoContas,
 				modalidadeMovimento: data.modalidadeMovimento,
 				idPessoa: data.idPessoa ?? null,
+				idCentroCustos: data.idCentroCustos ?? null,
 			};
 
 			if (data.modalidadeMovimento === 'padrao') {
@@ -556,6 +558,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? undefined;
 				movimentoAtualizado.parcelado = data.parcelado ?? false;
 				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? undefined;
+				movimentoAtualizado.idCentroCustos = data.idCentroCustos ?? undefined;
 			}
 
 			if (data.modalidadeMovimento === 'transferencia') {
@@ -563,6 +566,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = undefined;
 				movimentoAtualizado.idFinanciamento = undefined;
+				movimentoAtualizado.idCentroCustos = undefined;
 				movimentoAtualizado.resultadoList = [];
 			}
 

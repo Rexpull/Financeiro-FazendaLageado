@@ -40,6 +40,7 @@ const Sidebar = () => {
     { path: "/cadastro/banco", label: "Banco" },
     { path: "/cadastro/conta-corrente", label: "Conta Corrente" },
     { path: "/cadastro/plano-de-contas", label: "Plano de Contas" },
+    { path: "/cadastro/centro-custos", label: "Centro de Custos" },
     { path: "/financeiro/conciliacao-bancaria", label: "Conciliação Bancária" },
     { path: "/financeiro/fluxo-de-caixa", label: "Fluxo de Caixa" },
     { path: "/financeiro/financiamento", label: "Financiamento" },
@@ -181,6 +182,11 @@ const Sidebar = () => {
                 <Link to="/cadastro/plano-de-contas">
                   <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/cadastro/plano-de-contas')}`}>
                     Plano de Contas
+                  </li>
+                </Link>
+                <Link to="/cadastro/centro-custos">
+                  <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/cadastro/centro-custos')}`}>
+                    Centro de Custos
                   </li>
                 </Link>
               </ul>

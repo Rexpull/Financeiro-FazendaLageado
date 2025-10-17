@@ -132,6 +132,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				idPlanoContas: data.idPlanoContas || null,
 				modalidadeMovimento: data.modalidadeMovimento,
 				idPessoa: data.idPessoa || null,
+				idCentroCustos: data.idCentroCustos || null,
 			};
 
 			if (data.modalidadeMovimento === 'padrao') {
@@ -146,6 +147,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				movimentoAtualizado.numeroDocumento = data.numeroDocumento || null;
 				movimentoAtualizado.parcelado = data.parcelado || false;
 				movimentoAtualizado.idFinanciamento = data.idFinanciamento || null;
+				movimentoAtualizado.idCentroCustos = data.idCentroCustos || null;
 			}
 
 			if(data.modalidadeMovimento === 'transferencia') {	
@@ -154,6 +156,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				movimentoAtualizado.idBanco = null;
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = null;
+				movimentoAtualizado.idCentroCustos = null;
 			}
 
 			console.log('Movimento atualizado:', movimentoAtualizado);
@@ -264,6 +267,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 						parcelado: data.parcelado || false,
 						idFinanciamento: data.idFinanciamento || null,
 						idUsuario: movimento.idUsuario || null,
+						idCentroCustos: data.idCentroCustos || null,
 					};
 
 					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
@@ -291,6 +295,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 						parcelado: atualizado.parcelado,
 						idFinanciamento: atualizado.idFinanciamento,
 						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
+						idCentroCustos: atualizado.idCentroCustos,
 					};
 				}
 				return mov;

@@ -8,6 +8,7 @@ export interface MovimentoBancario {
     idContaCorrente: number;    
     idPessoa?: number;
     idBanco?: number;
+    idCentroCustos?: number;
     valor: number;
     saldo: number;
     ideagro: boolean;

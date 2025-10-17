@@ -191,6 +191,22 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
       return new Response(JSON.stringify({ message: "Banco excluído com sucesso!" }), { status: 200, headers: corsHeaders });
     }
 
+    // 📌 Rotas para Centro de Custos
+    if (pathname.startsWith("/api/centro-custos")) {
+      console.log("🔍 Rota de centro de custos detectada:", pathname);
+      
+      try {
+        const { handleRequest } = await import("./handleCentroCustos");
+        return await handleRequest(req, DB);
+      } catch (importError) {
+        console.error("❌ Erro ao importar módulos de centro de custos:", importError);
+        return new Response(JSON.stringify({ error: "Erro ao carregar módulos de centro de custos" }), {
+          status: 500,
+          headers: corsHeaders,
+        });
+      }
+    }
+
     // 📌 Rotas para Histórico de Importações OFX
     if (pathname.startsWith("/api/historico-importacao-ofx")) {
       console.log("🔍 Rota de histórico de importações detectada:", pathname);

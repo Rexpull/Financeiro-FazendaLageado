@@ -107,6 +107,7 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 				ideagro: movimento.ideagro,
 				parcelado: movimento.parcelado,
 				modalidadeMovimento: movimento.modalidadeMovimento,
+				idCentroCustos: movimento.idCentroCustos,
 			};
 
 			// Adicionar apenas campos que foram alterados ou são diferentes do atual
@@ -136,6 +137,9 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 			}
 			if (movimento.idFinanciamento !== movimentoAtual.idFinanciamento) {
 				camposAlterados.idFinanciamento = movimento.idFinanciamento;
+			}
+			if (movimento.idCentroCustos !== movimentoAtual.idCentroCustos) {
+				camposAlterados.idCentroCustos = movimento.idCentroCustos;
 			}
 			if (movimento.resultadoList !== movimentoAtual.resultadoList) {
 				camposAlterados.resultadoList = movimento.resultadoList;
