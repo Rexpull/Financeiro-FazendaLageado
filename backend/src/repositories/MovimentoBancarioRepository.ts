@@ -1554,4 +1554,92 @@ export class MovimentoBancarioRepository {
 			throw error;
 		}
 	}
+
+	async getMovimentosPorCentroCustos(filters?: { dataInicio?: string; dataFim?: string }) {
+		try {
+			let sql = `
+				SELECT 
+					mb.id as idMovimento,
+					mb.dtMovimento,
+					mb.historico,
+					mb.valor,
+					mb.tipoMovimento,
+					mb.idCentroCustos,
+					mb.idPlanoContas,
+					cc.descricao as descricaoCentroCustos,
+					cco.numConta,
+					cco.numCartao,
+					cco.responsavel,
+					b.nome as bancoNome
+				FROM MovimentoBancario mb
+				INNER JOIN CentroCustos cc ON mb.idCentroCustos = cc.id
+				LEFT JOIN ContaCorrente cco ON mb.idContaCorrente = cco.id
+				LEFT JOIN Banco b ON cco.idBanco = b.id
+				WHERE mb.idPlanoContas IS NOT NULL
+				AND mb.idCentroCustos IS NOT NULL
+			`;
+
+			const params: any[] = [];
+
+			if (filters?.dataInicio && filters?.dataFim) {
+				sql += ` AND mb.dtMovimento BETWEEN ? AND ?`;
+				params.push(filters.dataInicio, filters.dataFim);
+			}
+
+			sql += ` ORDER BY mb.dtMovimento ASC`;
+
+			const { results } = await this.db.prepare(sql).bind(...params).all();
+
+			// Agrupar por centro de custos
+			const agrupados: { [key: string]: any } = {};
+
+			for (const row of results as any[]) {
+				const key = row.idCentroCustos;
+				const descricao = row.descricaoCentroCustos;
+
+				if (!agrupados[key]) {
+					agrupados[key] = {
+						idCentroCustos: row.idCentroCustos,
+						descricao: descricao,
+						totalReceitas: 0,
+						totalDespesas: 0,
+						saldoLiquido: 0,
+						movimentos: [],
+					};
+				}
+
+				const valor = Number(row.valor);
+				
+				// Formatar nome da conta bancária
+				const contaFormatada = `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'}${row.responsavel ? ` - ${row.responsavel}` : ''}`;
+				
+				agrupados[key].movimentos.push({
+					id: row.idMovimento,
+					data: row.dtMovimento,
+					historico: row.historico,
+					valor: valor,
+					tipo: row.tipoMovimento,
+					idPlanoContas: row.idPlanoContas,
+					contaBancaria: contaFormatada,
+				});
+
+				if (row.tipoMovimento === 'C') {
+					agrupados[key].totalReceitas += valor;
+				} else if (row.tipoMovimento === 'D') {
+					agrupados[key].totalDespesas += valor;
+				}
+			}
+
+			// Calcular saldo líquido para cada grupo
+			const result = Object.values(agrupados).map((grupo: any) => {
+				grupo.saldoLiquido = grupo.totalReceitas - grupo.totalDespesas;
+				return grupo;
+			});
+
+			return result;
+		} catch (error) {
+			console.error('Erro ao buscar movimentos por centro de custos:', error);
+			throw error;
+		}
+	}
 }

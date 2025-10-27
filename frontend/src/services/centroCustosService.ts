@@ -67,3 +67,25 @@ export const excluirCentroCustos = async (id: number): Promise<void> => {
     throw error;
   }
 };
+
+export const listarMovimentosPorCentroCustos = async (filters?: {
+  dataInicio?: string;
+  dataFim?: string;
+}): Promise<any[]> => {
+  try {
+    const params = new URLSearchParams();
+    if (filters?.dataInicio) params.append('dataInicio', filters.dataInicio);
+    if (filters?.dataFim) params.append('dataFim', filters.dataFim);
+
+    const url = `${API_URL}/api/movBancario/por-centro-custos${params.toString() ? `?${params.toString()}` : ''}`;
+    const res = await fetch(url);
+    
+    if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+    
+    return await res.json();
+  } catch (error) {
+    console.error("Erro ao listar movimentos por centro de custos:", error);
+    toast.error("Erro ao listar movimentos por centro de custos!");
+    throw error;
+  }
+};

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTimes, faSave, faCheck, faInfoCircle, faUsers, faMoneyBillTransfer, faSearch, faPlus, faEdit, faMoneyBillWave } from '@fortawesome/free-solid-svg-icons';
+import { faTimes, faSave, faCheck, faInfoCircle, faUsers, faMoneyBillTransfer, faSearch, faPlus, faEdit, faMoneyBillWave, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { listarPlanoContas } from '../../../../services/planoContasService';
 import { listarBancos } from '../../../../services/bancoService';
@@ -84,7 +84,11 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const [showSuggestions, setShowSuggestions] = useState(false);
 	const planoRef = useRef(null);
 	const [searchPlano, setSearchPlano] = useState('');
+	const [showPlanoDropdown, setShowPlanoDropdown] = useState(false);
+	const [planosSearchValue, setPlanosSearchValue] = useState('');
 	const [rateioModalAberto, setRateioModalAberto] = useState(false);
+	const [showCentroCustosDropdown, setShowCentroCustosDropdown] = useState(false);
+	const [centroCustosSearchValue, setCentroCustosSearchValue] = useState('');
 	const [rateios, setRateios] = useState<{ idPlano: number; descricao: string; valor: number }[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
 	const [modalFinanciamentoOpen, setModalFinanciamentoOpen] = useState(false);
@@ -154,7 +158,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				setNumeroDocumento(movimento.numeroDocumento || '');
 				setParcelado(movimento.parcelado || false);
 				setParcelas([]);
-				setSearchPlano('');
+				// Define o plano de contas selecionado
+				if (movimento.idPlanoContas) {
+					const planoSelecionado = planos.find(p => p.id === movimento.idPlanoContas);
+					setSearchPlano(planoSelecionado ? planoSelecionado.descricao : '');
+				} else {
+					setSearchPlano('');
+				}
 				setFinanciamentoSelecionado(null);
 				setBuscaFinanciamento('');
 				
@@ -292,6 +302,41 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		centro.descricao.toLowerCase().includes(searchCentroCustos.toLowerCase())
 	);
 
+	// Fechar dropdowns ao clicar fora
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			if (planoRef.current && !(planoRef.current as any).contains(event.target)) {
+				setShowPlanoDropdown(false);
+			}
+			if (centroCustosRef.current && !(centroCustosRef.current as any).contains(event.target)) {
+				setShowCentroCustosDropdown(false);
+			}
+		};
+
+		if (showPlanoDropdown || showCentroCustosDropdown) {
+			document.addEventListener('mousedown', handleClickOutside);
+		}
+
+		return () => {
+			document.removeEventListener('mousedown', handleClickOutside);
+		};
+	}, [showPlanoDropdown, showCentroCustosDropdown]);
+
+	// Filtrar planos com busca interna
+	const planosFiltered = planos
+		.filter(
+			(plano) =>
+				plano.descricao.toLowerCase().includes(planosSearchValue.toLowerCase()) &&
+				(movimento.tipoMovimento === 'D' ? plano.hierarquia.startsWith('002') : plano.hierarquia.startsWith('001')) &&
+				plano.nivel === 3
+		)
+		.slice(0, 50);
+
+	// Filtrar centro de custos com busca interna
+	const centroCustosFiltered = centroCustos.filter(centro =>
+		centro.descricao.toLowerCase().includes(centroCustosSearchValue.toLowerCase())
+	);
+
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 		const target = e.target as HTMLInputElement;
 		setFormData((prev: FormData) => ({
@@ -385,6 +430,24 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		setFormData((prev: FormData) => ({ ...prev, idPlanoContas: plano.id }));
 		setIdPlanoContas(plano.id);
 		setShowSuggestions(false);
+		setShowPlanoDropdown(false);
+		setPlanosSearchValue('');
+	};
+
+	const selectPlanoNew = (plano: PlanoConta) => {
+		setSearchPlano(plano.descricao);
+		setFormData((prev: FormData) => ({ ...prev, idPlanoContas: plano.id }));
+		setIdPlanoContas(plano.id);
+		setShowPlanoDropdown(false);
+		setPlanosSearchValue('');
+	};
+
+	const selectCentroCustosNew = (centro: CentroCustos) => {
+		setIdCentroCustos(centro.id);
+		setSearchCentroCustos(centro.descricao);
+		setShowCentroCustosDropdown(false);
+		setCentroCustosSearchValue('');
+		setFormData((prev: FormData) => ({ ...prev, idCentroCustos: centro.id }));
 	};
 
 	const handleSaveFinanciamento = async (financiamento: Financiamento) => {
@@ -553,13 +616,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								<div className="relative w-full">
 									<input
 										type="text"
-										className="w-full p-2 border rounded-l"
-										placeholder="Pesquisar plano de contas..."
-										onChange={handleSearchPlano}
-										value={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0 ? 'Multiplos Planos' : searchPlano}
-										disabled={rateios.length > 0 || (movimento.resultadoList ?? []).length > 0}
+										className={`w-full p-2 border rounded-l cursor-pointer ${rateios.length > 1 || (movimento.resultadoList ?? []).length > 1 ? 'bg-gray-100' : ''}`}
+										placeholder="Clique para selecionar plano de contas..."
+										onClick={() => !(rateios.length > 1 || (movimento.resultadoList ?? []).length > 1) && setShowPlanoDropdown(!showPlanoDropdown)}
+										value={rateios.length > 1 || (movimento.resultadoList ?? []).length > 1 ? 'Multiplos Planos' : searchPlano}
+										readOnly
 									/>
-									<FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
+									<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
 								</div>
 								<button
 									type="button"
@@ -576,15 +639,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								</button>
 							</div>
 							{errors.idPlanoContas && <p className="text-red-500 text-xs col-span-2">{errors.idPlanoContas}</p>}
-							{rateios.length > 0 || (movimento.resultadoList ?? []).length > 0 && (
+							{(rateios.length > 1 || (movimento.resultadoList ?? []).length > 1) && (
 								<p className="text-gray-500 text-xs col-span-2">
 									Múltiplos planos configurados para rateio
 								</p>
 							)}
 
-							{(movimento.resultadoList ?? []).length > 0 && (
+							{(movimento.resultadoList ?? []).length === 1 && movimento.idPlanoContas && (
 								<p className="text-gray-500 text-xs col-span-2">
-									Adicione múltiplos planos para conciliar em lote
+									Plano de contas já associado
 								</p>
 							)}
 							{movimentosSelecionados.length > 1 && (
@@ -593,14 +656,36 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								</p>
 							)}
 
-							{showSuggestions && (
-								<ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
-									{filteredPlanos.map((plano) => (
-										<li key={plano.id} className="p-2 hover:bg-gray-200 text-sm cursor-pointer" onClick={() => selectPlano(plano)}>
-											{plano.hierarquia} | {plano.descricao}
-										</li>
-									))}
-								</ul>
+							{showPlanoDropdown && (
+								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1">
+									<div className="p-2 border-b">
+										<input
+											type="text"
+											className="w-full p-2 border rounded"
+											placeholder="Buscar plano de contas..."
+											value={planosSearchValue}
+											onChange={(e) => setPlanosSearchValue(e.target.value)}
+											autoFocus
+										/>
+									</div>
+									<ul className="max-h-60 overflow-y-auto">
+										{planosFiltered.length > 0 ? (
+											planosFiltered.map((plano) => (
+												<li 
+													key={plano.id} 
+													className="p-2 hover:bg-orange-100 text-sm cursor-pointer border-b last:border-b-0"
+													onClick={() => selectPlanoNew(plano)}
+												>
+													<span className="font-semibold text-gray-600">{plano.hierarquia}</span> | {plano.descricao}
+												</li>
+											))
+										) : (
+											<li className="p-2 text-sm text-gray-500 text-center">
+												Nenhum resultado encontrado
+											</li>
+										)}
+									</ul>
+								</div>
 							)}
 						</div>
 						<div>
@@ -631,21 +716,44 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							<div className="relative">
 								<input
 									type="text"
-									className="w-full p-2 border border-gray-300 rounded"
-									placeholder="Pesquisar centro de custos..."
-									onChange={handleSearchCentroCustos}
+									className="w-full p-2 border border-gray-300 rounded cursor-pointer"
+									placeholder="Clique para selecionar centro de custos..."
+									onClick={() => setShowCentroCustosDropdown(!showCentroCustosDropdown)}
 									value={searchCentroCustos}
+									readOnly
 								/>
-								<FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
+								<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
 							</div>
-							{showCentroCustosSuggestions && (
-								<ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10">
-									{filteredCentroCustos.map((centro) => (
-										<li key={centro.id} className="p-2 hover:bg-gray-200 text-sm cursor-pointer" onClick={() => selectCentroCustos(centro)}>
-											{centro.descricao}
-										</li>
-									))}
-								</ul>
+							{showCentroCustosDropdown && (
+								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1">
+									<div className="p-2 border-b">
+										<input
+											type="text"
+											className="w-full p-2 border rounded"
+											placeholder="Buscar centro de custos..."
+											value={centroCustosSearchValue}
+											onChange={(e) => setCentroCustosSearchValue(e.target.value)}
+											autoFocus
+										/>
+									</div>
+									<ul className="max-h-60 overflow-y-auto">
+										{centroCustosFiltered.length > 0 ? (
+											centroCustosFiltered.map((centro) => (
+												<li 
+													key={centro.id} 
+													className="p-2 hover:bg-orange-100 text-sm cursor-pointer border-b last:border-b-0"
+													onClick={() => selectCentroCustosNew(centro)}
+												>
+													{centro.descricao}
+												</li>
+											))
+										) : (
+											<li className="p-2 text-sm text-gray-500 text-center">
+												Nenhum resultado encontrado
+											</li>
+										)}
+									</ul>
+								</div>
 							)}
 						</div>
 						<div></div>

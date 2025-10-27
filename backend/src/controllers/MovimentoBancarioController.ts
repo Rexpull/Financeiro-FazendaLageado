@@ -51,6 +51,27 @@ export class MovimentoBancarioController {
 		}
 
 		try {
+			if (method === 'GET' && pathname === '/api/movBancario/por-centro-custos') {
+				console.log('📥 Requisição GET /api/movBancario/por-centro-custos recebida');
+				
+				const searchParams = url.searchParams;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+
+				console.log('🔍 Parâmetros de busca:', { dataInicio, dataFim });
+
+				const result = await this.movBancarioRepository.getMovimentosPorCentroCustos({
+					dataInicio,
+					dataFim
+				});
+
+				console.log('📤 Retornando', result.length, 'grupos de movimentos');
+
+				return new Response(JSON.stringify(result), { 
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+				});
+			}
+
 			if (method === 'GET' && pathname === '/api/movBancario') {
 				console.log('📥 Requisição GET /api/movBancario recebida');
 				const movBancario = await this.movBancarioRepository.getAll();
