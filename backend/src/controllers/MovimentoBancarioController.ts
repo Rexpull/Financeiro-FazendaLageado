@@ -90,8 +90,15 @@ export class MovimentoBancarioController {
 				const dataInicio = searchParams.get('dataInicio') || undefined;
 				const dataFim = searchParams.get('dataFim') || undefined;
 				const status = searchParams.get('status') || undefined;
+				
+				// Novos filtros: planos e centros
+				const planosIdsParam = searchParams.get('planosIds');
+				const planosIds = planosIdsParam ? planosIdsParam.split(',').map(id => parseInt(id)) : undefined;
+				
+				const centrosIdsParam = searchParams.get('centrosIds');
+				const centrosIds = centrosIdsParam ? centrosIdsParam.split(',').map(id => parseInt(id)) : undefined;
 
-				console.log('🔍 Parâmetros de paginação:', { page, limit, contaId, dataInicio, dataFim, status });
+				console.log('🔍 Parâmetros de paginação:', { page, limit, contaId, dataInicio, dataFim, status, planosIds, centrosIds });
 
 				const result = await this.movBancarioRepository.getPaginado({
 					page,
@@ -99,7 +106,9 @@ export class MovimentoBancarioController {
 					contaId,
 					dataInicio,
 					dataFim,
-					status
+					status,
+					planosIds,
+					centrosIds
 				});
 
 				console.log('📤 Retornando', result.movimentos.length, 'movimentos de', result.total, 'total');

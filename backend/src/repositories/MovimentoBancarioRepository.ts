@@ -1146,6 +1146,8 @@ export class MovimentoBancarioRepository {
 		dataInicio?: string;
 		dataFim?: string;
 		status?: string;
+		planosIds?: number[];
+		centrosIds?: number[];
 	}): Promise<{
 		movimentos: MovimentoBancario[];
 		total: number;
@@ -1178,6 +1180,18 @@ export class MovimentoBancarioRepository {
 
 			if (filters.status === 'pendentes') {
 				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+			}
+
+			if (filters.planosIds && filters.planosIds.length > 0) {
+				const placeholders = filters.planosIds.map(() => '?').join(',');
+				whereConditions.push(`mb.idPlanoContas IN (${placeholders})`);
+				params.push(...filters.planosIds);
+			}
+
+			if (filters.centrosIds && filters.centrosIds.length > 0) {
+				const placeholders = filters.centrosIds.map(() => '?').join(',');
+				whereConditions.push(`mb.idCentroCustos IN (${placeholders})`);
+				params.push(...filters.centrosIds);
 			}
 
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';

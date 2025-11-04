@@ -10,6 +10,10 @@ import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBa
 import ConciliarPlano from './Modals/ConciliarPlano';
 import { formatarData, formatarDataSemHora, calcularDataAnteriorFimDia } from '../../../Utils/formatarData';
 import { toast } from 'react-toastify';
+import MultiSelectDropdown from '../../../components/MultiSelectDropdown';
+import { listarCentroCustos } from '../../../services/centroCustosService';
+import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
+import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
 
 
 Modal.setAppElement('#root');
@@ -21,7 +25,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 	const [saldoPosExtrato, setSaldoPosExtrato] = useState<number>(0);
 	const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
 	const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
-	const [planos, setPlanos] = useState<{ id: number; descricao: string; tipo: string }[]>([]);
+	const [planos, setPlanos] = useState<PlanoConta[]>([]);
 	const [movimentosSendoConciliados, setMovimentosSendoConciliados] = useState<MovimentoBancario[]>([]);
 	const [filtroDescricao, setFiltroDescricao] = useState('');
 	const [filtroValor, setFiltroValor] = useState('');
@@ -30,6 +34,10 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 	const [dropdownAberto, setDropdownAberto] = useState(false);
 	const [movimentosSelecionados, setMovimentosSelecionados] = useState<MovimentoBancario[]>([]);
 	const [tipoMovimentoSelecionado, setTipoMovimentoSelecionado] = useState<'C' | 'D' | null>(null);
+	const [planosDisponiveis, setPlanosDisponiveis] = useState<PlanoConta[]>([]);
+	const [centrosDisponiveis, setCentrosDisponiveis] = useState<CentroCustos[]>([]);
+	const [planosSelecionados, setPlanosSelecionados] = useState<PlanoConta[]>([]);
+	const [centrosSelecionados, setCentrosSelecionados] = useState<CentroCustos[]>([]);
 	const formatarISOParaInput = (iso: string): string => {
 		if (!iso || isNaN(new Date(iso).getTime())) {
 			return '';
@@ -40,13 +48,33 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 		filtroDescricao.trim() !== '' ||
 		filtroValor.trim() !== '' ||
 		filtroDataInicio !== formatarISOParaInput(totalizadores.dtInicialExtrato) ||
-		filtroDataFim !== formatarISOParaInput(totalizadores.dtFinalExtrato);
+		filtroDataFim !== formatarISOParaInput(totalizadores.dtFinalExtrato) ||
+		planosSelecionados.length > 0 ||
+		centrosSelecionados.length > 0;
 
 	const limparFiltros = () => {
 		setFiltroDescricao('');
 		setFiltroValor('');
 		setFiltroDataInicio('');
 		setFiltroDataFim('');
+		setPlanosSelecionados([]);
+		setCentrosSelecionados([]);
+	};
+
+	const adicionarPlano = (plano: PlanoConta) => {
+		setPlanosSelecionados([...planosSelecionados, plano]);
+	};
+
+	const removerPlano = (id: number) => {
+		setPlanosSelecionados(planosSelecionados.filter(p => p.id !== id));
+	};
+
+	const adicionarCentro = (centro: CentroCustos) => {
+		setCentrosSelecionados([...centrosSelecionados, centro]);
+	};
+
+	const removerCentro = (id: number) => {
+		setCentrosSelecionados(centrosSelecionados.filter(c => c.id !== id));
 	};
 
 	useEffect(() => {
@@ -66,7 +94,14 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			setFiltroDataInicio(formatarISOParaInput(totalizadores.dtInicialExtrato));
 			setFiltroDataFim(formatarISOParaInput(totalizadores.dtFinalExtrato));
 		}
-		listarPlanoContas().then((planos) => setPlanos(planos));
+		listarPlanoContas().then((planos) => {
+			setPlanos(planos);
+			setPlanosDisponiveis(planos.filter(p => p.nivel === 3));
+		});
+
+		listarCentroCustos().then((centros) => {
+			setCentrosDisponiveis(centros);
+		});
 
 		setMovimentosSendoConciliados(movimentos);
 		setStatus('todos');
@@ -109,7 +144,11 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			(!filtroDataInicio || new Date(m.dtMovimento) >= new Date(filtroDataInicio)) &&
 			(!filtroDataFim || new Date(m.dtMovimento) <= new Date(filtroDataFim));
 		
-		return descricaoMatch && valorMatch && dataMatch;
+		// Novos filtros
+		const planoMatch = planosSelecionados.length === 0 || planosSelecionados.some(p => p.id === m.idPlanoContas);
+		const centroMatch = centrosSelecionados.length === 0 || centrosSelecionados.some(c => c.id === m.idCentroCustos);
+		
+		return descricaoMatch && valorMatch && dataMatch && planoMatch && centroMatch;
 	});
 
 	const openModalConcilia = async (movimento: MovimentoBancario) => {
@@ -364,48 +403,82 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 								</button>
 
 								{dropdownAberto && (
-									<div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-4 space-y-3 dropdown-filtros">
+									<div className="absolute right-0 mt-2 w-[600px] bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-4 space-y-3 dropdown-filtros">
+										{/* Linha 1: Descrição e Valor */}
+										<div className="grid grid-cols-2 gap-3">
+											<div className="flex flex-col">
+												<label className="font-medium text-gray-700 mb-1">Descrição</label>
+												<input
+													type="text"
+													value={filtroDescricao}
+													placeholder="Digite a descrição"
+													onChange={(e) => setFiltroDescricao(e.target.value)}
+													className="border rounded px-2 py-1"
+												/>
+											</div>
+
+											<div className="flex flex-col">
+												<label className="font-medium text-gray-700 mb-1">Valor</label>
+												<input
+													name="valor"
+													className="w-full p-2 bg-white border border-gray-300 rounded"
+													placeholder="R$ 0,00"
+													value={filtroValor}
+													onChange={(e) => setFiltroValor(e.target.value)}
+												/>
+											</div>
+										</div>
+
+										{/* Linha 2: Data Inicial e Data Final */}
+										<div className="grid grid-cols-2 gap-3">
+											<div className="flex flex-col">
+												<label className="font-medium text-gray-700 mb-1">Data Inicial</label>
+												<input
+													type="date"
+													value={filtroDataInicio}
+													onChange={(e) => setFiltroDataInicio(e.target.value)}
+													className="border rounded px-2 py-1"
+												/>
+											</div>
+
+											<div className="flex flex-col">
+												<label className="font-medium text-gray-700 mb-1">Data Final</label>
+												<input
+													type="date"
+													value={filtroDataFim}
+													onChange={(e) => setFiltroDataFim(e.target.value)}
+													className="border rounded px-2 py-1"
+												/>
+											</div>
+										</div>
+
+										{/* Linha 3: Planos de Contas */}
 										<div className="flex flex-col">
-											<label className="font-medium text-gray-700">Descrição</label>
-											<input
-												type="text"
-												value={filtroDescricao}
-												placeholder="Digite a descrição"
-												onChange={(e) => setFiltroDescricao(e.target.value)}
-												className="border rounded px-2 py-1"
+											<label className="font-medium text-gray-700 mb-1">
+												Planos de Contas <span className="text-gray-500">(opcional)</span>
+											</label>
+											<MultiSelectDropdown
+												items={planosDisponiveis}
+												selectedItems={planosSelecionados}
+												onSelect={adicionarPlano}
+												onRemove={removerPlano}
+												placeholder="Clique para selecionar planos de contas..."
+												searchPlaceholder="Buscar plano de contas..."
 											/>
 										</div>
 
+										{/* Linha 4: Centro de Custos */}
 										<div className="flex flex-col">
-											<label className="font-medium text-gray-700">Valor</label>
-
-											<input
-												name="valor"
-												className="w-full p-2 bg-white border border-gray-300 rounded"
-												placeholder="R$ 0,00"
-												prefix="R$ "
-												value={filtroValor}
-												onChange={(e) => setFiltroValor(e.target.value)}
-											/>
-										</div>
-
-										<div className="flex flex-col">
-											<label className="font-medium text-gray-700">Data Inicial</label>
-											<input
-												type="date"
-												value={filtroDataInicio}
-												onChange={(e) => setFiltroDataInicio(e.target.value)}
-												className="border rounded px-2 py-1"
-											/>
-										</div>
-
-										<div className="flex flex-col">
-											<label className="font-medium text-gray-700">Data Final</label>
-											<input
-												type="date"
-												value={filtroDataFim}
-												onChange={(e) => setFiltroDataFim(e.target.value)}
-												className="border rounded px-2 py-1"
+											<label className="font-medium text-gray-700 mb-1">
+												Centro de Custos <span className="text-gray-500">(opcional)</span>
+											</label>
+											<MultiSelectDropdown
+												items={centrosDisponiveis}
+												selectedItems={centrosSelecionados}
+												onSelect={adicionarCentro}
+												onRemove={removerCentro}
+												placeholder="Clique para selecionar centros de custos..."
+												searchPlaceholder="Buscar centro de custos..."
 											/>
 										</div>
 									</div>

@@ -87,6 +87,10 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [dataInicio, setDataInicio] = useState<string>('');
 	const [dataFim, setDataFim] = useState<string>('');
 	const [statusFiltro, setStatusFiltro] = useState<string>('todos');
+	const [planosFiltroIds, setPlanosFiltroIds] = useState<number[] | undefined>(undefined);
+	const [centrosFiltroIds, setCentrosFiltroIds] = useState<number[] | undefined>(undefined);
+	const [planosSelecao, setPlanosSelecao] = useState<any[]>([]);
+	const [centrosSelecao, setCentrosSelecao] = useState<any[]>([]);
 
 	const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
 	const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
@@ -97,6 +101,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [historicoImportacoes, setHistoricoImportacoes] = useState<any[]>([]);
 	const [dropdownHistoricoAberto, setDropdownHistoricoAberto] = useState(false);
 	const [modalConciliacaoHistoricoIsOpen, setModalConciliacaoHistoricoIsOpen] = useState(false);
+	const [isLoadingHistorico, setIsLoadingHistorico] = useState(false);
 	const [historicoSelecionado, setHistoricoSelecionado] = useState<{
 		movimentos: MovimentoBancario[];
 		totalizadores: TotalizadoresOFX;
@@ -108,6 +113,10 @@ const MovimentoBancarioTable: React.FC = () => {
 	// Estados para edição de conta do histórico OFX
 	const [modalEditarContaIsOpen, setModalEditarContaIsOpen] = useState(false);
 	const [historicoParaEditarConta, setHistoricoParaEditarConta] = useState<any | null>(null);
+
+	// Estados para seleção múltipla e conciliação em lote
+	const [movimentosSelecionados, setMovimentosSelecionados] = useState<MovimentoBancario[]>([]);
+	const [tipoMovimentoSelecionado, setTipoMovimentoSelecionado] = useState<'C' | 'D' | null>(null);
 
 	// 🔹 Paginação
 	const [currentPage, setCurrentPage] = useState(1);
@@ -187,7 +196,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			});
 			fetchMovimentos(1);
 		}
-	}, [contaSelecionada, dataInicio, dataFim, statusFiltro, itemsPerPage]);
+	}, [contaSelecionada, dataInicio, dataFim, statusFiltro, itemsPerPage, planosFiltroIds, centrosFiltroIds]);
 
 	useEffect(() => {
 		if (!contaSelecionada) {
@@ -241,7 +250,9 @@ const MovimentoBancarioTable: React.FC = () => {
 				contaSelecionada.id,
 				dataInicio,
 				dataFim,
-				statusFiltro
+				statusFiltro,
+				planosFiltroIds,
+				centrosFiltroIds
 			);
 
 			console.log('📊 Resultado da busca:', result);
@@ -335,11 +346,23 @@ const MovimentoBancarioTable: React.FC = () => {
 		// Aqui você pode processar o arquivo OFX
 	};
 
-	const handleSearchFilters = (filters: { dataInicio: string; dataFim: string; status: string }) => {
+	const handleSearchFilters = (filters: { 
+		dataInicio: string; 
+		dataFim: string; 
+		status: string;
+		planosIds?: number[];
+		centrosIds?: number[];
+		planosSelecionados?: any[];
+		centrosSelecionados?: any[];
+	}) => {
 		console.log('🔍 Aplicando filtros:', filters);
 		setDataInicio(filters.dataInicio);
 		setDataFim(filters.dataFim);
 		setStatusFiltro(filters.status);
+		setPlanosFiltroIds(filters.planosIds);
+		setCentrosFiltroIds(filters.centrosIds);
+		setPlanosSelecao(filters.planosSelecionados || []);
+		setCentrosSelecao(filters.centrosSelecionados || []);
 		setCurrentPage(1);
 		// O useEffect vai detectar a mudança e chamar fetchMovimentos automaticamente
 	};
@@ -581,6 +604,10 @@ const MovimentoBancarioTable: React.FC = () => {
 			setCurrentPage(paginaAtual);
 			setModalConciliaIsOpen(false);
 			
+			// Limpar seleção
+			setMovimentosSelecionados([]);
+			setTipoMovimentoSelecionado(null);
+			
 			// Recarregar dados da página atual
 			await fetchMovimentos(paginaAtual);
 			
@@ -617,10 +644,130 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
+	const handleSelecionarMovimento = (movimento: MovimentoBancario) => {
+		if (!tipoMovimentoSelecionado) {
+			setTipoMovimentoSelecionado(movimento.tipoMovimento || null);
+			setMovimentosSelecionados([movimento]);
+		} else if (tipoMovimentoSelecionado === movimento.tipoMovimento) {
+			const jaSelecionado = movimentosSelecionados.some(m => m.id === movimento.id);
+			if (jaSelecionado) {
+				const novosSelecionados = movimentosSelecionados.filter(m => m.id !== movimento.id);
+				setMovimentosSelecionados(novosSelecionados);
+				if (novosSelecionados.length === 0) {
+					setTipoMovimentoSelecionado(null);
+				}
+			} else {
+				setMovimentosSelecionados([...movimentosSelecionados, movimento]);
+			}
+		} else {
+			toast.warning('Não é possível selecionar movimentos de tipos diferentes (Crédito/Débito)');
+		}
+	};
+
+	const handleSelecionarTodos = (e: React.ChangeEvent<HTMLInputElement>) => {
+		if (e.target.checked) {
+			if (currentItems.length === 0) {
+				console.warn('Nenhum movimento disponível para seleção');
+				e.target.checked = false;
+				return;
+			}
+
+			const primeiroMovimento = currentItems[0];
+			
+			if (!primeiroMovimento || !primeiroMovimento.tipoMovimento) {
+				console.warn('Primeiro movimento inválido:', primeiroMovimento);
+				e.target.checked = false;
+				return;
+			}
+
+			const todosMesmoTipo = currentItems.every(m => m && m.tipoMovimento === primeiroMovimento.tipoMovimento);
+			
+			if (todosMesmoTipo) {
+				setTipoMovimentoSelecionado(primeiroMovimento.tipoMovimento);
+				setMovimentosSelecionados(currentItems);
+			} else {
+				toast.warning('Não é possível selecionar movimentos de tipos diferentes (Crédito/Débito)');
+				e.target.checked = false;
+			}
+		} else {
+			setMovimentosSelecionados([]);
+			setTipoMovimentoSelecionado(null);
+		}
+	};
+
+	const handleConciliarSelecionados = () => {
+		if (movimentosSelecionados.length > 0) {
+			setMovimentoParaConciliar(movimentosSelecionados[0]);
+			setModalConciliaIsOpen(true);
+		}
+	};
+
+	const handleConciliaMultiplos = async (data: any) => {
+		try {
+			const movimentosAtualizados: MovimentoBancario[] = [];
+			const erros: number[] = [];
+
+			for (const movimento of movimentosSelecionados) {
+				try {
+					const movimentoAtualizado: MovimentoBancario = {
+						...movimento,
+						modalidadeMovimento: data.modalidadeMovimento,
+						idPlanoContas: data.idPlanoContas || undefined,
+						idPessoa: data.idPessoa || null,
+						idBanco: data.idBanco || undefined,
+						numeroDocumento: data.numeroDocumento || undefined,
+						parcelado: data.parcelado || false,
+						idFinanciamento: data.idFinanciamento || undefined,
+						idUsuario: movimento.idUsuario || undefined,
+						idCentroCustos: data.idCentroCustos || undefined,
+					};
+
+					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
+					movimentosAtualizados.push(resultadoSalvo);
+				} catch (error) {
+					console.error(`Erro ao conciliar movimento ${movimento.id}:`, error);
+					erros.push(movimento.id);
+				}
+			}
+
+			// Limpa a seleção
+			setMovimentosSelecionados([]);
+			setTipoMovimentoSelecionado(null);
+
+			// Fecha o modal
+			setMovimentoParaConciliar(null);
+			setModalConciliaIsOpen(false);
+
+			// Recarrega a página atual
+			await fetchMovimentos(currentPage);
+
+			// Exibe mensagens de feedback
+			if (erros.length > 0) {
+				toast.error(`Erro ao conciliar ${erros.length} movimento(s).`);
+			}
+			if (movimentosAtualizados.length > 0) {
+				toast.success(`${movimentosAtualizados.length} movimento(s) conciliado(s) com sucesso!`);
+			}
+		} catch (error) {
+			console.error('Erro ao conciliar movimentos:', error);
+			toast.error('Erro ao conciliar movimentos.');
+		}
+	};
+
 	const currentItems = filteredMovimentos;
 
 	return (
 		<div>
+			{/* Loading bloqueante para histórico */}
+			{isLoadingHistorico && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+					<div className="bg-white rounded-lg p-8 flex flex-col items-center gap-4">
+						<div className="loader"></div>
+						<p className="text-gray-700 font-semibold">Carregando movimentos...</p>
+					</div>
+				</div>
+			)}
+
 			<div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 lg:gap-5 mb-4">
 				<div className="flex flex-col sm:flex-row items-start sm:items-end gap-3 relative w-full lg:w-auto" ref={menuRef}>
 					<div className="relative w-auto whitespace-nowrap">
@@ -733,6 +880,9 @@ const MovimentoBancarioTable: React.FC = () => {
 												<button
 													onClick={async () => {
 														try {
+															setIsLoadingHistorico(true);
+															setDropdownHistoricoAberto(false);
+															
 															// Busca os movimentos atualizados do banco de dados
 															const movimentosAtualizados = await buscarMovimentosPorIds(item.idMovimentos);
 															
@@ -741,10 +891,11 @@ const MovimentoBancarioTable: React.FC = () => {
 																totalizadores: item.totalizadores 
 															});
 															setModalConciliacaoHistoricoIsOpen(true);
-															setDropdownHistoricoAberto(false);
 														} catch (error) {
 															console.error('Erro ao buscar movimentos atualizados:', error);
 															toast.error('Erro ao carregar movimentos do histórico');
+														} finally {
+															setIsLoadingHistorico(false);
 														}
 													}}
 													className="flex-1 text-left min-w-0"
@@ -787,6 +938,14 @@ const MovimentoBancarioTable: React.FC = () => {
 							<table className="w-full border-collapse">
 								<thead>
 									<tr className="bg-gray-200">
+										<th className="p-2 text-center w-12">
+											<input
+												type="checkbox"
+												checked={currentItems.length > 0 && currentItems.every(m => movimentosSelecionados.some(ms => ms.id === m.id))}
+												onChange={handleSelecionarTodos}
+												className="w-4 h-4"
+											/>
+										</th>
 										<th className="pl-5 p-2 text-left truncate">Data do Movimento</th>
 										<th className="p-2 text-left">Histórico</th>
 										<th className="p-2 text-center">Plano Contas</th>
@@ -796,13 +955,22 @@ const MovimentoBancarioTable: React.FC = () => {
 							<tbody>
 								{currentItems.length === 0 ? (
 									<tr>
-										<td colSpan={5} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
+										<td colSpan={6} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
 											Nenhum movimento encontrado!
 										</td>
 									</tr>
 								) : (
 									currentItems.map((movBancario) => (
 											<tr key={movBancario.id} className="border-b">
+												<td className="p-2 text-center">
+													<input
+														type="checkbox"
+														checked={movimentosSelecionados.some(m => m.id === movBancario.id)}
+														onChange={() => handleSelecionarMovimento(movBancario)}
+														className="w-4 h-4"
+														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== movBancario.tipoMovimento}
+													/>
+												</td>
 												<td className="pl-5 p-2 text-left truncate">{formatarData(movBancario.dtMovimento)}</td>
 												<td className="p-2 text-left max-w-[490px] truncate">
 													<span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
@@ -878,12 +1046,21 @@ const MovimentoBancarioTable: React.FC = () => {
 											<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
 												{/* Header do card */}
 												<div className="flex justify-between items-start mb-3">
-													<div className="flex-1">
-														<div className="text-sm font-medium text-gray-900">
-															{formatarData(movBancario.dtMovimento)}
-														</div>
-														<div className="text-xs text-gray-500 mt-1">
-															{movBancario.historico}
+													<div className="flex items-center gap-2">
+														<input
+															type="checkbox"
+															checked={movimentosSelecionados.some(m => m.id === movBancario.id)}
+															onChange={() => handleSelecionarMovimento(movBancario)}
+															className="w-4 h-4"
+															disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== movBancario.tipoMovimento}
+														/>
+														<div className="flex-1">
+															<div className="text-sm font-medium text-gray-900">
+																{formatarData(movBancario.dtMovimento)}
+															</div>
+															<div className="text-xs text-gray-500 mt-1">
+																{movBancario.historico}
+															</div>
 														</div>
 													</div>
 														<div className="flex items-center gap-2">
@@ -1021,6 +1198,24 @@ const MovimentoBancarioTable: React.FC = () => {
 					</>
 				)}
 			</div>
+
+			{/* Botão fixo de conciliação em lote */}
+			{movimentosSelecionados.length > 0 && (
+				<div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50" style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}>
+					<div className="container mx-auto flex justify-between items-center">
+						<span className="text-gray-600 font-semibold text-lg">
+							{movimentosSelecionados.length} movimento(s) selecionado(s)
+						</span>
+						<button
+							onClick={handleConciliarSelecionados}
+							className="bg-blue-600 text-white text-lg px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+						>
+							Conciliar {movimentosSelecionados.length} Movimento(s)
+						</button>
+					</div>
+				</div>
+			)}
+
 			<LancamentoManual isOpen={modalIsOpen} onClose={() => setModalIsOpen(false)} handleSave={handleSave} isSaving={isSaving} />
 
 			<ImportOFXModal isOpen={modalImportOFXIsOpen} onClose={() => setModalImportOFXIsOpen(false)} handleImport={handleImportFile} />
@@ -1032,6 +1227,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				dataInicio={dataInicio}
 				dataFim={dataFim}
 				status={statusFiltro}
+				planosIniciais={planosSelecao}
+				centrosIniciais={centrosSelecao}
 			/>
 
 			<DialogModal
@@ -1091,10 +1288,15 @@ const MovimentoBancarioTable: React.FC = () => {
 
 			<ConciliarPlano
 				isOpen={modalConciliaIsOpen}
-				onClose={() => setModalConciliaIsOpen(false)}
+				onClose={() => {
+					setModalConciliaIsOpen(false);
+					setMovimentoParaConciliar(null);
+				}}
 				movimento={movimentoParaConciliar || ({} as MovimentoBancario)}
 				planos={planos}
 				handleConcilia={handleConcilia}
+				movimentosSelecionados={movimentosSelecionados}
+				onConciliaMultiplos={handleConciliaMultiplos}
 			/>
 
 			{historicoSelecionado && (
