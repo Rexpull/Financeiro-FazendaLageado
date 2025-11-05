@@ -15,6 +15,7 @@ import { Pessoa } from '../../../../../../backend/src/models/Pessoa';
 import { CentroCustos } from '../../../../../../backend/src/models/CentroCustos';
 import { Resultado } from '../../../../../../backend/src/models/Resultado';
 import ModalRateioPlano from './ModalRateioPlano';
+import ModalRateioCentroCustos from './ModalRateioCentroCustos';
 import ModalFinanciamento from '../../Financiamento/ModalFinanciamento';
 import { listarFinanciamentos, salvarFinanciamento } from '../../../../services/financiamentoService';
 import { Financiamento } from '../../../../../../backend/src/models/Financiamento';
@@ -24,6 +25,7 @@ import { toast } from 'react-toastify';
 import { ParcelaFinanciamento } from '../../../../../../backend/src/models/ParcelaFinanciamento';
 import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinanciamentoService';
 import ListFinanciamentos from '../../Financiamento/ListFinanciamentos';
+import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
   
 Modal.setAppElement('#root');
 
@@ -87,9 +89,11 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const [showPlanoDropdown, setShowPlanoDropdown] = useState(false);
 	const [planosSearchValue, setPlanosSearchValue] = useState('');
 	const [rateioModalAberto, setRateioModalAberto] = useState(false);
+	const [rateioCentrosModalAberto, setRateioCentrosModalAberto] = useState(false);
 	const [showCentroCustosDropdown, setShowCentroCustosDropdown] = useState(false);
 	const [centroCustosSearchValue, setCentroCustosSearchValue] = useState('');
 	const [rateios, setRateios] = useState<{ idPlano: number; descricao: string; valor: number }[]>([]);
+	const [rateiosCentros, setRateiosCentros] = useState<{ idCentro: number; descricao: string; valor: number }[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
 	const [modalFinanciamentoOpen, setModalFinanciamentoOpen] = useState(false);
 	const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
@@ -283,6 +287,20 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		});
 		setRateios(convertidos);
 		setRateioModalAberto(false);
+	};
+
+	const aplicarRateioCentrosComoCentroCustosList = (centros: MovimentoCentroCustos[]) => {
+		movimento.centroCustosList = centros;
+		const convertidos = centros.map((c) => {
+			const centro = centroCustos.find((ct) => ct.id === c.idCentroCustos);
+			return {
+				idCentro: c.idCentroCustos,
+				descricao: centro?.descricao || `Centro ${c.idCentroCustos}`,
+				valor: c.valor,
+			};
+		});
+		setRateiosCentros(convertidos);
+		setRateioCentrosModalAberto(false);
 	};
 
 	const handleSearchCentroCustos = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -519,7 +537,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 		setIsSaving(true);
 		try {
-			let dados = {};
+			let dados: any = {};
 
 		console.log('formData ', formData);
 		console.log('idPlanoContas ', idPlanoContas);
@@ -531,6 +549,11 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					idCentroCustos: formData.idCentroCustos,
 					modalidadeMovimento,
 				};
+				
+				// Adicionar centroCustosList se houver múltiplos centros
+				if (rateiosCentros.length > 0 || (movimento.centroCustosList ?? []).length > 0) {
+					dados.centroCustosList = movimento.centroCustosList;
+				}
 			} else if (modalidadeMovimento === 'financiamento') {
 				dados = {
 					idPlanoContas: idPlanoContas,
@@ -538,7 +561,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					idCentroCustos: formData.idCentroCustos,
 					modalidadeMovimento,
 				};
-				console.log('financiamento sendo enviado:', dados)
+				console.log('financiamento sendo enviado:', dados);
+				
+				// Adicionar centroCustosList se houver múltiplos centros
+				if (rateiosCentros.length > 0 || (movimento.centroCustosList ?? []).length > 0) {
+					dados.centroCustosList = movimento.centroCustosList;
+				}
 			} else if (modalidadeMovimento === 'transferencia') {
 				const idPlano = transferenciaPlanoMode === 'transferencia' ? parametros[0]?.idPlanoTransferenciaEntreContas : 233; //Id plano de contas de aplicação de fundos (Tô com preguiça de parametrizar)
 				
@@ -713,17 +741,49 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							<label className="block text-sm font-medium text-gray-700 mb-1">
 								Centro de Custos <span className="text-gray-500">(opcional)</span>
 							</label>
-							<div className="relative">
-								<input
-									type="text"
-									className="w-full p-2 border border-gray-300 rounded cursor-pointer"
-									placeholder="Clique para selecionar centro de custos..."
-									onClick={() => setShowCentroCustosDropdown(!showCentroCustosDropdown)}
-									value={searchCentroCustos}
-									readOnly
-								/>
-								<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+							<div className="flex w-full">
+								<div className="relative w-full">
+									<input
+										type="text"
+										className={`w-full p-2 border rounded-l cursor-pointer ${rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 ? 'bg-gray-100' : ''}`}
+										placeholder="Clique para selecionar centro de custos..."
+										onClick={() => !(rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1) && setShowCentroCustosDropdown(!showCentroCustosDropdown)}
+										value={rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 ? 'Múltiplos Centros' : searchCentroCustos}
+										readOnly
+									/>
+									<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+								</div>
+								<button
+									type="button"
+									className={`px-3 rounded-r ${
+										movimentosSelecionados.length > 1
+											? 'bg-gray-300 cursor-not-allowed'
+											: 'bg-green-500 hover:bg-green-600 text-white'
+									}`}
+									onClick={() => movimentosSelecionados.length <= 1 && setRateioCentrosModalAberto(true)}
+									disabled={movimentosSelecionados.length > 1}
+									title={movimentosSelecionados.length > 1 ? 'Não é possível usar múltiplos centros em conciliação em lote' : 'Adicionar múltiplos centros'}
+								>
+									<FontAwesomeIcon icon={faPlus} className="font-bolder" />
+								</button>
 							</div>
+							{(rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1) && (
+								<p className="text-gray-500 text-xs col-span-2">
+									Múltiplos centros configurados para rateio
+								</p>
+							)}
+
+							{(movimento.centroCustosList ?? []).length === 1 && movimento.idCentroCustos && (
+								<p className="text-gray-500 text-xs col-span-2">
+									Centro de custos já associado
+								</p>
+							)}
+							{movimentosSelecionados.length > 1 && (
+								<p className="text-gray-500 text-xs col-span-2">
+									Selecione um centro único para aplicar a todos os movimentos selecionados
+								</p>
+							)}
+
 							{showCentroCustosDropdown && (
 								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1">
 									<div className="p-2 border-b">
@@ -805,12 +865,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							</div>
 							{errors.financiamento && <p className="text-red-500 text-xs">{errors.financiamento}</p>}
 							
-							{buscaFinanciamento && !financiamentoSelecionado && (
+							{buscaFinanciamento && !financiamentoSelecionado && financiamentosFiltrados.length > 0 && (
 								<ul className="absolute z-10 border rounded mt-1 bg-white max-h-40 overflow-y-auto w-full shadow-lg">
-									{financiamentosFiltrados.map(f => (
+									{financiamentosFiltrados.map((f: Financiamento) => (
 										<li
 											key={f.id}
-											className={`p-2 cursor-pointer hover:bg-orange-100 ${financiamentoSelecionado?.id === f.id ? 'bg-orange-200' : ''}`}
+											className="p-2 cursor-pointer hover:bg-orange-100"
 											onClick={() => setFinanciamentoSelecionado(f)}
 										>
 											<strong>{f.numeroContrato}</strong> - {f.responsavel} - {bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome}
@@ -1074,6 +1134,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				rateios={rateios}
 				setRateios={setRateios}
 			/>
+			<ModalRateioCentroCustos
+				isOpen={rateioCentrosModalAberto}
+				onClose={() => setRateioCentrosModalAberto(false)}
+				onConfirmar={aplicarRateioCentrosComoCentroCustosList}
+				centrosDisponiveis={centroCustos}
+				movimento={movimento}
+				valorTotal={movimento.valor}
+				rateios={rateiosCentros}
+				setRateios={setRateiosCentros}
+			/>
 			<ModalFinanciamento
 				isOpen={modalFinanciamentoOpen}
 				onClose={() => setModalFinanciamentoOpen(false)}
@@ -1083,8 +1153,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					await carregarFinanciamentos();
 					setFinanciamentoSelecionado(financiamento);
 				}}
-				bancos={bancos}
-				pessoas={pessoas}
+				bancos={bancos as any}
+				pessoas={pessoas as any}
 				financiamentoData={novoFinanciamentoData}
 			/>
 			{financiamentoSelecionado && (
@@ -1095,8 +1165,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					}}
 					financiamento={financiamentoSelecionado}
 					onSave={handleSaveFinanciamento}
-					bancos={bancos}
-					pessoas={pessoas}
+					bancos={bancos as any}
+					pessoas={pessoas as any}
 				/>
 			)}
 			<DialogModal
@@ -1109,17 +1179,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				onConfirm={handleLiquidarParcela}
 				title="Liquidar Parcela"
 				type="info"
-				message={
-					<div className="space-y-4">
-						<p>Selecione a data de liquidação da parcela:</p>
-						<input
-							type="date"
-							value={liquidationDate}
-							onChange={(e) => setLiquidationDate(e.target.value)}
-							className="w-full p-2 border rounded"
-						/>
-					</div>
-				}
+				message="Selecione a data de liquidação da parcela:"
 				confirmLabel="Liquidar"
 				cancelLabel="Cancelar"
 			/>

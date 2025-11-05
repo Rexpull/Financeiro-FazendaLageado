@@ -1,4 +1,5 @@
 import { Resultado } from "./Resultado";
+import { MovimentoCentroCustos } from "./MovimentoCentroCustos";
 
 export interface MovimentoBancario {
     id: number;
@@ -24,5 +25,6 @@ export interface MovimentoBancario {
     tipoMovimento?: "C" | "D";
 	modalidadeMovimento?: "padrao" | "financiamento" | "transferencia";
     idFinanciamento?: number;
-    resultadoList?: Resultado[]; 
+    resultadoList?: Resultado[];
+    centroCustosList?: MovimentoCentroCustos[];
 }

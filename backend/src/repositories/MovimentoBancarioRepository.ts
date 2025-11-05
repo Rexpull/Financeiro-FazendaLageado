@@ -3,17 +3,20 @@ import { ResultadoRepository } from './ResultadoRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 import { FinanciamentoDetalhadoDTO } from '../models/FinanciamentoDetalhadoDTO';
 import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository';
+import { MovimentoCentroCustosRepository } from './MovimentoCentroCustosRepository';
 import * as XLSX from 'xlsx';
 
 export class MovimentoBancarioRepository {
 	private db: D1Database;
 	private resultadoRepo: ResultadoRepository;
 	private parcelaRepo: ParcelaFinanciamentoRepository;
+	private movimentoCentroCustosRepo: MovimentoCentroCustosRepository;
 
 	constructor(db: D1Database) {
 		this.db = db;
 		this.resultadoRepo = new ResultadoRepository(db);
 		this.parcelaRepo = new ParcelaFinanciamentoRepository(db);
+		this.movimentoCentroCustosRepo = new MovimentoCentroCustosRepository(db);
 	}
 
 	async getMovimentosPorDetalhamento(planoId: number, mes: number, tipo: string): Promise<MovimentoDetalhado[]> {
@@ -431,9 +434,13 @@ export class MovimentoBancarioRepository {
 		const temResultadoList = movimento.resultadoList && movimento.resultadoList.length > 0;
 		console.log('🔍 Tem resultadoList para processar?', temResultadoList);
 
-		// Se não há campos para alterar E não há resultadoList, retornar
-		if (Object.keys(camposAlterados).length === 0 && !temResultadoList) {
-			console.log('ℹ️ Nenhum campo foi alterado e não há resultadoList para processar');
+		// Verificar se há centroCustosList para processar
+		const temCentroCustosList = movimento.centroCustosList && movimento.centroCustosList.length > 0;
+		console.log('🔍 Tem centroCustosList para processar?', temCentroCustosList);
+
+		// Se não há campos para alterar E não há resultadoList E não há centroCustosList, retornar
+		if (Object.keys(camposAlterados).length === 0 && !temResultadoList && !temCentroCustosList) {
+			console.log('ℹ️ Nenhum campo foi alterado e não há resultadoList nem centroCustosList para processar');
 			return;
 		}
 
@@ -584,6 +591,42 @@ export class MovimentoBancarioRepository {
 			console.log('⚠️ Nenhum resultado para processar');
 		}
 
+		// Processar centroCustosList se necessário
+		console.log('🧹 Limpando centros de custos antigos...');
+		await this.movimentoCentroCustosRepo.deleteByMovimento(id);
+
+		let centroCustosList = movimento.centroCustosList;
+		console.log('🔍 Processando centroCustosList:', JSON.stringify(centroCustosList, null, 2));
+
+		if (!centroCustosList || centroCustosList.length === 0) {
+			console.log('⚠️ Nenhum centroCustosList fornecido, verificando se precisa criar centro padrão...');
+			if (camposAlterados.idCentroCustos) {
+				console.log('⚠️ Nenhum centro informado. Criando centro padrão...');
+				centroCustosList = [
+					{
+						idMovimentoBancario: id,
+						idCentroCustos: camposAlterados.idCentroCustos,
+						valor: Math.abs(movimentoAtual.valor),
+					},
+				];
+			}
+		} else {
+			console.log('✅ centroCustosList fornecido, processando múltiplos centros...');
+		}
+
+		if (centroCustosList?.length) {
+			console.log(`📝 Criando ${centroCustosList.length} centros de custos:`);
+			centroCustosList.forEach((c: any, index: number) => {
+				console.log(`  ${index + 1}. Centro: ${c.idCentroCustos}, Valor: ${c.valor}`);
+			});
+			for (const centro of centroCustosList) {
+				await this.movimentoCentroCustosRepo.criar({ ...centro, idMovimentoBancario: id });
+			}
+			console.log('✅ Centros de custos criados com sucesso');
+		} else {
+			console.log('⚠️ Nenhum centro de custos para processar');
+		}
+
 		console.log('✅ Movimento atualizado com sucesso');
 	}
 
@@ -609,7 +652,11 @@ export class MovimentoBancarioRepository {
 			console.log(`🧹 Removendo parcelas de financiamento relacionadas ao movimento ${id}`);
 			await this.parcelaRepo.deleteByMovimentoBancario(id);
 			
-			// 3. Por último, remover o movimento bancário principal
+			// 3. Remover registros da tabela MovimentoCentroCustos que referenciam este movimento
+			console.log(`🧹 Removendo centros de custos relacionados ao movimento ${id}`);
+			await this.movimentoCentroCustosRepo.deleteByMovimento(id);
+			
+			// 4. Por último, remover o movimento bancário principal
 			console.log(`🗑 Removendo movimento bancário principal ID ${id}`);
 			await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(id).run();
 			
@@ -670,6 +717,10 @@ export class MovimentoBancarioRepository {
 					// Excluir parcelas relacionadas
 					console.log(`🧹 Excluindo parcelas para movimento ${idNumerico}`);
 					await this.parcelaRepo.deleteByMovimentoBancario(idNumerico);
+					
+					// Excluir centros de custos relacionados
+					console.log(`🧹 Excluindo centros de custos para movimento ${idNumerico}`);
+					await this.movimentoCentroCustosRepo.deleteByMovimento(idNumerico);
 					
 					// Excluir movimento principal
 					console.log(`🗑 Excluindo movimento principal ${idNumerico}`);
