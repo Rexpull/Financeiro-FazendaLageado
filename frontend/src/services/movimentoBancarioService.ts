@@ -148,6 +148,10 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 			if (movimento.resultadoList !== movimentoAtual.resultadoList) {
 				camposAlterados.resultadoList = movimento.resultadoList;
 			}
+			// Incluir centroCustosList se presente (não é um campo da tabela, mas precisa ser processado)
+			if (movimento.centroCustosList !== undefined) {
+				camposAlterados.centroCustosList = movimento.centroCustosList;
+			}
 
 			// Limpar valores undefined antes de enviar
 			const movimentoLimpo = Object.fromEntries(
@@ -164,8 +168,8 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 
 			if (!res.ok) throw new Error('Erro ao atualizar movimento bancário');
 			
-			// Buscar o movimento atualizado do backend
-			const movimentoAtualizado = await buscarMovimentoBancarioById(movimento.id);
+			// O backend agora retorna o movimento completo com centroCustosList
+			const movimentoAtualizado = await res.json() as MovimentoBancario;
 			toast.success(`Movimento atualizado com sucesso!`);
 			return movimentoAtualizado;
 		} else {

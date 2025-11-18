@@ -11,7 +11,7 @@ import { MovimentoCentroCustos } from '../../../../../../backend/src/models/Movi
 interface RateioCentro {
 	idCentro: number;
 	descricao: string;
-	valor: number;
+	valor: number; // Quando isModoMultiplos e tipoRateio é 'porcentagem', este campo armazena a porcentagem diretamente
 }
 
 interface ModalRateioCentroCustosProps {
@@ -22,7 +22,8 @@ interface ModalRateioCentroCustosProps {
 	centrosDisponiveis: CentroCustos[];
 	rateios: RateioCentro[];
 	setRateios: (rateios: RateioCentro[]) => void;
-	onConfirmar: (centros: MovimentoCentroCustos[]) => void;
+	onConfirmar: (centros: MovimentoCentroCustos[] | { idCentro: number; porcentagem: number }[]) => void;
+	movimentosMultiplos?: MovimentoBancario[];
 }
 
 const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
@@ -34,30 +35,59 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	rateios,
 	setRateios,
 	onConfirmar,
+	movimentosMultiplos,
 }) => {
 	const [centroSelecionado, setCentroSelecionado] = useState<CentroCustos | null>(null);
 	const [valorParcial, setValorParcial] = useState<string>('0,00');
 	const [searchCentro, setSearchCentro] = useState('');
 	const [showSuggestions, setShowSuggestions] = useState(false);
-	const [tipoRateio, setTipoRateio] = useState<'valor' | 'porcentagem'>('valor');
+	const isModoMultiplos = movimentosMultiplos && movimentosMultiplos.length > 1;
+	const [tipoRateio, setTipoRateio] = useState<'valor' | 'porcentagem'>(isModoMultiplos ? 'porcentagem' : 'valor');
 	const [porcentagemParcial, setPorcentagemParcial] = useState<string>('0');
 
 	const valorNumericoParcial = Number(valorParcial.replace(/\./g, '').replace(',', '.')) || 0;
 	const porcentagemNumericaParcial = Number(porcentagemParcial) || 0;
 
 	const valorTotalAbsoluto = Math.abs(valorTotal);
-	const totalRateado = rateios.reduce((acc, r) => acc + r.valor, 0);
+	
+	// Debug: logar valores iniciais
+	if (tipoRateio === 'porcentagem' && porcentagemParcial !== '0' && porcentagemParcial !== '') {
+		console.log('🔍 DEBUG - Valores iniciais:');
+		console.log('  - valorTotal:', valorTotal);
+		console.log('  - valorTotalAbsoluto:', valorTotalAbsoluto);
+		console.log('  - porcentagemParcial (string):', porcentagemParcial);
+		console.log('  - porcentagemNumericaParcial:', porcentagemNumericaParcial);
+		console.log('  - tipoRateio:', tipoRateio);
+		console.log('  - isModoMultiplos:', isModoMultiplos);
+	}
+	
+	// Quando há múltiplos movimentos e tipoRateio é 'porcentagem', trabalhar apenas com porcentagens puras
+	const isModoPorcentagemPura = isModoMultiplos && tipoRateio === 'porcentagem';
+	
+	// Calcular total rateado e porcentagem total
+	let totalRateado = 0;
+	let porcentagemTotalRateada = 0;
+	
+	if (isModoPorcentagemPura) {
+		// Em modo porcentagem pura, o campo 'valor' armazena a porcentagem diretamente
+		porcentagemTotalRateada = rateios.reduce((acc, r) => acc + r.valor, 0);
+		totalRateado = 0; // Não calculamos valores quando há múltiplos movimentos
+	} else {
+		// Modo normal: calcular valores e porcentagens baseados no valorTotalAbsoluto
+		totalRateado = rateios.reduce((acc, r) => acc + r.valor, 0);
+		porcentagemTotalRateada = rateios.reduce((acc, r) => {
+			const porcentagemRateio = (r.valor / valorTotalAbsoluto) * 100;
+			return acc + porcentagemRateio;
+		}, 0);
+	}
+	
 	const valorRestante = valorTotalAbsoluto - totalRateado;
 
-	// Calcular valor baseado na porcentagem
-	const valorCalculadoPorcentagem = (porcentagemNumericaParcial / 100) * valorTotalAbsoluto;
+	// Calcular valor baseado na porcentagem (apenas quando não está em modo porcentagem pura)
+	const valorCalculadoPorcentagem = isModoPorcentagemPura 
+		? 0 // Não calcular valor quando em modo porcentagem pura
+		: (porcentagemNumericaParcial / 100) * valorTotalAbsoluto;
 	const valorFinalParcial = tipoRateio === 'valor' ? valorNumericoParcial : valorCalculadoPorcentagem;
-
-	// Calcular porcentagem total dos rateios existentes
-	const porcentagemTotalRateada = rateios.reduce((acc, r) => {
-		const porcentagemRateio = (r.valor / valorTotalAbsoluto) * 100;
-		return acc + porcentagemRateio;
-	}, 0);
 
 	// Calcular porcentagem restante
 	const porcentagemRestante = 100 - porcentagemTotalRateada;
@@ -84,18 +114,23 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	};
 
 	useEffect(() => {
-		if (isOpen && movimento && (movimento.centroCustosList ?? []).length > 0) {
-			const convertidos: RateioCentro[] = (movimento.centroCustosList ?? []).map((c) => {
-				const centro = centrosDisponiveis.find((ct) => ct.id === c.idCentroCustos);
-				return {
-					idCentro: c.idCentroCustos,
-					descricao: centro?.descricao || `Centro ${c.idCentroCustos}`,
-					valor: c.valor,
-				};
-			});
-			setRateios(convertidos);
+		if (isOpen) {
+			if (isModoMultiplos) {
+				// Em modo múltiplos, não carregar do movimento
+				setRateios([]);
+			} else if (movimento && (movimento.centroCustosList ?? []).length > 0) {
+				const convertidos: RateioCentro[] = (movimento.centroCustosList ?? []).map((c) => {
+					const centro = centrosDisponiveis.find((ct) => ct.id === c.idCentroCustos);
+					return {
+						idCentro: c.idCentroCustos,
+						descricao: centro?.descricao || `Centro ${c.idCentroCustos}`,
+						valor: c.valor,
+					};
+				});
+				setRateios(convertidos);
+			}
 		}
-	}, [isOpen]);
+	}, [isOpen, isModoMultiplos]);
 
 	// Limpar busca quando modal fechar
 	useEffect(() => {
@@ -105,9 +140,9 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			setShowSuggestions(false);
 			setValorParcial('0,00');
 			setPorcentagemParcial('0');
-			setTipoRateio('valor');
+			setTipoRateio(isModoMultiplos ? 'porcentagem' : 'valor');
 		}
-	}, [isOpen]);
+	}, [isOpen, isModoMultiplos]);
 
 	const handleCancelar = () => {
 		setRateios([]);
@@ -117,36 +152,99 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	const handleConfirmar = () => {
 		if (!podeConfirmar) return;
 
-		const novosCentros: MovimentoCentroCustos[] = rateios.map((r) => ({
-			idMovimentoBancario: movimento.id,
-			idCentroCustos: r.idCentro,
-			valor: r.valor,
-		}));
-
-		onConfirmar(novosCentros);
+		if (isModoMultiplos) {
+			// Retornar apenas porcentagens para múltiplos movimentos
+			// Quando isModoPorcentagemPura, o campo 'valor' já contém a porcentagem diretamente
+			const rateiosPorcentagem: { idCentro: number; porcentagem: number }[] = rateios.map((r) => {
+				return {
+					idCentro: r.idCentro,
+					porcentagem: r.valor, // Já é a porcentagem quando isModoPorcentagemPura
+				};
+			});
+			console.log('🔍 DEBUG - handleConfirmar (múltiplos):');
+			console.log('  - rateios:', rateios);
+			console.log('  - rateiosPorcentagem:', rateiosPorcentagem);
+			onConfirmar(rateiosPorcentagem);
+		} else {
+			// Comportamento normal para movimento único
+			const novosCentros: MovimentoCentroCustos[] = rateios.map((r) => ({
+				idMovimentoBancario: movimento.id,
+				idCentroCustos: r.idCentro,
+				valor: r.valor,
+			}));
+			onConfirmar(novosCentros);
+		}
 	};
 
 	const adicionarRateio = () => {
-		if (centroSelecionado && valorFinalParcial > 0) {
-			let valorParaAdicionar = valorFinalParcial;
+		if (!centroSelecionado) return;
+		
+		// Quando há múltiplos movimentos e tipoRateio é 'porcentagem', trabalhar apenas com porcentagens puras
+		if (isModoPorcentagemPura) {
+			// Validar porcentagem
+			if (porcentagemNumericaParcial <= 0 || porcentagemTotalRateada + porcentagemNumericaParcial > 100) {
+				return; // Não adicionar se exceder 100%
+			}
 			
-			// Auto-correção para porcentagem: se estiver muito próximo de 100%, ajustar para o valor restante exato
+			// Auto-correção: se estiver muito próximo de 100%, ajustar para o valor restante exato
+			let porcentagemParaAdicionar = porcentagemNumericaParcial;
+			const porcentagemComNovoRateio = porcentagemTotalRateada + porcentagemNumericaParcial;
+			if (porcentagemComNovoRateio >= 99.9) {
+				porcentagemParaAdicionar = porcentagemRestante; // Usar a porcentagem restante exata
+			}
+			
+			// Armazenar a porcentagem diretamente no campo 'valor'
+			setRateios([
+				...rateios,
+				{
+					idCentro: centroSelecionado.id,
+					descricao: centroSelecionado.descricao,
+					valor: porcentagemParaAdicionar, // Armazenar porcentagem diretamente
+				},
+			]);
+		} else {
+			// Modo normal: trabalhar com valores
+			let valorParaAdicionar: number;
+			
 			if (tipoRateio === 'porcentagem') {
+				// Quando é porcentagem, calcular o valor baseado na porcentagem informada
+				console.log('🔍 DEBUG - Adicionando rateio por porcentagem:');
+				console.log('  - porcentagemNumericaParcial:', porcentagemNumericaParcial);
+				console.log('  - valorTotalAbsoluto:', valorTotalAbsoluto);
+				console.log('  - porcentagemParcial (string):', porcentagemParcial);
+				
+				valorParaAdicionar = (porcentagemNumericaParcial / 100) * valorTotalAbsoluto;
+				
+				console.log('  - valorParaAdicionar calculado:', valorParaAdicionar);
+				
+				// Auto-correção: se estiver muito próximo de 100%, ajustar para o valor restante exato
 				const porcentagemComNovoRateio = porcentagemTotalRateada + porcentagemNumericaParcial;
 				if (porcentagemComNovoRateio >= 99.9) { // Próximo de 100%
 					valorParaAdicionar = valorRestante; // Usar o valor restante exato
+					console.log('  - Ajustado para valorRestante:', valorParaAdicionar);
+				}
+				
+				// Validação: não pode exceder 100%
+				if (porcentagemTotalRateada + porcentagemNumericaParcial > 100) {
+					console.log('  - ❌ ERRO: Porcentagem excede 100%');
+					return; // Não adicionar se exceder 100%
+				}
+			} else {
+				// Quando é valor, usar o valor informado diretamente
+				valorParaAdicionar = valorFinalParcial;
+				
+				// Validação: não pode exceder o restante
+				if (valorParaAdicionar > valorRestante) {
+					return; // Não adicionar se exceder
 				}
 			}
 			
-			// Validação para valor: não pode exceder o restante
-			if (tipoRateio === 'valor' && valorParaAdicionar > valorRestante) {
-				return; // Não adicionar se exceder
+			if (valorParaAdicionar <= 0) {
+				console.log('  - ❌ ERRO: valorParaAdicionar <= 0:', valorParaAdicionar);
+				return;
 			}
-			
-			// Validação para porcentagem: não pode exceder 100%
-			if (tipoRateio === 'porcentagem' && porcentagemTotalRateada + porcentagemNumericaParcial > 100) {
-				return; // Não adicionar se exceder 100%
-			}
+
+			console.log('  - ✅ Adicionando rateio com valor:', valorParaAdicionar);
 
 			setRateios([
 				...rateios,
@@ -156,12 +254,13 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 					valor: valorParaAdicionar,
 				},
 			]);
-			setCentroSelecionado(null);
-			setValorParcial('0,00');
-			setPorcentagemParcial('0');
-			setSearchCentro(''); // Limpar campo de busca
-			setShowSuggestions(false); // Esconder sugestões
 		}
+		
+		setCentroSelecionado(null);
+		setValorParcial('0,00');
+		setPorcentagemParcial('0');
+		setSearchCentro(''); // Limpar campo de busca
+		setShowSuggestions(false); // Esconder sugestões
 	};
 
 	const removerRateio = (index: number) => {
@@ -170,9 +269,11 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		setRateios(novosRateios);
 	};
 
-	const podeConfirmar = tipoRateio === 'valor' 
-		? totalRateado === valorTotalAbsoluto 
-		: Math.abs(porcentagemTotalRateada - 100) < 0.01; // Tolerância de 0.01% para problemas de centavos
+	const podeConfirmar = isModoPorcentagemPura
+		? Math.abs(porcentagemTotalRateada - 100) < 0.01 // Tolerância de 0.01% para problemas de centavos
+		: tipoRateio === 'valor' 
+			? totalRateado === valorTotalAbsoluto 
+			: Math.abs(porcentagemTotalRateada - 100) < 0.01; // Tolerância de 0.01% para problemas de centavos
 
 	const handlePorcentagemChange = (value: string) => {
 		// Permitir apenas números e ponto decimal
@@ -196,36 +297,39 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			<div className="flex justify-between items-center bg-green-50 px-4 py-3 rounded-t-lg border-b">
 				<h2 className="text-xl font-semibold text-gray-800">
 					Rateio de centros de custos - {movimento.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}
+					{isModoMultiplos && ` (${movimentosMultiplos?.length} movimentos)`}
 				</h2>
 				<button onClick={handleCancelar} className="text-gray-500 hover:text-gray-700">
 					<FontAwesomeIcon icon={faTimes} size="xl" />
 				</button>
 			</div>
 
-			{/* Switch para tipo de rateio */}
-			<div className="px-5 py-3 bg-gray-50 border-b">
-				<div className="flex items-center justify-center gap-4">
-					<span className={`text-sm font-medium ${tipoRateio === 'valor' ? 'text-green-600' : 'text-gray-500'}`}>
-						Rateio por Valor
-					</span>
-					<button
-						type="button"
-						className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
-							tipoRateio === 'porcentagem' ? 'bg-green-600' : 'bg-gray-200'
-						}`}
-						onClick={() => setTipoRateio(tipoRateio === 'valor' ? 'porcentagem' : 'valor')}
-					>
-						<span
-							className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-								tipoRateio === 'porcentagem' ? 'translate-x-6' : 'translate-x-1'
+			{/* Switch para tipo de rateio - oculto em modo múltiplos */}
+			{!isModoMultiplos && (
+				<div className="px-5 py-3 bg-gray-50 border-b">
+					<div className="flex items-center justify-center gap-4">
+						<span className={`text-sm font-medium ${tipoRateio === 'valor' ? 'text-green-600' : 'text-gray-500'}`}>
+							Rateio por Valor
+						</span>
+						<button
+							type="button"
+							className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
+								tipoRateio === 'porcentagem' ? 'bg-green-600' : 'bg-gray-200'
 							}`}
-						/>
-					</button>
-					<span className={`text-sm font-medium ${tipoRateio === 'porcentagem' ? 'text-green-600' : 'text-gray-500'}`}>
-						Rateio por Porcentagem
-					</span>
+							onClick={() => setTipoRateio(tipoRateio === 'valor' ? 'porcentagem' : 'valor')}
+						>
+							<span
+								className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+									tipoRateio === 'porcentagem' ? 'translate-x-6' : 'translate-x-1'
+								}`}
+							/>
+						</button>
+						<span className={`text-sm font-medium ${tipoRateio === 'porcentagem' ? 'text-green-600' : 'text-gray-500'}`}>
+							Rateio por Porcentagem
+						</span>
+					</div>
 				</div>
-			</div>
+			)}
 
 			<div className="flex items-start gap-2 pt-3 p-5">
 				<div className="w-3/4 relative">
@@ -280,7 +384,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 							groupSeparator="."
 							value={valorParcial}
 							onValueChange={(value) => setValorParcial(value || '0,00')}
-							disabled={!centroSelecionado || valorRestante <= 0}
+							disabled={!centroSelecionado || (!isModoPorcentagemPura && valorRestante <= 0)}
 						/>
 						) : (
 							<input
@@ -298,8 +402,9 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 							className="bg-green-500 text-white font-semibold px-4 py-2 rounded-r hover:bg-green-600"
 							disabled={
 								!centroSelecionado || 
-								(tipoRateio === 'valor' && (valorFinalParcial <= 0 || valorFinalParcial > valorRestante)) ||
-								(tipoRateio === 'porcentagem' && (porcentagemNumericaParcial <= 0 || porcentagemTotalRateada + porcentagemNumericaParcial > 100))
+								(isModoPorcentagemPura && (porcentagemNumericaParcial <= 0 || porcentagemTotalRateada + porcentagemNumericaParcial > 100)) ||
+								(!isModoPorcentagemPura && tipoRateio === 'valor' && (valorFinalParcial <= 0 || valorFinalParcial > valorRestante)) ||
+								(!isModoPorcentagemPura && tipoRateio === 'porcentagem' && (porcentagemNumericaParcial <= 0 || porcentagemTotalRateada + porcentagemNumericaParcial > 100))
 							}
 						>
 							<FontAwesomeIcon icon={faPlus} />
@@ -335,11 +440,22 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 						</thead>
 						<tbody>
 							{rateios.map((r, idx) => {
-								const porcentagemRateio = (r.valor / valorTotalAbsoluto) * 100;
+								// Quando isModoPorcentagemPura, o campo 'valor' já contém a porcentagem diretamente
+								const porcentagemRateio = isModoPorcentagemPura 
+									? r.valor 
+									: (r.valor / valorTotalAbsoluto) * 100;
+								const valorExibido = isModoPorcentagemPura 
+									? null // Não exibir valor quando em modo porcentagem pura
+									: r.valor;
 								return (
 								<tr key={idx} className="border-t">
 									<td className="p-2">{r.descricao}</td>
-									<td className="p-2 text-center">{formatarMoeda(r.valor ? r.valor : 0)}</td>
+									<td className="p-2 text-center">
+										{isModoPorcentagemPura 
+											? <span className="text-gray-400 italic">N/A (múltiplos movimentos)</span>
+											: formatarMoeda(valorExibido ? valorExibido : 0)
+										}
+									</td>
 									<td className="p-2 text-center">{porcentagemRateio.toFixed(2)}%</td>
 									<td className="p-2 text-right pr-4" style={{ width: '50px' }}>
 										<button onClick={() => removerRateio(idx)} className="text-red-500 hover:text-red-700">
@@ -362,12 +478,14 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			</div>
 			<div className="flex justify-between items-center gap-4 mt-4 p-5 border-t">
 				<div className="flex justify-start gap-4 text-sm font-medium">
-					<div className="flex flex-col gap-1">
-					<span>Total Rateado:</span>
-					<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>
-						R$ {formatarMoeda(totalRateado ? totalRateado : 0)} / R$ {formatarMoeda(valorTotalAbsoluto ? valorTotalAbsoluto : 0)}
-					</span>
-					</div>
+					{!isModoPorcentagemPura && (
+						<div className="flex flex-col gap-1">
+							<span>Total Rateado:</span>
+							<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>
+								R$ {formatarMoeda(totalRateado ? totalRateado : 0)} / R$ {formatarMoeda(valorTotalAbsoluto ? valorTotalAbsoluto : 0)}
+							</span>
+						</div>
+					)}
 					<div className="flex flex-col gap-1">
 						<span>Porcentagem Total:</span>
 						<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>

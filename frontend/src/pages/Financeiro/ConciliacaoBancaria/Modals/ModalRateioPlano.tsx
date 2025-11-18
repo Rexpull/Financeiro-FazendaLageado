@@ -21,7 +21,8 @@ interface ModalRateioPlanoProps {
 	planosDisponiveis: PlanoConta[];
 	rateios: Rateio[];
 	setRateios: (rateios: Rateio[]) => void;
-	onConfirmar: (resultados: Resultado[]) => void;
+	onConfirmar: (resultados: Resultado[] | { idPlano: number; porcentagem: number }[]) => void;
+	movimentosMultiplos?: MovimentoBancario[];
 }
 
 const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
@@ -33,12 +34,14 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	rateios,
 	setRateios,
 	onConfirmar,
+	movimentosMultiplos,
 }) => {
 	const [planoSelecionado, setPlanoSelecionado] = useState<PlanoConta | null>(null);
 	const [valorParcial, setValorParcial] = useState<string>('0,00');
 	const [searchPlano, setSearchPlano] = useState('');
 	const [showSuggestions, setShowSuggestions] = useState(false);
-	const [tipoRateio, setTipoRateio] = useState<'valor' | 'porcentagem'>('valor');
+	const isModoMultiplos = movimentosMultiplos && movimentosMultiplos.length > 1;
+	const [tipoRateio, setTipoRateio] = useState<'valor' | 'porcentagem'>(isModoMultiplos ? 'porcentagem' : 'valor');
 	const [porcentagemParcial, setPorcentagemParcial] = useState<string>('0');
 
 	const valorNumericoParcial = Number(valorParcial.replace(/\./g, '').replace(',', '.')) || 0;
@@ -88,19 +91,25 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	};
 
 	useEffect(() => {
-		if (isOpen && movimento && (movimento.resultadoList ?? []).length > 0) {
-			const convertidos: Rateio[] = (movimento.resultadoList ?? []).map((r) => {
-				const plano = planosDisponiveis.find((p) => p.id === r.idPlanoContas);
-				return {
-					idPlano: r.idPlanoContas,
-					descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
-					valor: r.valor,
-				};
-			});
-			rateiosOriginais.current = convertidos; // backup dos originais
-			setRateios(convertidos); // atualiza visual
+		if (isOpen) {
+			if (isModoMultiplos) {
+				// Em modo múltiplos, não carregar do movimento
+				setRateios([]);
+				rateiosOriginais.current = [];
+			} else if (movimento && (movimento.resultadoList ?? []).length > 0) {
+				const convertidos: Rateio[] = (movimento.resultadoList ?? []).map((r) => {
+					const plano = planosDisponiveis.find((p) => p.id === r.idPlanoContas);
+					return {
+						idPlano: r.idPlanoContas,
+						descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
+						valor: r.valor,
+					};
+				});
+				rateiosOriginais.current = convertidos; // backup dos originais
+				setRateios(convertidos); // atualiza visual
+			}
 		}
-	}, [isOpen]); // somente ao abrir
+	}, [isOpen, isModoMultiplos]); // somente ao abrir
 
 	// Limpar busca quando modal fechar
 	useEffect(() => {
@@ -110,9 +119,9 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 			setShowSuggestions(false);
 			setValorParcial('0,00');
 			setPorcentagemParcial('0');
-			setTipoRateio('valor');
+			setTipoRateio(isModoMultiplos ? 'porcentagem' : 'valor');
 		}
-	}, [isOpen]);
+	}, [isOpen, isModoMultiplos]);
 
 	const handleCancelar = () => {
 		setRateios(rateiosOriginais.current); // restaura valores
@@ -122,15 +131,27 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	const handleConfirmar = () => {
 		if (!podeConfirmar) return;
 
-		const novosResultados: Resultado[] = rateios.map((r) => ({
-			idPlanoContas: r.idPlano,
-			valor: r.valor,
-			tipo: movimento.tipoMovimento ?? 'C',
-			idContaCorrente: movimento.idContaCorrente,
-			dtMovimento: movimento.dtMovimento,
-		}));
-
-		onConfirmar(novosResultados);
+		if (isModoMultiplos) {
+			// Retornar apenas porcentagens para múltiplos movimentos
+			const rateiosPorcentagem: { idPlano: number; porcentagem: number }[] = rateios.map((r) => {
+				const porcentagem = (r.valor / valorTotalAbsoluto) * 100;
+				return {
+					idPlano: r.idPlano,
+					porcentagem: porcentagem,
+				};
+			});
+			onConfirmar(rateiosPorcentagem);
+		} else {
+			// Comportamento normal para movimento único
+			const novosResultados: Resultado[] = rateios.map((r) => ({
+				idPlanoContas: r.idPlano,
+				valor: r.valor,
+				tipo: movimento.tipoMovimento ?? 'C',
+				idContaCorrente: movimento.idContaCorrente,
+				dtMovimento: movimento.dtMovimento,
+			}));
+			onConfirmar(novosResultados);
+		}
 	};
 
 	const adicionarRateio = () => {
@@ -203,36 +224,40 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 			<div className="flex justify-between items-center bg-blue-50 px-4 py-3 rounded-t-lg border-b">
 				<h2 className="text-xl font-semibold text-gray-800">
 					Rateio de planos de contas - {movimento.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}
+					{isModoMultiplos && ` (${movimentosMultiplos?.length} movimentos)`}
 				</h2>
 				<button onClick={handleCancelar} className="text-gray-500 hover:text-gray-700">
 					<FontAwesomeIcon icon={faTimes} size="xl" />
 				</button>
 			</div>
 
-			{/* Switch para tipo de rateio */}
-			<div className="px-5 py-3 bg-gray-50 border-b">
-				<div className="flex items-center justify-center gap-4">
-					<span className={`text-sm font-medium ${tipoRateio === 'valor' ? 'text-blue-600' : 'text-gray-500'}`}>
-						Rateio por Valor
-					</span>
-					<button
-						type="button"
-						className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-							tipoRateio === 'porcentagem' ? 'bg-blue-600' : 'bg-gray-200'
-						}`}
-						onClick={() => setTipoRateio(tipoRateio === 'valor' ? 'porcentagem' : 'valor')}
-					>
-						<span
-							className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-								tipoRateio === 'porcentagem' ? 'translate-x-6' : 'translate-x-1'
+			{/* Switch para tipo de rateio - oculto em modo múltiplos */}
+			{!isModoMultiplos && (
+				<div className="px-5 py-3 bg-gray-50 border-b">
+					<div className="flex items-center justify-center gap-4">
+						<span className={`text-sm font-medium ${tipoRateio === 'valor' ? 'text-blue-600' : 'text-gray-500'}`}>
+							Rateio por Valor
+						</span>
+						<button
+							type="button"
+							className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+								tipoRateio === 'porcentagem' ? 'bg-blue-600' : 'bg-gray-200'
 							}`}
-						/>
-					</button>
-					<span className={`text-sm font-medium ${tipoRateio === 'porcentagem' ? 'text-blue-600' : 'text-gray-500'}`}>
-						Rateio por Porcentagem
-					</span>
+							onClick={() => setTipoRateio(tipoRateio === 'valor' ? 'porcentagem' : 'valor')}
+						>
+							<span
+								className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+									tipoRateio === 'porcentagem' ? 'translate-x-6' : 'translate-x-1'
+								}`}
+							/>
+						</button>
+						<span className={`text-sm font-medium ${tipoRateio === 'porcentagem' ? 'text-blue-600' : 'text-gray-500'}`}>
+							Rateio por Porcentagem
+						</span>
+					</div>
 				</div>
-			</div>
+			)}
+
 
 			<div className="flex items-start gap-2 pt-3 p-5">
 				<div className="w-3/4 relative">

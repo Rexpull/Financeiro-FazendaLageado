@@ -34,11 +34,12 @@ interface Props {
   dadosAtual: any[];
   dadosAnterior: any[];
   isLoading: boolean;
+  tipoAgrupamento?: 'planos' | 'centros';
 }
 
 const mesesNomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-const FluxoCaixaGrafico: React.FC<Props> = ({ anoSelecionado, dadosAtual, dadosAnterior, isLoading }) => {
+const FluxoCaixaGrafico: React.FC<Props> = ({ anoSelecionado, dadosAtual, dadosAnterior, isLoading, tipoAgrupamento = 'planos' }) => {
   const [tipoTop, setTipoTop] = useState<'receitas' | 'despesas'>('receitas');
 
   // Skeletons para loading e para mock
@@ -252,10 +253,10 @@ const FluxoCaixaGrafico: React.FC<Props> = ({ anoSelecionado, dadosAtual, dadosA
             />
           </div>
         </div>
-        {/* Top 10 Planos de Contas */}
+        {/* Top 10 Planos de Contas / Centros de Custos */}
         <div className="bg-white rounded-lg p-4 pt-3 shadow border flex flex-col min-h-[350px]">
           <div className="font-bold text-gray-700 mb-2 flex justify-between items-center text-base">
-            TOP 10 PLANOS DE CONTAS
+            {tipoAgrupamento === 'centros' ? 'TOP 10 CENTROS DE CUSTOS' : 'TOP 10 PLANOS DE CONTAS'}
             <select className="ml-2 border-b border-blue-500 text-blue-500 cursor-pointer px-2 py-1 " value={tipoTop} onChange={e => setTipoTop((e.target as HTMLSelectElement).value as any)}>
               <option value="receitas">Receitas</option>
               <option value="despesas">Despesas</option>

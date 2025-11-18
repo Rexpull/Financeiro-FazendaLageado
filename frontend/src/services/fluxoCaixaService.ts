@@ -3,14 +3,15 @@ import { FluxoCaixaMes } from '../../../backend/src/models/FluxoCaixaDTO';
 import { MovimentoDetalhado } from '../../../backend/src/models/MovimentoDetalhado';
 const API_URL = (import.meta as any).env.VITE_API_URL;
 
-export const buscarFluxoCaixa = async (ano: string, contas: string[]): Promise<FluxoCaixaMes[]> => {
+export const buscarFluxoCaixa = async (ano: string, contas: string[], tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<FluxoCaixaMes[]> => {
 
 	console.log('ano:', ano);
 	console.log('contas:', contas);
+	console.log('tipoAgrupamento:', tipoAgrupamento);
 	const res = await fetch(`${API_URL}/api/fluxoCaixa`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ano, contas }),
+		body: JSON.stringify({ ano, contas, tipoAgrupamento }),
 	});
 	
 	if (!res.ok) {
@@ -22,8 +23,8 @@ export const buscarFluxoCaixa = async (ano: string, contas: string[]): Promise<F
 	return res.json();
 };
 
-export const buscarDetalhamento = async (planoId: string, mes: number, tipo: string, ano: string): Promise<MovimentoDetalhado[] | any[]> => {
-	const res = await fetch(`${API_URL}/api/fluxoCaixa/detalhar?planoId=${planoId}&mes=${mes}&tipo=${tipo}&ano=${ano}`, {
+export const buscarDetalhamento = async (planoId: string, mes: number, tipo: string, ano: string, tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<MovimentoDetalhado[] | any[]> => {
+	const res = await fetch(`${API_URL}/api/fluxoCaixa/detalhar?planoId=${planoId}&mes=${mes}&tipo=${tipo}&ano=${ano}&tipoAgrupamento=${tipoAgrupamento}`, {
 		method: 'GET',
 		headers: { 'Accept': 'application/json' },
 	});
@@ -37,11 +38,11 @@ export const buscarDetalhamento = async (planoId: string, mes: number, tipo: str
 	return data;
 };
 
-export const buscarFluxoCaixaAnoAnterior = async (ano: string, contas: string[]): Promise<FluxoCaixaMes[]> => {
+export const buscarFluxoCaixaAnoAnterior = async (ano: string, contas: string[], tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<FluxoCaixaMes[]> => {
 	const res = await fetch(`${API_URL}/api/fluxoCaixa/anoAnterior`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ano, contas }),
+		body: JSON.stringify({ ano, contas, tipoAgrupamento }),
 	});
 	if (!res.ok) {
 		const errorData = await res.json().catch(() => ({ error: 'Erro desconhecido' })) as { error?: string; details?: string };

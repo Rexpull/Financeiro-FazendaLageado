@@ -13,7 +13,7 @@ const CentroCustosTable: React.FC = () => {
   const [centroCustos, setCentroCustos] = useState<CentroCustos[]>([]);
   const [filteredCentroCustos, setFilteredCentroCustos] = useState<CentroCustos[]>([]);
   const [modalIsOpen, setModalIsOpen] = useState(false);
-  const [centroCustosData, setCentroCustosData] = useState<CentroCustos>({ id: 0, descricao: "" });
+  const [centroCustosData, setCentroCustosData] = useState<CentroCustos>({ id: 0, descricao: "", tipo: "CUSTEIO" });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -141,7 +141,7 @@ const CentroCustosTable: React.FC = () => {
   }, [dataInicio, dataFim]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openModal = (centroCustos?: CentroCustos) => {
-    setCentroCustosData(centroCustos || { id: 0, descricao: "" });
+    setCentroCustosData(centroCustos || { id: 0, descricao: "", tipo: "CUSTEIO" });
     setModalIsOpen(true);
   };
 
@@ -264,13 +264,14 @@ const CentroCustosTable: React.FC = () => {
                   <tr className="bg-gray-200">
                     <th className="p-2">ID</th>
                     <th className="p-2 text-left">Descrição</th>
+                    <th className="p-2 text-left">Tipo</th>
                     <th className="p-2 pr-11 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {currentItems.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
+                      <td colSpan={4} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
                         Nenhum centro de custos encontrado!
                       </td>
                     </tr>
@@ -279,6 +280,15 @@ const CentroCustosTable: React.FC = () => {
                       <tr key={centro.id} className="border-b">
                         <td className="p-2 text-center">{centro.id}</td>
                         <td className="p-2 text-left">{centro.descricao}</td>
+                        <td className="p-2 text-left">
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            centro.tipo === 'INVESTIMENTO' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {centro.tipo === 'INVESTIMENTO' ? 'Investimento' : 'Custeio'}
+                          </span>
+                        </td>
                         <td className="p-2 text-right pr-5">
                           <button
                             className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
@@ -440,7 +450,12 @@ const CentroCustosTable: React.FC = () => {
         isOpen={modalIsOpen}
         onClose={() => setModalIsOpen(false)}
         centroCustosData={centroCustosData}
-        handleInputChange={(e) => setCentroCustosData({ ...centroCustosData, [e.target.name]: e.target.value })}
+        handleInputChange={(e) => {
+          const value = e.target.name === 'tipo' 
+            ? (e.target.value as 'CUSTEIO' | 'INVESTIMENTO')
+            : e.target.value;
+          setCentroCustosData({ ...centroCustosData, [e.target.name]: value });
+        }}
         handleSave={handleSave}
         isSaving={isSaving}
       />

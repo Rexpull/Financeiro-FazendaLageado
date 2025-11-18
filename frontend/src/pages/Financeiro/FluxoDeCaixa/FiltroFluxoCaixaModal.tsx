@@ -12,7 +12,8 @@ interface Props {
 	contasDisponiveis: any[];
 	anoSelecionado: string;
 	contasSelecionadas: string[];
-	onAplicarFiltro: (ano: string, contas: string[]) => void;
+	tipoAgrupamento: 'planos' | 'centros';
+	onAplicarFiltro: (ano: string, contas: string[], tipoAgrupamento: 'planos' | 'centros') => void;
 }
 
 const FiltroFluxoCaixaModal: React.FC<Props> = ({
@@ -21,17 +22,20 @@ const FiltroFluxoCaixaModal: React.FC<Props> = ({
 	contasDisponiveis,
 	anoSelecionado,
 	contasSelecionadas,
+	tipoAgrupamento,
 	onAplicarFiltro,
 }) => {
 	const [ano, setAno] = useState<string>(anoSelecionado);
 	const [contasSelecionadasLocal, setContasSelecionadasLocal] = useState<string[]>([]);
+	const [tipoAgrupamentoLocal, setTipoAgrupamentoLocal] = useState<'planos' | 'centros'>(tipoAgrupamento);
 
     useEffect(() => {
         if (isOpen) {
             setAno(anoSelecionado);
             setContasSelecionadasLocal(contasSelecionadas.map(id => id.toString()));
+            setTipoAgrupamentoLocal(tipoAgrupamento);
         }
-    }, [isOpen, anoSelecionado, contasSelecionadas]);
+    }, [isOpen, anoSelecionado, contasSelecionadas, tipoAgrupamento]);
 
 	const toggleConta = (id: string) => {
 		setContasSelecionadasLocal((prev) => {
@@ -50,7 +54,7 @@ const FiltroFluxoCaixaModal: React.FC<Props> = ({
 		const contasFiltradas = contasSelecionadasLocal.filter(id => 
 			contasDisponiveis.some(conta => conta.id.toString() === id)
 		);
-		onAplicarFiltro(ano, contasFiltradas);
+		onAplicarFiltro(ano, contasFiltradas, tipoAgrupamentoLocal);
 		onClose();
 	};
 
@@ -93,16 +97,30 @@ const FiltroFluxoCaixaModal: React.FC<Props> = ({
 					</div>
 				</div>
 
-				<div>
-					<label className="font-semibold block mb-1">Ano</label>
-					<select
-						value={ano}
-						onChange={(e) => setAno((e.target as HTMLSelectElement).value)}
-						className="w-full border px-3 py-2 rounded bg-white"
-					>
-						<option value="2024">2024</option>
-						<option value="2025">2025</option>
-					</select>
+				<div className="grid grid-cols-2 gap-4">
+					<div>
+						<label className="font-semibold block mb-1">Ano</label>
+						<select
+							value={ano}
+							onChange={(e) => setAno((e.target as HTMLSelectElement).value)}
+							className="w-full border px-3 py-2 rounded bg-white"
+						>
+							<option value="2024">2024</option>
+							<option value="2025">2025</option>
+						</select>
+					</div>
+
+					<div>
+						<label className="font-semibold block mb-1">Agrupar por</label>
+						<select
+							value={tipoAgrupamentoLocal}
+							onChange={(e) => setTipoAgrupamentoLocal((e.target as HTMLSelectElement).value as 'planos' | 'centros')}
+							className="w-full border px-3 py-2 rounded bg-white"
+						>
+							<option value="planos">Planos de Contas</option>
+							<option value="centros">Centro de Custos</option>
+						</select>
+					</div>
 				</div>
 			</div>
 

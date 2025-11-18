@@ -6,6 +6,7 @@ import { ContaCorrenteRepository } from "../repositories/ContaCorrenteRepository
 import { FinanciamentoRepository } from "../repositories/FinanciamentoRepository";
 import { PessoaRepository } from "../repositories/PessoaRepository";
 import { BancoRepository } from "../repositories/BancoRepository";
+import { CentroCustosRepository } from "../repositories/CentroCustosRepository";
 
 export async function handleRequest(req: Request, DB: D1Database): Promise<Response> {
     const repository = new MovimentoBancarioRepository(DB);
@@ -15,6 +16,7 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
     const financiamentoRepository = new FinanciamentoRepository(DB);
     const pessoaRepository = new PessoaRepository(DB);
     const bancoRepository = new BancoRepository(DB);
+    const centroCustosRepository = new CentroCustosRepository(DB);
 
     const controller = new MovimentoBancarioController(
         repository, 
@@ -23,7 +25,8 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
         contaCorrenteRepository,
         financiamentoRepository,
         pessoaRepository,
-        bancoRepository
+        bancoRepository,
+        centroCustosRepository
     );
     return controller.handleRequest(req);
 }

@@ -568,6 +568,11 @@ const MovimentoBancarioTable: React.FC = () => {
 				idCentroCustos: data.idCentroCustos ?? null,
 			};
 
+			// Incluir centroCustosList se presente
+			if (data.centroCustosList !== undefined) {
+				movimentoAtualizado.centroCustosList = data.centroCustosList;
+			}
+
 			if (data.modalidadeMovimento === 'padrao') {
 				movimentoAtualizado.idBanco = undefined;
 				movimentoAtualizado.parcelado = false;
@@ -591,6 +596,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				movimentoAtualizado.idFinanciamento = undefined;
 				movimentoAtualizado.idCentroCustos = undefined;
 				movimentoAtualizado.resultadoList = [];
+				// Limpar centroCustosList em transferências
+				movimentoAtualizado.centroCustosList = undefined;
 			}
 
 			const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
@@ -707,21 +714,43 @@ const MovimentoBancarioTable: React.FC = () => {
 			const movimentosAtualizados: MovimentoBancario[] = [];
 			const erros: number[] = [];
 
-			for (const movimento of movimentosSelecionados) {
-				try {
-					const movimentoAtualizado: MovimentoBancario = {
-						...movimento,
-						modalidadeMovimento: data.modalidadeMovimento,
-						idPlanoContas: data.idPlanoContas || undefined,
-						idPessoa: data.idPessoa || null,
-						idBanco: data.idBanco || undefined,
-						numeroDocumento: data.numeroDocumento || undefined,
-						parcelado: data.parcelado || false,
-						idFinanciamento: data.idFinanciamento || undefined,
-						idUsuario: movimento.idUsuario || undefined,
-						idCentroCustos: data.idCentroCustos || undefined,
-					};
+			// Verificar se data é um array de movimentos (quando há rateio por porcentagem)
+			const movimentosParaProcessar = Array.isArray(data) ? data : movimentosSelecionados;
 
+			console.log('🔍 DEBUG - handleConciliaMultiplos:');
+			console.log('  - data é array?', Array.isArray(data));
+			console.log('  - movimentosParaProcessar:', movimentosParaProcessar);
+
+			for (const movimento of movimentosParaProcessar) {
+				try {
+					let movimentoAtualizado: MovimentoBancario;
+
+					if (Array.isArray(data)) {
+						// Se data é um array, os movimentos já vêm preparados com resultadoList e centroCustosList
+						console.log('  - Movimento (array):', movimento.id, 'centroCustosList:', movimento.centroCustosList);
+						movimentoAtualizado = movimento as MovimentoBancario;
+					} else {
+						// Se data é um objeto simples, construir o movimento
+						movimentoAtualizado = {
+							...movimento,
+							modalidadeMovimento: data.modalidadeMovimento,
+							idPlanoContas: data.idPlanoContas || undefined,
+							idPessoa: data.idPessoa || null,
+							idBanco: data.idBanco || undefined,
+							numeroDocumento: data.numeroDocumento || undefined,
+							parcelado: data.parcelado || false,
+							idFinanciamento: data.idFinanciamento || undefined,
+							idUsuario: movimento.idUsuario || undefined,
+							idCentroCustos: data.idCentroCustos || undefined,
+						};
+
+						// Incluir centroCustosList se presente
+						if (data.centroCustosList !== undefined) {
+							movimentoAtualizado.centroCustosList = data.centroCustosList;
+						}
+					}
+
+					console.log('  - movimentoAtualizado antes de salvar:', movimentoAtualizado.id, 'centroCustosList:', movimentoAtualizado.centroCustosList);
 					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 					movimentosAtualizados.push(resultadoSalvo);
 				} catch (error) {

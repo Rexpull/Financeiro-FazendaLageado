@@ -48,8 +48,9 @@ export class CentroCustosController {
       }
 
       if (req.method === "POST" && pathname === "/api/centro-custos") {
-        const { descricao }: { descricao: string } = await req.json();
-        const centroCustosCriado = await this.centroCustosService.criarCentroCustos(descricao);
+        const { descricao, tipo }: { descricao: string; tipo?: 'CUSTEIO' | 'INVESTIMENTO' } = await req.json();
+        const tipoFinal = tipo || 'CUSTEIO';
+        const centroCustosCriado = await this.centroCustosService.criarCentroCustos(descricao, tipoFinal);
         return new Response(JSON.stringify(centroCustosCriado), { 
           status: 201, 
           headers: { ...corsHeaders, "Content-Type": "application/json" } 
@@ -58,8 +59,8 @@ export class CentroCustosController {
 
       if (req.method === "PUT" && pathname.startsWith("/api/centro-custos/")) {
         const id = parseInt(pathname.split("/")[3]);
-        const { descricao }: { descricao: string } = await req.json();
-        await this.centroCustosService.atualizarCentroCustos(id, descricao);
+        const { descricao, tipo }: { descricao: string; tipo: 'CUSTEIO' | 'INVESTIMENTO' } = await req.json();
+        await this.centroCustosService.atualizarCentroCustos(id, descricao, tipo);
         return new Response(JSON.stringify({ message: "Centro de Custos atualizado com sucesso" }), { 
           status: 200, 
           headers: { ...corsHeaders, "Content-Type": "application/json" } 

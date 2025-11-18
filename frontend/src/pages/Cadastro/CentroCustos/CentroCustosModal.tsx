@@ -10,7 +10,7 @@ interface CentroCustosModalProps {
   isOpen: boolean;
   onClose: () => void;
   centroCustosData: CentroCustos;
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   handleSave: () => void;
   isSaving: boolean;
 }
@@ -23,14 +23,18 @@ const CentroCustosModal: React.FC<CentroCustosModalProps> = ({
   handleSave,
   isSaving,
 }) => {
-  const [errors, setErrors] = useState<{ descricao?: string }>({});
+  const [errors, setErrors] = useState<{ descricao?: string; tipo?: string }>({});
 
   // 🔹 Validação antes de salvar
   const validateAndSave = () => {
-    const newErrors: { descricao?: string } = {};
+    const newErrors: { descricao?: string; tipo?: string } = {};
 
     if (!centroCustosData.descricao.trim()) {
       newErrors.descricao = "A descrição é obrigatória!";
+    }
+
+    if (!centroCustosData.tipo || (centroCustosData.tipo !== 'CUSTEIO' && centroCustosData.tipo !== 'INVESTIMENTO')) {
+      newErrors.tipo = "O tipo é obrigatório!";
     }
 
     setErrors(newErrors);
@@ -82,6 +86,30 @@ const CentroCustosModal: React.FC<CentroCustosModalProps> = ({
             {errors.descricao && (
               <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
                 <FontAwesomeIcon icon={faExclamationCircle} /> {errors.descricao}
+              </p>
+            )}
+          </div>
+
+          {/* Tipo */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tipo <span className="text-red-500">*</span>
+            </label>
+            <select
+              name="tipo"
+              className={`w-full p-2 bg-gray-50 border ${
+                errors.tipo ? "border-red-500" : "border-gray-300"
+              } rounded focus:outline-none focus:ring-1 focus:ring-gray-300`}
+              value={centroCustosData.tipo || "CUSTEIO"}
+              onChange={handleInputChange}
+              disabled={isSaving}
+            >
+              <option value="CUSTEIO">Custeio</option>
+              <option value="INVESTIMENTO">Investimento</option>
+            </select>
+            {errors.tipo && (
+              <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                <FontAwesomeIcon icon={faExclamationCircle} /> {errors.tipo}
               </p>
             )}
           </div>

@@ -19,12 +19,13 @@ export class MovimentoBancarioRepository {
 		this.movimentoCentroCustosRepo = new MovimentoCentroCustosRepository(db);
 	}
 
-	async getMovimentosPorDetalhamento(planoId: number, mes: number, tipo: string): Promise<MovimentoDetalhado[]> {
+	async getMovimentosPorDetalhamento(planoId: number, mes: number, tipo: string, ano?: number): Promise<MovimentoDetalhado[]> {
 		let sql = '';
 		let params: any[] = [];
 
-		const primeiroDiaMes = `${new Date().getFullYear()}-${String(mes + 1).padStart(2, '0')}-01`;
-		const ultimoDiaMes = `${new Date().getFullYear()}-${String(mes + 1).padStart(2, '0')}-31`;
+		const anoUsar = ano || new Date().getFullYear();
+		const primeiroDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-01`;
+		const ultimoDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-31`;
 
 		if (tipo === 'receitas' || tipo === 'despesas' || tipo === 'investimentos' ) {
 			sql = `
@@ -106,6 +107,62 @@ export class MovimentoBancarioRepository {
 		});
 	}
 
+	async getMovimentosPorCentroCustosDetalhamento(centroCustosId: number, mes: number, tipo: string, ano?: number): Promise<MovimentoDetalhado[]> {
+		let sql = '';
+		let params: any[] = [];
+
+		const anoUsar = ano || new Date().getFullYear();
+		const primeiroDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-01`;
+		const ultimoDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-31`;
+
+		if (tipo === 'receitas' || tipo === 'despesas') {
+			// Buscar movimentos que têm o centro de custos na tabela MovimentoCentroCustos (rateio)
+			// OU que têm idCentroCustos diretamente no MovimentoBancario
+			sql = `
+				SELECT
+					mb.id,
+					mb.dtMovimento,
+					mb.historico,
+					COALESCE(mcc.valor, ABS(mb.valor)) as valor,
+					b.nome AS bancoNome,
+					cc.numConta,
+					cc.numCartao,
+					cc.responsavel
+				FROM MovimentoBancario mb
+				LEFT JOIN MovimentoCentroCustos mcc ON mb.id = mcc.idMovimentoBancario AND mcc.idCentroCustos = ?
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				LEFT JOIN Banco b ON cc.idBanco = b.id
+				WHERE (mcc.idCentroCustos = ? OR mb.idCentroCustos = ?)
+				AND mb.dtMovimento BETWEEN ? AND ?
+				AND mb.tipoMovimento = ?
+				ORDER BY mb.dtMovimento ASC
+			`;
+			const tipoMovimento = tipo === 'receitas' ? 'C' : 'D';
+			params = [centroCustosId, centroCustosId, centroCustosId, primeiroDiaMes, ultimoDiaMes, tipoMovimento];
+		} else {
+			// Para outros tipos, retornar vazio ou tratar conforme necessário
+			return [];
+		}
+		
+		const { results } = await this.db
+			.prepare(sql)
+			.bind(...params)
+			.all();
+
+		return results.map((row: any) => {
+			const contaFormatada = `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'} - ${
+				row.responsavel || 'Responsável'
+			}`;
+			return {
+				id: row.id,
+				data: row.dtMovimento,
+				descricao: row.historico,
+				valor: Number(row.valor),
+				conta: contaFormatada,
+			};
+		});
+	}
+
 	async getAll(): Promise<MovimentoBancario[]> {
 		const { results } = await this.db
 			.prepare(
@@ -177,7 +234,8 @@ export class MovimentoBancarioRepository {
 					idUsuario,
 					tipoMovimento,
 					modalidadeMovimento,
-					idFinanciamento
+					idFinanciamento,
+					idCentroCustos
 				FROM MovimentoBancario
 				WHERE dtMovimento BETWEEN ? AND ?
 				AND idContaCorrente IN (${contas.map(() => '?').join(',')})
@@ -189,6 +247,7 @@ export class MovimentoBancarioRepository {
 		const movimentos = await Promise.all(
 			results.map(async (result) => {
 				const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
+				const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(result.id as number);
 				return {
 					id: result.id as number,
 					dtMovimento: result.dtMovimento as string,
@@ -213,6 +272,8 @@ export class MovimentoBancarioRepository {
 					modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
 					idFinanciamento: result.idFinanciamento as number | undefined,
 					resultadoList,
+					centroCustosList,
+					idCentroCustos: result.idCentroCustos as number | undefined,
 				};
 			})
 		);
@@ -1005,6 +1066,7 @@ export class MovimentoBancarioRepository {
 		if (!result) return null;
 
 		const resultadoList = await this.resultadoRepo.getByMovimento(id);
+		const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(id);
 
 		return {
 			id: result.id as number,
@@ -1031,6 +1093,7 @@ export class MovimentoBancarioRepository {
 			idFinanciamento: result.idFinanciamento as number | undefined,
 			idCentroCustos: result.idCentroCustos as number | undefined,
 			resultadoList: resultadoList,
+			centroCustosList: centroCustosList,
 		};
 	}
 
@@ -1268,19 +1331,9 @@ export class MovimentoBancarioRepository {
 			// Query principal com paginação
 			const mainQuery = `
 				SELECT 
-					mb.*,
-					GROUP_CONCAT(
-						CASE 
-							WHEN r.idPlanoContas IS NOT NULL 
-							THEN json_object('id', r.idPlanoContas, 'valor', r.valor, 'descricao', pc.descricao)
-							ELSE NULL 
-						END
-					) as resultadoList
+					mb.*
 				FROM MovimentoBancario mb
-				LEFT JOIN Resultado r ON mb.id = r.idMovimentoBancario
-				LEFT JOIN PlanoContas pc ON r.idPlanoContas = pc.id
 				${whereClause}
-				GROUP BY mb.id
 				ORDER BY mb.dtMovimento DESC
 				LIMIT ? OFFSET ?
 			`;
@@ -1290,21 +1343,12 @@ export class MovimentoBancarioRepository {
 				.bind(...params, filters.limit, offset)
 				.all();
 
-			// Processar resultados
+			// Processar resultados e carregar resultadoList e centroCustosList
 			const movimentos = await Promise.all(
 				results.map(async (result: any) => {
-					let resultadoList: any[] = [];
-					if (result.resultadoList) {
-						try {
-							resultadoList = result.resultadoList
-								.split(',')
-								.map((item: string) => JSON.parse(item))
-								.filter((item: any) => item !== null);
-						} catch (error) {
-							console.warn('⚠️ Erro ao processar resultadoList:', error);
-							resultadoList = [];
-						}
-					}
+					// Carregar resultadoList e centroCustosList usando os repositórios
+					const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
+					const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(result.id as number);
 
 					return {
 						id: result.id as number,
@@ -1328,7 +1372,9 @@ export class MovimentoBancarioRepository {
 						idPessoa: result.idPessoa as number,
 						parcelado: result.parcelado === 1,
 						idFinanciamento: result.idFinanciamento as number | undefined,
+						idCentroCustos: result.idCentroCustos as number | undefined,
 						resultadoList: resultadoList,
+						centroCustosList: centroCustosList,
 					};
 				})
 			);

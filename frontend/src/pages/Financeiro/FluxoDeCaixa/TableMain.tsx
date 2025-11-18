@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faSearchDollar } from '@fortawesome/free-solid-svg-icons';
 import { listarContas } from '../../../services/contaCorrenteService';
 import { listarPlanoContas } from '../../../services/planoContasService';
+import { listarCentroCustos } from '../../../services/centroCustosService';
 import FiltroFluxoCaixaModal from './FiltroFluxoCaixaModal';
 import { buscarFluxoCaixa, buscarDetalhamento, buscarFluxoCaixaAnoAnterior } from '../../../services/fluxoCaixaService';
 import { FluxoCaixaMes } from '../../../../../backend/src/models/FluxoCaixaDTO';
@@ -10,6 +11,7 @@ import { formatarMoeda, formatarMoedaOuTraco, parseMoeda } from '../../../Utils/
 import ModalDetalhamento from './ModalDetalhamento';
 import { MovimentoDetalhado } from '../../../../../backend/src/models/MovimentoDetalhado';
 import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
+import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
 import ModalDetalhamentoFinanciamento from './ModalDetalhamentoFinanciamento';
 import { FinanciamentoDetalhadoDTO } from '../../../../../backend/src/models/FinanciamentoDetalhadoDTO';
 import FluxoCaixaGrafico from './FluxoCaixaGrafico';
@@ -33,8 +35,10 @@ const MovimentoBancarioTable: React.FC = () => {
 	});
 	const [contasCorrentes, setContasCorrentes] = useState<any[]>([]);
 	const [planosContas, setPlanosContas] = useState<PlanoConta[]>([]);
+	const [centrosCustos, setCentrosCustos] = useState<CentroCustos[]>([]);
 	const [contasSelecionadas, setContasSelecionadas] = useState<string[]>([]);
 	const [anoSelecionado, setAnoSelecionado] = useState<string>(String(new Date().getFullYear()));
+	const [tipoAgrupamento, setTipoAgrupamento] = useState<'planos' | 'centros'>('planos');
 	const [meses, setMeses] = useState<string[]>([]);
 	const [modalDetalhamentoAberto, setModalDetalhamentoAberto] = useState(false);
 	const [movimentosDetalhados, setMovimentosDetalhados] = useState<MovimentoDetalhado[]>([]);
@@ -76,14 +80,26 @@ const MovimentoBancarioTable: React.FC = () => {
 			setPlanosContas(planos);
 		}
 
+		async function buscarCentrosCustos() {
+			const centros = await listarCentroCustos();
+			setCentrosCustos(centros);
+		}
+
 		buscarContas();
 		buscarPlanosContas();
+		buscarCentrosCustos();
 	}, []);
 
 	// Função para obter descrição do plano de contas
 	const getDescricaoPlanoConta = (idPlano: string): string => {
 		const plano = planosContas.find(p => p.id.toString() === idPlano);
 		return plano ? plano.descricao : `Plano ${idPlano}`;
+	};
+
+	// Função para obter descrição do centro de custos
+	const getDescricaoCentroCustos = (idCentro: string): string => {
+		const centro = centrosCustos.find(c => c.id.toString() === idCentro);
+		return centro ? centro.descricao : `Centro ${idCentro}`;
 	};
 
 	// Função para obter descrição da conta corrente
@@ -103,16 +119,17 @@ const MovimentoBancarioTable: React.FC = () => {
 		return `${nomeBanco} - ${numConta}${responsavel}`;
 	};
 
-	const gerarFluxo = async (contasParaGerar?: string[]) => {
+	const gerarFluxo = async (contasParaGerar?: string[], tipoAgrupamentoParaGerar?: 'planos' | 'centros') => {
 		try {
 			setIsLoading(false);
 			const contas = contasParaGerar || contasSelecionadas;
+			const tipoAgrup = tipoAgrupamentoParaGerar || tipoAgrupamento;
 			if (contas.length === 0) {
 				console.error('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
 				return;
 			}
-			const dados = await buscarFluxoCaixa(anoSelecionado, contas);
-			const dadosAnterior = await buscarFluxoCaixaAnoAnterior(anoSelecionado, contas);
+			const dados = await buscarFluxoCaixa(anoSelecionado, contas, tipoAgrup);
+			const dadosAnterior = await buscarFluxoCaixaAnoAnterior(anoSelecionado, contas, tipoAgrup);
 			setDadosFluxo(dados);
 			setDadosFluxoAnterior(dadosAnterior);
 			setIsLoading(true);
@@ -126,53 +143,98 @@ const MovimentoBancarioTable: React.FC = () => {
 			const receitas = dados[0]?.receitas || {};
 			const despesas = dados[0]?.despesas || {};
 
-			const subEntradas = Object.entries(receitas).map(([id, { descricao, filhos }]) => ({
-				id,
-				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
-					id: idFilho,
-					descricao: getDescricaoPlanoConta(idFilho),
-				})),
-			}));
+			// Adaptar renderização baseado no tipo de agrupamento
+			if (tipoAgrup === 'centros') {
+				// Agrupamento por Centro de Custos
+				// Receitas são valores diretos (números), não objetos com filhos
+				const subEntradas: any[] = [];
+				Object.entries(receitas).forEach(([id, valor]) => {
+					// Se for um número, é um centro de custos direto
+					if (typeof valor === 'number') {
+						subEntradas.push({
+							id,
+							descricao: getDescricaoCentroCustos(id),
+							filhos: [],
+							isDireto: true, // Flag para indicar que é direto
+						});
+					}
+				});
 
-			const subSaidas = Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
-				id,
-				descricao,
-				filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
-					id: idFilho,
-					descricao: getDescricaoPlanoConta(idFilho),
-				})),
-			}));
+				// Despesas separadas por Custeio e Investimentos (mantém estrutura de filhos)
+				const subSaidas = Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
+					id,
+					descricao,
+					filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
+						id: idFilho,
+						descricao: getDescricaoCentroCustos(idFilho),
+					})),
+				}));
 
-			const subFinanciamentos = Object.entries(dados[0]?.financiamentos || {}).map(([idConta, valor]) => ({
-				id: idConta,
-				descricao: getDescricaoContaCorrente(idConta),
-				filhos: [],
-			}));
+				setCategorias((prev) => ({
+					entradas: { ...prev.entradas, subcategorias: subEntradas },
+					saidas: { ...prev.saidas, subcategorias: subSaidas },
+					financiamentos: { ...prev.financiamentos, subcategorias: [] },
+					investimentos: { ...prev.investimentos, subcategorias: [] },
+					pendentes: {
+						label: 'Pendentes Seleção',
+						cor: '#fcd34d',
+						subcategorias: Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, valor]) => ({
+							id: idConta,
+							descricao: getDescricaoContaCorrente(idConta),
+							filhos: [],
+						})),
+					},
+				}));
+			} else {
+				// Agrupamento por Planos de Contas (lógica original)
+				const subEntradas = Object.entries(receitas).map(([id, { descricao, filhos }]) => ({
+					id,
+					descricao,
+					filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
+						id: idFilho,
+						descricao: getDescricaoPlanoConta(idFilho),
+					})),
+				}));
 
-			const subInvestimentos = Object.entries(dados[0]?.investimentos || {}).map(([idPlano, valor]) => ({
-				id: idPlano,
-				descricao: getDescricaoPlanoConta(idPlano),
-				filhos: [],
-			}));
+				const subSaidas = Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
+					id,
+					descricao,
+					filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
+						id: idFilho,
+						descricao: getDescricaoPlanoConta(idFilho),
+					})),
+				}));
 
-			const subPendentes = Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, valor]) => ({
-				id: idConta,
-				descricao: getDescricaoContaCorrente(idConta),
-				filhos: [],
-			}));
+				const subFinanciamentos = Object.entries(dados[0]?.financiamentos || {}).map(([idConta, valor]) => ({
+					id: idConta,
+					descricao: getDescricaoContaCorrente(idConta),
+					filhos: [],
+				}));
 
-			setCategorias((prev) => ({
-				entradas: { ...prev.entradas, subcategorias: subEntradas },
-				saidas: { ...prev.saidas, subcategorias: subSaidas },
-				financiamentos: { ...prev.financiamentos, subcategorias: subFinanciamentos },
-				investimentos: { ...prev.investimentos, subcategorias: subInvestimentos },
-				pendentes: {
-					label: 'Pendentes Seleção',
-					cor: '#fcd34d',
-					subcategorias: subPendentes,
-				},
-			}));
+				const subInvestimentos = Object.entries(dados[0]?.investimentos || {}).map(([idPlano, valor]) => ({
+					id: idPlano,
+					descricao: getDescricaoPlanoConta(idPlano),
+					filhos: [],
+				}));
+
+				const subPendentes = Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, valor]) => ({
+					id: idConta,
+					descricao: getDescricaoContaCorrente(idConta),
+					filhos: [],
+				}));
+
+				setCategorias((prev) => ({
+					entradas: { ...prev.entradas, subcategorias: subEntradas },
+					saidas: { ...prev.saidas, subcategorias: subSaidas },
+					financiamentos: { ...prev.financiamentos, subcategorias: subFinanciamentos },
+					investimentos: { ...prev.investimentos, subcategorias: subInvestimentos },
+					pendentes: {
+						label: 'Pendentes Seleção',
+						cor: '#fcd34d',
+						subcategorias: subPendentes,
+					},
+				}));
+			}
 		} catch (e) {
 			console.error('Erro ao gerar fluxo de caixa:', e);
 			const errorMessage = e instanceof Error ? e.message : 'Erro desconhecido ao gerar fluxo de caixa';
@@ -220,7 +282,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const abrirDetalhamento = async (planoId: string, mes: number, tipo: string, descricao: string) => {
 		try {
 			console.log('abrirDetalhamento', { planoId, mes, tipo, descricao });
-			const dados = await buscarDetalhamento(planoId, mes, tipo, anoSelecionado);
+			const dados = await buscarDetalhamento(planoId, mes, tipo, anoSelecionado, tipoAgrupamento);
 			console.log('dados', dados);
 			setTituloDetalhamento(descricao);
 			console.log('tipo', tipo);
@@ -239,9 +301,12 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const calcularTotais = (tipo: keyof FluxoCaixaMes): string[] => {
 		return dadosFluxo.map((mes) => {
-			if (tipo === 'financiamentos' || tipo === 'investimentos' || tipo === 'pendentesSelecao') {
+			// Quando agrupado por centros, receitas são valores diretos
+			const isDireto = tipo === 'financiamentos' || tipo === 'investimentos' || tipo === 'pendentesSelecao' ||
+				(tipoAgrupamento === 'centros' && tipo === 'receitas');
+			
+			if (isDireto) {
 				const soma = Object.values(mes[tipo] ?? {}).reduce((a, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-
 				return 'R$ ' + formatarMoedaOuTraco(soma);
 			}
 			let total = 0;
@@ -254,9 +319,17 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const calcularSaldoMes = (): string[] => {
 		return dadosFluxo.map((mes) => {
-			const receita = Object.values(mes.receitas ?? {}).reduce((acc, subcat: any) => {
-				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-			}, 0);
+			let receita = 0;
+			if (tipoAgrupamento === 'centros') {
+				// Quando agrupado por centros, receitas são valores diretos (números)
+				receita = Object.values(mes.receitas ?? {}).reduce((acc, item: any) => {
+					return acc + (typeof item === 'number' ? item : 0);
+				}, 0);
+			} else {
+				receita = Object.values(mes.receitas ?? {}).reduce((acc, subcat: any) => {
+					return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+				}, 0);
+			}
 
 			const despesa = Object.values(mes.despesas ?? {}).reduce((acc, subcat: any) => {
 				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
@@ -269,7 +342,9 @@ const MovimentoBancarioTable: React.FC = () => {
 	const renderCategoria = (tipo: keyof FluxoCaixaMes, label: string, mainCor: string, valueCor: string) => {
 		const possuiDados = dadosFluxo.some((mes) => mes[tipo] && Object.keys(mes[tipo] ?? {}).length > 0);
 
-		const isFilhoDireto = tipo === 'financiamentos' || tipo === 'investimentos' || tipo === 'pendentesSelecao';
+		// Quando agrupado por centros, receitas são diretas (sem hierarquia)
+		const isFilhoDireto = tipo === 'financiamentos' || tipo === 'investimentos' || tipo === 'pendentesSelecao' || 
+			(tipoAgrupamento === 'centros' && tipo === 'receitas');
 
 		return (
 			<>
@@ -293,10 +368,18 @@ const MovimentoBancarioTable: React.FC = () => {
 										0
 									);
 								} else if (isFilhoDireto) {
-									total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
-										(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
-										0
-									);
+									// Para receitas quando agrupado por centros, os valores são números diretos
+									if (tipoAgrupamento === 'centros' && tipo === 'receitas') {
+										total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
+											(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
+											0
+										);
+									} else {
+										total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
+											(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
+											0
+										);
+									}
 								} else {
 									Object.values(dadosFluxo[idx]?.[tipo] ?? {}).forEach((subcat: any) => {
 										total += Object.values(subcat.filhos ?? {}).reduce(
@@ -346,7 +429,7 @@ const MovimentoBancarioTable: React.FC = () => {
 					})
 				)}
 
-				{/* Se for movimentação direta (Investimento ou Pendentes) */}
+				{/* Se for movimentação direta (Investimento, Pendentes ou Receitas quando agrupado por centros) */}
 				{expandido[tipo] && isFilhoDireto && tipo !== 'financiamentos' && (
 					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
 						let descricao = '';
@@ -354,6 +437,8 @@ const MovimentoBancarioTable: React.FC = () => {
 							descricao = getDescricaoPlanoConta(idFilho);
 						} else if (tipo === 'pendentesSelecao') {
 							descricao = getDescricaoContaCorrente(idFilho);
+						} else if (tipo === 'receitas' && tipoAgrupamento === 'centros') {
+							descricao = getDescricaoCentroCustos(idFilho);
 						} else {
 							descricao = `Item ${idFilho}`;
 						}
@@ -364,17 +449,19 @@ const MovimentoBancarioTable: React.FC = () => {
 								</td>
 								{meses.map((_, idx) => {
 									const filhoValor = (dadosFluxo[idx]?.[tipo] as any)?.[idFilho];
+									// Para receitas quando agrupado por centros, o valor é um número direto
+									const valor = typeof filhoValor === 'number' ? filhoValor : filhoValor;
 									return (
 										<td
 											key={`valor-direto-${idFilho}-${idx}`}
 											className="text-center px-3 py-1 border border-gray-300"
 										>
-											{filhoValor ? (
+											{valor ? (
 												<div
 													className="cursor-pointer hover:underline hover:text-blue-600"
 													onClick={() => abrirDetalhamento(idFilho, idx, tipo, descricao)}
 												>
-													{`R$ ${formatarMoeda(filhoValor)}`}
+													{`R$ ${formatarMoeda(valor)}`}
 												</div>
 											) : (
 												'R$ 0,00'
@@ -421,7 +508,10 @@ const MovimentoBancarioTable: React.FC = () => {
 										]?.filhos?.[idFilho];
 										if (!filho) return null;
 
-										const descricaoFilho = getDescricaoPlanoConta(idFilho);
+										// Quando agrupado por centros, usar getDescricaoCentroCustos para despesas
+										const descricaoFilho = (tipoAgrupamento === 'centros' && tipo === 'despesas') 
+											? getDescricaoCentroCustos(idFilho)
+											: getDescricaoPlanoConta(idFilho);
 
 										return (
 											<tr key={`filho-${idPai}-${idFilho}`} className="bg-white border border-gray-200">
@@ -551,7 +641,8 @@ const MovimentoBancarioTable: React.FC = () => {
 								{renderCategoria('receitas', 'Receitas', '#82b4ff', '#c7eafe')}
 								{renderCategoria('despesas', 'Despesas', '#ffbe82', '#ffe6bc')}
 								{renderCategoria('financiamentos', 'Financiamentos', '#ffc0c0', '#fce1e3')}
-								{renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
+								{/* Quando agrupado por centros, não mostrar seção de investimentos (já está nas despesas) */}
+								{tipoAgrupamento === 'planos' && renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
 								{renderCategoria('pendentesSelecao', 'Pendentes Seleção', '#e2e8f0', '#f8fafc')}
 
 								{/* Totalizadores */}
@@ -574,14 +665,17 @@ const MovimentoBancarioTable: React.FC = () => {
 									))}
 								</tr>
 
-								<tr className="bg-gray-100 font-bold border border-gray-300">
-									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Investimentos</td>
-									{calcularTotais('investimentos').map((valor, idx) => (
-										<td key={idx} className="text-center border border-gray-300 bg-white">
-											{valor}
-										</td>
-									))}
-								</tr>
+								{/* Quando agrupado por centros, não mostrar saldo de investimentos (já está nas despesas) */}
+								{tipoAgrupamento === 'planos' && (
+									<tr className="bg-gray-100 font-bold border border-gray-300">
+										<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Investimentos</td>
+										{calcularTotais('investimentos').map((valor, idx) => (
+											<td key={idx} className="text-center border border-gray-300 bg-white">
+												{valor}
+											</td>
+										))}
+									</tr>
+								)}
 
 								<tr className="bg-gray-100 font-bold border border-gray-300">
 									<td className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Pendências</td>
@@ -630,6 +724,7 @@ const MovimentoBancarioTable: React.FC = () => {
 					dadosAtual={dadosFluxo}
 					dadosAnterior={dadosFluxoAnterior}
 					isLoading={!isLoading}
+					tipoAgrupamento={tipoAgrupamento}
 				/>
 			)}
 			<FiltroFluxoCaixaModal
@@ -638,10 +733,12 @@ const MovimentoBancarioTable: React.FC = () => {
 				contasDisponiveis={contasCorrentes}
 				anoSelecionado={anoSelecionado}
 				contasSelecionadas={contasSelecionadas}
-				onAplicarFiltro={(ano, contas) => {
+				tipoAgrupamento={tipoAgrupamento}
+				onAplicarFiltro={(ano, contas, tipoAgrup) => {
 					setAnoSelecionado(ano);
 					setContasSelecionadas(contas);
-					gerarFluxo(contas).then(() => {
+					setTipoAgrupamento(tipoAgrup);
+					gerarFluxo(contas, tipoAgrup).then(() => {
 						expandirTodos();
 					});
 				}}

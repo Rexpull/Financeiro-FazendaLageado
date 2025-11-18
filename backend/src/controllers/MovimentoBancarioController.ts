@@ -6,6 +6,7 @@ import { ContaCorrenteRepository } from '../repositories/ContaCorrenteRepository
 import { FinanciamentoRepository } from '../repositories/FinanciamentoRepository';
 import { PessoaRepository } from '../repositories/PessoaRepository';
 import { BancoRepository } from '../repositories/BancoRepository';
+import { CentroCustosRepository } from '../repositories/CentroCustosRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 
 export class MovimentoBancarioController {
@@ -16,6 +17,7 @@ export class MovimentoBancarioController {
 	private financiamentoRepo: FinanciamentoRepository;
 	private pessoaRepo: PessoaRepository;
 	private bancoRepo: BancoRepository;
+	private centroCustosRepository: CentroCustosRepository;
 
 	constructor(
 		movBancarioRepository: MovimentoBancarioRepository,
@@ -24,7 +26,8 @@ export class MovimentoBancarioController {
 		contaCorrenteRepo: ContaCorrenteRepository,
 		financiamentoRepo: FinanciamentoRepository,
 		pessoaRepo: PessoaRepository,
-		bancoRepo: BancoRepository
+		bancoRepo: BancoRepository,
+		centroCustosRepository: CentroCustosRepository
 	) {
 		this.movBancarioRepository = movBancarioRepository;
 		this.planoContaRepository = planoContaRepository;
@@ -33,6 +36,7 @@ export class MovimentoBancarioController {
 		this.financiamentoRepo = financiamentoRepo;
 		this.pessoaRepo = pessoaRepo;
 		this.bancoRepo = bancoRepo;
+		this.centroCustosRepository = centroCustosRepository;
 	}
 
 	async handleRequest(req: Request): Promise<Response> {
@@ -301,15 +305,21 @@ export class MovimentoBancarioController {
 				const tipo = urlObj.searchParams.get('tipo') || '';
 				const mes = parseInt(urlObj.searchParams.get('mes') || '');
 				const ano = parseInt(urlObj.searchParams.get('ano') || new Date().getFullYear().toString());
+				const tipoAgrupamento = urlObj.searchParams.get('tipoAgrupamento') || 'planos';
 
 				let movimentos: MovimentoDetalhado[] = [];
 
 				if (tipo === 'financiamentos') {
 					const credorKey = urlObj.searchParams.get('planoId') || '';
 					movimentos = await this.movBancarioRepository.getDetalhesFinanciamento(credorKey, mes, ano);
+				} else if (tipoAgrupamento === 'centros') {
+					// Detalhamento por centro de custos
+					const centroCustosId = parseInt(urlObj.searchParams.get('planoId') || '');
+					movimentos = await this.movBancarioRepository.getMovimentosPorCentroCustosDetalhamento(centroCustosId, mes, tipo, ano);
 				} else {
+					// Detalhamento por plano de contas (lógica original)
 					const planoId = parseInt(urlObj.searchParams.get('planoId') || '');
-					movimentos = await this.movBancarioRepository.getMovimentosPorDetalhamento(planoId, mes, tipo);
+					movimentos = await this.movBancarioRepository.getMovimentosPorDetalhamento(planoId, mes, tipo, ano);
 				}
 
 				return new Response(JSON.stringify(movimentos), {
@@ -321,9 +331,11 @@ export class MovimentoBancarioController {
 			if (method === 'POST' && pathname === '/api/fluxoCaixa') {
 				try {
 					const body = await req.json();
-					const { ano, contas } = body as { ano: string; contas: string[] };
+					const { ano, contas, tipoAgrupamento: tipoAgrupamentoRaw = 'planos' } = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
+					// Garantir que tipoAgrupamento seja string e normalize para 'centros' ou 'planos'
+					const tipoAgrupamento = (tipoAgrupamentoRaw === 'centros' || tipoAgrupamentoRaw === 'Centro de Custos') ? 'centros' : 'planos';
 					const contasNumber = contas.map(Number);
-					console.log('📊 Gerando fluxo de caixa para ano:', ano, 'contas:', contas);
+					console.log('📊 Gerando fluxo de caixa para ano:', ano, 'contas:', contas, 'tipoAgrupamento (raw):', tipoAgrupamentoRaw, 'tipoAgrupamento (normalizado):', tipoAgrupamento);
 
 					const todosMovimentos = await this.movBancarioRepository.getAllFiltrado(ano, contasNumber);
 					console.log('📥 Total movimentos carregados:', todosMovimentos.length);
@@ -340,6 +352,9 @@ export class MovimentoBancarioController {
 					const financiamentos = await this.financiamentoRepo.getAll();
 					const pessoas = await this.pessoaRepo.getAll();
 					const bancos = await this.bancoRepo.getAll();
+
+					// Buscar centros de custos se for agrupamento por centros
+					const centrosCustos = tipoAgrupamento === 'centros' ? await this.centroCustosRepository.getAll() : [];
 
 					const pendentesPorConta: { [idConta: number]: number } = {};
 
@@ -358,11 +373,17 @@ export class MovimentoBancarioController {
 					});
 
 					console.log('🎯 Movimentos filtrados:', movimentosFiltrados.length);
+					console.log('🔍 Tipo de agrupamento recebido:', tipoAgrupamento, 'Tipo:', typeof tipoAgrupamento, 'É igual a "centros"?', tipoAgrupamento === 'centros');
 
+					// Estrutura de dados diferente baseada no tipo de agrupamento
 					const dadosMensais: any[] = Array(12)
 						.fill(null)
 						.map(() => ({
-							receitas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
+							// Quando agrupado por centros, receitas são valores diretos (números)
+							// Quando agrupado por planos, receitas têm estrutura com descricao e filhos
+							receitas: tipoAgrupamento === 'centros' 
+								? {} as { [key: number]: number }
+								: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							investimentos: {} as { [key: number]: number },
 							financiamentos: {} as { [key: string]: { valor: number; descricao: string } },
@@ -372,132 +393,209 @@ export class MovimentoBancarioController {
 							lucro: 0,
 						}));
 
-					for (const movimento of movimentosFiltrados) {
-						const mes = new Date(movimento.dtMovimento).getMonth();
-						console.log('🔎 Processando movimento:', {
-							id: movimento.id,
-							data: movimento.dtMovimento,
-							conta: movimento.idContaCorrente,
-							valor: movimento.valor,
-							modalidade: movimento.modalidadeMovimento,
-							parcelado: movimento.parcelado,
-							resultados: movimento.resultadoList?.length,
-						});
-
-						if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
-							continue;
-						}
-
-						if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
-							console.warn('⚠️ Movimento sem resultadoList. Enviando como pendente!');
+					// Processar movimentos baseado no tipo de agrupamento
+					if (tipoAgrupamento === 'centros') {
+						console.log('✅ Processando com agrupamento por CENTROS DE CUSTOS');
+						// Agrupamento por Centro de Custos
+						for (const movimento of movimentosFiltrados) {
 							const mes = new Date(movimento.dtMovimento).getMonth();
-							const conta = movimento.idContaCorrente;
-							pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
-
-							// Corrigindo para usar apenas o valor numérico conforme o modelo
-							if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+							
+							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
+								continue;
 							}
-							dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
-						}
 
-						if (movimento.resultadoList) {
-							for (const resultado of movimento.resultadoList) {
-								console.log('🔍 Processando resultado:', {
-									idMovimentoBancario: resultado.idMovimentoBancario,
-									idPlanoContas: resultado.idPlanoContas,
-									valor: resultado.valor,
-									tipo: resultado.tipo,
+							// Obter centros de custos do movimento (pode ser lista ou único)
+							const centrosDoMovimento: { id: number; valor: number }[] = [];
+							
+							if (movimento.centroCustosList && movimento.centroCustosList.length > 0) {
+								// Múltiplos centros (rateio)
+								centrosDoMovimento.push(...movimento.centroCustosList.map(cc => ({
+									id: cc.idCentroCustos,
+									valor: Math.abs(cc.valor)
+								})));
+							} else if (movimento.idCentroCustos) {
+								// Centro único
+								centrosDoMovimento.push({
+									id: movimento.idCentroCustos,
+									valor: Math.abs(movimento.valor)
 								});
+							}
 
-								const plano = planos.find((p) => p.id === resultado.idPlanoContas);
-								const contaId = movimento.idContaCorrente;
+							if (centrosDoMovimento.length === 0) {
+								// Sem centro de custos, enviar como pendente
+								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+								}
+								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+								continue;
+							}
 
-								if (!plano) {
-									console.error('🚨 Plano de contas não encontrado!', resultado.idPlanoContas, 'Movimento:', movimento.id);
-
-									// Se o plano de contas não existir, considera como pendente
-									if (!dadosMensais[mes].pendentesSelecao[contaId]) {
-										dadosMensais[mes].pendentesSelecao[contaId] = 0;
-									}
-									dadosMensais[mes].pendentesSelecao[contaId] += resultado.valor;
-
+							// Processar cada centro de custos do movimento
+							for (const centroMov of centrosDoMovimento) {
+								const centro = centrosCustos.find(c => c.id === centroMov.id);
+								if (!centro) {
+									console.warn('⚠️ Centro de custos não encontrado:', centroMov.id);
 									continue;
 								}
 
-								console.log('📘 Plano encontrado:', {
-									id: plano.id,
-									descricao: plano.descricao,
-									tipo: plano.tipo,
-									hierarquia: plano.hierarquia,
-								});
-
-								const tipoMov = plano.tipo;
-								const hierarquia = plano.hierarquia;
-
-								console.warn(
-									'Tipo Movimento: ' +
-										tipoMov +
-										', Modalidade do Movimento: ' +
-										movimento.modalidadeMovimento +
-										', Parcelado?: ' +
-										movimento.parcelado
-								);
-								if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
-									console.log('➕ Adicionando investimento:', resultado.valor);
-
-									// Corrigindo para usar apenas o valor numérico conforme o modelo
-									if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
-										dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
+								// Determinar se é receita ou despesa baseado no tipoMovimento
+								const grupo = movimento.tipoMovimento === 'C' ? 'receitas' : 'despesas';
+								
+								if (grupo === 'receitas') {
+									// Receitas: agrupar diretamente por centro de custos (sem hierarquia)
+									// Armazenar como valor direto, não em estrutura de filhos
+									if (!dadosMensais[mes].receitas[centro.id]) {
+										dadosMensais[mes].receitas[centro.id] = 0;
 									}
-									dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
-
-									continue;
-								} else if (tipoMov === 'custeio' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
-									const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
-
-									if (!grupo) {
-										console.warn('⚠️ Hierarquia inválida no plano. Jogando para pendentes:', hierarquia);
-										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-										continue;
-									}
-
-									const idPai = plano.idReferente;
-									if (!idPai) {
-										console.warn('⚠️ Plano de contas sem idPai. Jogando para pendentes:', plano);
-										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-										continue;
-									}
-
-									// Se chegou até aqui, tudo está OK
-									if (!dadosMensais[mes][grupo][idPai]) {
-										dadosMensais[mes][grupo][idPai] = {
-											descricao: planos.find((p) => p.id === idPai)?.descricao || 'Outro',
-											filhos: {},
+									dadosMensais[mes].receitas[centro.id] += centroMov.valor;
+								} else {
+									// Despesas: separar por tipo (CUSTEIO/INVESTIMENTO)
+									// Usar IDs especiais para categorias: 1000 = Custeio, 2000 = Investimentos
+									const categoriaId = centro.tipo === 'CUSTEIO' ? 1000 : 2000;
+									const categoriaDesc = centro.tipo === 'CUSTEIO' ? 'Custeio' : 'Investimentos';
+									
+									if (!dadosMensais[mes].despesas[categoriaId]) {
+										dadosMensais[mes].despesas[categoriaId] = {
+											descricao: categoriaDesc,
+											filhos: {}
 										};
 									}
+									if (!dadosMensais[mes].despesas[categoriaId].filhos[centro.id]) {
+										dadosMensais[mes].despesas[categoriaId].filhos[centro.id] = 0;
+									}
+									dadosMensais[mes].despesas[categoriaId].filhos[centro.id] += centroMov.valor;
+								}
+							}
+						}
+					} else {
+						// Agrupamento por Planos de Contas (lógica original)
+						for (const movimento of movimentosFiltrados) {
+							const mes = new Date(movimento.dtMovimento).getMonth();
+							console.log('🔎 Processando movimento:', {
+								id: movimento.id,
+								data: movimento.dtMovimento,
+								conta: movimento.idContaCorrente,
+								valor: movimento.valor,
+								modalidade: movimento.modalidadeMovimento,
+								parcelado: movimento.parcelado,
+								resultados: movimento.resultadoList?.length,
+							});
 
-									console.log(`➕ Adicionando ${grupo} (Pai: ${idPai}) com valor:`, resultado.valor);
-									if (!dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas]) {
-										dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] = resultado.valor;
+							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
+								continue;
+							}
+
+							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
+								console.warn('⚠️ Movimento sem resultadoList. Enviando como pendente!');
+								const mes = new Date(movimento.dtMovimento).getMonth();
+								const conta = movimento.idContaCorrente;
+								pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
+
+								// Corrigindo para usar apenas o valor numérico conforme o modelo
+								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+								}
+								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+							}
+
+							if (movimento.resultadoList) {
+								for (const resultado of movimento.resultadoList) {
+									console.log('🔍 Processando resultado:', {
+										idMovimentoBancario: resultado.idMovimentoBancario,
+										idPlanoContas: resultado.idPlanoContas,
+										valor: resultado.valor,
+										tipo: resultado.tipo,
+									});
+
+									const plano = planos.find((p) => p.id === resultado.idPlanoContas);
+									const contaId = movimento.idContaCorrente;
+
+									if (!plano) {
+										console.error('🚨 Plano de contas não encontrado!', resultado.idPlanoContas, 'Movimento:', movimento.id);
+
+										// Se o plano de contas não existir, considera como pendente
+										if (!dadosMensais[mes].pendentesSelecao[contaId]) {
+											dadosMensais[mes].pendentesSelecao[contaId] = 0;
+										}
+										dadosMensais[mes].pendentesSelecao[contaId] += resultado.valor;
+
+										continue;
+									}
+
+									console.log('📘 Plano encontrado:', {
+										id: plano.id,
+										descricao: plano.descricao,
+										tipo: plano.tipo,
+										hierarquia: plano.hierarquia,
+									});
+
+									const tipoMov = plano.tipo;
+									const hierarquia = plano.hierarquia;
+
+									console.warn(
+										'Tipo Movimento: ' +
+											tipoMov +
+											', Modalidade do Movimento: ' +
+											movimento.modalidadeMovimento +
+											', Parcelado?: ' +
+											movimento.parcelado
+									);
+									if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+										console.log('➕ Adicionando investimento:', resultado.valor);
+
+										// Corrigindo para usar apenas o valor numérico conforme o modelo
+										if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
+											dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
+										}
+										dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
+
+										continue;
+									} else if (tipoMov === 'custeio' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+										const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
+
+										if (!grupo) {
+											console.warn('⚠️ Hierarquia inválida no plano. Jogando para pendentes:', hierarquia);
+											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+											}
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
+											continue;
+										}
+
+										const idPai = plano.idReferente;
+										if (!idPai) {
+											console.warn('⚠️ Plano de contas sem idPai. Jogando para pendentes:', plano);
+											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+											}
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
+											continue;
+										}
+
+										// Se chegou até aqui, tudo está OK
+										if (!dadosMensais[mes][grupo][idPai]) {
+											dadosMensais[mes][grupo][idPai] = {
+												descricao: planos.find((p) => p.id === idPai)?.descricao || 'Outro',
+												filhos: {},
+											};
+										}
+
+										console.log(`➕ Adicionando ${grupo} (Pai: ${idPai}) com valor:`, resultado.valor);
+										if (!dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas]) {
+											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] = resultado.valor;
+										} else {
+											// Se já existe, soma o valor
+											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] += resultado.valor;
+										}
 									} else {
-										// Se já existe, soma o valor
-										dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] += resultado.valor;
-									}
-								} else {
-									console.warn('⚠️ Tipo não reconhecido, jogando para pendentes!', tipoMov);
+										console.warn('⚠️ Tipo não reconhecido, jogando para pendentes!', tipoMov);
 
-									// Se não for investimento nem custeio, também lança como pendente
-									if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+										// Se não for investimento nem custeio, também lança como pendente
+										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+										}
+										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
 									}
-									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
 								}
 							}
 						}
@@ -582,10 +680,10 @@ export class MovimentoBancarioController {
 			if (method === 'POST' && pathname === '/api/fluxoCaixa/anoAnterior') {
 				try {
 					const body = await req.json();
-					const { ano, contas } = body as { ano: string; contas: string[] };
+					const { ano, contas, tipoAgrupamento = 'planos' } = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
 					const anoAnterior = (parseInt(ano) - 1).toString();
 					const contasNumber = contas.map(Number);
-					console.log('📊 Gerando fluxo de caixa do ano anterior:', anoAnterior, 'contas:', contas);
+					console.log('📊 Gerando fluxo de caixa do ano anterior:', anoAnterior, 'contas:', contas, 'tipoAgrupamento:', tipoAgrupamento);
 
 					const todosMovimentos = await this.movBancarioRepository.getAllFiltrado(anoAnterior, contasNumber);
 					console.log('📥 Total movimentos carregados (ano anterior):', todosMovimentos.length);
@@ -603,6 +701,9 @@ export class MovimentoBancarioController {
 					const pessoas = await this.pessoaRepo.getAll();
 					const bancos = await this.bancoRepo.getAll();
 
+					// Buscar centros de custos se for agrupamento por centros
+					const centrosCustos = tipoAgrupamento === 'centros' ? await this.centroCustosRepository.getAll() : [];
+
 					const pendentesPorConta: { [idConta: number]: number } = {};
 
 					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
@@ -616,10 +717,15 @@ export class MovimentoBancarioController {
 						return typeof mov.dtMovimento === 'string' && mov.dtMovimento.startsWith(anoAnterior) && contasNumber.includes(mov.idContaCorrente);
 					});
 
+					// Estrutura de dados diferente baseada no tipo de agrupamento
 					const dadosMensais: any[] = Array(12)
 						.fill(null)
 						.map(() => ({
-							receitas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
+							// Quando agrupado por centros, receitas são valores diretos (números)
+							// Quando agrupado por planos, receitas têm estrutura com descricao e filhos
+							receitas: tipoAgrupamento === 'centros' 
+								? {} as { [key: number]: number }
+								: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							investimentos: {} as { [key: number]: number },
 							financiamentos: {} as { [key: string]: { valor: number; descricao: string } },
@@ -629,71 +735,147 @@ export class MovimentoBancarioController {
 							lucro: 0,
 						}));
 
-					for (const movimento of movimentosFiltrados) {
-						const mes = new Date(movimento.dtMovimento).getMonth();
-						if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
-							continue;
-						}
-						if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
-							const conta = movimento.idContaCorrente;
-							pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
-							if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+					// Processar movimentos baseado no tipo de agrupamento
+					if (tipoAgrupamento === 'centros') {
+						// Agrupamento por Centro de Custos
+						for (const movimento of movimentosFiltrados) {
+							const mes = new Date(movimento.dtMovimento).getMonth();
+							
+							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
+								continue;
 							}
-							dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
-						}
-						if (movimento.resultadoList) {
-							for (const resultado of movimento.resultadoList) {
-								const plano = planos.find((p) => p.id === resultado.idPlanoContas);
-								const contaId = movimento.idContaCorrente;
-								if (!plano) {
-									if (!dadosMensais[mes].pendentesSelecao[contaId]) {
-										dadosMensais[mes].pendentesSelecao[contaId] = 0;
-									}
-									dadosMensais[mes].pendentesSelecao[contaId] += resultado.valor;
+
+							// Obter centros de custos do movimento (pode ser lista ou único)
+							const centrosDoMovimento: { id: number; valor: number }[] = [];
+							
+							if (movimento.centroCustosList && movimento.centroCustosList.length > 0) {
+								// Múltiplos centros (rateio)
+								centrosDoMovimento.push(...movimento.centroCustosList.map(cc => ({
+									id: cc.idCentroCustos,
+									valor: Math.abs(cc.valor)
+								})));
+							} else if (movimento.idCentroCustos) {
+								// Centro único
+								centrosDoMovimento.push({
+									id: movimento.idCentroCustos,
+									valor: Math.abs(movimento.valor)
+								});
+							}
+
+							if (centrosDoMovimento.length === 0) {
+								// Sem centro de custos, enviar como pendente
+								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+								}
+								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+								continue;
+							}
+
+							// Processar cada centro de custos do movimento
+							for (const centroMov of centrosDoMovimento) {
+								const centro = centrosCustos.find(c => c.id === centroMov.id);
+								if (!centro) {
+									console.warn('⚠️ Centro de custos não encontrado:', centroMov.id);
 									continue;
 								}
-								const tipoMov = plano.tipo;
-								const hierarquia = plano.hierarquia;
-								if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
-									if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
-										dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
+
+								// Determinar se é receita ou despesa baseado no tipoMovimento
+								const grupo = movimento.tipoMovimento === 'C' ? 'receitas' : 'despesas';
+								
+								if (grupo === 'receitas') {
+									// Receitas: agrupar diretamente por centro de custos (sem hierarquia)
+									// Armazenar como valor direto, não em estrutura de filhos
+									if (!dadosMensais[mes].receitas[centro.id]) {
+										dadosMensais[mes].receitas[centro.id] = 0;
 									}
-									dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
-									continue;
-								} else if (tipoMov === 'custeio' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
-									const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
-									if (!grupo) {
-										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-										continue;
-									}
-									const idPai = plano.idReferente;
-									if (!idPai) {
-										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-										continue;
-									}
-									if (!dadosMensais[mes][grupo][idPai]) {
-										dadosMensais[mes][grupo][idPai] = {
-											descricao: planos.find((p) => p.id === idPai)?.descricao || 'Outro',
-											filhos: {},
+									dadosMensais[mes].receitas[centro.id] += centroMov.valor;
+								} else {
+									// Despesas: separar por tipo (CUSTEIO/INVESTIMENTO)
+									// Usar IDs especiais para categorias: 1000 = Custeio, 2000 = Investimentos
+									const categoriaId = centro.tipo === 'CUSTEIO' ? 1000 : 2000;
+									const categoriaDesc = centro.tipo === 'CUSTEIO' ? 'Custeio' : 'Investimentos';
+									
+									if (!dadosMensais[mes].despesas[categoriaId]) {
+										dadosMensais[mes].despesas[categoriaId] = {
+											descricao: categoriaDesc,
+											filhos: {}
 										};
 									}
-									if (!dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas]) {
-										dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] = resultado.valor;
+									if (!dadosMensais[mes].despesas[categoriaId].filhos[centro.id]) {
+										dadosMensais[mes].despesas[categoriaId].filhos[centro.id] = 0;
+									}
+									dadosMensais[mes].despesas[categoriaId].filhos[centro.id] += centroMov.valor;
+								}
+							}
+						}
+					} else {
+						// Agrupamento por Planos de Contas (lógica original)
+						for (const movimento of movimentosFiltrados) {
+							const mes = new Date(movimento.dtMovimento).getMonth();
+							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
+								continue;
+							}
+							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
+								const conta = movimento.idContaCorrente;
+								pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
+								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+								}
+								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+							}
+							if (movimento.resultadoList) {
+								for (const resultado of movimento.resultadoList) {
+									const plano = planos.find((p) => p.id === resultado.idPlanoContas);
+									const contaId = movimento.idContaCorrente;
+									if (!plano) {
+										if (!dadosMensais[mes].pendentesSelecao[contaId]) {
+											dadosMensais[mes].pendentesSelecao[contaId] = 0;
+										}
+										dadosMensais[mes].pendentesSelecao[contaId] += resultado.valor;
+										continue;
+									}
+									const tipoMov = plano.tipo;
+									const hierarquia = plano.hierarquia;
+									if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+										if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
+											dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
+										}
+										dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
+										continue;
+									} else if (tipoMov === 'custeio' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+										const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
+										if (!grupo) {
+											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+											}
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
+											continue;
+										}
+										const idPai = plano.idReferente;
+										if (!idPai) {
+											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+											}
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
+											continue;
+										}
+										if (!dadosMensais[mes][grupo][idPai]) {
+											dadosMensais[mes][grupo][idPai] = {
+												descricao: planos.find((p) => p.id === idPai)?.descricao || 'Outro',
+												filhos: {},
+											};
+										}
+										if (!dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas]) {
+											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] = resultado.valor;
+										} else {
+											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] += resultado.valor;
+										}
 									} else {
-										dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] += resultado.valor;
+										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
+											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+										}
+										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
 									}
-								} else {
-									if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-									}
-									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
 								}
 							}
 						}
@@ -774,7 +956,16 @@ export class MovimentoBancarioController {
 				await this.movBancarioRepository.update(id, body);
 				console.log('✅ Atualização realizada com sucesso');
 
-				return new Response(JSON.stringify({ message: 'Movimento bancário atualizado com sucesso!' }), {
+				// Buscar o movimento atualizado com centroCustosList
+				const movimentoAtualizado = await this.movBancarioRepository.getById(id);
+				if (!movimentoAtualizado) {
+					return new Response(JSON.stringify({ error: 'Movimento não encontrado após atualização' }), {
+						status: 404,
+						headers: corsHeaders,
+					});
+				}
+
+				return new Response(JSON.stringify(movimentoAtualizado), {
 					status: 200,
 					headers: corsHeaders,
 				});
