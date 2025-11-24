@@ -386,7 +386,11 @@ export class MovimentoBancarioController {
 								: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							investimentos: {} as { [key: number]: number },
-							financiamentos: {} as { [key: string]: { valor: number; descricao: string } },
+							// Quando agrupado por centros, financiamentos têm estrutura separada (pagos/contratados)
+							// Quando agrupado por planos, financiamentos têm estrutura simples
+							financiamentos: tipoAgrupamento === 'centros'
+								? { pagos: {} as { [key: string]: { valor: number; descricao: string } }, contratados: {} as { [key: string]: { valor: number; descricao: string } } }
+								: {} as { [key: string]: { valor: number; descricao: string } },
 							pendentesSelecao: {} as { [key: number]: number },
 							saldoInicial: 0,
 							saldoFinal: 0,
@@ -602,8 +606,6 @@ export class MovimentoBancarioController {
 					}
 
 					for (const parcela of parcelas) {
-						const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
-						const mes = dataEfetiva.getMonth();
 						const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
 						if (!financiamento) continue;
 
@@ -622,22 +624,59 @@ export class MovimentoBancarioController {
 
 						if (!credorKey) continue;
 
-						if (!dadosMensais[mes].financiamentos[credorKey]) {
-							dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
+						if (tipoAgrupamento === 'centros') {
+							// Separar em pagos e contratados
+							// Pagos: parcelas com dt_liquidacao no mês
+							// Contratados: parcelas com dt_vencimento no mês e sem dt_liquidacao
+							if (parcela.dt_liquidacao) {
+								// Parcela paga
+								const mesLiquidacao = new Date(parcela.dt_liquidacao).getMonth();
+								if (!dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey]) {
+									dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey] = { valor: 0, descricao: credorDescricao };
+								}
+								dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey].valor += parcela.valor;
+							}
+							
+							// Contratados: sempre considerar pelo vencimento (mesmo que já tenha sido pago)
+							const mesVencimento = new Date(parcela.dt_vencimento).getMonth();
+							if (!dadosMensais[mesVencimento].financiamentos.contratados[credorKey]) {
+								dadosMensais[mesVencimento].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
+							}
+							dadosMensais[mesVencimento].financiamentos.contratados[credorKey].valor += parcela.valor;
+						} else {
+							// Estrutura original para planos de contas
+							const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
+							const mes = dataEfetiva.getMonth();
+							if (!dadosMensais[mes].financiamentos[credorKey]) {
+								dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
+							}
+							dadosMensais[mes].financiamentos[credorKey].valor += parcela.valor;
 						}
-
-						dadosMensais[mes].financiamentos[credorKey].valor += parcela.valor;
 					}
 
 					for (let i = 0; i < dadosMensais.length; i++) {
-						const receitas = Object.values(dadosMensais[i].receitas ?? {})
-							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
-							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						let receitas = 0;
+						if (tipoAgrupamento === 'centros') {
+							// Quando agrupado por centros, receitas são valores diretos (números)
+							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						} else {
+							receitas = Object.values(dadosMensais[i].receitas ?? {})
+								.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
+								.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						}
 						const despesas = Object.values(dadosMensais[i].despesas ?? {})
 							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
 							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						const financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
+						let financiamentos = 0;
+						if (tipoAgrupamento === 'centros') {
+							// Quando agrupado por centros, financiamentos têm estrutura separada
+							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
+							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
+							financiamentos = contratados - pagos; // Resultado do mês
+						} else {
+							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
+						}
 						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 
 						if (i > 0) {
@@ -728,7 +767,11 @@ export class MovimentoBancarioController {
 								: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							investimentos: {} as { [key: number]: number },
-							financiamentos: {} as { [key: string]: { valor: number; descricao: string } },
+							// Quando agrupado por centros, financiamentos têm estrutura separada (pagos/contratados)
+							// Quando agrupado por planos, financiamentos têm estrutura simples
+							financiamentos: tipoAgrupamento === 'centros'
+								? { pagos: {} as { [key: string]: { valor: number; descricao: string } }, contratados: {} as { [key: string]: { valor: number; descricao: string } } }
+								: {} as { [key: string]: { valor: number; descricao: string } },
 							pendentesSelecao: {} as { [key: number]: number },
 							saldoInicial: 0,
 							saldoFinal: 0,
@@ -882,8 +925,6 @@ export class MovimentoBancarioController {
 					}
 
 					for (const parcela of parcelas) {
-						const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
-						const mes = dataEfetiva.getMonth();
 						const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
 						if (!financiamento) continue;
 						let credorKey = '';
@@ -898,21 +939,60 @@ export class MovimentoBancarioController {
 							credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
 						}
 						if (!credorKey) continue;
-						if (!dadosMensais[mes].financiamentos[credorKey]) {
-							dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
+
+						if (tipoAgrupamento === 'centros') {
+							// Separar em pagos e contratados
+							// Pagos: parcelas com dt_liquidacao no mês
+							// Contratados: parcelas com dt_vencimento no mês e sem dt_liquidacao
+							if (parcela.dt_liquidacao) {
+								// Parcela paga
+								const mesLiquidacao = new Date(parcela.dt_liquidacao).getMonth();
+								if (!dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey]) {
+									dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey] = { valor: 0, descricao: credorDescricao };
+								}
+								dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey].valor += parcela.valor;
+							}
+							
+							// Contratados: sempre considerar pelo vencimento (mesmo que já tenha sido pago)
+							const mesVencimento = new Date(parcela.dt_vencimento).getMonth();
+							if (!dadosMensais[mesVencimento].financiamentos.contratados[credorKey]) {
+								dadosMensais[mesVencimento].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
+							}
+							dadosMensais[mesVencimento].financiamentos.contratados[credorKey].valor += parcela.valor;
+						} else {
+							// Estrutura original para planos de contas
+							const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
+							const mes = dataEfetiva.getMonth();
+							if (!dadosMensais[mes].financiamentos[credorKey]) {
+								dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
+							}
+							dadosMensais[mes].financiamentos[credorKey].valor += parcela.valor;
 						}
-						dadosMensais[mes].financiamentos[credorKey].valor += parcela.valor;
 					}
 
 					for (let i = 0; i < dadosMensais.length; i++) {
-						const receitas = Object.values(dadosMensais[i].receitas ?? {})
-							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
-							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						let receitas = 0;
+						if (tipoAgrupamento === 'centros') {
+							// Quando agrupado por centros, receitas são valores diretos (números)
+							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						} else {
+							receitas = Object.values(dadosMensais[i].receitas ?? {})
+								.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
+								.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						}
 						const despesas = Object.values(dadosMensais[i].despesas ?? {})
 							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
 							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						const financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
+						let financiamentos = 0;
+						if (tipoAgrupamento === 'centros') {
+							// Quando agrupado por centros, financiamentos têm estrutura separada
+							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
+							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
+							financiamentos = contratados - pagos; // Resultado do mês
+						} else {
+							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
+						}
 						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
 						if (i > 0) {
 							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;

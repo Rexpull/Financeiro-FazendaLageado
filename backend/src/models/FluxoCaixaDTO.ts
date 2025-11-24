@@ -23,6 +23,19 @@ export interface FluxoCaixaMes {
 			valor: number;
 			descricao: string;
 		};
+	} | {
+		pagos: {
+			[credorKey: string]: {
+				valor: number;
+				descricao: string;
+			};
+		};
+		contratados: {
+			[credorKey: string]: {
+				valor: number;
+				descricao: string;
+			};
+		};
 	};
 
 	pendentesSelecao?: { [idConta: number]: number };
