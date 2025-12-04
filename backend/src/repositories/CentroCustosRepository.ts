@@ -24,7 +24,9 @@ export class CentroCustosRepository {
           CREATE TABLE CentroCustos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             descricao TEXT NOT NULL UNIQUE,
-            tipo TEXT NOT NULL DEFAULT 'CUSTEIO' CHECK(tipo IN ('CUSTEIO', 'INVESTIMENTO'))
+            tipo TEXT DEFAULT 'CUSTEIO' CHECK(tipo IN ('CUSTEIO', 'INVESTIMENTO')),
+            tipoReceitaDespesa TEXT CHECK(tipoReceitaDespesa IN ('RECEITA', 'DESPESA')),
+            ordem INTEGER
           )
         `).run();
 
@@ -37,11 +39,18 @@ export class CentroCustosRepository {
 
 
   async getAll(): Promise<CentroCustos[]> {
-    const { results } = await this.db.prepare("SELECT * FROM CentroCustos").all();
+    const { results } = await this.db.prepare(`
+      SELECT * FROM CentroCustos 
+      ORDER BY 
+        CASE WHEN tipoReceitaDespesa = 'RECEITA' THEN 1 WHEN tipoReceitaDespesa = 'DESPESA' THEN 2 ELSE 3 END,
+        CASE WHEN tipo = 'CUSTEIO' THEN 1 WHEN tipo = 'INVESTIMENTO' THEN 2 ELSE 3 END,
+        id
+    `).all();
     return results.map(result => ({
       id: result.id as number,
       descricao: result.descricao as string,
-      tipo: (result.tipo as 'CUSTEIO' | 'INVESTIMENTO') || 'CUSTEIO'
+      tipo: result.tipo as 'CUSTEIO' | 'INVESTIMENTO' | undefined,
+      tipoReceitaDespesa: result.tipoReceitaDespesa as 'RECEITA' | 'DESPESA' | undefined
     })) as CentroCustos[];
   }
 
@@ -52,17 +61,30 @@ export class CentroCustosRepository {
     return {
       id: result.id as number,
       descricao: result.descricao as string,
-      tipo: (result.tipo as 'CUSTEIO' | 'INVESTIMENTO') || 'CUSTEIO'
+      tipo: result.tipo as 'CUSTEIO' | 'INVESTIMENTO' | undefined,
+      tipoReceitaDespesa: result.tipoReceitaDespesa as 'RECEITA' | 'DESPESA' | undefined
     };
   }
 
-  async create(descricao: string, tipo: 'CUSTEIO' | 'INVESTIMENTO' = 'CUSTEIO'): Promise<CentroCustos> {
-    const result = await this.db.prepare("INSERT INTO CentroCustos (descricao, tipo) VALUES (?, ?) RETURNING id, descricao, tipo").bind(descricao, tipo).first();
+  async create(descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA'): Promise<CentroCustos> {
+    // Se for Receita e não tiver tipo definido, usar CUSTEIO como padrão
+    const tipoFinal = tipo || (tipoReceitaDespesa === 'RECEITA' ? 'CUSTEIO' : null);
+    const result = await this.db.prepare(`
+      INSERT INTO CentroCustos (descricao, tipo, tipoReceitaDespesa) 
+      VALUES (?, ?, ?) 
+      RETURNING id, descricao, tipo, tipoReceitaDespesa
+    `).bind(descricao, tipoFinal || null, tipoReceitaDespesa || null).first();
     return result as unknown as CentroCustos;
   }
 
-  async update(id: number, descricao: string, tipo: 'CUSTEIO' | 'INVESTIMENTO'): Promise<void> {
-    await this.db.prepare("UPDATE CentroCustos SET descricao = ?, tipo = ? WHERE id = ?").bind(descricao, tipo, id).run();
+  async update(id: number, descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA'): Promise<void> {
+    // Se for Receita e não tiver tipo definido, usar CUSTEIO como padrão
+    const tipoFinal = tipo || (tipoReceitaDespesa === 'RECEITA' ? 'CUSTEIO' : null);
+    await this.db.prepare(`
+      UPDATE CentroCustos 
+      SET descricao = ?, tipo = ?, tipoReceitaDespesa = ? 
+      WHERE id = ?
+    `).bind(descricao, tipoFinal || null, tipoReceitaDespesa || null, id).run();
   }
 
   async delete(id: number): Promise<void> {

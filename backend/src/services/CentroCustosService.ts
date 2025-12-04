@@ -15,21 +15,26 @@ export class CentroCustosService {
     return this.centroCustosRepository.getById(id);
   }
 
-  async criarCentroCustos(descricao: string, tipo: 'CUSTEIO' | 'INVESTIMENTO' = 'CUSTEIO') {
+  async criarCentroCustos(descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA') {
     if (!descricao) throw new Error("Descrição é obrigatória");
-    if (tipo !== 'CUSTEIO' && tipo !== 'INVESTIMENTO') {
-      throw new Error("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO'");
+    if (tipoReceitaDespesa && tipoReceitaDespesa !== 'RECEITA' && tipoReceitaDespesa !== 'DESPESA') {
+      throw new Error("tipoReceitaDespesa deve ser 'RECEITA' ou 'DESPESA'");
     }
-    return await this.centroCustosRepository.create(descricao, tipo);
+    if (tipoReceitaDespesa === 'DESPESA' && tipo && tipo !== 'CUSTEIO' && tipo !== 'INVESTIMENTO') {
+      throw new Error("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO' quando tipoReceitaDespesa for 'DESPESA'");
+    }
+    return await this.centroCustosRepository.create(descricao, tipo, tipoReceitaDespesa);
   }
 
-  async atualizarCentroCustos(id: number, descricao: string, tipo: 'CUSTEIO' | 'INVESTIMENTO') {
+  async atualizarCentroCustos(id: number, descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA') {
     if (!descricao) throw new Error("Descrição é obrigatória");
-    if (!tipo) throw new Error("Tipo é obrigatório");
-    if (tipo !== 'CUSTEIO' && tipo !== 'INVESTIMENTO') {
-      throw new Error("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO'");
+    if (tipoReceitaDespesa && tipoReceitaDespesa !== 'RECEITA' && tipoReceitaDespesa !== 'DESPESA') {
+      throw new Error("tipoReceitaDespesa deve ser 'RECEITA' ou 'DESPESA'");
     }
-    await this.centroCustosRepository.update(id, descricao, tipo);
+    if (tipoReceitaDespesa === 'DESPESA' && tipo && tipo !== 'CUSTEIO' && tipo !== 'INVESTIMENTO') {
+      throw new Error("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO' quando tipoReceitaDespesa for 'DESPESA'");
+    }
+    await this.centroCustosRepository.update(id, descricao, tipo, tipoReceitaDespesa);
   }
 
   async excluirCentroCustos(id: number) {

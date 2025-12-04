@@ -13,7 +13,7 @@ const CentroCustosTable: React.FC = () => {
   const [centroCustos, setCentroCustos] = useState<CentroCustos[]>([]);
   const [filteredCentroCustos, setFilteredCentroCustos] = useState<CentroCustos[]>([]);
   const [modalIsOpen, setModalIsOpen] = useState(false);
-  const [centroCustosData, setCentroCustosData] = useState<CentroCustos>({ id: 0, descricao: "", tipo: "CUSTEIO" });
+  const [centroCustosData, setCentroCustosData] = useState<CentroCustos>({ id: 0, descricao: "", tipo: undefined, tipoReceitaDespesa: 'RECEITA' });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -141,7 +141,7 @@ const CentroCustosTable: React.FC = () => {
   }, [dataInicio, dataFim]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openModal = (centroCustos?: CentroCustos) => {
-    setCentroCustosData(centroCustos || { id: 0, descricao: "", tipo: "CUSTEIO" });
+    setCentroCustosData(centroCustos || { id: 0, descricao: "", tipo: undefined, tipoReceitaDespesa: 'RECEITA' });
     setModalIsOpen(true);
   };
 
@@ -149,14 +149,22 @@ const CentroCustosTable: React.FC = () => {
     setIsSaving(true);
 
     try {
+      // Se for Receita e não tiver tipo definido, definir como CUSTEIO
+      const dadosParaSalvar = {
+        ...centroCustosData,
+        tipo: centroCustosData.tipoReceitaDespesa === 'RECEITA' && !centroCustosData.tipo 
+          ? 'CUSTEIO' 
+          : centroCustosData.tipo
+      };
+
       let centroCustosSalvo: CentroCustos;
-      if (centroCustosData.id) {
-          await salvarCentroCustos(centroCustosData);
+      if (dadosParaSalvar.id) {
+          await salvarCentroCustos(dadosParaSalvar);
           setCentroCustos((prev) =>
-              prev.map((centro) => (centro.id === centroCustosData.id ? centroCustosData : centro))
+              prev.map((centro) => (centro.id === dadosParaSalvar.id ? dadosParaSalvar : centro))
           );
       } else {
-          centroCustosSalvo = await salvarCentroCustos(centroCustosData);
+          centroCustosSalvo = await salvarCentroCustos(dadosParaSalvar);
           setCentroCustos((prev) => [...prev, centroCustosSalvo]);
       }
 
@@ -184,10 +192,39 @@ const CentroCustosTable: React.FC = () => {
     setConfirmModalOpen(true);
   };
 
+  // Agrupar centros de custos
+  const receitas: CentroCustos[] = [];
+  const despesasCusteio: CentroCustos[] = [];
+  const despesasInvestimento: CentroCustos[] = [];
+  
+  filteredCentroCustos.forEach(centro => {
+    if (centro.tipoReceitaDespesa === 'RECEITA') {
+      receitas.push(centro);
+    } else if (centro.tipoReceitaDespesa === 'DESPESA') {
+      if (centro.tipo === 'CUSTEIO') {
+        despesasCusteio.push(centro);
+      } else if (centro.tipo === 'INVESTIMENTO') {
+        despesasInvestimento.push(centro);
+      }
+    }
+  });
+
+  // Criar lista ordenada: Receitas primeiro, depois Despesas (Custeio e Investimento)
+  const centrosOrdenados: CentroCustos[] = [];
+  
+  // Receitas (primeiro)
+  centrosOrdenados.push(...receitas);
+  
+  // Despesas de Custeio
+  centrosOrdenados.push(...despesasCusteio);
+  
+  // Despesas de Investimento
+  centrosOrdenados.push(...despesasInvestimento);
+
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredCentroCustos.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredCentroCustos.length / itemsPerPage);
+  const currentItems = centrosOrdenados.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(centrosOrdenados.length / itemsPerPage);
 
   return (
     <div>
@@ -264,6 +301,7 @@ const CentroCustosTable: React.FC = () => {
                   <tr className="bg-gray-200">
                     <th className="p-2">ID</th>
                     <th className="p-2 text-left">Descrição</th>
+                    <th className="p-2 text-left">Modalidade</th>
                     <th className="p-2 text-left">Tipo</th>
                     <th className="p-2 pr-11 text-right">Ações</th>
                   </tr>
@@ -271,47 +309,119 @@ const CentroCustosTable: React.FC = () => {
                 <tbody>
                   {currentItems.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
+                      <td colSpan={5} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
                         Nenhum centro de custos encontrado!
                       </td>
                     </tr>
                   ) : (
-                    currentItems.map((centro) => (
-                      <tr key={centro.id} className="border-b">
-                        <td className="p-2 text-center">{centro.id}</td>
-                        <td className="p-2 text-left">{centro.descricao}</td>
-                        <td className="p-2 text-left">
-                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                            centro.tipo === 'INVESTIMENTO' 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-green-100 text-green-800'
-                          }`}>
-                            {centro.tipo === 'INVESTIMENTO' ? 'Investimento' : 'Custeio'}
-                          </span>
-                        </td>
-                        <td className="p-2 text-right pr-5">
-                          <button
-                            className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
-                            onClick={() => openModal(centro)}
-                          >
-                            <FontAwesomeIcon icon={faPencil} />
-                          </button>
-                          <button
-                            className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
-                            onClick={() => handleDelete(centro.id)}
-                          >
-                            <FontAwesomeIcon icon={faTrash} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    currentItems.map((centro, index) => {
+                      const prevCentro = index > 0 ? currentItems[index - 1] : null;
+                      
+                      // Verificar se precisa mostrar header de Receitas
+                      const mostrarHeaderReceitas = centro.tipoReceitaDespesa === 'RECEITA' && 
+                        (!prevCentro || prevCentro.tipoReceitaDespesa !== 'RECEITA');
+                      
+                      // Verificar se precisa mostrar header de Despesas (grupo principal)
+                      const mostrarHeaderDespesas = centro.tipoReceitaDespesa === 'DESPESA' && 
+                        (!prevCentro || prevCentro.tipoReceitaDespesa !== 'DESPESA');
+                      
+                      // Verificar se precisa mostrar subheader de Custeio
+                      const mostrarSubheaderCusteio = centro.tipoReceitaDespesa === 'DESPESA' && centro.tipo === 'CUSTEIO' &&
+                        (!prevCentro || prevCentro.tipo !== 'CUSTEIO' || prevCentro.tipoReceitaDespesa !== 'DESPESA');
+                      
+                      // Verificar se precisa mostrar subheader de Investimento
+                      const mostrarSubheaderInvestimento = centro.tipoReceitaDespesa === 'DESPESA' && centro.tipo === 'INVESTIMENTO' &&
+                        (!prevCentro || prevCentro.tipo !== 'INVESTIMENTO' || prevCentro.tipoReceitaDespesa !== 'DESPESA');
+
+                      return (
+                        <React.Fragment key={centro.id}>
+                          {/* Header Receitas */}
+                          {mostrarHeaderReceitas && (
+                            <tr>
+                              <td colSpan={5} className="p-3 border-t-2 font-bold text-white bg-green-600 border-green-700">
+                                <div className="text-lg">Receitas</div>
+                              </td>
+                            </tr>
+                          )}
+                          
+                          {/* Header Despesas (grupo principal) */}
+                          {mostrarHeaderDespesas && (
+                            <tr>
+                              <td colSpan={5} className="p-3 border-t-2 font-bold text-white bg-red-600 border-red-700">
+                                <div className="text-lg">Despesas</div>
+                              </td>
+                            </tr>
+                          )}
+                          
+                          {/* Subheader Custeio */}
+                          {mostrarSubheaderCusteio && (
+                            <tr>
+                              <td colSpan={5} className="p-2 pl-6 bg-yellow-100 border-t border-yellow-300">
+                                <div className="font-semibold text-yellow-900">Custeio</div>
+                              </td>
+                            </tr>
+                          )}
+                          
+                          {/* Subheader Investimento */}
+                          {mostrarSubheaderInvestimento && (
+                            <tr>
+                              <td colSpan={5} className="p-2 pl-6 bg-blue-100 border-t border-blue-300">
+                                <div className="font-semibold text-blue-900">Investimento</div>
+                              </td>
+                            </tr>
+                          )}
+                          
+                          {/* Linha do centro de custos */}
+                          <tr className="border-b">
+                            <td className="p-2 text-center">{centro.id}</td>
+                            <td className="p-2 text-left">{centro.descricao}</td>
+                            <td className="p-2 text-left">
+                              {centro.tipoReceitaDespesa && (
+                                <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                  centro.tipoReceitaDespesa === 'RECEITA' 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {centro.tipoReceitaDespesa === 'RECEITA' ? 'Receita' : 'Despesa'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2 text-left">
+                              {centro.tipo && centro.tipoReceitaDespesa === 'DESPESA' && (
+                                <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                  centro.tipo === 'INVESTIMENTO' 
+                                    ? 'bg-blue-100 text-blue-800' 
+                                    : 'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {centro.tipo === 'INVESTIMENTO' ? 'Investimento' : 'Custeio'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2 text-right pr-5">
+                              <button
+                                className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
+                                onClick={() => openModal(centro)}
+                              >
+                                <FontAwesomeIcon icon={faPencil} />
+                              </button>
+                              <button
+                                className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
+                                onClick={() => handleDelete(centro.id)}
+                              >
+                                <FontAwesomeIcon icon={faTrash} />
+                              </button>
+                            </td>
+                          </tr>
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             
             {/* 🔹 Paginação */}
             <div className="flex justify-center items-center my-2 mx-2">
-              <span className="text-gray-800 text-base w-auto whitespace-nowrap ml-2">{centroCustos.length} <span className="text-sm">Registros</span></span>
+              <span className="text-gray-800 text-base w-auto whitespace-nowrap ml-2">{centrosOrdenados.length} <span className="text-sm">Registros</span></span>
 
               <div className="flex items-center gap-2 w-full justify-end">
                 <button
@@ -451,10 +561,21 @@ const CentroCustosTable: React.FC = () => {
         onClose={() => setModalIsOpen(false)}
         centroCustosData={centroCustosData}
         handleInputChange={(e) => {
-          const value = e.target.name === 'tipo' 
-            ? (e.target.value as 'CUSTEIO' | 'INVESTIMENTO')
-            : e.target.value;
-          setCentroCustosData({ ...centroCustosData, [e.target.name]: value });
+          const name = e.target.name;
+          let value: any = e.target.value;
+          
+          if (name === 'tipo') {
+            value = value === '' ? undefined : (value as 'CUSTEIO' | 'INVESTIMENTO');
+          } else if (name === 'tipoReceitaDespesa') {
+            value = value === '' ? undefined : (value as 'RECEITA' | 'DESPESA');
+            // Se mudar para Receita, definir tipo como CUSTEIO automaticamente
+            if (value === 'RECEITA') {
+              setCentroCustosData({ ...centroCustosData, tipoReceitaDespesa: value, tipo: 'CUSTEIO' });
+              return;
+            }
+          }
+          
+          setCentroCustosData({ ...centroCustosData, [name]: value });
         }}
         handleSave={handleSave}
         isSaving={isSaving}

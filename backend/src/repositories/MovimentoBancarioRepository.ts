@@ -1283,13 +1283,17 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.dataInicio) {
-				whereConditions.push('mb.dtMovimento >= ?');
-				params.push(filters.dataInicio + ' 00:00:00');
+				// Usar DATE() para comparar apenas a parte da data, garantindo inclusão do dia inteiro
+				// Isso resolve problemas de timezone e formato (ex: '2025-11-06T00:00:00.000Z' vs '2025-11-06 23:59:59')
+				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
-				whereConditions.push('mb.dtMovimento <= ?');
-				params.push(filters.dataFim + ' 23:59:59');
+				// Usar DATE() para comparar apenas a parte da data, garantindo inclusão do dia inteiro
+				// Isso resolve problemas de timezone e formato (ex: '2025-11-06T00:00:00.000Z' vs '2025-11-06 23:59:59')
+				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				params.push(filters.dataFim);
 			}
 
 			if (filters.status === 'pendentes') {
@@ -1415,13 +1419,13 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.dataInicio) {
-				whereConditions.push('mb.dtMovimento >= ?');
-				params.push(filters.dataInicio + ' 00:00:00');
+				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
-				whereConditions.push('mb.dtMovimento <= ?');
-				params.push(filters.dataFim + ' 23:59:59');
+				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				params.push(filters.dataFim);
 			}
 
 			if (filters.status === 'pendentes') {
@@ -1521,13 +1525,13 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.dataInicio) {
-				whereConditions.push('mb.dtMovimento >= ?');
-				params.push(filters.dataInicio + ' 00:00:00');
+				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
-				whereConditions.push('mb.dtMovimento <= ?');
-				params.push(filters.dataFim + ' 23:59:59');
+				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				params.push(filters.dataFim);
 			}
 
 			if (filters.status === 'pendentes') {

@@ -48,9 +48,12 @@ export class CentroCustosController {
       }
 
       if (req.method === "POST" && pathname === "/api/centro-custos") {
-        const { descricao, tipo }: { descricao: string; tipo?: 'CUSTEIO' | 'INVESTIMENTO' } = await req.json();
-        const tipoFinal = tipo || 'CUSTEIO';
-        const centroCustosCriado = await this.centroCustosService.criarCentroCustos(descricao, tipoFinal);
+        const { descricao, tipo, tipoReceitaDespesa }: { 
+          descricao: string; 
+          tipo?: 'CUSTEIO' | 'INVESTIMENTO';
+          tipoReceitaDespesa?: 'RECEITA' | 'DESPESA';
+        } = await req.json();
+        const centroCustosCriado = await this.centroCustosService.criarCentroCustos(descricao, tipo, tipoReceitaDespesa);
         return new Response(JSON.stringify(centroCustosCriado), { 
           status: 201, 
           headers: { ...corsHeaders, "Content-Type": "application/json" } 
@@ -59,8 +62,12 @@ export class CentroCustosController {
 
       if (req.method === "PUT" && pathname.startsWith("/api/centro-custos/")) {
         const id = parseInt(pathname.split("/")[3]);
-        const { descricao, tipo }: { descricao: string; tipo: 'CUSTEIO' | 'INVESTIMENTO' } = await req.json();
-        await this.centroCustosService.atualizarCentroCustos(id, descricao, tipo);
+        const { descricao, tipo, tipoReceitaDespesa }: { 
+          descricao: string; 
+          tipo?: 'CUSTEIO' | 'INVESTIMENTO';
+          tipoReceitaDespesa?: 'RECEITA' | 'DESPESA';
+        } = await req.json();
+        await this.centroCustosService.atualizarCentroCustos(id, descricao, tipo, tipoReceitaDespesa);
         return new Response(JSON.stringify({ message: "Centro de Custos atualizado com sucesso" }), { 
           status: 200, 
           headers: { ...corsHeaders, "Content-Type": "application/json" } 

@@ -25,6 +25,7 @@ import {
 	faEllipsisV,
 	faInfo,
 	faInfoCircle,
+	faUndo,
 } from '@fortawesome/free-solid-svg-icons';
 import {
 	listarMovimentosBancarios,
@@ -78,7 +79,9 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 	const [confirmDeleteParcelaModalOpen, setConfirmDeleteParcelaModalOpen] = useState(false);
 	const [confirmDeleteAllModalOpen, setConfirmDeleteAllModalOpen] = useState(false);
+	const [confirmLimparConciliacaoModalOpen, setConfirmLimparConciliacaoModalOpen] = useState(false);
 	const [deleteMovimentoId, setDeleteMovimentoId] = useState<number | null>(null);
+	const [limparConciliacaoMovimentoId, setLimparConciliacaoMovimentoId] = useState<number | null>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
 	const [planos, setPlanos] = useState<any[]>([]);
@@ -528,6 +531,46 @@ const MovimentoBancarioTable: React.FC = () => {
 			setConfirmDeleteParcelaModalOpen(true);
 		} else {
 			setConfirmModalOpen(true);
+		}
+	};
+
+	const handleLimparConciliacao = async (id: number) => {
+		setLimparConciliacaoMovimentoId(id);
+		setConfirmLimparConciliacaoModalOpen(true);
+	};
+
+	const handleLimparConciliacaoConfirm = async () => {
+		if (limparConciliacaoMovimentoId === null) return;
+		
+		try {
+			setIsSaving(true);
+			// Buscar o movimento completo
+			const movimentoCompleto = await buscarMovimentoBancarioById(limparConciliacaoMovimentoId);
+			
+			// Limpar todos os campos de conciliação
+			const movimentoLimpo: MovimentoBancario = {
+				...movimentoCompleto,
+				idPlanoContas: null,
+				idCentroCustos: null,
+				idPessoa: null,
+				resultadoList: [],
+				centroCustosList: undefined,
+				modalidadeMovimento: 'padrao',
+			};
+
+			await salvarMovimentoBancario(movimentoLimpo);
+			
+			// Atualizar a lista
+			await fetchMovimentos(currentPage);
+			
+			setConfirmLimparConciliacaoModalOpen(false);
+			setLimparConciliacaoMovimentoId(null);
+			toast.success('Conciliação limpa com sucesso!');
+		} catch (error) {
+			console.error('Erro ao limpar conciliação:', error);
+			toast.error('Erro ao limpar conciliação');
+		} finally {
+			setIsSaving(false);
 		}
 	};
 
@@ -1047,6 +1090,17 @@ const MovimentoBancarioTable: React.FC = () => {
 																	>
 																		<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
 																	</button>
+																	{movBancario.idPlanoContas && (
+																		<button
+																			className="w-full px-4 py-2 hover:bg-orange-100 text-left text-orange-600"
+																			onClick={() => {
+																				handleLimparConciliacao(movBancario.id);
+																				setMenuAtivoId(null);
+																			}}
+																		>
+																			<FontAwesomeIcon icon={faUndo} className="mr-1" /> Limpar
+																		</button>
+																	)}
 																	<button
 																		className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
 																		onClick={() => handleDelete(movBancario.id)}
@@ -1143,7 +1197,7 @@ const MovimentoBancarioTable: React.FC = () => {
 												{/* Menu de ações mobile */}
 											{menuAtivoId === movBancario.id && (
 													<div className="mt-3 pt-3 border-t border-gray-200">
-														<div className="flex gap-2">
+														<div className="flex gap-2 flex-wrap">
 															<button
 																className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
 																onClick={() => {
@@ -1155,6 +1209,18 @@ const MovimentoBancarioTable: React.FC = () => {
 																<FontAwesomeIcon icon={faInfoCircle} />
 																Informação
 															</button>
+															{movBancario.idPlanoContas && (
+																<button
+																	className="flex-1 px-3 py-2 text-sm bg-orange-50 text-orange-600 rounded hover:bg-orange-100 flex items-center justify-center gap-2"
+																	onClick={() => {
+																		handleLimparConciliacao(movBancario.id);
+																		setMenuAtivoId(null);
+																	}}
+																>
+																	<FontAwesomeIcon icon={faUndo} />
+																	Limpar
+																</button>
+															)}
 															<button
 																className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
 																onClick={() => {
@@ -1279,6 +1345,20 @@ const MovimentoBancarioTable: React.FC = () => {
 				type="error"
 				message={`Tem CERTEZA ABSOLUTA que deseja excluir TODOS os movimentos bancários da conta "${contaSelecionada?.numConta} - ${contaSelecionada?.bancoNome}"?\n\nEsta ação é IRREVERSÍVEL e excluirá:\n• Todos os movimentos bancários\n• Todos os resultados relacionados\n• Todas as parcelas de financiamento associadas`}
 				confirmLabel="EXCLUIR TODOS"
+				cancelLabel="Cancelar"
+			/>
+
+			<DialogModal
+				isOpen={confirmLimparConciliacaoModalOpen}
+				onClose={() => {
+					setConfirmLimparConciliacaoModalOpen(false);
+					setLimparConciliacaoMovimentoId(null);
+				}}
+				onConfirm={handleLimparConciliacaoConfirm}
+				title="Limpar"
+				type="warn"
+				message="Tem certeza que deseja limpar a conciliação deste movimento? O movimento ficará pendente novamente."
+				confirmLabel="Limpar"
 				cancelLabel="Cancelar"
 			/>
 
