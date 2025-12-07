@@ -39,7 +39,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [centrosCustos, setCentrosCustos] = useState<CentroCustos[]>([]);
 	const [contasSelecionadas, setContasSelecionadas] = useState<string[]>([]);
 	const [anoSelecionado, setAnoSelecionado] = useState<string>(String(new Date().getFullYear()));
-	const [tipoAgrupamento, setTipoAgrupamento] = useState<'planos' | 'centros'>('planos');
+	const [tipoAgrupamento, setTipoAgrupamento] = useState<'planos' | 'centros'>('centros');
 	const [meses, setMeses] = useState<string[]>([]);
 	const [modalDetalhamentoAberto, setModalDetalhamentoAberto] = useState(false);
 	const [movimentosDetalhados, setMovimentosDetalhados] = useState<MovimentoDetalhado[]>([]);

@@ -118,19 +118,24 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			if (isModoMultiplos) {
 				// Em modo múltiplos, não carregar do movimento
 				setRateios([]);
-			} else if (movimento && (movimento.centroCustosList ?? []).length > 0) {
+			} else if (movimento && (movimento.centroCustosList ?? []).length > 0 && centrosDisponiveis.length > 0) {
 				const convertidos: RateioCentro[] = (movimento.centroCustosList ?? []).map((c) => {
 					const centro = centrosDisponiveis.find((ct) => ct.id === c.idCentroCustos);
+					if (!centro) {
+						console.warn(`⚠️ Centro de custos não encontrado: ID ${c.idCentroCustos}`);
+					}
 					return {
 						idCentro: c.idCentroCustos,
-						descricao: centro?.descricao || `Centro ${c.idCentroCustos}`,
+						descricao: centro?.descricao && centro.descricao.trim() !== '' 
+							? centro.descricao 
+							: `Centro ${c.idCentroCustos}`,
 						valor: c.valor,
 					};
 				});
 				setRateios(convertidos);
 			}
 		}
-	}, [isOpen, isModoMultiplos]);
+	}, [isOpen, isModoMultiplos, movimento, centrosDisponiveis]);
 
 	// Limpar busca quando modal fechar
 	useEffect(() => {
