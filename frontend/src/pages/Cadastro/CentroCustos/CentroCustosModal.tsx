@@ -101,34 +101,34 @@ const CentroCustosModal: React.FC<CentroCustosModalProps> = ({
           {/* Descrição e Tipo na mesma linha quando for Despesa */}
           {centroCustosData.tipoReceitaDespesa === 'DESPESA' ? (
             <div className="flex gap-4">
-              {/* Descrição */}
+          {/* Descrição */}
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Descrição <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="descricao"
-                  className={`w-full p-2 bg-gray-50 border ${
-                    errors.descricao ? "border-red-500" : "border-gray-300"
-                  } rounded focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-600`}
-                  placeholder="Descrição do Centro de Custos"
-                  value={centroCustosData.descricao}
-                  onChange={handleInputChange}
-                  disabled={isSaving}
-                />
-                {errors.descricao && (
-                  <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                    <FontAwesomeIcon icon={faExclamationCircle} /> {errors.descricao}
-                  </p>
-                )}
-              </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Descrição <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              name="descricao"
+              className={`w-full p-2 bg-gray-50 border ${
+                errors.descricao ? "border-red-500" : "border-gray-300"
+              } rounded focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-600`}
+              placeholder="Descrição do Centro de Custos"
+              value={centroCustosData.descricao}
+              onChange={handleInputChange}
+              disabled={isSaving}
+            />
+            {errors.descricao && (
+              <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                <FontAwesomeIcon icon={faExclamationCircle} /> {errors.descricao}
+              </p>
+            )}
+          </div>
 
               {/* Tipo (Custeio/Investimento) - Radio Buttons */}
               <div className="w-64">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tipo <span className="text-red-500">*</span>
-                </label>
+              Tipo <span className="text-red-500">*</span>
+            </label>
                 <div className="flex items-center gap-5">
                   <label className={`flex items-center gap-2 cursor-pointer ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}>
                     <input
@@ -158,12 +158,12 @@ const CentroCustosModal: React.FC<CentroCustosModalProps> = ({
                   <label className={`flex items-center gap-2 cursor-pointer ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}>
                     <input
                       type="radio"
-                      name="tipo"
+              name="tipo"
                       value="INVESTIMENTO"
                       checked={centroCustosData.tipo === 'INVESTIMENTO'}
-                      onChange={handleInputChange}
+              onChange={handleInputChange}
                       className="hidden"
-                      disabled={isSaving}
+              disabled={isSaving}
                     />
                     <div
                       className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
@@ -180,12 +180,12 @@ const CentroCustosModal: React.FC<CentroCustosModalProps> = ({
                     <span className={centroCustosData.tipo === 'INVESTIMENTO' ? 'text-gray-800 font-medium' : 'text-gray-600'}>Investimento</span>
                   </label>
                 </div>
-                {errors.tipo && (
-                  <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                    <FontAwesomeIcon icon={faExclamationCircle} /> {errors.tipo}
-                  </p>
-                )}
-              </div>
+            {errors.tipo && (
+              <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                <FontAwesomeIcon icon={faExclamationCircle} /> {errors.tipo}
+              </p>
+            )}
+          </div>
             </div>
           ) : (
             /* Descrição quando for Receita */

@@ -4,7 +4,7 @@ import {  RiBarChartFill, RiSettings3Fill} from "react-icons/ri";
 import { FaUserCircle } from "react-icons/fa";
 import { Link, useLocation, useNavigate  } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faDoorOpen, faSearch, faUserEdit } from '@fortawesome/free-solid-svg-icons';
+import { faDoorOpen, faSearch, faUserEdit, faFileAlt } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from "../pages/Login/AuthContext";
 import NotificacaoIcon from './NotificacaoIcon';
 
@@ -44,6 +44,7 @@ const Sidebar = () => {
     { path: "/financeiro/conciliacao-bancaria", label: "Conciliação Bancária" },
     { path: "/financeiro/fluxo-de-caixa", label: "Fluxo de Caixa" },
     { path: "/financeiro/financiamento", label: "Financiamento" },
+    { path: "/relatorios", label: "Relatórios" },
     { path: "/parametros", label: "Parâmetros" },
 
   ];
@@ -51,7 +52,8 @@ const Sidebar = () => {
 
   const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({
     cadastros: false,
-    financeiro: false
+    financeiro: false,
+    relatorios: false
   });
 
   useEffect(() => {
@@ -59,8 +61,10 @@ const Sidebar = () => {
       setExpanded(prevState => ({ ...prevState, cadastros: true }));
     } else if (location.pathname.startsWith('/financeiro')) {
       setExpanded(prevState => ({ ...prevState, financeiro: true }));      
+    } else if (location.pathname.startsWith('/relatorios')) {
+      setExpanded(prevState => ({ ...prevState, relatorios: true }));
     } else {
-      setExpanded({ cadastros: false, financeiro: false });
+      setExpanded({ cadastros: false, financeiro: false, relatorios: false });
     }
   }, [location.pathname]);
 
@@ -209,16 +213,41 @@ const Sidebar = () => {
                     Conciliação Bancária
                   </li>
                 </Link>
-                <Link to="/financeiro/fluxo-de-caixa">
-                  <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/financeiro/fluxo-de-caixa')}`}>
-                    Fluxo de Caixa
-                  </li>
-                </Link>
                 <Link to="/financeiro/financiamento">
                   <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/financeiro/financiamento')}`}>
                     Financiamento
                   </li>
                 </Link>
+              </ul>
+            </li>
+
+            {/* Relatórios */}
+            <li className='div-subMenu'>
+              <div
+              className={`flex items-center justify-between p-2 text-gray-800 hover:bg-gray-200 rounded-md sub-menu ${expanded.relatorios ? 'expanded' : ''}`}
+              onClick={() => toggleExpand('relatorios')}
+              >
+                <span className="flex items-center gap-2 sub-menu-text"><FontAwesomeIcon icon={faFileAlt} /> Relatórios</span>
+                {expanded.relatorios ? <FiChevronDown /> : <FiChevronRight />}
+              </div>
+              
+              <ul className={`space-y-2 div-subMenu-item ${expanded.relatorios ? 'block' : 'hidden'}`}>
+                <Link to="/relatorios/fluxo-de-caixa">
+                  <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/relatorios/fluxo-de-caixa')}`}>
+                    Fluxo de Caixa
+                  </li>
+                </Link>
+                <Link to="/relatorios/centro-custos">
+                  <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/relatorios/centro-custos')}`}>
+                    Centro de Custos
+                  </li>
+                </Link>
+                <Link to="/relatorios/itens-classificados">
+                  <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/relatorios/itens-classificados')}`}>
+                    Itens Classificados
+                  </li>
+                </Link>
+              
               </ul>
             </li>
 

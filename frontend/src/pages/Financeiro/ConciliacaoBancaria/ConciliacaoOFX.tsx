@@ -657,18 +657,31 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 												</td>
 												<td
 													className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
-														mov.resultadoList?.length > 1
-															? 'text-blue-600 font-semibold'
-															: !planos.find((p) => p.id === mov.idPlanoContas)
-															? 'text-orange-500 font-semibold'
-															: ''
+														mov.tipoMovimento === 'C' 
+															? (mov.centroCustosList && mov.centroCustosList.length > 1
+																? 'text-blue-600 font-semibold'
+																: !centrosDisponiveis.find((c) => c.id === mov.idCentroCustos) && !(mov.centroCustosList && mov.centroCustosList.length > 0)
+																? 'text-orange-500 font-semibold'
+																: '')
+															: (mov.resultadoList?.length > 1
+																? 'text-blue-600 font-semibold'
+																: !planos.find((p) => p.id === mov.idPlanoContas)
+																? 'text-orange-500 font-semibold'
+																: '')
 													}`}
 													style={{ textUnderlineOffset: '2px' }}
 													onClick={() => openModalConcilia(mov)}
 												>
-													{mov.resultadoList?.length > 1
-														? 'Múltiplos Planos'
-														: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+													{mov.tipoMovimento === 'C' 
+														? (mov.centroCustosList && mov.centroCustosList.length > 1
+															? 'Múltiplos Centros'
+															: mov.centroCustosList && mov.centroCustosList.length > 0
+															? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${mov.centroCustosList[0].idCentroCustos}`
+															: centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos')
+														: (mov.resultadoList?.length > 1
+															? 'Múltiplos Planos'
+															: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
+													}
 												</td>
 
 												<td className={`p-2 font-medium text-center ${mov.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>

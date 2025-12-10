@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Modal from 'react-modal';
 import { CentroCustos } from '../../../../../../backend/src/models/CentroCustos';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faTrash, faCheck, faTimes, faArrowLeft, faWarning, faSearch } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faTrash, faCheck, faTimes, faArrowLeft, faWarning, faSearch, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { formatarMoeda } from '../../../../Utils/formataMoeda';
 import CurrencyInput from 'react-currency-input-field';
@@ -40,10 +40,16 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	const [centroSelecionado, setCentroSelecionado] = useState<CentroCustos | null>(null);
 	const [valorParcial, setValorParcial] = useState<string>('0,00');
 	const [searchCentro, setSearchCentro] = useState('');
-	const [showSuggestions, setShowSuggestions] = useState(false);
+	const centroCustosRef = useRef(null);
+	const [centroCustosSearchValue, setCentroCustosSearchValue] = useState('');
+	const [showCentroCustosDropdown, setShowCentroCustosDropdown] = useState(false);
 	const isModoMultiplos = movimentosMultiplos && movimentosMultiplos.length > 1;
 	const [tipoRateio, setTipoRateio] = useState<'valor' | 'porcentagem'>(isModoMultiplos ? 'porcentagem' : 'valor');
 	const [porcentagemParcial, setPorcentagemParcial] = useState<string>('0');
+	const [tipoCentroSelecionado, setTipoCentroSelecionado] = useState<'CUSTEIO' | 'INVESTIMENTO' | null>(null);
+	const [editandoPorcentagem, setEditandoPorcentagem] = useState<number | null>(null);
+	const [valorPorcentagemEditando, setValorPorcentagemEditando] = useState<string>('');
+	const isDespesa = movimento.tipoMovimento === 'D';
 
 	const valorNumericoParcial = Number(valorParcial.replace(/\./g, '').replace(',', '.')) || 0;
 	const porcentagemNumericaParcial = Number(porcentagemParcial) || 0;
@@ -92,26 +98,51 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	// Calcular porcentagem restante
 	const porcentagemRestante = 100 - porcentagemTotalRateada;
 
-	// Filtrar centros baseado na busca
+	// Filtrar centros baseado na busca e tipo (para despesas)
 	const filteredCentros = centrosDisponiveis
 		.filter((centro) => {
-			const buscaCorreta = centro.descricao.toLowerCase().includes(searchCentro.toLowerCase());
-			return buscaCorreta;
+			const buscaCorreta = centro.descricao.toLowerCase().includes(centroCustosSearchValue.toLowerCase());
+			// Filtrar por tipo de movimento: C (Crédito/Entrada) = Receita, D (Débito/Saída) = Despesa
+			const matchTipoMovimento = movimento.tipoMovimento === 'C' 
+				? centro.tipoReceitaDespesa === 'RECEITA'
+				: centro.tipoReceitaDespesa === 'DESPESA';
+			// Para despesas, filtrar também por tipo (CUSTEIO/INVESTIMENTO) se um tipo foi selecionado
+			const matchTipo = !isDespesa || !tipoCentroSelecionado || centro.tipo === tipoCentroSelecionado;
+			return buscaCorreta && matchTipoMovimento && matchTipo;
 		})
-		.slice(0, 10);
+		.slice(0, 50);
 
-	// Funções de busca
-	const handleSearchCentro = (e: React.ChangeEvent<HTMLInputElement>) => {
-		setSearchCentro(e.target.value);
-		setShowSuggestions(true);
-		setCentroSelecionado(null);
+	// Funções de seleção
+	const selectCentro = (centro: CentroCustos | null) => {
+		if (centro === null) {
+			setCentroSelecionado(null);
+			setSearchCentro('');
+			setShowCentroCustosDropdown(false);
+			setCentroCustosSearchValue('');
+		} else {
+			setCentroSelecionado(centro);
+			setSearchCentro(centro.descricao);
+			setShowCentroCustosDropdown(false);
+			setCentroCustosSearchValue('');
+		}
 	};
 
-	const selectCentro = (centro: CentroCustos) => {
-		setSearchCentro(centro.descricao);
-		setCentroSelecionado(centro);
-		setShowSuggestions(false);
-	};
+	// Fechar dropdowns ao clicar fora
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			if (centroCustosRef.current && !(centroCustosRef.current as any).contains(event.target)) {
+				setShowCentroCustosDropdown(false);
+			}
+		};
+
+		if (showCentroCustosDropdown) {
+			document.addEventListener('mousedown', handleClickOutside);
+		}
+
+		return () => {
+			document.removeEventListener('mousedown', handleClickOutside);
+		};
+	}, [showCentroCustosDropdown]);
 
 	useEffect(() => {
 		if (isOpen) {
@@ -142,10 +173,14 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		if (!isOpen) {
 			setSearchCentro('');
 			setCentroSelecionado(null);
-			setShowSuggestions(false);
+			setShowCentroCustosDropdown(false);
+			setCentroCustosSearchValue('');
 			setValorParcial('0,00');
 			setPorcentagemParcial('0');
 			setTipoRateio(isModoMultiplos ? 'porcentagem' : 'valor');
+			setTipoCentroSelecionado(null);
+			setEditandoPorcentagem(null);
+			setValorPorcentagemEditando('');
 		}
 	}, [isOpen, isModoMultiplos]);
 
@@ -261,17 +296,80 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			]);
 		}
 		
-		setCentroSelecionado(null);
-		setValorParcial('0,00');
-		setPorcentagemParcial('0');
-		setSearchCentro(''); // Limpar campo de busca
-		setShowSuggestions(false); // Esconder sugestões
+			setCentroSelecionado(null);
+			setValorParcial('0,00');
+			setPorcentagemParcial('0');
+			setSearchCentro(''); // Limpar campo de busca
+			setShowCentroCustosDropdown(false); // Esconder dropdown
+			setCentroCustosSearchValue(''); // Limpar busca do dropdown
 	};
 
 	const removerRateio = (index: number) => {
 		const novosRateios = [...rateios];
 		novosRateios.splice(index, 1);
 		setRateios(novosRateios);
+	};
+
+	const iniciarEdicaoPorcentagem = (index: number) => {
+		const porcentagemAtual = isModoPorcentagemPura 
+			? rateios[index].valor 
+			: (rateios[index].valor / valorTotalAbsoluto) * 100;
+		setEditandoPorcentagem(index);
+		setValorPorcentagemEditando(porcentagemAtual.toFixed(2));
+	};
+
+	const salvarEdicaoPorcentagem = (index: number) => {
+		const novaPorcentagem = parseFloat(valorPorcentagemEditando) || 0;
+		
+		// Validar que não excede 100%
+		const porcentagemOutros = rateios.reduce((acc, r, i) => {
+			if (i === index) return acc;
+			const porcentagemOutro = isModoPorcentagemPura 
+				? r.valor 
+				: (r.valor / valorTotalAbsoluto) * 100;
+			return acc + porcentagemOutro;
+		}, 0);
+		
+		if (novaPorcentagem <= 0 || porcentagemOutros + novaPorcentagem > 100) {
+			// Cancelar edição se inválida
+			setEditandoPorcentagem(null);
+			setValorPorcentagemEditando('');
+			return;
+		}
+		
+		const novosRateios = [...rateios];
+		if (isModoPorcentagemPura) {
+			// Em modo porcentagem pura, armazenar a porcentagem diretamente
+			novosRateios[index] = {
+				...novosRateios[index],
+				valor: novaPorcentagem,
+			};
+		} else {
+			// Calcular o valor baseado na nova porcentagem
+			const novoValor = (novaPorcentagem / 100) * valorTotalAbsoluto;
+			novosRateios[index] = {
+				...novosRateios[index],
+				valor: novoValor,
+			};
+		}
+		
+		setRateios(novosRateios);
+		setEditandoPorcentagem(null);
+		setValorPorcentagemEditando('');
+	};
+
+	const cancelarEdicaoPorcentagem = () => {
+		setEditandoPorcentagem(null);
+		setValorPorcentagemEditando('');
+	};
+
+	const handlePorcentagemEditChange = (value: string) => {
+		// Permitir apenas números e ponto decimal
+		const cleanValue = value.replace(/[^0-9.]/g, '');
+		const numValue = parseFloat(cleanValue) || 0;
+		if (numValue <= 100) {
+			setValorPorcentagemEditando(cleanValue);
+		}
 	};
 
 	const podeConfirmar = isModoPorcentagemPura
@@ -337,36 +435,115 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			)}
 
 			<div className="flex items-start gap-2 pt-3 p-5">
-				<div className="w-3/4 relative">
+				<div className="w-3/4 relative" ref={centroCustosRef}>
 					<label className="block text-sm font-medium text-gray-700 mb-1">Centro de Custos</label>
-					<div className="relative">
+					<div className="relative w-full">
 						<input
 							type="text"
-							className="w-full p-2 border rounded pr-10"
-							placeholder="Pesquisar centro de custos..."
+							className={`w-full p-2 border rounded cursor-pointer ${!valorRestante || valorRestante <= 0 ? 'bg-gray-100' : ''}`}
+							placeholder="Clique para selecionar centro de custos..."
+							onClick={() => (!valorRestante || valorRestante <= 0 ? false : setShowCentroCustosDropdown(!showCentroCustosDropdown))}
 							value={searchCentro}
-							onChange={handleSearchCentro}
+							readOnly
 							disabled={!valorRestante || valorRestante <= 0}
 						/>
-						<FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
+						<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
 					</div>
-					{showSuggestions && searchCentro && (
-						<ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10 max-h-60 overflow-y-auto">
-							{filteredCentros.map((centro) => (
-								<li 
-									key={centro.id} 
-									className="p-2 hover:bg-gray-200 text-sm cursor-pointer border-b last:border-b-0" 
-									onClick={() => selectCentro(centro)}
-								>
-									<div className="text-gray-800">{centro.descricao}</div>
-								</li>
-							))}
-							{filteredCentros.length === 0 && (
-								<li className="p-2 text-sm text-gray-500 text-center">
-									Nenhum centro encontrado
-								</li>
+					{showCentroCustosDropdown && (
+						<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1">
+							{isDespesa && (
+								<div className="p-2 border-b bg-gray-50">
+									<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
+									<div className="flex ">
+										<button
+											type="button"
+											onClick={() => {
+												setTipoCentroSelecionado('CUSTEIO');
+												// Limpar seleção de centro quando mudar o tipo
+												setCentroSelecionado(null);
+												setSearchCentro('');
+												setCentroCustosSearchValue('');
+											}}
+											className={`flex-1 px-4 py-2 rounded-l-lg font-medium text-sm transition-all ${
+												tipoCentroSelecionado === 'CUSTEIO'
+													? 'bg-yellow-500 text-white shadow-md'
+													: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300	'
+											}`}
+										>
+											Custeio
+										</button>
+										<button
+											type="button"
+											onClick={() => {
+												setTipoCentroSelecionado('INVESTIMENTO');
+												// Limpar seleção de centro quando mudar o tipo
+												setCentroSelecionado(null);
+												setSearchCentro('');
+												setCentroCustosSearchValue('');
+											}}
+											className={`flex-1 px-4 py-2 rounded-r-lg font-medium text-sm transition-all ${
+												tipoCentroSelecionado === 'INVESTIMENTO'
+													? 'bg-blue-500 text-white shadow-md'
+													: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300	'
+											}`}
+										>
+											Investimento
+										</button>
+									</div>
+								</div>
 							)}
-						</ul>
+							{(!isDespesa || tipoCentroSelecionado !== null) && (
+								<>
+									<div className="p-2 border-b">
+										<input
+											type="text"
+											className="w-full p-2 border rounded"
+											placeholder="Buscar centro de custos..."
+											value={centroCustosSearchValue}
+											onChange={(e) => setCentroCustosSearchValue(e.target.value)}
+											autoFocus
+										/>
+									</div>
+									<ul className="max-h-60 overflow-y-auto">
+										<li 
+											className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
+											onClick={() => selectCentro(null)}
+										>
+											Selecione um centro
+										</li>
+										{filteredCentros.length > 0 ? (
+											filteredCentros.map((centro) => (
+												<li 
+													key={centro.id} 
+													className="p-2 hover:bg-orange-100 text-sm cursor-pointer border-b last:border-b-0 flex items-center justify-between"
+													onClick={() => selectCentro(centro)}
+												>
+													<span>{centro.descricao}</span>
+													{centro.tipo && centro.tipoReceitaDespesa === 'DESPESA' && (
+														<span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
+															centro.tipo === 'INVESTIMENTO' 
+																? 'bg-blue-100 text-blue-800' 
+																: 'bg-yellow-100 text-yellow-800'
+														}`}>
+															{centro.tipo === 'INVESTIMENTO' ? 'Inv' : 'Cust'}
+														</span>
+													)}
+												</li>
+											))
+										) : (
+											<li className="p-2 text-sm text-gray-500 text-center">
+												Nenhum resultado encontrado
+											</li>
+										)}
+									</ul>
+								</>
+							)}
+							{isDespesa && !tipoCentroSelecionado && (
+								<div className="p-4 text-center text-gray-500 text-sm">
+									Selecione primeiro o tipo de despesa
+								</div>
+							)}
+						</div>
 					)}
 				</div>
 
@@ -461,7 +638,36 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 											: formatarMoeda(valorExibido ? valorExibido : 0)
 										}
 									</td>
-									<td className="p-2 text-center">{porcentagemRateio.toFixed(2)}%</td>
+									<td className="p-2 text-center">
+										{editandoPorcentagem === idx ? (
+											<div className="flex items-center justify-center gap-1">
+												<input
+													type="text"
+													className="w-20 p-1 border rounded text-center text-sm"
+													value={valorPorcentagemEditando}
+													onChange={(e) => handlePorcentagemEditChange(e.target.value)}
+													onBlur={() => salvarEdicaoPorcentagem(idx)}
+													onKeyDown={(e) => {
+														if (e.key === 'Enter') {
+															salvarEdicaoPorcentagem(idx);
+														} else if (e.key === 'Escape') {
+															cancelarEdicaoPorcentagem();
+														}
+													}}
+													autoFocus
+												/>
+												<span>%</span>
+											</div>
+										) : (
+											<span 
+												className="cursor-pointer hover:text-blue-600 hover:underline"
+												onClick={() => iniciarEdicaoPorcentagem(idx)}
+												title="Clique para editar"
+											>
+												{porcentagemRateio.toFixed(2)}%
+											</span>
+										)}
+									</td>
 									<td className="p-2 text-right pr-4" style={{ width: '50px' }}>
 										<button onClick={() => removerRateio(idx)} className="text-red-500 hover:text-red-700">
 											<FontAwesomeIcon icon={faTrash} />

@@ -180,6 +180,155 @@ export class MovimentoBancarioController {
 				});
 			}
 
+			// Endpoints de Relatórios
+			if (method === 'GET' && pathname === '/api/relatorio/centro-custos') {
+				console.log('📥 Requisição GET /api/relatorio/centro-custos recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+				const centroCustosId = searchParams.get('centroCustosId') ? parseInt(searchParams.get('centroCustosId')!) : undefined;
+
+				const dados = await this.movBancarioRepository.getRelatorioCentroCustos({
+					contaId,
+					dataInicio,
+					dataFim,
+					status,
+					centroCustosId
+				});
+
+				return new Response(JSON.stringify(dados), {
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+				});
+			}
+
+			if (method === 'GET' && pathname === '/api/relatorio/itens-classificados') {
+				console.log('📥 Requisição GET /api/relatorio/itens-classificados recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+
+				const dados = await this.movBancarioRepository.getRelatorioItensClassificados({
+					contaId,
+					dataInicio,
+					dataFim,
+					status
+				});
+
+				return new Response(JSON.stringify(dados), {
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+				});
+			}
+
+			if (method === 'GET' && pathname === '/api/relatorio/centro-custos/excel') {
+				console.log('📥 Requisição GET /api/relatorio/centro-custos/excel recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+				const centroCustosId = searchParams.get('centroCustosId') ? parseInt(searchParams.get('centroCustosId')!) : undefined;
+
+				const excelBuffer = await this.movBancarioRepository.exportRelatorioCentroCustosExcel({
+					contaId,
+					dataInicio,
+					dataFim,
+					status,
+					centroCustosId
+				});
+
+				return new Response(excelBuffer as any, {
+					headers: {
+						...corsHeaders,
+						'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+						'Content-Disposition': 'attachment; filename="relatorio_centro_custos.xlsx"'
+					}
+				});
+			}
+
+			if (method === 'GET' && pathname === '/api/relatorio/centro-custos/pdf') {
+				console.log('📥 Requisição GET /api/relatorio/centro-custos/pdf recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+				const centroCustosId = searchParams.get('centroCustosId') ? parseInt(searchParams.get('centroCustosId')!) : undefined;
+
+				const pdfBuffer = await this.movBancarioRepository.exportRelatorioCentroCustosPDF({
+					contaId,
+					dataInicio,
+					dataFim,
+					status,
+					centroCustosId
+				});
+
+				return new Response(pdfBuffer as any, {
+					headers: {
+						...corsHeaders,
+						'Content-Type': 'application/pdf',
+						'Content-Disposition': 'attachment; filename="relatorio_centro_custos.pdf"'
+					}
+				});
+			}
+
+			if (method === 'GET' && pathname === '/api/relatorio/itens-classificados/excel') {
+				console.log('📥 Requisição GET /api/relatorio/itens-classificados/excel recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+
+				const excelBuffer = await this.movBancarioRepository.exportRelatorioItensClassificadosExcel({
+					contaId,
+					dataInicio,
+					dataFim,
+					status
+				});
+
+				return new Response(excelBuffer as any, {
+					headers: {
+						...corsHeaders,
+						'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+						'Content-Disposition': 'attachment; filename="relatorio_itens_classificados.xlsx"'
+					}
+				});
+			}
+
+			if (method === 'GET' && pathname === '/api/relatorio/itens-classificados/pdf') {
+				console.log('📥 Requisição GET /api/relatorio/itens-classificados/pdf recebida');
+				
+				const searchParams = url.searchParams;
+				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
+				const dataInicio = searchParams.get('dataInicio') || undefined;
+				const dataFim = searchParams.get('dataFim') || undefined;
+				const status = searchParams.get('status') || undefined;
+
+				const pdfBuffer = await this.movBancarioRepository.exportRelatorioItensClassificadosPDF({
+					contaId,
+					dataInicio,
+					dataFim,
+					status
+				});
+
+				return new Response(pdfBuffer as any, {
+					headers: {
+						...corsHeaders,
+						'Content-Type': 'application/pdf',
+						'Content-Disposition': 'attachment; filename="relatorio_itens_classificados.pdf"'
+					}
+				});
+			}
+
 			if (method === 'GET' && pathname.startsWith('/api/movBancario/')) {
 				const pathParts = pathname.split('/');
 				if (pathParts.length === 4 && !isNaN(Number(pathParts[3]))) {

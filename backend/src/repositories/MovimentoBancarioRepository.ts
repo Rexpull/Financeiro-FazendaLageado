@@ -1751,9 +1751,1236 @@ export class MovimentoBancarioRepository {
 				return grupo;
 			});
 
-			return result;
+		return result;
+	} catch (error) {
+		console.error('Erro ao buscar movimentos por centro de custos:', error);
+		throw error;
+	}
+}
+
+	async getRelatorioCentroCustos(filters: {
+		dataInicio?: string;
+		dataFim?: string;
+		contaId?: number;
+		status?: string;
+		centroCustosId?: number;
+	}): Promise<Array<{
+		centro: { id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string };
+		total: number;
+		movimentos: Array<{
+			id: number;
+			dtMovimento: string;
+			historico: string;
+			valor: number;
+			tipoMovimento: string;
+			planoDescricao?: string;
+			pessoaNome?: string;
+			bancoNome?: string;
+			contaDescricao?: string;
+		}>;
+	}>> {
+		try {
+			console.log('🔍 Repository: Buscando relatório de centro de custos com filtros:', filters);
+
+			// Construir query base
+			let whereConditions: string[] = [];
+			let params: any[] = [];
+
+			// Sempre buscar apenas movimentos conciliados (com plano de contas)
+			whereConditions.push('mb.idPlanoContas IS NOT NULL AND mb.idPlanoContas != 0');
+
+			if (filters.contaId) {
+				whereConditions.push('mb.idContaCorrente = ?');
+				params.push(filters.contaId);
+			}
+
+			if (filters.dataInicio) {
+				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				params.push(filters.dataInicio);
+			}
+
+			if (filters.dataFim) {
+				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				params.push(filters.dataFim);
+			}
+
+			if (filters.status === 'pendentes') {
+				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+			}
+
+			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+			// Query para buscar movimentos com informações relacionadas
+			const query = `
+				SELECT 
+					mb.id,
+					mb.dtMovimento,
+					mb.historico,
+					mb.valor,
+					mb.tipoMovimento,
+					mb.idPlanoContas,
+					mb.idCentroCustos,
+					mb.idPessoa,
+					mb.idBanco,
+					mb.idContaCorrente,
+					pc.descricao as planoDescricao,
+					p.nome as pessoaNome,
+					b.nome as bancoNome,
+					b.codigo as bancoCodigo,
+					cc.numConta,
+					cc.agencia,
+					cc.responsavel,
+					cco.id as centroCustosId,
+					cco.descricao as centroCustosDescricao,
+					cco.tipo as centroCustosTipo,
+					cco.tipoReceitaDespesa as centroCustosTipoReceitaDespesa
+				FROM MovimentoBancario mb
+				LEFT JOIN PlanoContas pc ON mb.idPlanoContas = pc.id
+				LEFT JOIN Pessoa p ON mb.idPessoa = p.id
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				LEFT JOIN Banco b ON cc.idBanco = b.id
+				LEFT JOIN CentroCustos cco ON mb.idCentroCustos = cco.id
+				${whereClause}
+				ORDER BY mb.dtMovimento DESC
+			`;
+
+			const { results } = await this.db
+				.prepare(query)
+				.bind(...params)
+				.all();
+
+			console.log(`📊 Repository: ${results.length} movimentos encontrados`);
+
+			// Buscar também movimentos com rateio (centroCustosList)
+			const movimentosComRateio = await Promise.all(
+				results.map(async (mov: any) => {
+					const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(mov.id);
+					return { ...mov, centroCustosList };
+				})
+			);
+
+			// Agrupar por centro de custos
+			const agrupados: Map<number, {
+				centro: { id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string };
+				total: number;
+				movimentos: any[];
+			}> = new Map();
+
+			for (const mov of movimentosComRateio as any[]) {
+				const centrosDoMovimento: Array<{ id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string; valor: number }> = [];
+
+				// Se tem rateio (centroCustosList), usar ele
+				if (mov.centroCustosList && mov.centroCustosList.length > 0) {
+					for (const cc of mov.centroCustosList) {
+						// Buscar informações do centro de custos
+						const centroInfo = await this.db
+							.prepare('SELECT id, descricao, tipo, tipoReceitaDespesa FROM CentroCustos WHERE id = ?')
+							.bind(cc.idCentroCustos)
+							.first();
+						
+						if (centroInfo) {
+							centrosDoMovimento.push({
+								id: centroInfo.id as number,
+								descricao: centroInfo.descricao as string,
+								tipo: centroInfo.tipo as string,
+								tipoReceitaDespesa: centroInfo.tipoReceitaDespesa as string,
+								valor: Math.abs(cc.valor)
+							});
+						}
+					}
+				} else if (mov.idCentroCustos) {
+					// Centro único
+					centrosDoMovimento.push({
+						id: mov.centroCustosId || mov.idCentroCustos,
+						descricao: mov.centroCustosDescricao || 'Não definido',
+						tipo: mov.centroCustosTipo,
+						tipoReceitaDespesa: mov.centroCustosTipoReceitaDespesa,
+						valor: Math.abs(mov.valor)
+					});
+				}
+
+				// Filtrar por centroCustosId se especificado
+				if (filters.centroCustosId) {
+					const temCentro = centrosDoMovimento.some(cc => cc.id === filters.centroCustosId);
+					if (!temCentro) continue;
+				}
+
+				// Adicionar movimento a cada centro
+				for (const centroMov of centrosDoMovimento) {
+					if (!agrupados.has(centroMov.id)) {
+						agrupados.set(centroMov.id, {
+							centro: {
+								id: centroMov.id,
+								descricao: centroMov.descricao,
+								tipo: centroMov.tipo,
+								tipoReceitaDespesa: centroMov.tipoReceitaDespesa
+							},
+							total: 0,
+							movimentos: []
+						});
+					}
+
+					const grupo = agrupados.get(centroMov.id)!;
+					grupo.total += centroMov.valor;
+					grupo.movimentos.push({
+						id: mov.id,
+						dtMovimento: mov.dtMovimento,
+						historico: mov.historico,
+						valor: centroMov.valor,
+						tipoMovimento: mov.tipoMovimento,
+						planoDescricao: mov.planoDescricao,
+						pessoaNome: mov.pessoaNome,
+						bancoNome: mov.bancoNome,
+						bancoCodigo: mov.bancoCodigo,
+						agencia: mov.agencia,
+						numConta: mov.numConta,
+						contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
+					});
+				}
+			}
+
+			const resultado = Array.from(agrupados.values());
+			console.log(`✅ Repository: Relatório agrupado em ${resultado.length} centros de custos`);
+			return resultado;
 		} catch (error) {
-			console.error('Erro ao buscar movimentos por centro de custos:', error);
+			console.error('❌ Erro ao buscar relatório de centro de custos:', error);
+			throw error;
+		}
+	}
+
+	async getRelatorioItensClassificados(filters: {
+		dataInicio?: string;
+		dataFim?: string;
+		contaId?: number;
+		status?: string;
+	}): Promise<Array<{
+		id: number;
+		dtMovimento: string;
+		historico: string;
+		valor: number;
+		tipoMovimento: string;
+		planoDescricao?: string;
+		centroCustosDescricao?: string;
+		pessoaNome?: string;
+		bancoNome?: string;
+		contaDescricao?: string;
+	}>> {
+		try {
+			console.log('🔍 Repository: Buscando relatório de itens classificados com filtros:', filters);
+
+			// Construir query base - apenas movimentos conciliados
+			let whereConditions: string[] = [];
+			let params: any[] = [];
+
+			// Apenas movimentos com plano de contas (classificados)
+			whereConditions.push('mb.idPlanoContas IS NOT NULL AND mb.idPlanoContas != 0');
+
+			if (filters.contaId) {
+				whereConditions.push('mb.idContaCorrente = ?');
+				params.push(filters.contaId);
+			}
+
+			if (filters.dataInicio) {
+				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				params.push(filters.dataInicio);
+			}
+
+			if (filters.dataFim) {
+				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				params.push(filters.dataFim);
+			}
+
+			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+			// Query para buscar movimentos classificados
+			const query = `
+				SELECT 
+					mb.id,
+					mb.dtMovimento,
+					mb.historico,
+					mb.valor,
+					mb.tipoMovimento,
+					mb.modalidadeMovimento,
+					mb.idPlanoContas,
+					mb.idCentroCustos,
+					mb.idPessoa,
+					mb.idBanco,
+					mb.idContaCorrente,
+					pc.descricao as planoDescricao,
+					cco.descricao as centroCustosDescricao,
+					p.nome as pessoaNome,
+					b.nome as bancoNome,
+					b.codigo as bancoCodigo,
+					cc.numConta,
+					cc.agencia,
+					cc.responsavel
+				FROM MovimentoBancario mb
+				LEFT JOIN PlanoContas pc ON mb.idPlanoContas = pc.id
+				LEFT JOIN CentroCustos cco ON mb.idCentroCustos = cco.id
+				LEFT JOIN Pessoa p ON mb.idPessoa = p.id
+				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+				LEFT JOIN Banco b ON cc.idBanco = b.id
+				${whereClause}
+				ORDER BY mb.dtMovimento DESC
+			`;
+
+			const { results } = await this.db
+				.prepare(query)
+				.bind(...params)
+				.all();
+
+			console.log(`📊 Repository: ${results.length} movimentos classificados encontrados`);
+
+			// Processar resultados incluindo rateios
+			const movimentosProcessados: any[] = [];
+
+			for (const mov of results as any[]) {
+				// Verificar se tem rateio de centros de custos
+				const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(mov.id);
+
+				if (centroCustosList && centroCustosList.length > 0) {
+					// Múltiplos centros (rateio) - criar uma linha para cada
+					for (const cc of centroCustosList) {
+						const centroInfo = await this.db
+							.prepare('SELECT descricao FROM CentroCustos WHERE id = ?')
+							.bind(cc.idCentroCustos)
+							.first();
+
+						movimentosProcessados.push({
+							id: mov.id,
+							dtMovimento: mov.dtMovimento,
+							historico: mov.historico,
+							valor: Math.abs(cc.valor),
+							tipoMovimento: mov.tipoMovimento,
+							modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
+							planoDescricao: mov.planoDescricao,
+							centroCustosDescricao: centroInfo?.descricao as string || 'Não definido',
+							pessoaNome: mov.pessoaNome,
+							bancoNome: mov.bancoNome,
+							bancoCodigo: mov.bancoCodigo,
+							agencia: mov.agencia,
+							numConta: mov.numConta,
+							contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
+						});
+					}
+				} else {
+					// Centro único ou sem centro
+					movimentosProcessados.push({
+						id: mov.id,
+						dtMovimento: mov.dtMovimento,
+						historico: mov.historico,
+						valor: Math.abs(mov.valor),
+						tipoMovimento: mov.tipoMovimento,
+						modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
+						planoDescricao: mov.planoDescricao,
+						centroCustosDescricao: mov.centroCustosDescricao || 'Não definido',
+						pessoaNome: mov.pessoaNome,
+						bancoNome: mov.bancoNome,
+						bancoCodigo: mov.bancoCodigo,
+						agencia: mov.agencia,
+						numConta: mov.numConta,
+						contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
+					});
+				}
+			}
+
+			return movimentosProcessados;
+		} catch (error) {
+			console.error('❌ Erro ao buscar relatório de itens classificados:', error);
+			throw error;
+		}
+	}
+
+	async exportRelatorioCentroCustosExcel(filters: {
+		dataInicio?: string;
+		dataFim?: string;
+		contaId?: number;
+		status?: string;
+		centroCustosId?: number;
+	}): Promise<Buffer> {
+		try {
+			console.log('📊 Repository: Iniciando exportação Excel - Relatório Centro de Custos');
+
+			const dados = await this.getRelatorioCentroCustos(filters);
+
+			// Buscar informações dos filtros para exibir no header
+			let contaNome = 'Todas';
+			if (filters.contaId) {
+				const contaResult = await this.db
+					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.bind(filters.contaId)
+					.first();
+				if (contaResult) {
+					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+				}
+			}
+
+			let centroCustosNome = 'Todos';
+			if (filters.centroCustosId) {
+				const centroResult = await this.db
+					.prepare('SELECT descricao FROM CentroCustos WHERE id = ?')
+					.bind(filters.centroCustosId)
+					.first();
+				if (centroResult) {
+					centroCustosNome = centroResult.descricao as string;
+				}
+			}
+
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
+			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+
+			// Criar workbook
+			const wb = XLSX.utils.book_new();
+
+			// Planilha 1: Resumo por Centro de Custos
+			const headerData = [
+				['RELATÓRIO DE CENTRO DE CUSTOS'],
+				[''],
+				['Filtros Aplicados:'],
+				[`Período: ${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`],
+				[`Conta Corrente: ${contaNome}`],
+				[`Status: ${statusNome}`],
+				[`Centro de Custos: ${centroCustosNome}`],
+				[''],
+				['Resumo por Centro de Custos'],
+				['Centro de Custos', 'Tipo', 'Custeio/Investimento', 'Total R$']
+			];
+
+			const resumoData = dados.map(item => [
+				item.centro.descricao,
+				item.centro.tipoReceitaDespesa || '',
+				item.centro.tipo || '',
+				item.total
+			]);
+
+			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoData]);
+			XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo por Centro');
+
+			// Planilha 2: Detalhamento
+			const detalhamentoHeader = [
+				['RELATÓRIO DE CENTRO DE CUSTOS - DETALHAMENTO'],
+				[''],
+				['Filtros Aplicados:'],
+				[`Período: ${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`],
+				[`Conta Corrente: ${contaNome}`],
+				[`Status: ${statusNome}`],
+				[`Centro de Custos: ${centroCustosNome}`],
+				[''],
+				['Detalhamento de Movimentos'],
+				['Centro de Custos', 'Data', 'Histórico', 'Valor R$', 'Tipo', 'Plano de Contas', 'Pessoa', 'Conta']
+			];
+
+			const detalhamentoData: any[] = [];
+			for (const item of dados) {
+				for (const mov of item.movimentos) {
+					detalhamentoData.push([
+						item.centro.descricao,
+						new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+						mov.historico,
+						mov.valor,
+						mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+						mov.planoDescricao || '',
+						mov.pessoaNome || '',
+						mov.contaDescricao || ''
+					]);
+				}
+			}
+
+			const wsDetalhamento = XLSX.utils.aoa_to_sheet([...detalhamentoHeader, ...detalhamentoData]);
+			XLSX.utils.book_append_sheet(wb, wsDetalhamento, 'Detalhamento');
+
+			const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+			console.log(`✅ Repository: Excel gerado com sucesso, ${excelBuffer.length} bytes`);
+			return excelBuffer;
+		} catch (error) {
+			console.error('❌ Erro ao exportar relatório de centro de custos para Excel:', error);
+			throw error;
+		}
+	}
+
+	async exportRelatorioCentroCustosPDF(filters: {
+		dataInicio?: string;
+		dataFim?: string;
+		contaId?: number;
+		status?: string;
+		centroCustosId?: number;
+	}): Promise<Uint8Array> {
+		try {
+			console.log('📊 Repository: Iniciando exportação PDF - Relatório Centro de Custos');
+
+			const dados = await this.getRelatorioCentroCustos(filters);
+
+			// Buscar informações dos filtros para exibir no cabeçalho
+			let contaNome = 'Todas';
+			if (filters.contaId) {
+				const contaResult = await this.db
+					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.bind(filters.contaId)
+					.first();
+				if (contaResult) {
+					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+				}
+			}
+
+			let centroCustosNome = 'Todos';
+			if (filters.centroCustosId) {
+				const centroResult = await this.db
+					.prepare('SELECT descricao FROM CentroCustos WHERE id = ?')
+					.bind(filters.centroCustosId)
+					.first();
+				if (centroResult) {
+					centroCustosNome = centroResult.descricao as string;
+				}
+			}
+
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
+			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+
+			const jsPDF = (await import('jspdf')).default;
+			const autoTable = (await import('jspdf-autotable')).default;
+
+			const doc = new jsPDF('l', 'mm', 'a4');
+
+			// Calcular totais
+			const totalReceitas = dados
+				.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA')
+				.reduce((sum, item) => sum + item.total, 0);
+			
+			const totalDespesas = dados
+				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA')
+				.reduce((sum, item) => sum + item.total, 0);
+			
+			const totalGeral = totalReceitas - totalDespesas;
+
+			// Função para desenhar cabeçalho
+			const drawHeader = (pageNumber: number = 1) => {
+				// Linha superior
+				doc.setDrawColor(0, 0, 0);
+				doc.setLineWidth(0.5);
+				doc.line(20, 15, 277, 15);
+				
+				// Título principal
+				doc.setTextColor(0, 0, 0);
+				doc.setFontSize(16);
+				doc.setFont('helvetica', 'bold');
+				doc.text('RELATÓRIO DE CENTRO DE CUSTOS', 20, 22);
+				
+				// Data de geração
+				doc.setFontSize(9);
+				doc.setFont('helvetica', 'normal');
+				const dataGeracao = new Date().toLocaleDateString('pt-BR', { 
+					weekday: 'long', 
+					year: 'numeric', 
+					month: 'long', 
+					day: 'numeric' 
+				});
+				doc.text(dataGeracao, 277, 22, { align: 'right' });
+				
+				// Linha inferior do cabeçalho
+				doc.line(20, 26, 277, 26);
+			};
+
+			// Função para desenhar informações dos filtros
+			const drawFilters = (yStart: number) => {
+				doc.setFontSize(9);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				
+				// Primeira coluna
+				let yPos = yStart;
+				doc.text('Período:', 20, yPos);
+				doc.setFont('helvetica', 'normal');
+				const periodoTexto = `${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`;
+				doc.text(periodoTexto, 55, yPos);
+				
+				doc.setFont('helvetica', 'bold');
+				doc.text('Conta Corrente:', 20, yPos + 5);
+				doc.setFont('helvetica', 'normal');
+				doc.text(contaNome, 55, yPos + 5);
+				
+				// Segunda coluna
+				doc.setFont('helvetica', 'bold');
+				doc.text('Status:', 150, yPos);
+				doc.setFont('helvetica', 'normal');
+				doc.text(statusNome, 185, yPos);
+				
+				doc.setFont('helvetica', 'bold');
+				doc.text('Centro de Custos:', 150, yPos + 5);
+				doc.setFont('helvetica', 'normal');
+				// Truncar se muito longo
+				const centroTexto = centroCustosNome.length > 30 ? centroCustosNome.substring(0, 27) + '...' : centroCustosNome;
+				doc.text(centroTexto, 185, yPos + 5);
+				
+				// Linha separadora
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.line(20, yPos + 10, 277, yPos + 10);
+				
+				return yPos + 15;
+			};
+
+			// Função para desenhar resumo executivo
+			const drawSummary = (yStart: number) => {
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				
+				// Fundo cinza claro
+				doc.setFillColor(245, 245, 245);
+				doc.rect(20, yStart - 5, 257, 12, 'F');
+				
+				// Bordas
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.rect(20, yStart - 5, 257, 12);
+				
+				// Totais - ajustar posicionamento para evitar sobreposição
+				doc.text('Total Receitas:', 25, yStart + 2);
+				doc.setFont('helvetica', 'normal');
+				doc.setTextColor(0, 128, 0);
+				const receitasFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(totalReceitas);
+				doc.text(receitasFormatado, 55, yStart + 2);
+				
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				doc.text('Total Despesas:', 125, yStart + 2);
+				doc.setFont('helvetica', 'normal');
+				doc.setTextColor(220, 20, 60);
+				const despesasFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(totalDespesas);
+				doc.text(despesasFormatado, 155, yStart + 2);
+				
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				doc.text('Total Geral:', 225, yStart + 2);
+				const geralFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(totalGeral);
+				doc.text(geralFormatado, 248, yStart + 2);
+				
+				doc.setTextColor(0, 0, 0);
+				
+				return yStart + 12;
+			};
+
+			// Primeira página
+			drawHeader(1);
+			let yPos = drawFilters(32);
+			yPos = drawSummary(yPos);
+
+			// Lista todos os movimentos expandidos, agrupados por centro
+			let isFirstPage = true;
+			let pageNumber = 1;
+			
+			for (const item of dados) {
+				// Verificar se precisa de nova página
+				if (yPos > 175 && !isFirstPage) {
+					pageNumber++;
+					doc.addPage();
+					drawHeader(pageNumber);
+					yPos = 32;
+				}
+				isFirstPage = false;
+
+				// Cabeçalho do centro de custos (estilo similar ao exemplo)
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				
+				// Determinar cor do fundo baseado em tipoReceitaDespesa e tipo
+				let fillColor = [240, 240, 240]; // Cinza padrão
+				if (item.centro.tipoReceitaDespesa === 'RECEITA') {
+					fillColor = [220, 252, 231]; // Verde claro para receitas
+				} else if (item.centro.tipoReceitaDespesa === 'DESPESA') {
+					if (item.centro.tipo === 'INVESTIMENTO') {
+						fillColor = [219, 234, 254]; // Azul claro para investimento
+					} else {
+						fillColor = [254, 226, 226]; // Vermelho claro para custeio
+					}
+				}
+				
+				// Fundo colorido para o cabeçalho do grupo
+				doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
+				doc.rect(20, yPos - 4, 257, 10, 'F');
+				
+				// Borda superior
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.line(20, yPos - 4, 277, yPos - 4);
+				
+				// Borda inferior para fechar o retângulo
+				doc.line(20, yPos + 6, 277, yPos + 6);
+				
+				// Nome do centro
+				doc.text(item.centro.descricao, 22, yPos);
+				
+				// Tipo e classificação com cores
+				doc.setFontSize(8);
+				doc.setFont('helvetica', 'normal');
+				
+				// Cor baseada no tipo
+				if (item.centro.tipoReceitaDespesa === 'RECEITA') {
+					doc.setTextColor(0, 128, 0); // Verde
+				} else if (item.centro.tipoReceitaDespesa === 'DESPESA') {
+					if (item.centro.tipo === 'INVESTIMENTO') {
+						doc.setTextColor(30, 64, 175); // Azul
+					} else {
+						doc.setTextColor(220, 20, 60); // Vermelho
+					}
+				} else {
+					doc.setTextColor(100, 100, 100); // Cinza padrão
+				}
+				
+				const tipoInfo = `${item.centro.tipoReceitaDespesa || ''}${item.centro.tipo ? ` - ${item.centro.tipo}` : ''}`;
+				doc.text(tipoInfo, 22, yPos + 4);
+				
+				// Total formatado à direita - ajustar posição para não sobrepor
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				const totalFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(item.total);
+				doc.text(`Total: ${totalFormatado}`, 270, yPos + 2, { align: 'right' });
+				
+				yPos += 7;
+
+				// Tabela de movimentos deste centro
+				const detalhamentoData = item.movimentos.map(mov => {
+					const valorFormatado = new Intl.NumberFormat('pt-BR', {
+						style: 'currency',
+						currency: 'BRL'
+					}).format(mov.valor);
+					
+					// Limpar e sanitizar histórico para evitar problemas de encoding
+					let historicoLimpo = String(mov.historico || '');
+					
+					// Decodificar se necessário e remover caracteres problemáticos
+					try {
+						// Tentar decodificar como UTF-8 se vier como buffer ou com encoding incorreto
+						if (typeof historicoLimpo === 'string') {
+							// Remover caracteres de controle problemáticos, mas preservar acentos UTF-8
+							// Remover apenas caracteres de controle (0x00-0x1F exceto tab/newline, 0x7F-0x9F)
+							historicoLimpo = historicoLimpo
+								.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove caracteres de controle exceto \t, \n, \r
+								.replace(/\x00/g, '') // Remove nulls
+								.replace(/[\uFFFD]/g, '') // Remove replacement characters ()
+								.trim();
+						}
+					} catch (e) {
+						// Se houver erro, usar string vazia
+						historicoLimpo = '';
+					}
+					
+					// Normalizar espaços múltiplos
+					historicoLimpo = historicoLimpo.replace(/\s+/g, ' ');
+					
+					// Truncar se muito longo (usar método seguro para UTF-8)
+					if (historicoLimpo.length > 60) {
+						// Usar slice em vez de substring para melhor suporte UTF-8
+						historicoLimpo = historicoLimpo.slice(0, 57) + '...';
+					}
+					
+					// Sanitizar plano de contas também
+					let planoLimpo = String(mov.planoDescricao || '-');
+					try {
+						planoLimpo = planoLimpo
+							.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+							.replace(/\x00/g, '')
+							.replace(/[\uFFFD]/g, '')
+							.trim();
+					} catch (e) {
+						planoLimpo = '-';
+					}
+					
+					if (planoLimpo.length > 35) {
+						planoLimpo = planoLimpo.slice(0, 32) + '...';
+					}
+					
+					// Sanitizar pessoa também
+					let pessoaLimpo = String(mov.pessoaNome || '-');
+					try {
+						pessoaLimpo = pessoaLimpo
+							.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+							.replace(/\x00/g, '')
+							.replace(/[\uFFFD]/g, '')
+							.trim();
+					} catch (e) {
+						pessoaLimpo = '-';
+					}
+					
+					return [
+						new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+						historicoLimpo || '-',
+						valorFormatado,
+						mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+						planoLimpo,
+						pessoaLimpo
+					];
+				});
+
+				autoTable(doc, {
+					startY: yPos,
+					head: [['Data', 'Histórico', 'Valor', 'Tipo', 'Plano de Contas', 'Pessoa']],
+					body: detalhamentoData,
+					theme: 'striped',
+					headStyles: { 
+						fillColor: [240, 240, 240],
+						textColor: [0, 0, 0],
+						fontStyle: 'bold',
+						fontSize: 9,
+						lineColor: [200, 200, 200],
+						lineWidth: 0.3
+					},
+					bodyStyles: {
+						fontSize: 8,
+						textColor: [0, 0, 0],
+						lineColor: [220, 220, 220],
+						lineWidth: 0.2
+					},
+					alternateRowStyles: {
+						fillColor: [250, 250, 250]
+					},
+					columnStyles: {
+						0: { cellWidth: 22, halign: 'left' }, // Data
+						1: { cellWidth: 95, halign: 'left' }, // Histórico
+						2: { cellWidth: 28, halign: 'right' }, // Valor
+						3: { cellWidth: 20, halign: 'center' }, // Tipo
+						4: { cellWidth: 65, halign: 'left' }, // Plano de Contas
+						5: { cellWidth: 27, halign: 'left' } // Pessoa
+					},
+					margin: { left: 20, right: 20, top: 2 },
+					styles: {
+						overflow: 'linebreak',
+						cellPadding: 2,
+						lineColor: [220, 220, 220],
+						lineWidth: 0.2
+					},
+					didDrawPage: (data: any) => {
+						// Se precisar de nova página, adicionar cabeçalho novamente
+						if (data.pageNumber > pageNumber) {
+							pageNumber = data.pageNumber;
+							drawHeader(pageNumber);
+						}
+					}
+				});
+
+				// Obter posição final da tabela
+				const finalY = (doc as any).lastAutoTable?.finalY;
+				if (finalY) {
+					yPos = finalY + 8; // Espaço entre centros
+				} else {
+					yPos += 30; // Fallback
+				}
+			}
+
+			// Rodapé em todas as páginas
+			const totalPages = doc.getNumberOfPages();
+			for (let i = 1; i <= totalPages; i++) {
+				doc.setPage(i);
+				
+				// Linha separadora do rodapé
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.line(20, 195, 277, 195);
+				
+				// Numeração de páginas
+				doc.setFontSize(8);
+				doc.setFont('helvetica', 'normal');
+				doc.setTextColor(100, 100, 100);
+				doc.text(`Página ${i} de ${totalPages}`, 277, 200, { align: 'right' });
+			}
+
+			const pdfBuffer = new Uint8Array(doc.output('arraybuffer'));
+			console.log(`✅ Repository: PDF gerado com sucesso, ${pdfBuffer.length} bytes`);
+			return pdfBuffer;
+		} catch (error) {
+			console.error('❌ Erro ao exportar relatório de centro de custos para PDF:', error);
+			throw error;
+		}
+	}
+
+	async exportRelatorioItensClassificadosExcel(filters: {
+		dataInicio?: string;
+		dataFim?: string;
+		contaId?: number;
+		status?: string;
+	}): Promise<Buffer> {
+		try {
+			console.log('📊 Repository: Iniciando exportação Excel - Relatório Itens Classificados');
+
+			const dados = await this.getRelatorioItensClassificados(filters);
+
+			// Buscar informações dos filtros para exibir no header
+			let contaNome = 'Todas';
+			if (filters.contaId) {
+				const contaResult = await this.db
+					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.bind(filters.contaId)
+					.first();
+				if (contaResult) {
+					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+				}
+			}
+
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
+			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+
+			// Criar header igual ao de Centro de Custos
+			const headerData = [
+				['RELATÓRIO DE ITENS CLASSIFICADOS'],
+				[''],
+				['Filtros Aplicados:'],
+				[`Período: ${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`],
+				[`Conta Corrente: ${contaNome}`],
+				[`Status: ${statusNome}`],
+				[''],
+				['Itens Classificados'],
+				['Data', 'Histórico', 'Valor R$', 'Tipo', 'Modalidade', 'Plano de Contas', 'Centro de Custos', 'Pessoa']
+			];
+
+			// Preparar dados para Excel
+			const dadosParaExportar = dados.map(mov => [
+				new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+				mov.historico || '',
+				mov.valor,
+				mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+				((mov as any).modalidadeMovimento === 'financiamento' ? 'Financiamento' : 
+				 (mov as any).modalidadeMovimento === 'transferencia' ? 'Transferência' : 'Padrão'),
+				mov.planoDescricao || '',
+				mov.centroCustosDescricao || '',
+				mov.pessoaNome || ''
+			]);
+
+			const wb = XLSX.utils.book_new();
+			const ws = XLSX.utils.aoa_to_sheet([...headerData, ...dadosParaExportar]);
+			XLSX.utils.book_append_sheet(wb, ws, 'Itens Classificados');
+
+			const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+			console.log(`✅ Repository: Excel gerado com sucesso, ${excelBuffer.length} bytes`);
+			return excelBuffer;
+		} catch (error) {
+			console.error('❌ Erro ao exportar relatório de itens classificados para Excel:', error);
+			throw error;
+		}
+	}
+
+	async exportRelatorioItensClassificadosPDF(filters: {
+		dataInicio?: string;
+		dataFim?: string;
+		contaId?: number;
+		status?: string;
+	}): Promise<Uint8Array> {
+		try {
+			console.log('📊 Repository: Iniciando exportação PDF - Relatório Itens Classificados');
+
+			const dados = await this.getRelatorioItensClassificados(filters);
+
+			// Buscar informações dos filtros para exibir no cabeçalho
+			let contaNome = 'Todas';
+			if (filters.contaId) {
+				const contaResult = await this.db
+					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.bind(filters.contaId)
+					.first();
+				if (contaResult) {
+					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+				}
+			}
+
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
+			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+
+			// Calcular totais
+			const totalReceitas = dados
+				.filter(item => item.tipoMovimento === 'C')
+				.reduce((sum, item) => sum + item.valor, 0);
+			
+			const totalDespesas = dados
+				.filter(item => item.tipoMovimento === 'D')
+				.reduce((sum, item) => sum + item.valor, 0);
+			
+			const totalGeral = totalReceitas - totalDespesas;
+
+			const jsPDF = (await import('jspdf')).default;
+			const autoTable = (await import('jspdf-autotable')).default;
+
+			const doc = new jsPDF('l', 'mm', 'a4');
+
+			// Função para desenhar cabeçalho
+			const drawHeader = (pageNumber: number = 1) => {
+				// Linha superior
+				doc.setDrawColor(0, 0, 0);
+				doc.setLineWidth(0.5);
+				doc.line(20, 15, 277, 15);
+				
+				// Título principal
+				doc.setTextColor(0, 0, 0);
+				doc.setFontSize(16);
+				doc.setFont('helvetica', 'bold');
+				doc.text('RELATÓRIO DE ITENS CLASSIFICADOS', 20, 22);
+				
+				// Data de geração
+				doc.setFontSize(9);
+				doc.setFont('helvetica', 'normal');
+				const dataGeracao = new Date().toLocaleDateString('pt-BR', { 
+					weekday: 'long', 
+					year: 'numeric', 
+					month: 'long', 
+					day: 'numeric' 
+				});
+				doc.text(dataGeracao, 277, 22, { align: 'right' });
+				
+				// Linha inferior do cabeçalho
+				doc.line(20, 26, 277, 26);
+			};
+
+			// Função para desenhar informações dos filtros
+			const drawFilters = (yStart: number) => {
+				doc.setFontSize(9);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				
+				// Primeira coluna
+				let yPos = yStart;
+				doc.text('Período:', 20, yPos);
+				doc.setFont('helvetica', 'normal');
+				const periodoTexto = `${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`;
+				doc.text(periodoTexto, 55, yPos);
+				
+				doc.setFont('helvetica', 'bold');
+				doc.text('Conta Corrente:', 20, yPos + 5);
+				doc.setFont('helvetica', 'normal');
+				doc.text(contaNome, 55, yPos + 5);
+				
+				// Segunda coluna
+				doc.setFont('helvetica', 'bold');
+				doc.text('Status:', 150, yPos);
+				doc.setFont('helvetica', 'normal');
+				doc.text(statusNome, 185, yPos);
+				
+				// Linha separadora
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.line(20, yPos + 10, 277, yPos + 10);
+				
+				return yPos + 15;
+			};
+
+			// Função para desenhar resumo executivo
+			const drawSummary = (yStart: number) => {
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				
+				// Fundo cinza claro
+				doc.setFillColor(245, 245, 245);
+				doc.rect(20, yStart - 5, 257, 12, 'F');
+				
+				// Bordas
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.rect(20, yStart - 5, 257, 12);
+				
+				// Totais - ajustar posicionamento para evitar sobreposição
+				doc.text('Total Receitas:', 25, yStart + 2);
+				doc.setFont('helvetica', 'normal');
+				doc.setTextColor(0, 128, 0);
+				const receitasFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(totalReceitas);
+				doc.text(receitasFormatado, 55, yStart + 2);
+				
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				doc.text('Total Despesas:', 125, yStart + 2);
+				doc.setFont('helvetica', 'normal');
+				doc.setTextColor(220, 20, 60);
+				const despesasFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(totalDespesas);
+				doc.text(despesasFormatado, 155, yStart + 2);
+				
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				doc.text('Total Geral:', 225, yStart + 2);
+				const geralFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(totalGeral);
+				doc.text(geralFormatado, 248, yStart + 2);
+				
+				doc.setTextColor(0, 0, 0);
+				
+				return yStart + 12;
+			};
+
+			// Primeira página
+			drawHeader(1);
+			let yPos = drawFilters(32);
+			yPos = drawSummary(yPos);
+
+			// Preparar dados para tabela com sanitização
+			const tableData = dados.map(mov => {
+				// Sanitizar histórico
+				let historicoLimpo = String(mov.historico || '');
+				try {
+					historicoLimpo = historicoLimpo
+						.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+						.replace(/\x00/g, '')
+						.replace(/[\uFFFD]/g, '')
+						.trim()
+						.replace(/\s+/g, ' ');
+					if (historicoLimpo.length > 60) {
+						historicoLimpo = historicoLimpo.slice(0, 57) + '...';
+					}
+				} catch (e) {
+					historicoLimpo = '-';
+				}
+
+				// Sanitizar plano de contas
+				let planoLimpo = String(mov.planoDescricao || '-');
+				try {
+					planoLimpo = planoLimpo
+						.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+						.replace(/\x00/g, '')
+						.replace(/[\uFFFD]/g, '')
+						.trim();
+					if (planoLimpo.length > 35) {
+						planoLimpo = planoLimpo.slice(0, 32) + '...';
+					}
+				} catch (e) {
+					planoLimpo = '-';
+				}
+
+				// Sanitizar centro de custos
+				let centroLimpo = String(mov.centroCustosDescricao || '-');
+				try {
+					centroLimpo = centroLimpo
+						.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+						.replace(/\x00/g, '')
+						.replace(/[\uFFFD]/g, '')
+						.trim();
+					if (centroLimpo.length > 35) {
+						centroLimpo = centroLimpo.slice(0, 32) + '...';
+					}
+				} catch (e) {
+					centroLimpo = '-';
+				}
+
+				// Sanitizar pessoa
+				let pessoaLimpo = String(mov.pessoaNome || '-');
+				try {
+					pessoaLimpo = pessoaLimpo
+						.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+						.replace(/\x00/g, '')
+						.replace(/[\uFFFD]/g, '')
+						.trim();
+				} catch (e) {
+					pessoaLimpo = '-';
+				}
+
+				const valorFormatado = new Intl.NumberFormat('pt-BR', {
+					style: 'currency',
+					currency: 'BRL'
+				}).format(mov.valor);
+
+				return [
+					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+					historicoLimpo || '-',
+					valorFormatado,
+					mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+					((mov as any).modalidadeMovimento === 'financiamento' ? 'Financiamento' : 
+					 (mov as any).modalidadeMovimento === 'transferencia' ? 'Transferência' : 'Padrão'),
+					planoLimpo,
+					centroLimpo,
+					pessoaLimpo
+				];
+			});
+
+			let pageNumber = 1;
+			
+			autoTable(doc, {
+				startY: yPos,
+				head: [['Data', 'Histórico', 'Valor', 'Tipo', 'Modalidade', 'Plano de Contas', 'Centro de Custos', 'Pessoa']],
+				body: tableData,
+				theme: 'striped',
+				headStyles: { 
+					fillColor: [240, 240, 240],
+					textColor: [0, 0, 0],
+					fontStyle: 'bold',
+					fontSize: 9,
+					lineColor: [200, 200, 200],
+					lineWidth: 0.3
+				},
+				bodyStyles: {
+					fontSize: 8,
+					textColor: [0, 0, 0],
+					lineColor: [220, 220, 220],
+					lineWidth: 0.2
+				},
+				alternateRowStyles: {
+					fillColor: [250, 250, 250]
+				},
+				columnStyles: {
+					0: { cellWidth: 20, halign: 'left' }, // Data
+					1: { cellWidth: 70, halign: 'left' }, // Histórico
+					2: { cellWidth: 25, halign: 'right' }, // Valor
+					3: { cellWidth: 18, halign: 'center' }, // Tipo
+					4: { cellWidth: 28, halign: 'center' }, // Modalidade
+					5: { cellWidth: 40, halign: 'left' }, // Plano de Contas
+					6: { cellWidth: 40, halign: 'left' }, // Centro de Custos
+					7: { cellWidth: 16, halign: 'left' } // Pessoa
+				},
+				margin: { left: 20, right: 20, top: 2 },
+				styles: {
+					overflow: 'linebreak',
+					cellPadding: 2,
+					lineColor: [220, 220, 220],
+					lineWidth: 0.2
+				},
+				willDrawPage: (data: any) => {
+					// Desenhar header ANTES da tabela começar em novas páginas
+					if (data.pageNumber > 1) {
+						doc.setPage(data.pageNumber);
+						drawHeader(data.pageNumber);
+						// Ajustar startY para começar após o header (26mm é onde termina o header)
+						data.settings.startY = 32;
+					}
+				}
+			});
+
+			// Rodapé em todas as páginas
+			const totalPages = doc.getNumberOfPages();
+			for (let i = 1; i <= totalPages; i++) {
+				doc.setPage(i);
+				
+				// Linha separadora do rodapé
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.line(20, 195, 277, 195);
+				
+				// Numeração de páginas
+				doc.setFontSize(8);
+				doc.setFont('helvetica', 'normal');
+				doc.setTextColor(100, 100, 100);
+				doc.text(`Página ${i} de ${totalPages}`, 277, 200, { align: 'right' });
+			}
+
+			const pdfBuffer = new Uint8Array(doc.output('arraybuffer'));
+			console.log(`✅ Repository: PDF gerado com sucesso, ${pdfBuffer.length} bytes`);
+			return pdfBuffer;
+		} catch (error) {
+			console.error('❌ Erro ao exportar relatório de itens classificados para PDF:', error);
 			throw error;
 		}
 	}

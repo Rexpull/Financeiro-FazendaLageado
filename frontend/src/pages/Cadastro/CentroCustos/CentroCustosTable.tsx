@@ -373,9 +373,9 @@ const CentroCustosTable: React.FC = () => {
                           
                           {/* Linha do centro de custos */}
                           <tr className="border-b">
-                            <td className="p-2 text-center">{centro.id}</td>
-                            <td className="p-2 text-left">{centro.descricao}</td>
-                            <td className="p-2 text-left">
+                        <td className="p-2 text-center">{centro.id}</td>
+                        <td className="p-2 text-left">{centro.descricao}</td>
+                        <td className="p-2 text-left">
                               {centro.tipoReceitaDespesa && (
                                 <span className={`px-2 py-1 rounded text-xs font-semibold ${
                                   centro.tipoReceitaDespesa === 'RECEITA' 
@@ -388,30 +388,30 @@ const CentroCustosTable: React.FC = () => {
                             </td>
                             <td className="p-2 text-left">
                               {centro.tipo && centro.tipoReceitaDespesa === 'DESPESA' && (
-                                <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                  centro.tipo === 'INVESTIMENTO' 
-                                    ? 'bg-blue-100 text-blue-800' 
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            centro.tipo === 'INVESTIMENTO' 
+                              ? 'bg-blue-100 text-blue-800' 
                                     : 'bg-yellow-100 text-yellow-800'
-                                }`}>
-                                  {centro.tipo === 'INVESTIMENTO' ? 'Investimento' : 'Custeio'}
-                                </span>
+                          }`}>
+                            {centro.tipo === 'INVESTIMENTO' ? 'Investimento' : 'Custeio'}
+                          </span>
                               )}
-                            </td>
-                            <td className="p-2 text-right pr-5">
-                              <button
-                                className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
-                                onClick={() => openModal(centro)}
-                              >
-                                <FontAwesomeIcon icon={faPencil} />
-                              </button>
-                              <button
-                                className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
-                                onClick={() => handleDelete(centro.id)}
-                              >
-                                <FontAwesomeIcon icon={faTrash} />
-                              </button>
-                            </td>
-                          </tr>
+                        </td>
+                        <td className="p-2 text-right pr-5">
+                          <button
+                            className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
+                            onClick={() => openModal(centro)}
+                          >
+                            <FontAwesomeIcon icon={faPencil} />
+                          </button>
+                          <button
+                            className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
+                            onClick={() => handleDelete(centro.id)}
+                          >
+                            <FontAwesomeIcon icon={faTrash} />
+                          </button>
+                        </td>
+                      </tr>
                         </React.Fragment>
                       );
                     })

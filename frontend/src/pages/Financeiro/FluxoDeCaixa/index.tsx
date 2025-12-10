@@ -5,7 +5,7 @@ import TableMain from "../FluxoDeCaixa/TableMain";
 const FluxoCaixa = () => {
   return (
     <div >
-      <BreadCrumb grupo="Financeiro" pagina="Fluxo de Caixa" />
+      <BreadCrumb grupo="Relatórios" pagina="Fluxo de Caixa" />
       <TableMain />
     </div>
   );

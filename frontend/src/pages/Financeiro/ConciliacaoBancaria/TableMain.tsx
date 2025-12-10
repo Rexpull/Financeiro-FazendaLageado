@@ -49,6 +49,8 @@ import {
 	verificarParcelasAssociadas,
 } from '../../../services/financiamentoParcelasService';
 import { listarPlanoContas } from '../../../services/planoContasService';
+import { listarCentroCustos } from '../../../services/centroCustosService';
+import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
 import { Tooltip } from 'react-tooltip';
 import ConciliarPlano from './Modals/ConciliarPlano';
 import { formatarData } from '../../../Utils/formatarData';
@@ -85,6 +87,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const menuRef = useRef<HTMLDivElement>(null);
 	const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
 	const [planos, setPlanos] = useState<any[]>([]);
+	const [centrosDisponiveis, setCentrosDisponiveis] = useState<CentroCustos[]>([]);
 	const [isExporting, setIsExporting] = useState(false);
 
 	const [dataInicio, setDataInicio] = useState<string>('');
@@ -185,6 +188,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	// useEffect para carregar planos de contas
 	useEffect(() => {
 		listarPlanoContas().then((planos) => setPlanos(planos));
+		listarCentroCustos().then((centros) => setCentrosDisponiveis(centros));
 	}, []);
 
 	// useEffect principal para carregar dados quando conta e filtros estiverem prontos
@@ -1168,20 +1172,33 @@ const MovimentoBancarioTable: React.FC = () => {
 												{/* Conteúdo do card */}
 														<div className="grid grid-cols-2 gap-3 mb-3">
 															<div>
-																<div className="text-xs text-gray-500">Plano de Contas</div>
+																<div className="text-xs text-gray-500">{movBancario.tipoMovimento === 'C' ? 'Centro de Custos' : 'Plano de Contas'}</div>
 																<div 
 																	className={`text-sm cursor-pointer underline hover:text-gray-500 ${
-																		movBancario.resultadoList && movBancario.resultadoList.length > 1
-																			? 'text-blue-600 font-semibold'
-																			: !planos.find((p) => p.id === movBancario.idPlanoContas)
-																			? 'text-orange-500 font-semibold'
-																			: ''
+																		movBancario.tipoMovimento === 'C'
+																			? (movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																				? 'text-blue-600 font-semibold'
+																				: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) && !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
+																				? 'text-orange-500 font-semibold'
+																				: '')
+																			: (movBancario.resultadoList && movBancario.resultadoList.length > 1
+																				? 'text-blue-600 font-semibold'
+																				: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																				? 'text-orange-500 font-semibold'
+																				: '')
 																	}`}
 																	onClick={() => openModalConcilia(movBancario)}
 																>
-																	{movBancario.resultadoList && movBancario.resultadoList.length > 1
-																		? 'Múltiplos Planos'
-																		: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'}
+																	{movBancario.tipoMovimento === 'C'
+																		? (movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																			? 'Múltiplos Centros'
+																			: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
+																			? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
+																			: centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao || 'Selecione o Centro de Custos')
+																		: (movBancario.resultadoList && movBancario.resultadoList.length > 1
+																			? 'Múltiplos Planos'
+																			: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
+																	}
 																</div>
 															</div>
 															<div>

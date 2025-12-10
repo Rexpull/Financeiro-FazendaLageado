@@ -43,6 +43,8 @@ export default {
         return handeMovimentoBancario(req, env.DB);
       case pathname.startsWith("/api/fluxoCaixa"):
         return handeMovimentoBancario(req, env.DB);
+      case pathname.startsWith("/api/relatorio"):
+        return handeMovimentoBancario(req, env.DB);
       case pathname.startsWith("/api/centro-custos"):
         return handleCentroCustosRequest(req, env.DB);
       case pathname.startsWith("/api/parcelaFinanciamento"):
