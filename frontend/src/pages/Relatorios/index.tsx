@@ -36,7 +36,7 @@ const Relatorios: React.FC = () => {
 						}`}
 					>
 						<FontAwesomeIcon icon={faListCheck} />
-						Relatório de Itens Classificados
+						Relatório de Plano de Contas
 					</button>
 				</div>
 

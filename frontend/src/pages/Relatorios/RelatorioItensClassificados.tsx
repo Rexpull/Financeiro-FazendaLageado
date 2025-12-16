@@ -40,7 +40,7 @@ const RelatorioItensClassificados: React.FC = () => {
 			setDados(resultado);
 		} catch (error) {
 			console.error('Erro ao buscar relatório:', error);
-			toast.error('Erro ao buscar relatório de itens classificados');
+			toast.error('Erro ao buscar relatório de plano de contas');
 		} finally {
 			setIsLoading(false);
 		}
@@ -59,7 +59,7 @@ const RelatorioItensClassificados: React.FC = () => {
 			const url = window.URL.createObjectURL(blob);
 			const link = document.createElement('a');
 			link.href = url;
-			link.download = `relatorio_itens_classificados_${filtrosAplicados.dataInicio || ''}_${filtrosAplicados.dataFim || ''}.xlsx`;
+			link.download = `relatorio_plano_contas_${filtrosAplicados.dataInicio || ''}_${filtrosAplicados.dataFim || ''}.xlsx`;
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -87,7 +87,7 @@ const RelatorioItensClassificados: React.FC = () => {
 			const url = window.URL.createObjectURL(blob);
 			const link = document.createElement('a');
 			link.href = url;
-			link.download = `relatorio_itens_classificados_${filtrosAplicados.dataInicio || ''}_${filtrosAplicados.dataFim || ''}.pdf`;
+			link.download = `relatorio_plano_contas_${filtrosAplicados.dataInicio || ''}_${filtrosAplicados.dataFim || ''}.pdf`;
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -116,7 +116,7 @@ const RelatorioItensClassificados: React.FC = () => {
 		<div className="min-h-screen ">
 			<div className="max-w-8xl mx-auto">
 				<div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-					<h1 className="text-2xl font-bold text-gray-900">Relatório de Itens Classificados</h1>
+					<h1 className="text-2xl font-bold text-gray-900">Relatório de Plano de Contas</h1>
 				</div>
 				<FiltroRelatorio onAplicarFiltros={handleAplicarFiltros} mostrarCentroCustos={false} />
 
@@ -142,7 +142,7 @@ const RelatorioItensClassificados: React.FC = () => {
 				<div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
 					<div className="p-5">
 						<div className="flex items-center justify-between mb-3">
-							<h3 className="text-lg font-semibold text-gray-800">Itens Classificados</h3>
+							<h3 className="text-lg font-semibold text-gray-800">Plano de Contas</h3>
 							{/* Botões de Exportação */}
 							<div className="flex gap-2">
 								<button
@@ -196,7 +196,7 @@ const RelatorioItensClassificados: React.FC = () => {
 							<span className="text-gray-600">|</span>
 
 							<div className="text-gray-900 font-semibold">
-								Total Geral: {new Intl.NumberFormat('pt-BR', {
+								Saldo: {new Intl.NumberFormat('pt-BR', {
 									style: 'currency',
 									currency: 'BRL'
 								}).format(totalGeral)}
@@ -213,7 +213,10 @@ const RelatorioItensClassificados: React.FC = () => {
 										Histórico
 									</th>
 									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
-										Valor R$
+										Receita R$
+									</th>
+									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+										Despesa R$
 									</th>
 									<th className="w-20 px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
 										Tipo
@@ -248,10 +251,28 @@ const RelatorioItensClassificados: React.FC = () => {
 											{item.historico}
 										</td>
 										<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-											{new Intl.NumberFormat('pt-BR', {
-												style: 'currency',
-												currency: 'BRL'
-											}).format(item.valor)}
+											{item.tipoMovimento === 'C' ? (
+												<span className="text-emerald-700">
+													{new Intl.NumberFormat('pt-BR', {
+														style: 'currency',
+														currency: 'BRL'
+													}).format(item.valor)}
+												</span>
+											) : (
+												<span className="text-gray-400">-</span>
+											)}
+										</td>
+										<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
+											{item.tipoMovimento === 'D' ? (
+												<span className="text-rose-700">
+													{new Intl.NumberFormat('pt-BR', {
+														style: 'currency',
+														currency: 'BRL'
+													}).format(item.valor)}
+												</span>
+											) : (
+												<span className="text-gray-400">-</span>
+											)}
 										</td>
 										<td className="px-2 py-2 whitespace-nowrap text-xs">
 											<span
@@ -261,7 +282,7 @@ const RelatorioItensClassificados: React.FC = () => {
 														: 'bg-rose-100 text-rose-800'
 												}`}
 											>
-												{item.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}
+												{item.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}
 											</span>
 										</td>
 										<td className="px-2 py-2 whitespace-nowrap text-xs">

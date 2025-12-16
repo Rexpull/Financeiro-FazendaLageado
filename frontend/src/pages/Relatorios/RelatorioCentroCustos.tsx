@@ -235,7 +235,7 @@ const RelatorioCentroCustos: React.FC = () => {
 							</div>
 							<span className="text-gray-600">|</span>
 							<div className="text-gray-900 font-semibold">
-								Total Geral: {new Intl.NumberFormat('pt-BR', {
+								Saldo: {new Intl.NumberFormat('pt-BR', {
 									style: 'currency',
 									currency: 'BRL'
 								}).format(totalGeral)}
@@ -255,7 +255,10 @@ const RelatorioCentroCustos: React.FC = () => {
 											Custeio/Investimento
 										</th>
 										<th className="px-6 py-3 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-											Total R$
+											Receita R$
+										</th>
+										<th className="px-6 py-3 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+											Despesa R$
 										</th>
 										<th className="px-6 py-3 text-center text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
 											Ações
@@ -300,10 +303,28 @@ const RelatorioCentroCustos: React.FC = () => {
 													)}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-													{new Intl.NumberFormat('pt-BR', {
-														style: 'currency',
-														currency: 'BRL'
-													}).format(item.total)}
+													{item.centro.tipoReceitaDespesa === 'RECEITA' ? (
+														<span className="text-emerald-700">
+															{new Intl.NumberFormat('pt-BR', {
+																style: 'currency',
+																currency: 'BRL'
+															}).format(item.total)}
+														</span>
+													) : (
+														<span className="text-gray-400">-</span>
+													)}
+												</td>
+												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
+													{item.centro.tipoReceitaDespesa === 'DESPESA' ? (
+														<span className="text-rose-700">
+															{new Intl.NumberFormat('pt-BR', {
+																style: 'currency',
+																currency: 'BRL'
+															}).format(item.total)}
+														</span>
+													) : (
+														<span className="text-gray-400">-</span>
+													)}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-center">
 													<button
@@ -319,7 +340,7 @@ const RelatorioCentroCustos: React.FC = () => {
 											</tr>
 											{centrosExpandidos.has(item.centro.id) && (
 												<tr>
-													<td colSpan={6} className="px-6 py-4 bg-slate-50">
+													<td colSpan={7} className="px-6 py-4 bg-slate-50">
 														<div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
 															<table className="min-w-full">
 																<thead className="bg-slate-100">

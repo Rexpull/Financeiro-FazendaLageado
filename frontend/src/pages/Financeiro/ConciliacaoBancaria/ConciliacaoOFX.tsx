@@ -126,7 +126,17 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 	}, [dropdownAberto]);
 
 	const isMovimentoPendente = (mov: MovimentoBancario) => {
-		return !mov.idPlanoContas || (mov.resultadoList && mov.resultadoList.length > 1);
+		// Para receitas: pendente se não tiver centro de custos
+		if (mov.tipoMovimento === 'C') {
+			const temCentroUnico = mov.idCentroCustos !== null && mov.idCentroCustos !== undefined;
+			const temCentroCustosList = mov.centroCustosList && mov.centroCustosList.length > 0;
+			return !temCentroUnico && !temCentroCustosList;
+		}
+		
+		// Para despesas: pendente se não tiver plano de contas
+		const temPlanoUnico = mov.idPlanoContas !== null && mov.idPlanoContas !== undefined;
+		const temResultadoList = mov.resultadoList && mov.resultadoList.length > 0;
+		return !temPlanoUnico && !temResultadoList;
 	};
 
 	const movimentosFiltrados = (
@@ -174,6 +184,11 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				idCentroCustos: data.idCentroCustos || null,
 			};
 
+			// Incluir centroCustosList se presente
+			if (data.centroCustosList !== undefined) {
+				movimentoAtualizado.centroCustosList = data.centroCustosList;
+			}
+
 			if (data.modalidadeMovimento === 'padrao') {
 				movimentoAtualizado.idBanco = null;
 				movimentoAtualizado.parcelado = false;
@@ -213,6 +228,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 						parcelado: resultadoSalvo.parcelado,
 						numeroDocumento: resultadoSalvo.numeroDocumento,
 						idFinanciamento: resultadoSalvo.idFinanciamento,
+						idCentroCustos: resultadoSalvo.idCentroCustos,
+						centroCustosList: resultadoSalvo.centroCustosList,
 						resultadoList: resultadoSalvo.resultadoList,
 						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
 					};
@@ -333,8 +350,10 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 						numeroDocumento: atualizado.numeroDocumento,
 						parcelado: atualizado.parcelado,
 						idFinanciamento: atualizado.idFinanciamento,
-						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
 						idCentroCustos: atualizado.idCentroCustos,
+						centroCustosList: atualizado.centroCustosList,
+						resultadoList: atualizado.resultadoList,
+						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
 					};
 				}
 				return mov;
@@ -532,7 +551,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 								<span>
 									Pendentes{' '}
 									<span className="text-lg font-semibold text-orange-600">
-										({(movimentos as MovimentoBancario[]).filter((m) => !m.idPlanoContas).length})
+										({(movimentos as MovimentoBancario[]).filter(isMovimentoPendente).length})
 									</span>
 								</span>
 							</label>

@@ -244,7 +244,7 @@ const Sidebar = () => {
                 </Link>
                 <Link to="/relatorios/itens-classificados">
                   <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/relatorios/itens-classificados')}`}>
-                    Itens Classificados
+                    Plano de Contas
                   </li>
                 </Link>
               

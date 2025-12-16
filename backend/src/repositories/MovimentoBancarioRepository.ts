@@ -1786,8 +1786,24 @@ export class MovimentoBancarioRepository {
 			let whereConditions: string[] = [];
 			let params: any[] = [];
 
-			// Sempre buscar apenas movimentos conciliados (com plano de contas)
-			whereConditions.push('mb.idPlanoContas IS NOT NULL AND mb.idPlanoContas != 0');
+			// Buscar movimentos conciliados:
+			// - Despesas: devem ter plano de contas
+			// - Receitas: devem ter centro de custos (mesmo sem plano de contas)
+			whereConditions.push(`(
+				(mb.idPlanoContas IS NOT NULL AND mb.idPlanoContas != 0) 
+				OR 
+				(
+					mb.tipoMovimento = 'C' 
+					AND (
+						mb.idCentroCustos IS NOT NULL 
+						OR EXISTS (
+							SELECT 1 
+							FROM MovimentoCentroCustos mcc 
+							WHERE mcc.idMovimentoBancario = mb.id
+						)
+					)
+				)
+			)`);
 
 			if (filters.contaId) {
 				whereConditions.push('mb.idContaCorrente = ?');
@@ -1805,7 +1821,20 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.status === 'pendentes') {
-				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+				// Pendentes: despesas sem plano de contas OU receitas sem centro de custos
+				whereConditions.push(`(
+					(mb.tipoMovimento = 'D' AND (mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0))
+					OR
+					(
+						mb.tipoMovimento = 'C' 
+						AND mb.idCentroCustos IS NULL 
+						AND NOT EXISTS (
+							SELECT 1 
+							FROM MovimentoCentroCustos mcc 
+							WHERE mcc.idMovimentoBancario = mb.id
+						)
+					)
+				)`);
 			}
 
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
