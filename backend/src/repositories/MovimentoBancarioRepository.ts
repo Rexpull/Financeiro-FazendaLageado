@@ -2037,6 +2037,7 @@ export class MovimentoBancarioRepository {
 					mb.idContaCorrente,
 					pc.descricao as planoDescricao,
 					cco.descricao as centroCustosDescricao,
+					cco.tipo as centroCustosTipo,
 					p.nome as pessoaNome,
 					b.nome as bancoNome,
 					b.codigo as bancoCodigo,
@@ -2067,11 +2068,11 @@ export class MovimentoBancarioRepository {
 				// Verificar se tem rateio de centros de custos
 				const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(mov.id);
 
-				if (centroCustosList && centroCustosList.length > 0) {
+					if (centroCustosList && centroCustosList.length > 0) {
 					// Múltiplos centros (rateio) - criar uma linha para cada
 					for (const cc of centroCustosList) {
 						const centroInfo = await this.db
-							.prepare('SELECT descricao FROM CentroCustos WHERE id = ?')
+							.prepare('SELECT descricao, tipo FROM CentroCustos WHERE id = ?')
 							.bind(cc.idCentroCustos)
 							.first();
 
@@ -2084,6 +2085,7 @@ export class MovimentoBancarioRepository {
 							modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
 							planoDescricao: mov.planoDescricao,
 							centroCustosDescricao: centroInfo?.descricao as string || 'Não definido',
+							centroCustosTipo: centroInfo?.tipo as string || null,
 							pessoaNome: mov.pessoaNome,
 							bancoNome: mov.bancoNome,
 							bancoCodigo: mov.bancoCodigo,
@@ -2103,6 +2105,7 @@ export class MovimentoBancarioRepository {
 						modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
 						planoDescricao: mov.planoDescricao,
 						centroCustosDescricao: mov.centroCustosDescricao || 'Não definido',
+						centroCustosTipo: mov.centroCustosTipo || null,
 						pessoaNome: mov.pessoaNome,
 						bancoNome: mov.bancoNome,
 						bancoCodigo: mov.bancoCodigo,
@@ -2172,15 +2175,20 @@ export class MovimentoBancarioRepository {
 				[`Centro de Custos: ${centroCustosNome}`],
 				[''],
 				['Resumo por Centro de Custos'],
-				['Centro de Custos', 'Tipo', 'Custeio/Investimento', 'Total R$']
+				['Centro de Custos', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$']
 			];
 
-			const resumoData = dados.map(item => [
-				item.centro.descricao,
-				item.centro.tipoReceitaDespesa || '',
-				item.centro.tipo || '',
-				item.total
-			]);
+			const resumoData = dados.map(item => {
+				const receita = item.centro.tipoReceitaDespesa === 'RECEITA' ? item.total : 0;
+				const despesaCusteio = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO' ? item.total : 0;
+				const despesaInvestimento = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO' ? item.total : 0;
+				return [
+					item.centro.descricao,
+					receita,
+					despesaCusteio,
+					despesaInvestimento
+				];
+			});
 
 			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoData]);
 			XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo por Centro');
@@ -2265,11 +2273,6 @@ export class MovimentoBancarioRepository {
 			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
 			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
 
-			const jsPDF = (await import('jspdf')).default;
-			const autoTable = (await import('jspdf-autotable')).default;
-
-			const doc = new jsPDF('l', 'mm', 'a4');
-
 			// Calcular totais
 			const totalReceitas = dados
 				.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA')
@@ -2279,7 +2282,20 @@ export class MovimentoBancarioRepository {
 				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA')
 				.reduce((sum, item) => sum + item.total, 0);
 			
+			const totalDespesasCusteio = dados
+				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
+				.reduce((sum, item) => sum + item.total, 0);
+			
+			const totalDespesasInvestimento = dados
+				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
+				.reduce((sum, item) => sum + item.total, 0);
+			
 			const totalGeral = totalReceitas - totalDespesas;
+
+			const jsPDF = (await import('jspdf')).default;
+			const autoTable = (await import('jspdf-autotable')).default;
+
+			const doc = new jsPDF('l', 'mm', 'a4');
 
 			// Função para desenhar cabeçalho
 			const drawHeader = (pageNumber: number = 1) => {
@@ -2356,12 +2372,12 @@ export class MovimentoBancarioRepository {
 				
 				// Fundo cinza claro
 				doc.setFillColor(245, 245, 245);
-				doc.rect(20, yStart - 5, 257, 12, 'F');
+				doc.rect(20, yStart - 5, 257, 15, 'F');
 				
 				// Bordas
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
-				doc.rect(20, yStart - 5, 257, 12);
+				doc.rect(20, yStart - 5, 257, 15);
 				
 				// Totais - ajustar posicionamento para evitar sobreposição
 				doc.text('Total Receitas:', 25, yStart + 2);
@@ -2384,6 +2400,11 @@ export class MovimentoBancarioRepository {
 				}).format(totalDespesas);
 				doc.text(despesasFormatado, 155, yStart + 2);
 				
+				// Adicionar detalhamento de despesas
+				doc.setFont('helvetica', 'normal');
+				doc.setFontSize(8);
+				doc.text(`(Custeio: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasCusteio)} | Investimento: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasInvestimento)})`, 125, yStart + 5);
+				
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
 				doc.text('Total Geral:', 225, yStart + 2);
@@ -2395,7 +2416,7 @@ export class MovimentoBancarioRepository {
 				
 				doc.setTextColor(0, 0, 0);
 				
-				return yStart + 12;
+				return yStart + 15;
 			};
 
 			// Primeira página
@@ -2664,29 +2685,35 @@ export class MovimentoBancarioRepository {
 
 			// Criar header igual ao de Centro de Custos
 			const headerData = [
-				['RELATÓRIO DE ITENS CLASSIFICADOS'],
+				['RELATÓRIO DE PLANO DE CONTAS'],
 				[''],
 				['Filtros Aplicados:'],
 				[`Período: ${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`],
 				[`Conta Corrente: ${contaNome}`],
 				[`Status: ${statusNome}`],
 				[''],
-				['Itens Classificados'],
-				['Data', 'Histórico', 'Valor R$', 'Tipo', 'Modalidade', 'Plano de Contas', 'Centro de Custos', 'Pessoa']
+				['Plano de Contas'],
+				['Data', 'Histórico', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$', 'Plano de Contas', 'Centro de Custos', 'Conta Corrente']
 			];
 
 			// Preparar dados para Excel
-			const dadosParaExportar = dados.map(mov => [
-				new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
-				mov.historico || '',
-				mov.valor,
-				mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
-				((mov as any).modalidadeMovimento === 'financiamento' ? 'Financiamento' : 
-				 (mov as any).modalidadeMovimento === 'transferencia' ? 'Transferência' : 'Padrão'),
-				mov.planoDescricao || '',
-				mov.centroCustosDescricao || '',
-				mov.pessoaNome || ''
-			]);
+			const dadosParaExportar = dados.map(mov => {
+				const receita = mov.tipoMovimento === 'C' ? mov.valor : 0;
+				const despesaCusteio = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO' ? mov.valor : 0;
+				const despesaInvestimento = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO' ? mov.valor : 0;
+				// Se despesa sem tipo definido, colocar em custeio
+				const despesaSemTipo = mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo ? mov.valor : 0;
+				return [
+					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+					mov.historico || '',
+					receita,
+					despesaCusteio || despesaSemTipo,
+					despesaInvestimento,
+					mov.planoDescricao || '',
+					mov.centroCustosDescricao || '',
+					mov.contaDescricao || ''
+				];
+			});
 
 			const wb = XLSX.utils.book_new();
 			const ws = XLSX.utils.aoa_to_sheet([...headerData, ...dadosParaExportar]);
@@ -2736,6 +2763,14 @@ export class MovimentoBancarioRepository {
 				.filter(item => item.tipoMovimento === 'D')
 				.reduce((sum, item) => sum + item.valor, 0);
 			
+			const totalDespesasCusteio = dados
+				.filter(item => item.tipoMovimento === 'D' && (item as any).centroCustosTipo === 'CUSTEIO')
+				.reduce((sum, item) => sum + item.valor, 0);
+			
+			const totalDespesasInvestimento = dados
+				.filter(item => item.tipoMovimento === 'D' && (item as any).centroCustosTipo === 'INVESTIMENTO')
+				.reduce((sum, item) => sum + item.valor, 0);
+			
 			const totalGeral = totalReceitas - totalDespesas;
 
 			const jsPDF = (await import('jspdf')).default;
@@ -2754,7 +2789,7 @@ export class MovimentoBancarioRepository {
 				doc.setTextColor(0, 0, 0);
 				doc.setFontSize(16);
 				doc.setFont('helvetica', 'bold');
-				doc.text('RELATÓRIO DE ITENS CLASSIFICADOS', 20, 22);
+				doc.text('RELATÓRIO DE PLANO DE CONTAS', 20, 22);
 				
 				// Data de geração
 				doc.setFontSize(9);
@@ -2918,21 +2953,20 @@ export class MovimentoBancarioRepository {
 					pessoaLimpo = '-';
 				}
 
-				const valorFormatado = new Intl.NumberFormat('pt-BR', {
-					style: 'currency',
-					currency: 'BRL'
-				}).format(mov.valor);
+				const receita = mov.tipoMovimento === 'C' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
+				const despesaCusteio = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
+				const despesaInvestimento = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
+				const despesaSemTipo = mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
 
 				return [
 					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
 					historicoLimpo || '-',
-					valorFormatado,
-					mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
-					((mov as any).modalidadeMovimento === 'financiamento' ? 'Financiamento' : 
-					 (mov as any).modalidadeMovimento === 'transferencia' ? 'Transferência' : 'Padrão'),
+					receita,
+					despesaCusteio || despesaSemTipo,
+					despesaInvestimento,
 					planoLimpo,
 					centroLimpo,
-					pessoaLimpo
+					String((mov as any).contaDescricao || '-')
 				];
 			});
 
@@ -2940,7 +2974,7 @@ export class MovimentoBancarioRepository {
 			
 			autoTable(doc, {
 				startY: yPos,
-				head: [['Data', 'Histórico', 'Valor', 'Tipo', 'Modalidade', 'Plano de Contas', 'Centro de Custos', 'Pessoa']],
+				head: [['Data', 'Histórico', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$', 'Plano de Contas', 'Centro de Custos', 'Conta Corrente']],
 				body: tableData,
 				theme: 'striped',
 				headStyles: { 

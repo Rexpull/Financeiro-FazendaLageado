@@ -404,6 +404,7 @@ const Dashboard = () => {
               startIcon={<FileDownloadIcon />}
               onClick={() => exportToExcel(dashboardData?.receitasDespesas?.detalhamento || [], 'receitas_despesas')}
               disabled={!dashboardData?.receitasDespesas?.detalhamento?.length}
+              title="Exporta os dados detalhados para Excel. Para relatórios completos, acesse a seção Relatórios."
             >
               Exportar Excel
             </Button>

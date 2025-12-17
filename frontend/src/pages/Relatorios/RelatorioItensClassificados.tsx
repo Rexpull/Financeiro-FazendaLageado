@@ -206,35 +206,34 @@ const RelatorioItensClassificados: React.FC = () => {
 							<table className="w-full table-fixed">
 							<thead className="bg-slate-50">
 								<tr>
-									<th className="w-24 px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+									<th rowSpan={2} className="w-24 px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
 										Data
 									</th>
-									<th className="w-48 px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+									<th rowSpan={2} className="w-48 px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
 										Histórico
 									</th>
-									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+									<th rowSpan={2} className="w-28 px-2 py-3 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-l-1 border-r border-t-1 border-gray-300 align-middle bg-emerald-50">
 										Receita R$
 									</th>
-									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+									<th colSpan={2} className="px-2 py-2 text-center text-[10px] font-semibold text-slate-700 uppercase tracking-wide border-b border-r border-gray-300 bg-rose-50">
 										Despesa R$
 									</th>
-									<th className="w-20 px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
-										Tipo
-									</th>
-									<th className="w-24 px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
-										Modalidade
-									</th>
-									<th className="px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+									<th rowSpan={2} className="px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-l border-gray-300 align-middle">
 										Plano de Contas
 									</th>
-									<th className="px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+									<th rowSpan={2} className="px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
 										Centro de Custos
 									</th>
-									<th className="w-32 px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
-										Pessoa
-									</th>
-									<th className="w-40 px-2 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+									<th rowSpan={2} className="w-40 px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-gray-300 align-middle">
 										Conta Corrente
+									</th>
+								</tr>
+								<tr className="bg-rose-50">
+									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300">
+										Custeio
+									</th>
+									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-gray-300">
+										Investimento
 									</th>
 								</tr>
 							</thead>
@@ -263,7 +262,7 @@ const RelatorioItensClassificados: React.FC = () => {
 											)}
 										</td>
 										<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-											{item.tipoMovimento === 'D' ? (
+											{item.tipoMovimento === 'D' && item.centroCustosTipo === 'CUSTEIO' ? (
 												<span className="text-rose-700">
 													{new Intl.NumberFormat('pt-BR', {
 														style: 'currency',
@@ -274,29 +273,24 @@ const RelatorioItensClassificados: React.FC = () => {
 												<span className="text-gray-400">-</span>
 											)}
 										</td>
-										<td className="px-2 py-2 whitespace-nowrap text-xs">
-											<span
-												className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
-													item.tipoMovimento === 'C'
-														? 'bg-emerald-100 text-emerald-800'
-														: 'bg-rose-100 text-rose-800'
-												}`}
-											>
-												{item.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}
-											</span>
-										</td>
-										<td className="px-2 py-2 whitespace-nowrap text-xs">
-											<span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium capitalize ${
-												item.modalidadeMovimento === 'financiamento' 
-													? 'bg-blue-100 text-blue-800' 
-													: item.modalidadeMovimento === 'transferencia' 
-													? 'bg-purple-100 text-purple-800' 
-													: 'bg-slate-100 text-slate-700'
-											}`}>
-												{item.modalidadeMovimento === 'financiamento' ? 'Financiamento' : 
-												 item.modalidadeMovimento === 'transferencia' ? 'Transferência' : 
-												 'Padrão'}
-											</span>
+										<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
+											{item.tipoMovimento === 'D' && item.centroCustosTipo === 'INVESTIMENTO' ? (
+												<span className="text-rose-700">
+													{new Intl.NumberFormat('pt-BR', {
+														style: 'currency',
+														currency: 'BRL'
+													}).format(item.valor)}
+												</span>
+											) : item.tipoMovimento === 'D' && !item.centroCustosTipo ? (
+												<span className="text-rose-700">
+													{new Intl.NumberFormat('pt-BR', {
+														style: 'currency',
+														currency: 'BRL'
+													}).format(item.valor)}
+												</span>
+											) : (
+												<span className="text-gray-400">-</span>
+											)}
 										</td>
 										<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.planoDescricao || ''}>
 											{item.planoDescricao || '-'}
@@ -305,9 +299,6 @@ const RelatorioItensClassificados: React.FC = () => {
 											<span className={item.centroCustosDescricao === 'Não definido' ? 'text-red-600 font-medium' : 'text-gray-800'}>
 												{item.centroCustosDescricao || '-'}
 											</span>
-										</td>
-										<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.pessoaNome || ''}>
-											{item.pessoaNome || '-'}
 										</td>
 										<td className="px-2 py-2 text-xs text-gray-800">
 											<div className="flex items-center gap-1.5" title={item.contaDescricao || ''}>

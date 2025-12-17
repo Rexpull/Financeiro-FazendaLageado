@@ -178,39 +178,44 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 			console.log('data:', data);
 			const movimentoAtualizado: MovimentoBancario = {
 				...movimentoParaConciliar!,
-				idPlanoContas: data.idPlanoContas || null,
+				idPlanoContas: movimentoParaConciliar!.tipoMovimento === 'C' ? undefined : (data.idPlanoContas || undefined),
 				modalidadeMovimento: data.modalidadeMovimento,
-				idPessoa: data.idPessoa || null,
-				idCentroCustos: data.idCentroCustos || null,
+				idPessoa: data.idPessoa || undefined,
+				idCentroCustos: data.idCentroCustos || undefined,
 			};
 
 			// Incluir centroCustosList se presente
 			if (data.centroCustosList !== undefined) {
 				movimentoAtualizado.centroCustosList = data.centroCustosList;
 			}
+			
+			// Para receitas, garantir que resultadoList está vazio
+			if (movimentoParaConciliar!.tipoMovimento === 'C') {
+				movimentoAtualizado.resultadoList = [];
+			}
 
 			if (data.modalidadeMovimento === 'padrao') {
-				movimentoAtualizado.idBanco = null;
+				movimentoAtualizado.idBanco = undefined;
 				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = null;
-				movimentoAtualizado.idFinanciamento = null;
+				movimentoAtualizado.numeroDocumento = undefined;
+				movimentoAtualizado.idFinanciamento = undefined;
 			}
 
 			if (data.modalidadeMovimento === 'financiamento') {
-				movimentoAtualizado.idBanco = data.idBanco || null;
-				movimentoAtualizado.numeroDocumento = data.numeroDocumento || null;
+				movimentoAtualizado.idBanco = data.idBanco || undefined;
+				movimentoAtualizado.numeroDocumento = data.numeroDocumento || undefined;
 				movimentoAtualizado.parcelado = data.parcelado || false;
-				movimentoAtualizado.idFinanciamento = data.idFinanciamento || null;
-				movimentoAtualizado.idCentroCustos = data.idCentroCustos || null;
+				movimentoAtualizado.idFinanciamento = data.idFinanciamento || undefined;
+				movimentoAtualizado.idCentroCustos = data.idCentroCustos || undefined;
 			}
 
 			if(data.modalidadeMovimento === 'transferencia') {	
 				movimentoAtualizado.resultadoList = [];
-				movimentoAtualizado.idFinanciamento = null;
-				movimentoAtualizado.idBanco = null;
+				movimentoAtualizado.idFinanciamento = undefined;
+				movimentoAtualizado.idBanco = undefined;
 				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = null;
-				movimentoAtualizado.idCentroCustos = null;
+				movimentoAtualizado.numeroDocumento = undefined;
+				movimentoAtualizado.idCentroCustos = undefined;
 			}
 
 			console.log('Movimento atualizado:', movimentoAtualizado);
@@ -221,7 +226,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				if (m.id === movimentoAtualizado.id || m.identificadorOfx === movimentoAtualizado.identificadorOfx) {
 					return {
 						...m,
-						idPlanoContas: resultadoSalvo.idPlanoContas,
+						idPlanoContas: m.tipoMovimento === 'C' ? undefined : resultadoSalvo.idPlanoContas,
 						modalidadeMovimento: resultadoSalvo.modalidadeMovimento,
 						idPessoa: resultadoSalvo.idPessoa,
 						idBanco: resultadoSalvo.idBanco,
@@ -230,8 +235,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 						idFinanciamento: resultadoSalvo.idFinanciamento,
 						idCentroCustos: resultadoSalvo.idCentroCustos,
 						centroCustosList: resultadoSalvo.centroCustosList,
-						resultadoList: resultadoSalvo.resultadoList,
-						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
+						resultadoList: m.tipoMovimento === 'C' ? [] : (resultadoSalvo.resultadoList || []),
+						planosDescricao: m.tipoMovimento === 'C' ? '' : (planos.find((p) => p.id === data.idPlanoContas)?.descricao || ''),
 					};
 				}
 				return m;
@@ -248,7 +253,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 	const handleSelecionarMovimento = (movimento: MovimentoBancario) => {
 		if (!tipoMovimentoSelecionado) {
-			setTipoMovimentoSelecionado(movimento.tipoMovimento);
+			setTipoMovimentoSelecionado(movimento.tipoMovimento || null);
 			setMovimentosSelecionados([movimento]);
 		} else if (tipoMovimentoSelecionado === movimento.tipoMovimento) {
 			const jaSelecionado = movimentosSelecionados.some(m => m.id === movimento.id);
@@ -316,14 +321,16 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 					const movimentoAtualizado: MovimentoBancario = {
 						...movimento,
 						modalidadeMovimento: data.modalidadeMovimento,
-						idPlanoContas: data.idPlanoContas || null,
-						idPessoa: data.idPessoa || null,
-						idBanco: data.idBanco || null,
-						numeroDocumento: data.numeroDocumento || null,
+						idPlanoContas: movimento.tipoMovimento === 'C' ? undefined : (data.idPlanoContas || undefined),
+						idPessoa: data.idPessoa || undefined,
+						idBanco: data.idBanco || undefined,
+						numeroDocumento: data.numeroDocumento || undefined,
 						parcelado: data.parcelado || false,
-						idFinanciamento: data.idFinanciamento || null,
-						idUsuario: movimento.idUsuario || null,
-						idCentroCustos: data.idCentroCustos || null,
+						idFinanciamento: data.idFinanciamento || undefined,
+						idUsuario: movimento.idUsuario || undefined,
+						idCentroCustos: data.idCentroCustos || undefined,
+						centroCustosList: data.centroCustosList,
+						resultadoList: movimento.tipoMovimento === 'C' ? [] : (data.resultadoList || []),
 					};
 
 					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
@@ -343,7 +350,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 				if (atualizado) {
 					return {
 						...mov,
-						idPlanoContas: atualizado.idPlanoContas,
+						idPlanoContas: mov.tipoMovimento === 'C' ? undefined : atualizado.idPlanoContas,
 						modalidadeMovimento: atualizado.modalidadeMovimento,
 						idPessoa: atualizado.idPessoa,
 						idBanco: atualizado.idBanco,
@@ -352,8 +359,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 						idFinanciamento: atualizado.idFinanciamento,
 						idCentroCustos: atualizado.idCentroCustos,
 						centroCustosList: atualizado.centroCustosList,
-						resultadoList: atualizado.resultadoList,
-						planosDescricao: planos.find((p) => p.id === data.idPlanoContas)?.descricao || '',
+						resultadoList: mov.tipoMovimento === 'C' ? [] : (atualizado.resultadoList || []),
+						planosDescricao: mov.tipoMovimento === 'C' ? '' : (planos.find((p) => p.id === data.idPlanoContas)?.descricao || ''),
 					};
 				}
 				return mov;
@@ -633,11 +640,11 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 					{/* Tabela de Movimentos */}
 					<div className="bg-gray-50 shadow-md rounded-lg overflow-hidden border border-gray-200 w-full" style={{ marginBottom: '50px' }}>
-						<div className="overflow-y-auto" style={{ maxHeight: '100%' }}>
-							<table className="w-full border-collapse">
+						<div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: '100%' }}>
+							<table className="w-full border-collapse min-w-[900px]">
 								<thead className="bg-gray-200 sticky top-0 z-10">
 									<tr className="bg-gray-200">
-										<th className="p-2 text-center w-12">
+										<th className="p-2 text-center w-12 min-w-[48px]">
 											<input
 												type="checkbox"
 												checked={movimentosFiltrados.length > 0 && movimentosFiltrados.every(m => movimentosSelecionados.some(ms => ms.id === m.id))}
@@ -645,16 +652,17 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 												className="w-4 h-4"
 											/>
 										</th>
-										<th className="p-2 text-left">Data</th>
-										<th className="p-2 text-left">Histórico</th>
-										<th className="p-2 text-center">Plano de Contas</th>
-										<th className="p-2 text-center">Valor</th>
+										<th className="p-2 text-left min-w-[140px]">Data</th>
+										<th className="p-2 text-left min-w-[200px]">Histórico</th>
+										<th className="p-2 text-center min-w-[180px]">Plano de Contas</th>
+										<th className="p-2 text-center min-w-[180px]">Centro de Custos</th>
+										<th className="p-2 text-center min-w-[120px]">Valor</th>
 									</tr>
 								</thead>
 								<tbody>
 									{movimentosFiltrados.length === 0 ? (
 										<tr>
-											<td colSpan={5} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
+											<td colSpan={6} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
 												Nenhum movimento encontrado!
 											</td>
 										</tr>
@@ -670,36 +678,49 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== mov.tipoMovimento}
 													/>
 												</td>
-												<td className="p-2 text-left">{formatarData(mov.dtMovimento)}</td>
-												<td className="p-2 text-left m-w-[500px] truncate" title={mov.historico}>
+												<td className="p-2 text-left min-w-[140px]">{formatarData(mov.dtMovimento)}</td>
+												<td className="p-2 text-left min-w-[200px] max-w-[300px] truncate" title={mov.historico}>
 													{mov.historico}
 												</td>
+												{/* Coluna Plano de Contas */}
 												<td
-													className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 max-w-[220px] ${
-														mov.tipoMovimento === 'C' 
-															? (mov.centroCustosList && mov.centroCustosList.length > 1
-																? 'text-blue-600 font-semibold'
-																: !centrosDisponiveis.find((c) => c.id === mov.idCentroCustos) && !(mov.centroCustosList && mov.centroCustosList.length > 0)
-																? 'text-orange-500 font-semibold'
-																: '')
-															: (mov.resultadoList?.length > 1
-																? 'text-blue-600 font-semibold'
+													className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
+														mov.tipoMovimento === 'D'
+															? 'cursor-pointer underline hover:text-gray-500' + ((mov.resultadoList && mov.resultadoList.length > 1)
+																? ' text-blue-600 font-semibold'
 																: !planos.find((p) => p.id === mov.idPlanoContas)
-																? 'text-orange-500 font-semibold'
+																? ' text-orange-500 font-semibold'
 																: '')
+															: 'text-gray-400'
+													}`}
+													style={{ textUnderlineOffset: '2px' }}
+													onClick={() => mov.tipoMovimento === 'D' && openModalConcilia(mov)}
+													title={mov.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
+												>
+													{mov.tipoMovimento === 'D'
+														? ((mov.resultadoList && mov.resultadoList.length > 1)
+															? 'Múltiplos Planos'
+															: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
+														: '-'
+													}
+												</td>
+												{/* Coluna Centro de Custos */}
+												<td
+													className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 min-w-[180px] max-w-[220px] ${
+														mov.centroCustosList && mov.centroCustosList.length > 1
+															? 'text-blue-600 font-semibold'
+															: !centrosDisponiveis.find((c) => c.id === mov.idCentroCustos) && !(mov.centroCustosList && mov.centroCustosList.length > 0)
+															? 'text-orange-500 font-semibold'
+															: ''
 													}`}
 													style={{ textUnderlineOffset: '2px' }}
 													onClick={() => openModalConcilia(mov)}
 												>
-													{mov.tipoMovimento === 'C' 
-														? (mov.centroCustosList && mov.centroCustosList.length > 1
-															? 'Múltiplos Centros'
-															: mov.centroCustosList && mov.centroCustosList.length > 0
-															? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${mov.centroCustosList[0].idCentroCustos}`
-															: centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos')
-														: (mov.resultadoList?.length > 1
-															? 'Múltiplos Planos'
-															: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
+													{mov.centroCustosList && mov.centroCustosList.length > 1
+														? 'Múltiplos Centros'
+														: mov.centroCustosList && mov.centroCustosList.length > 0
+														? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${mov.centroCustosList[0].idCentroCustos}`
+														: centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos'
 													}
 												</td>
 

@@ -85,6 +85,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const [rateiosPlanos, setRateiosPlanos] = useState<{ idPlano: number; descricao: string; valor: number }[]>([]);
 	const [rateiosPlanosPorcentagem, setRateiosPlanosPorcentagem] = useState<{ idPlano: number; porcentagem: number }[]>([]);
 	const [tipoCentroSelecionado, setTipoCentroSelecionado] = useState<'CUSTEIO' | 'INVESTIMENTO' | null>(null);
+	const [tipoPlanoSelecionado, setTipoPlanoSelecionado] = useState<'CUSTEIO' | 'INVESTIMENTO' | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [modalFinanciamentoOpen, setModalFinanciamentoOpen] = useState(false);
 	const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
@@ -327,17 +328,22 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	}, [showPlanoDropdown, showCentroCustosDropdown]);
 
 	// Filtrar planos com busca interna
+	const isDespesa = movimento.tipoMovimento === 'D';
 	const planosFiltered = planos
-		.filter(
-			(plano) =>
-				plano.descricao.toLowerCase().includes(planosSearchValue.toLowerCase()) &&
-				(movimento.tipoMovimento === 'D' ? plano.hierarquia.startsWith('002') : plano.hierarquia.startsWith('001')) &&
-				plano.nivel === 3
-		)
+		.filter((plano) => {
+			const matchSearch = plano.descricao.toLowerCase().includes(planosSearchValue.toLowerCase());
+			const matchHierarquia = movimento.tipoMovimento === 'D' 
+				? plano.hierarquia.startsWith('002') 
+				: plano.hierarquia.startsWith('001');
+			const matchNivel = plano.nivel === 3;
+			// Para despesas, filtrar também por tipo (custeio/investimento) se um tipo foi selecionado
+			const matchTipo = !isDespesa || !tipoPlanoSelecionado || 
+				plano.tipo?.toLowerCase() === tipoPlanoSelecionado.toLowerCase();
+			return matchSearch && matchHierarquia && matchNivel && matchTipo;
+		})
 		.slice(0, 50);
 
 	// Filtrar centro de custos com busca interna e por tipo de movimento
-	const isDespesa = movimento.tipoMovimento === 'D';
 	const centroCustosFiltered = centroCustos.filter(centro => {
 		const matchSearch = centro.descricao.toLowerCase().includes(centroCustosSearchValue.toLowerCase());
 		
@@ -819,7 +825,48 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 
 							{showPlanoDropdown && (
-								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1">
+								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[400px] overflow-y-auto">
+									{isDespesa && (
+										<div className="p-2 border-b bg-gray-50 sticky top-0 z-10">
+											<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
+											<div className="flex">
+												<button
+													type="button"
+													onClick={() => {
+														setTipoPlanoSelecionado('CUSTEIO');
+														setIdPlanoContas(null);
+														setSearchPlano('');
+														setPlanosSearchValue('');
+													}}
+													className={`flex-1 px-4 py-2 rounded-l-lg font-medium text-sm transition-all ${
+														tipoPlanoSelecionado === 'CUSTEIO'
+															? 'bg-yellow-500 text-white shadow-md'
+															: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+													}`}
+												>
+													Custeio
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setTipoPlanoSelecionado('INVESTIMENTO');
+														setIdPlanoContas(null);
+														setSearchPlano('');
+														setPlanosSearchValue('');
+													}}
+													className={`flex-1 px-4 py-2 rounded-r-lg font-medium text-sm transition-all ${
+														tipoPlanoSelecionado === 'INVESTIMENTO'
+															? 'bg-blue-500 text-white shadow-md'
+															: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+													}`}
+												>
+													Investimento
+												</button>
+											</div>
+										</div>
+									)}
+									{(!isDespesa || tipoPlanoSelecionado !== null) && (
+										<>
 									<div className="p-2 border-b">
 										<input
 											type="text"
@@ -830,7 +877,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 											autoFocus
 										/>
 									</div>
-									<ul className="max-h-60 overflow-y-auto">
+									<ul className="max-h-60 overflow-y-auto overflow-x-hidden">
 											<li 
 												className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
 												onClick={() => selectPlanoNew(null)}
@@ -864,6 +911,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 											</li>
 										)}
 									</ul>
+										</>
+									)}
+									{isDespesa && !tipoPlanoSelecionado && (
+										<div className="p-4 text-center text-gray-500 text-sm">
+											Selecione primeiro o tipo de despesa
+										</div>
+									)}
 								</div>
 							)}
 						</div>
@@ -897,9 +951,9 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							{errors.idCentroCustos && <p className="text-red-500 text-xs mt-1">{errors.idCentroCustos}</p>}
 
 							{showCentroCustosDropdown && (
-								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1">
+								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[400px] overflow-y-auto">
 									{isDespesa && (
-										<div className="p-2 border-b bg-gray-50">
+										<div className="p-2 border-b bg-gray-50 sticky top-0 z-10">
 											<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
 											<div className="flex ">
 												<button

@@ -33,6 +33,7 @@ export interface RelatorioItensClassificadosItem {
 	modalidadeMovimento?: string;
 	planoDescricao?: string;
 	centroCustosDescricao?: string;
+	centroCustosTipo?: string;
 	pessoaNome?: string;
 	bancoNome?: string;
 	bancoCodigo?: string;

@@ -128,7 +128,33 @@ const RelatorioCentroCustos: React.FC = () => {
 		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA')
 		.reduce((sum, item) => sum + item.total, 0);
 	
+	const totalDespesasCusteio = dados
+		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
+		.reduce((sum, item) => sum + item.total, 0);
+	
+	const totalDespesasInvestimento = dados
+		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
+		.reduce((sum, item) => sum + item.total, 0);
+	
 	const totalGeral = totalReceitas - totalDespesas;
+
+	// Função para calcular totais de despesas por tipo para um centro específico
+	const calcularTotaisDespesasPorTipo = (item: RelatorioCentroCustosItem) => {
+		if (item.centro.tipoReceitaDespesa !== 'DESPESA') {
+			return { custeio: 0, investimento: 0 };
+		}
+		
+		// Se o centro tem tipo definido, usar o total diretamente
+		if (item.centro.tipo === 'CUSTEIO') {
+			return { custeio: item.total, investimento: 0 };
+		} else if (item.centro.tipo === 'INVESTIMENTO') {
+			return { custeio: 0, investimento: item.total };
+		}
+		
+		// Se não tem tipo definido, distribuir igualmente ou calcular pelos movimentos
+		// Por enquanto, vamos assumir que se não tem tipo, é custeio (comportamento padrão)
+		return { custeio: item.total, investimento: 0 };
+	};
 
 	const expandirTodos = () => {
 		setCentrosExpandidos(new Set(dados.map(item => item.centro.id)));
@@ -232,6 +258,15 @@ const RelatorioCentroCustos: React.FC = () => {
 										currency: 'BRL'
 									}).format(totalDespesas)}
 								</span>
+								<span className="text-xs ml-2">
+									(Custeio: {new Intl.NumberFormat('pt-BR', {
+										style: 'currency',
+										currency: 'BRL'
+									}).format(totalDespesasCusteio)} | Investimento: {new Intl.NumberFormat('pt-BR', {
+										style: 'currency',
+										currency: 'BRL'
+									}).format(totalDespesasInvestimento)})
+								</span>
 							</div>
 							<span className="text-gray-600">|</span>
 							<div className="text-gray-900 font-semibold">
@@ -241,27 +276,29 @@ const RelatorioCentroCustos: React.FC = () => {
 								}).format(totalGeral)}
 							</div>
 						</div>
-						<div className="overflow-x-auto">
-							<table className="min-w-full">
+						<div className="overflow-x-auto border border-gray-200 rounded-lg overflow-hidden">
+							<table className="min-w-full table-fixed">
 								<thead className="bg-slate-50">
 									<tr>
-										<th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+										<th rowSpan={2} className="px-6 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
 											Centro de Custos
 										</th>
-										<th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-											Tipo
-										</th>
-										<th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-											Custeio/Investimento
-										</th>
-										<th className="px-6 py-3 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+										<th rowSpan={2} className="px-6 py-3 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-l-2 border-r-2 border-gray-300 align-middle bg-emerald-50">
 											Receita R$
 										</th>
-										<th className="px-6 py-3 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+										<th colSpan={2} className="px-6 py-3 text-center text-[11px] font-semibold text-slate-700 uppercase tracking-wide border-b-2 border-r border-gray-300 bg-rose-50">
 											Despesa R$
 										</th>
-										<th className="px-6 py-3 text-center text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+										<th rowSpan={2} className="px-6 py-3 text-center text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-l border-gray-300 align-middle">
 											Ações
+										</th>
+									</tr>
+									<tr className="bg-rose-50">
+										<th className="px-6 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300">
+											Custeio
+										</th>
+										<th className="px-6 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-gray-300">
+											Investimento
 										</th>
 									</tr>
 								</thead>
@@ -271,36 +308,6 @@ const RelatorioCentroCustos: React.FC = () => {
 											<tr className={idxResumo % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
 												<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
 													{item.centro.descricao}
-												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm">
-													{item.centro.tipoReceitaDespesa ? (
-														<span
-															className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-																item.centro.tipoReceitaDespesa === 'RECEITA'
-																	? 'bg-emerald-100 text-emerald-800'
-																	: 'bg-rose-100 text-rose-800'
-															}`}
-														>
-															{item.centro.tipoReceitaDespesa}
-														</span>
-													) : (
-														<span className="text-gray-400">-</span>
-													)}
-												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm">
-													{item.centro.tipo ? (
-														<span
-															className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-																item.centro.tipo === 'CUSTEIO'
-																	? 'bg-amber-100 text-amber-800'
-																	: 'bg-blue-100 text-blue-800'
-															}`}
-														>
-															{item.centro.tipo}
-														</span>
-													) : (
-														<span className="text-gray-400">-</span>
-													)}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
 													{item.centro.tipoReceitaDespesa === 'RECEITA' ? (
@@ -314,18 +321,37 @@ const RelatorioCentroCustos: React.FC = () => {
 														<span className="text-gray-400">-</span>
 													)}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-													{item.centro.tipoReceitaDespesa === 'DESPESA' ? (
-														<span className="text-rose-700">
-															{new Intl.NumberFormat('pt-BR', {
-																style: 'currency',
-																currency: 'BRL'
-															}).format(item.total)}
-														</span>
-													) : (
-														<span className="text-gray-400">-</span>
-													)}
-												</td>
+												{(() => {
+													const totaisDespesas = calcularTotaisDespesasPorTipo(item);
+													return (
+														<>
+															<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
+																{item.centro.tipoReceitaDespesa === 'DESPESA' && totaisDespesas.custeio > 0 ? (
+																	<span className="text-rose-700">
+																		{new Intl.NumberFormat('pt-BR', {
+																			style: 'currency',
+																			currency: 'BRL'
+																		}).format(totaisDespesas.custeio)}
+																	</span>
+																) : (
+																	<span className="text-gray-400">-</span>
+																)}
+															</td>
+															<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
+																{item.centro.tipoReceitaDespesa === 'DESPESA' && totaisDespesas.investimento > 0 ? (
+																	<span className="text-rose-700">
+																		{new Intl.NumberFormat('pt-BR', {
+																			style: 'currency',
+																			currency: 'BRL'
+																		}).format(totaisDespesas.investimento)}
+																	</span>
+																) : (
+																	<span className="text-gray-400">-</span>
+																)}
+															</td>
+														</>
+													);
+												})()}
 												<td className="px-6 py-4 whitespace-nowrap text-center">
 													<button
 														onClick={() => toggleCentro(item.centro.id)}
@@ -340,7 +366,7 @@ const RelatorioCentroCustos: React.FC = () => {
 											</tr>
 											{centrosExpandidos.has(item.centro.id) && (
 												<tr>
-													<td colSpan={7} className="px-6 py-4 bg-slate-50">
+													<td colSpan={5} className="px-6 py-4 bg-slate-50">
 														<div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
 															<table className="min-w-full">
 																<thead className="bg-slate-100">
