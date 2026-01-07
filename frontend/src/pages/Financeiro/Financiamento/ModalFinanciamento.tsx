@@ -82,6 +82,10 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 		if (!form.dataContrato) newErrors.dataContrato = 'Data do contrato é obrigatória';
 		if (!form.valor) newErrors.valor = 'Valor é obrigatório';
 		if (!form.numeroContrato) newErrors.numeroContrato = 'Número do contrato é obrigatório';
+		if (!form.modalidade) newErrors.modalidade = 'Modalidade é obrigatória';
+		if (form.modalidade === 'PARTICULAR' && !form.nomeModalidadeParticular) {
+			newErrors.nomeModalidadeParticular = 'Nome é obrigatório quando a modalidade é Particular';
+		}
 		if (!form.parcelasList || form.parcelasList.length === 0) {
 			newErrors.parcelas = 'Gere as parcelas antes de salvar';
 		}
@@ -113,10 +117,22 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 		}
 
 		const parcelas: ParcelaFinanciamento[] = [];
-		const valorTotal = parseFloat((form.valor || '0,00').replace(/\./g, '').replace(',', '.'));
-		if (valorTotal <= 0) {
+		const valorContrato = parseFloat((form.valor || '0,00').replace(/\./g, '').replace(',', '.'));
+		const totalJuros = parseFloat((form.taxaJurosAnual || '0,00').replace(/\./g, '').replace(',', '.'));
+		
+		if (valorContrato <= 0) {
 			toast.error('Valor total do financiamento inválido.');
 			return;
+		}
+
+		// Se for parcela única, soma valor do contrato + juros
+		let valorTotal = valorContrato;
+		if (numParcelas === 1 && totalJuros > 0) {
+			valorTotal = valorContrato + totalJuros;
+		} else if (numParcelas > 1) {
+			// Para múltiplas parcelas, usar apenas o valor do contrato
+			// Os juros serão distribuídos nas parcelas
+			valorTotal = valorContrato;
 		}
 
 		// Calcula o valor base da parcela e o resto da divisão
@@ -357,6 +373,43 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 							onValueChange={(value) => handleInputChange('taxaJurosAnual', value || '0,00')}
 						/>
 					</div>
+
+					<div>
+						<label className="text-sm sm:text-base">
+							Modalidade <span className="text-red-500">*</span>
+						</label>
+						<select
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
+							value={form.modalidade || ''}
+							onChange={(e) => {
+								handleInputChange('modalidade', e.target.value || null);
+								if (e.target.value !== 'PARTICULAR') {
+									handleInputChange('nomeModalidadeParticular', null);
+								}
+							}}
+						>
+							<option value="">Selecione a modalidade</option>
+							<option value="INVESTIMENTO">Investimento</option>
+							<option value="CUSTEIO">Custeio</option>
+							<option value="PARTICULAR">Particular</option>
+						</select>
+						{errors.modalidade && <p className="text-red-500 text-xs">{errors.modalidade}</p>}
+					</div>
+
+					{form.modalidade === 'PARTICULAR' && (
+						<div>
+							<label className="text-sm sm:text-base">
+								Nome (Modalidade Particular) <span className="text-red-500">*</span>
+							</label>
+							<input
+								className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
+								value={form.nomeModalidadeParticular || ''}
+								placeholder="Digite o nome"
+								onChange={(e) => handleInputChange('nomeModalidadeParticular', e.target.value)}
+							/>
+							{errors.nomeModalidadeParticular && <p className="text-red-500 text-xs">{errors.nomeModalidadeParticular}</p>}
+						</div>
+					)}
 
 					<div>
 						<label className="text-sm sm:text-base">Número da Garantia</label>

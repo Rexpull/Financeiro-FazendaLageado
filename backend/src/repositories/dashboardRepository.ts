@@ -25,26 +25,44 @@ export class DashboardRepository {
     }
   }
 
-  async getTotaisAno(ano: number): Promise<DashboardTotais> {
+  async getTotaisAno(ano: number, contas: number[] = []): Promise<DashboardTotais> {
     this.validarAno(ano);
+    
+    // Construir filtro de contas se fornecido
+    let contasFilter = '';
+    let queryParams: any[] = [ano];
+    
+    if (contas && contas.length > 0) {
+      contasFilter = `AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
+      queryParams = [ano, ...contas];
+    }
+    
+    // Usar MovimentoBancario diretamente para receitas e despesas (valores brutos)
+    // Para investimentos, verificar se tem plano de contas com tipo = 'investimento'
+    // Se tipoMovimento for NULL, usar o sinal do valor (positivo = crédito, negativo = débito)
     const query = `
       SELECT 
         COALESCE(SUM(CASE 
-          WHEN pc.tipo = 'investimento' THEN 0
-          WHEN pc.hierarquia LIKE '001%' THEN r.valor 
+          WHEN mb.tipoMovimento = 'C' THEN mb.valor
+          WHEN mb.tipoMovimento IS NULL AND mb.valor > 0 THEN mb.valor
           ELSE 0 
         END), 0) as receitas,
         COALESCE(SUM(CASE 
-          WHEN pc.tipo = 'investimento' THEN 0
-          WHEN pc.hierarquia LIKE '002%' THEN r.valor 
+          WHEN mb.tipoMovimento = 'D' AND COALESCE(pc.tipo, '') != 'investimento' THEN ABS(mb.valor)
+          WHEN mb.tipoMovimento IS NULL AND mb.valor < 0 AND COALESCE(pc.tipo, '') != 'investimento' THEN ABS(mb.valor)
           ELSE 0 
         END), 0) as despesas,
-        COALESCE(SUM(CASE WHEN pc.tipo = 'investimento' THEN r.valor ELSE 0 END), 0) as investimentos
-      FROM Resultado r
-      JOIN planoContas pc ON r.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?
+        COALESCE(SUM(CASE 
+          WHEN mb.tipoMovimento = 'D' AND pc.tipo = 'investimento' THEN ABS(mb.valor)
+          WHEN mb.tipoMovimento IS NULL AND mb.valor < 0 AND pc.tipo = 'investimento' THEN ABS(mb.valor)
+          ELSE 0 
+        END), 0) as investimentos
+      FROM MovimentoBancario mb
+      LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
+      WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
+        ${contasFilter}
     `;
-    const result = await this.db.prepare(query).bind(ano).first();
+    const result = await this.db.prepare(query).bind(...queryParams).first();
     const receitas = result && typeof result.receitas === 'number' ? result.receitas : 0;
     const despesas = result && typeof result.despesas === 'number' ? result.despesas : 0;
     const investimentos = result && typeof result.investimentos === 'number' ? result.investimentos : 0;
@@ -80,27 +98,43 @@ export class DashboardRepository {
   async getTotaisMes(ano: number, mes: number, contas: number[]): Promise<{ receitas: number, despesas: number, investimentos: number, financiamentos: number }> {
     this.validarAno(ano);
     if (isNaN(mes) || mes < 1 || mes > 12) throw new Error("Mês inválido");
+    
+    // Construir filtro de contas
+    let contasFilter = '';
+    let queryParams: any[] = [ano, mes];
+    
+    if (contas && contas.length > 0) {
+      contasFilter = `AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
+      queryParams = [ano, mes, ...contas];
+    }
+    
+    // Usar MovimentoBancario diretamente para receitas e despesas (valores brutos)
+    // Para investimentos, verificar se tem plano de contas com tipo = 'investimento'
+    // Se tipoMovimento for NULL, usar o sinal do valor (positivo = crédito, negativo = débito)
     const query = `
       SELECT 
         COALESCE(SUM(CASE 
-          WHEN pc.tipo = 'investimento' THEN 0
-          WHEN pc.hierarquia LIKE '001%' THEN r.valor 
+          WHEN mb.tipoMovimento = 'C' THEN mb.valor
+          WHEN mb.tipoMovimento IS NULL AND mb.valor > 0 THEN mb.valor
           ELSE 0 
         END), 0) as receitas,
         COALESCE(SUM(CASE 
-          WHEN pc.tipo = 'investimento' THEN 0
-          WHEN pc.hierarquia LIKE '002%' THEN r.valor 
+          WHEN mb.tipoMovimento = 'D' AND COALESCE(pc.tipo, '') != 'investimento' THEN ABS(mb.valor)
+          WHEN mb.tipoMovimento IS NULL AND mb.valor < 0 AND COALESCE(pc.tipo, '') != 'investimento' THEN ABS(mb.valor)
           ELSE 0 
         END), 0) as despesas,
-        COALESCE(SUM(CASE WHEN pc.tipo = 'investimento' THEN r.valor ELSE 0 END), 0) as investimentos
-      FROM Resultado r
-      JOIN planoContas pc ON r.idPlanoContas = pc.id
-      JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id
-      WHERE CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?
-        AND CAST(strftime('%m', r.dtMovimento) AS INTEGER) = ?
-        AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})
+        COALESCE(SUM(CASE 
+          WHEN mb.tipoMovimento = 'D' AND pc.tipo = 'investimento' THEN ABS(mb.valor)
+          WHEN mb.tipoMovimento IS NULL AND mb.valor < 0 AND pc.tipo = 'investimento' THEN ABS(mb.valor)
+          ELSE 0 
+        END), 0) as investimentos
+      FROM MovimentoBancario mb
+      LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
+      WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
+        AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?
+        ${contasFilter}
     `;
-    const result = await this.db.prepare(query).bind(ano, mes, ...contas).first();
+    const result = await this.db.prepare(query).bind(...queryParams).first();
     
     // Buscar financiamentos do mês específico
     const queryFin = `
@@ -121,26 +155,41 @@ export class DashboardRepository {
     };
   }
 
-  async getReceitasDespesasPorMes(ano: number): Promise<{ labels: string[], receitas: number[], despesas: number[] }> {
+  async getReceitasDespesasPorMes(ano: number, contas: number[] = []): Promise<{ labels: string[], receitas: number[], despesas: number[] }> {
     this.validarAno(ano);
+    
+    // Construir filtro de contas se fornecido
+    let contasFilter = '';
+    let queryParams: any[] = [ano];
+    
+    if (contas && contas.length > 0) {
+      contasFilter = `AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
+      queryParams = [ano, ...contas];
+    }
+    
+    // Usar MovimentoBancario diretamente para o gráfico mensal (valores brutos)
+    // Se tipoMovimento for NULL, usar o sinal do valor (positivo = crédito, negativo = débito)
     const query = `
       SELECT 
-        CAST(strftime('%m', m.dtMovimento) AS INTEGER) as mes,
+        CAST(strftime('%m', mb.dtMovimento) AS INTEGER) as mes,
         SUM(CASE 
-          WHEN pc.hierarquia LIKE '001%' THEN m.valor 
+          WHEN mb.tipoMovimento = 'C' THEN mb.valor
+          WHEN mb.tipoMovimento IS NULL AND mb.valor > 0 THEN mb.valor
           ELSE 0 
         END) as receitas,
         SUM(CASE 
-          WHEN pc.hierarquia LIKE '002%' THEN m.valor 
+          WHEN mb.tipoMovimento = 'D' AND COALESCE(pc.tipo, '') != 'investimento' THEN ABS(mb.valor)
+          WHEN mb.tipoMovimento IS NULL AND mb.valor < 0 AND COALESCE(pc.tipo, '') != 'investimento' THEN ABS(mb.valor)
           ELSE 0 
         END) as despesas
-      FROM MovimentoBancario m
-      JOIN planoContas pc ON m.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
+      FROM MovimentoBancario mb
+      LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
+      WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
+        ${contasFilter}
       GROUP BY mes
       ORDER BY mes
     `;
-    const result = await this.db.prepare(query).bind(ano).all();
+    const result = await this.db.prepare(query).bind(...queryParams).all();
     const receitas = Array(12).fill(0);
     const despesas = Array(12).fill(0);
     result.results.forEach((row: any) => {
@@ -155,8 +204,18 @@ export class DashboardRepository {
     };
   }
 
-  async getInvestimentosPorMes(ano: number): Promise<{ labels: string[], values: number[] }> {
+  async getInvestimentosPorMes(ano: number, contas: number[] = []): Promise<{ labels: string[], values: number[] }> {
     this.validarAno(ano);
+    
+    // Construir filtro de contas se fornecido
+    let contasFilter = '';
+    let queryParams: any[] = [ano];
+    
+    if (contas && contas.length > 0) {
+      contasFilter = `AND m.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
+      queryParams = [ano, ...contas];
+    }
+    
     const query = `
       SELECT 
         CAST(strftime('%m', m.dtMovimento) AS INTEGER) as mes,
@@ -165,10 +224,11 @@ export class DashboardRepository {
       JOIN planoContas pc ON m.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
       AND pc.tipo = 'investimento'
+      ${contasFilter}
       GROUP BY mes
       ORDER BY mes
     `;
-    const result = await this.db.prepare(query).bind(ano).all();
+    const result = await this.db.prepare(query).bind(...queryParams).all();
     const values = Array(12).fill(0);
     result.results.forEach((row: any) => {
       const idx = row.mes - 1;
@@ -373,32 +433,55 @@ export class DashboardRepository {
     };
   }
 
-  async getReceitasDespesas(ano: number, mes?: number): Promise<{ receitas: number[], despesas: number[], detalhamento: Array<{ descricao: string, valor: number, data: string, classificacao: string }> }> {
+  async getReceitasDespesas(ano: number, mes?: number, contas: number[] = [], tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<{ 
+    receitas: number[], 
+    despesas: number[], 
+    detalhamento: Array<{ descricao: string, valor: number, data: string, classificacao: string }>,
+    agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean }>,
+    totalConciliado: number,
+    totalSemConciliar: number,
+    totalReceitas: number,
+    totalDespesas: number
+  }> {
     this.validarAno(ano);
     
-    let whereClause = "WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?";
-    let params = [ano];
+    // Construir filtro de contas se fornecido
+    let contasFilter = '';
+    let contasParams: any[] = [];
+    
+    if (contas && contas.length > 0) {
+      contasFilter = `JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id`;
+      contasParams = contas;
+    }
+    
+    let whereClause = "WHERE";
+    if (contas && contas.length > 0) {
+      whereClause += ` mb.idContaCorrente IN (${contas.map(() => '?').join(',')}) AND`;
+    }
+    whereClause += " CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?";
+    let params = [...contasParams, ano];
     
     if (mes && mes >= 1 && mes <= 12) {
-      whereClause += " AND CAST(strftime('%m', m.dtMovimento) AS INTEGER) = ?";
+      whereClause += " AND CAST(strftime('%m', r.dtMovimento) AS INTEGER) = ?";
       params.push(mes);
     }
     
     const query = `
       SELECT 
-        CAST(strftime('%m', m.dtMovimento) AS INTEGER) as mes,
+        CAST(strftime('%m', r.dtMovimento) AS INTEGER) as mes,
         SUM(CASE 
           WHEN pc.tipo = 'investimento' THEN 0
-          WHEN pc.hierarquia LIKE '001%' THEN m.valor 
+          WHEN pc.hierarquia LIKE '001%' THEN r.valor 
           ELSE 0 
         END) as receitas,
         SUM(CASE 
           WHEN pc.tipo = 'investimento' THEN 0
-          WHEN pc.hierarquia LIKE '002%' THEN m.valor 
+          WHEN pc.hierarquia LIKE '002%' THEN r.valor 
           ELSE 0 
         END) as despesas
-      FROM MovimentoBancario m
-      JOIN planoContas pc ON m.idPlanoContas = pc.id
+      FROM Resultado r
+      JOIN planoContas pc ON r.idPlanoContas = pc.id
+      ${contasFilter}
       ${whereClause}
       GROUP BY mes
       ORDER BY mes
@@ -414,28 +497,199 @@ export class DashboardRepository {
     });
 
     // Buscar detalhamento com filtro de mês e ignorar movimentações (003%)
-    let detalhamentoWhereClause = "WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?";
-    let detalhamentoParams = [ano];
+    let detalhamentoContasFilter = '';
+    let detalhamentoContasParams: any[] = [];
+    
+    if (contas && contas.length > 0) {
+      detalhamentoContasFilter = `JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id`;
+      detalhamentoContasParams = contas;
+    }
+    
+    let detalhamentoWhereClause = "WHERE";
+    if (contas && contas.length > 0) {
+      detalhamentoWhereClause += ` mb.idContaCorrente IN (${contas.map(() => '?').join(',')}) AND`;
+    }
+    detalhamentoWhereClause += " CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?";
+    let detalhamentoParams = [...detalhamentoContasParams, ano];
 
     if (mes && mes >= 1 && mes <= 12) {
-      detalhamentoWhereClause += " AND CAST(strftime('%m', m.dtMovimento) AS INTEGER) = ?";
+      detalhamentoWhereClause += " AND CAST(strftime('%m', r.dtMovimento) AS INTEGER) = ?";
       detalhamentoParams.push(mes);
     }
+    detalhamentoWhereClause += " AND pc.hierarquia NOT LIKE '003%'";
 
     const queryDetalhamento = `
       SELECT 
         pc.descricao,
-        m.valor,
-        m.dtMovimento as data,
+        r.valor,
+        r.dtMovimento as data,
         pc.hierarquia as classificacao
-      FROM MovimentoBancario m
-      JOIN planoContas pc ON m.idPlanoContas = pc.id
+      FROM Resultado r
+      JOIN planoContas pc ON r.idPlanoContas = pc.id
+      ${detalhamentoContasFilter}
       ${detalhamentoWhereClause}
-      AND pc.hierarquia NOT LIKE '003%'
-      ORDER BY m.dtMovimento DESC
+      ORDER BY r.dtMovimento DESC
       LIMIT 100
     `;
     const detalhamento = await this.db.prepare(queryDetalhamento).bind(...detalhamentoParams).all();
+
+    // Buscar dados agrupados por planos ou centros
+    let agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean }> = [];
+    let totalConciliado = 0;
+    let totalSemConciliar = 0;
+    let totalReceitas = 0;
+    let totalDespesas = 0;
+
+    if (tipoAgrupamento === 'planos') {
+      // Agrupamento por Planos de Contas usando Resultado (rateio)
+      let agrupamentoWhereClause = "WHERE";
+      let agrupamentoParams: any[] = [];
+      
+      if (contas && contas.length > 0) {
+        agrupamentoWhereClause += ` mb.idContaCorrente IN (${contas.map(() => '?').join(',')}) AND`;
+        agrupamentoParams = [...contas];
+      }
+      
+      agrupamentoWhereClause += " CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?";
+      agrupamentoParams.push(ano);
+
+      if (mes && mes >= 1 && mes <= 12) {
+        agrupamentoWhereClause += " AND CAST(strftime('%m', r.dtMovimento) AS INTEGER) = ?";
+        agrupamentoParams.push(mes);
+      }
+      agrupamentoWhereClause += " AND pc.hierarquia NOT LIKE '003%'";
+
+      const queryAgrupamento = `
+        SELECT 
+          pc.descricao,
+          SUM(r.valor) as valor,
+          mb.tipoMovimento,
+          SUM(CASE 
+            WHEN mb.tipoMovimento = 'C' THEN
+              CASE 
+                WHEN (mb.idCentroCustos IS NOT NULL OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc WHERE mcc.idMovimentoBancario = mb.id))
+                THEN ABS(r.valor)
+                ELSE 0 
+              END
+            WHEN mb.tipoMovimento = 'D' THEN
+              CASE 
+                WHEN mb.idPlanoContas IS NOT NULL 
+                  AND (mb.idCentroCustos IS NOT NULL 
+                       OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc WHERE mcc.idMovimentoBancario = mb.id))
+                THEN ABS(r.valor)
+                ELSE 0 
+              END
+            ELSE 0
+          END) as valorConciliado
+        FROM Resultado r
+        JOIN planoContas pc ON r.idPlanoContas = pc.id
+        JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id
+        ${agrupamentoWhereClause}
+        GROUP BY pc.descricao, mb.tipoMovimento
+        ORDER BY pc.descricao
+      `;
+      const agrupamentoResult = await this.db.prepare(queryAgrupamento).bind(...agrupamentoParams).all();
+      
+      agrupadoPor = agrupamentoResult.results.map((row: any) => {
+        const valor = row.valor || 0;
+        const valorConciliado = row.valorConciliado || 0;
+        const valorTotal = Math.abs(valor);
+        const conciliado = valorConciliado > 0 && Math.abs(valorConciliado) >= valorTotal * 0.99; // Considera conciliado se 99% ou mais está conciliado
+        
+        if (row.tipoMovimento === 'C') {
+          totalReceitas += valorTotal;
+        } else {
+          totalDespesas += valorTotal;
+        }
+        
+        if (conciliado) {
+          totalConciliado += valorTotal;
+        } else {
+          totalSemConciliar += valorTotal;
+        }
+        
+        return {
+          descricao: row.descricao,
+          valor: valorTotal,
+          tipoMovimento: row.tipoMovimento as 'C' | 'D',
+          conciliado
+        };
+      });
+    } else {
+      // Agrupamento por Centros de Custos usando MovimentoCentroCustos (rateio)
+      let agrupamentoWhereClause = "WHERE";
+      let agrupamentoParams: any[] = [];
+      
+      if (contas && contas.length > 0) {
+        agrupamentoWhereClause += ` mb.idContaCorrente IN (${contas.map(() => '?').join(',')}) AND`;
+        agrupamentoParams = [...contas];
+      }
+      
+      agrupamentoWhereClause += " CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?";
+      agrupamentoParams.push(ano);
+
+      if (mes && mes >= 1 && mes <= 12) {
+        agrupamentoWhereClause += " AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?";
+        agrupamentoParams.push(mes);
+      }
+
+      const queryAgrupamento = `
+        SELECT 
+          cc.descricao,
+          SUM(mcc.valor) as valor,
+          mb.tipoMovimento,
+          SUM(CASE 
+            WHEN mb.tipoMovimento = 'C' THEN
+              CASE 
+                WHEN (mb.idCentroCustos IS NOT NULL OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc2 WHERE mcc2.idMovimentoBancario = mb.id))
+                THEN ABS(mcc.valor)
+                ELSE 0 
+              END
+            WHEN mb.tipoMovimento = 'D' THEN
+              CASE 
+                WHEN mb.idPlanoContas IS NOT NULL 
+                  AND (mb.idCentroCustos IS NOT NULL 
+                       OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc2 WHERE mcc2.idMovimentoBancario = mb.id))
+                THEN ABS(mcc.valor)
+                ELSE 0 
+              END
+            ELSE 0
+          END) as valorConciliado
+        FROM MovimentoCentroCustos mcc
+        JOIN centroCustos cc ON mcc.idCentroCustos = cc.id
+        JOIN MovimentoBancario mb ON mcc.idMovimentoBancario = mb.id
+        ${agrupamentoWhereClause}
+        GROUP BY cc.descricao, mb.tipoMovimento
+        ORDER BY cc.descricao
+      `;
+      const agrupamentoResult = await this.db.prepare(queryAgrupamento).bind(...agrupamentoParams).all();
+      
+      agrupadoPor = agrupamentoResult.results.map((row: any) => {
+        const valor = row.valor || 0;
+        const valorConciliado = row.valorConciliado || 0;
+        const valorTotal = Math.abs(valor);
+        const conciliado = valorConciliado > 0 && Math.abs(valorConciliado) >= valorTotal * 0.99; // Considera conciliado se 99% ou mais está conciliado
+        
+        if (row.tipoMovimento === 'C') {
+          totalReceitas += valorTotal;
+        } else {
+          totalDespesas += valorTotal;
+        }
+        
+        if (conciliado) {
+          totalConciliado += valorTotal;
+        } else {
+          totalSemConciliar += valorTotal;
+        }
+        
+        return {
+          descricao: row.descricao,
+          valor: valorTotal,
+          tipoMovimento: row.tipoMovimento as 'C' | 'D',
+          conciliado
+        };
+      });
+    }
 
     return {
       receitas,
@@ -445,7 +699,12 @@ export class DashboardRepository {
         valor: row.valor,
         data: row.data,
         classificacao: row.classificacao
-      }))
+      })),
+      agrupadoPor,
+      totalConciliado,
+      totalSemConciliar,
+      totalReceitas,
+      totalDespesas
     };
   }
 

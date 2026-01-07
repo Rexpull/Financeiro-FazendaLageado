@@ -150,3 +150,78 @@ export const exportRelatorioItensClassificadosPDF = async (
 	return res.blob();
 };
 
+export interface FiltrosRelatorioFinanciamentos {
+	mesVencimento?: number;
+	anoVencimento?: number;
+	idBanco?: number;
+	idPessoa?: number;
+	numeroGarantia?: string;
+	modalidade?: 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR';
+	dataContratoInicio?: string;
+	dataContratoFim?: string;
+	faixaJuros?: string;
+}
+
+export interface ItemRelatorioFinanciamentos {
+	idFinanciamento: number;
+	numeroContrato: string;
+	responsavel: string;
+	banco?: string;
+	pessoa?: string;
+	dataContrato: string;
+	valorContrato: number;
+	totalJuros: number;
+	valorTotal: number;
+	modalidade?: string;
+	nomeModalidadeParticular?: string;
+	numeroGarantia?: string;
+	taxaJurosAnual?: number;
+	parcelas: Array<{
+		idParcela: number;
+		numParcela: number;
+		valor: number;
+		dt_vencimento: string;
+		status: string;
+		dt_liquidacao?: string;
+	}>;
+}
+
+export interface TotalizadoresRelatorioFinanciamentos {
+	totalContratos: number;
+	totalValorContratos: number;
+	totalJuros: number;
+	totalValorParcelas: number;
+	totalParcelas: number;
+	totalParcelasLiquidadas: number;
+	totalParcelasAberto: number;
+	totalParcelasVencidas: number;
+}
+
+export interface RelatorioFinanciamentosData {
+	itens: ItemRelatorioFinanciamentos[];
+	totalizadores: TotalizadoresRelatorioFinanciamentos;
+	graficos: {
+		mensais: Array<{ mes: string; novos: number; liquidados: number }>;
+		anuais: Array<{ ano: number; novos: number; liquidados: number }>;
+	};
+}
+
+export const getRelatorioFinanciamentos = async (
+	filtros: FiltrosRelatorioFinanciamentos
+): Promise<RelatorioFinanciamentosData> => {
+	const params = new URLSearchParams();
+	if (filtros.mesVencimento) params.append('mesVencimento', filtros.mesVencimento.toString());
+	if (filtros.anoVencimento) params.append('anoVencimento', filtros.anoVencimento.toString());
+	if (filtros.idBanco) params.append('idBanco', filtros.idBanco.toString());
+	if (filtros.idPessoa) params.append('idPessoa', filtros.idPessoa.toString());
+	if (filtros.numeroGarantia) params.append('numeroGarantia', filtros.numeroGarantia);
+	if (filtros.modalidade) params.append('modalidade', filtros.modalidade);
+	if (filtros.dataContratoInicio) params.append('dataContratoInicio', filtros.dataContratoInicio);
+	if (filtros.dataContratoFim) params.append('dataContratoFim', filtros.dataContratoFim);
+	if (filtros.faixaJuros) params.append('faixaJuros', filtros.faixaJuros);
+
+	const res = await fetch(`${API_URL}/api/relatorio/financiamentos?${params}`);
+	if (!res.ok) throw new Error('Erro ao buscar relatório de financiamentos');
+	return res.json();
+};
+

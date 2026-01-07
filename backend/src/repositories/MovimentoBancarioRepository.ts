@@ -19,6 +19,16 @@ export class MovimentoBancarioRepository {
 		this.movimentoCentroCustosRepo = new MovimentoCentroCustosRepository(db);
 	}
 
+	/**
+	 * Formata um valor numérico no padrão brasileiro para Excel (0.111,22)
+	 */
+	private formatarMoedaExcel(valor: number): string {
+		return valor.toLocaleString('pt-BR', {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2
+		});
+	}
+
 	async getMovimentosPorDetalhamento(planoId: number, mes: number, tipo: string, ano?: number): Promise<MovimentoDetalhado[]> {
 		let sql = '';
 		let params: any[] = [];
@@ -244,12 +254,21 @@ export class MovimentoBancarioRepository {
 			.bind(inicioAno, fimAno, ...contas)
 			.all();
 
-		const movimentos = await Promise.all(
-			results.map(async (result) => {
-				const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
-				const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(result.id as number);
+		// Buscar todos os resultados e centros de custos em lote
+		const idsMovimentos = results.map((r: any) => r.id as number);
+		const [resultadosMap, centrosCustosMap] = await Promise.all([
+			this.resultadoRepo.getByMovimentos(idsMovimentos),
+			this.movimentoCentroCustosRepo.buscarPorMovimentos(idsMovimentos)
+		]);
+
+		// Mapear os resultados para os movimentos
+		const movimentos = results.map((result) => {
+			const id = result.id as number;
+			const resultadoList = resultadosMap.get(id) || [];
+			const centroCustosList = centrosCustosMap.get(id) || [];
+			
 				return {
-					id: result.id as number,
+				id,
 					dtMovimento: result.dtMovimento as string,
 					historico: result.historico as string,
 					idPlanoContas: result.idPlanoContas as number,
@@ -275,8 +294,7 @@ export class MovimentoBancarioRepository {
 					centroCustosList,
 					idCentroCustos: result.idCentroCustos as number | undefined,
 				};
-			})
-		);
+		});
 
 		return movimentos;
 	}
@@ -1992,6 +2010,7 @@ export class MovimentoBancarioRepository {
 		centroCustosDescricao?: string;
 		pessoaNome?: string;
 		bancoNome?: string;
+		responsavel?: string;
 		contaDescricao?: string;
 	}>> {
 		try {
@@ -2068,7 +2087,7 @@ export class MovimentoBancarioRepository {
 				// Verificar se tem rateio de centros de custos
 				const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(mov.id);
 
-					if (centroCustosList && centroCustosList.length > 0) {
+				if (centroCustosList && centroCustosList.length > 0) {
 					// Múltiplos centros (rateio) - criar uma linha para cada
 					for (const cc of centroCustosList) {
 						const centroInfo = await this.db
@@ -2091,6 +2110,7 @@ export class MovimentoBancarioRepository {
 							bancoCodigo: mov.bancoCodigo,
 							agencia: mov.agencia,
 							numConta: mov.numConta,
+							responsavel: mov.responsavel || '',
 							contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
 						});
 					}
@@ -2111,6 +2131,7 @@ export class MovimentoBancarioRepository {
 						bancoCodigo: mov.bancoCodigo,
 						agencia: mov.agencia,
 						numConta: mov.numConta,
+						responsavel: mov.responsavel || '',
 						contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
 					});
 				}
@@ -2183,14 +2204,33 @@ export class MovimentoBancarioRepository {
 				const despesaCusteio = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO' ? item.total : 0;
 				const despesaInvestimento = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO' ? item.total : 0;
 				return [
-					item.centro.descricao,
-					receita,
-					despesaCusteio,
-					despesaInvestimento
+				item.centro.descricao,
+					this.formatarMoedaExcel(receita),
+					this.formatarMoedaExcel(despesaCusteio),
+					this.formatarMoedaExcel(despesaInvestimento)
 				];
 			});
 
-			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoData]);
+			// Calcular totais
+			const totalReceitas = dados
+				.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA')
+				.reduce((sum, item) => sum + item.total, 0);
+			const totalDespesasCusteio = dados
+				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
+				.reduce((sum, item) => sum + item.total, 0);
+			const totalDespesasInvestimento = dados
+				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
+				.reduce((sum, item) => sum + item.total, 0);
+
+			// Adicionar linha de total
+			const linhaTotal = [
+				'TOTAL',
+				this.formatarMoedaExcel(totalReceitas),
+				this.formatarMoedaExcel(totalDespesasCusteio),
+				this.formatarMoedaExcel(totalDespesasInvestimento)
+			];
+
+			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoData, linhaTotal]);
 			XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo por Centro');
 
 			// Planilha 2: Detalhamento
@@ -2214,7 +2254,7 @@ export class MovimentoBancarioRepository {
 						item.centro.descricao,
 						new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
 						mov.historico,
-						mov.valor,
+						this.formatarMoedaExcel(mov.valor),
 						mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
 						mov.planoDescricao || '',
 						mov.pessoaNome || '',
@@ -2704,19 +2744,42 @@ export class MovimentoBancarioRepository {
 				// Se despesa sem tipo definido, colocar em custeio
 				const despesaSemTipo = mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo ? mov.valor : 0;
 				return [
-					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
-					mov.historico || '',
-					receita,
-					despesaCusteio || despesaSemTipo,
-					despesaInvestimento,
-					mov.planoDescricao || '',
-					mov.centroCustosDescricao || '',
-					mov.contaDescricao || ''
+				new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+				mov.historico || '',
+					this.formatarMoedaExcel(receita),
+					this.formatarMoedaExcel(despesaCusteio || despesaSemTipo),
+					this.formatarMoedaExcel(despesaInvestimento),
+				mov.planoDescricao || '',
+				mov.centroCustosDescricao || '',
+					(mov as any).responsavel || ''
 				];
 			});
 
+			// Calcular totais
+			const totalReceitas = dados
+				.filter(mov => mov.tipoMovimento === 'C')
+				.reduce((sum, mov) => sum + mov.valor, 0);
+			const totalDespesasCusteio = dados
+				.filter(mov => mov.tipoMovimento === 'D' && ((mov as any).centroCustosTipo === 'CUSTEIO' || !(mov as any).centroCustosTipo))
+				.reduce((sum, mov) => sum + mov.valor, 0);
+			const totalDespesasInvestimento = dados
+				.filter(mov => mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO')
+				.reduce((sum, mov) => sum + mov.valor, 0);
+
+			// Adicionar linha de total
+			const linhaTotal = [
+				'TOTAL',
+				'',
+				this.formatarMoedaExcel(totalReceitas),
+				this.formatarMoedaExcel(totalDespesasCusteio),
+				this.formatarMoedaExcel(totalDespesasInvestimento),
+				'',
+				'',
+				''
+			];
+
 			const wb = XLSX.utils.book_new();
-			const ws = XLSX.utils.aoa_to_sheet([...headerData, ...dadosParaExportar]);
+			const ws = XLSX.utils.aoa_to_sheet([...headerData, ...dadosParaExportar, linhaTotal]);
 			XLSX.utils.book_append_sheet(wb, ws, 'Itens Classificados');
 
 			const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });

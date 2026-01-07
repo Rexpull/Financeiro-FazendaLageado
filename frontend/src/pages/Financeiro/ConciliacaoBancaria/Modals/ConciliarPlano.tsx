@@ -90,6 +90,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const [modalFinanciamentoOpen, setModalFinanciamentoOpen] = useState(false);
 	const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
 	const [buscaFinanciamento, setBuscaFinanciamento] = useState('');
+	const [bancoFiltroFinanciamento, setBancoFiltroFinanciamento] = useState<number | null>(null);
 	const [financiamentoSelecionado, setFinanciamentoSelecionado] = useState<Financiamento | null>(null);
 	const [novoFinanciamentoData, setNovoFinanciamentoData] = useState<any>(null);
 	const [transferenciaPlanoMode, setTransferenciaPlanoMode] = useState('transferencia');
@@ -97,6 +98,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const [liquidationModalOpen, setLiquidationModalOpen] = useState(false);
 	const [selectedParcela, setSelectedParcela] = useState<ParcelaFinanciamento | null>(null);
 	const [liquidationDate, setLiquidationDate] = useState('');
+	const [liquidationValor, setLiquidationValor] = useState<string>('');
 
 	const [formData, setFormData] = useState<FormData>({
 		idPlanoContas: null,
@@ -402,16 +404,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			if (!financiamentoSelecionado) {
 				newErrors.financiamento = 'Selecione um financiamento ou crie um novo!';
 			}
-			
-			// Validar centro de custos obrigatório
-			const temCentroUnico = formData.idCentroCustos !== null && formData.idCentroCustos !== undefined;
-			const temCentroCustosList = (movimento.centroCustosList ?? []).length > 0;
-			const temRateiosCentros = rateiosCentros.length > 0;
-			const temRateiosCentrosPorcentagem = (rateiosCentrosPorcentagem ?? []).length > 0;
-			
-			if (!temCentroUnico && !temCentroCustosList && !temRateiosCentros && !temRateiosCentrosPorcentagem) {
-				newErrors.idCentroCustos = 'Selecione um centro de custos ou defina múltiplos!';
-			}
+			// Para financiamentos bancários, não exigir plano de contas nem centro de custos
+			// A informação vai apenas para o item financiamento
 		}
 		setErrors(newErrors);
 		return Object.keys(newErrors).length === 0;
@@ -524,12 +518,19 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		}
 	};
 
-	const financiamentosFiltrados = financiamentos.filter(f => 
-		f.responsavel.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
-		f.numeroContrato.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
-		(bancos.find(b => b.id === f.idBanco)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
-		(pessoas.find(p => p.id === f.idPessoa)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase())
-	);
+	const financiamentosFiltrados = financiamentos.filter(f => {
+		// Aplicar filtro por banco primeiro
+		const matchesBankFilter = bancoFiltroFinanciamento ? f.idBanco === bancoFiltroFinanciamento : true;
+		
+		// Aplicar filtro de busca por texto
+		const matchesSearch = buscaFinanciamento === '' || 
+			f.responsavel.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+			f.numeroContrato.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+			(bancos.find(b => b.id === f.idBanco)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+			(pessoas.find(p => p.id === f.idPessoa)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase());
+		
+		return matchesBankFilter && matchesSearch;
+	});
 
 	const handleSalvar = () => {
 		if (!validarFormulario()) return;
@@ -583,24 +584,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				}
 			} else if (modalidadeMovimento === 'financiamento') {
 				dados = {
-					idPlanoContas: idPlanoContas,
+					idPlanoContas: null, // Não exigir plano de contas para financiamentos
 					idFinanciamento: financiamentoSelecionado?.id,
-					idCentroCustos: formData.idCentroCustos,
+					idCentroCustos: null, // Não exigir centro de custos para financiamentos
 					modalidadeMovimento,
 				};
-				
-				// Adicionar centroCustosList se houver múltiplos centros
-				// Converter rateiosCentros para formato MovimentoCentroCustos[]
-				if (rateiosCentros.length > 0) {
-					dados.centroCustosList = rateiosCentros.map(rc => ({
-						idCentroCustos: rc.idCentro,
-						valor: rc.valor
-					}));
-				} else if ((movimento.centroCustosList ?? []).length > 0) {
-					// Se não há rateios novos mas há centros existentes, manter os existentes
-					dados.centroCustosList = movimento.centroCustosList;
-				}
-				// Nota: rateio por porcentagem será tratado no bloco de múltiplos movimentos abaixo
+				// Limpar centroCustosList e resultadoList para financiamentos
+				dados.centroCustosList = undefined;
+				dados.resultadoList = [];
 			} else if (modalidadeMovimento === 'transferencia') {
 				const idPlano = transferenciaPlanoMode === 'transferencia' ? parametros[0]?.idPlanoTransferenciaEntreContas : 233; //Id plano de contas de aplicação de fundos (Tô com preguiça de parametrizar)
 				
@@ -738,7 +729,10 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			} else {
 				handleConcilia(dados);
 			}
-			onClose();
+			// Fechar modal automaticamente após conciliação bem-sucedida
+			setTimeout(() => {
+				onClose();
+			}, 100);
 		} catch (error) {
 			console.error('Erro ao salvar movimento:', error);
 		} finally {
@@ -750,10 +744,17 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		if (!selectedParcela || !liquidationDate) return;
 
 		try {
+			// Converter valor de string formatada para número
+			const valorLiquidacao = liquidationValor 
+				? parseFloat(liquidationValor.replace(/\./g, '').replace(',', '.'))
+				: selectedParcela.valor;
+
 			const parcelaAtualizada: ParcelaFinanciamento = {
 				...selectedParcela,
 				status: 'Liquidado' as 'Liquidado',
 				dt_liquidacao: liquidationDate,
+				valor: valorLiquidacao, // Atualizar valor se diferente
+				idMovimentoBancario: movimento.id, // Vincular ao movimento bancário
 			};
 
 			await salvarParcelaFinanciamento(parcelaAtualizada);
@@ -781,7 +782,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			setLiquidationModalOpen(false);
 			setSelectedParcela(null);
 			setLiquidationDate('');
+			setLiquidationValor('');
 			toast.success('Parcela liquidada com sucesso!');
+			
+			// Após liquidar a parcela, fechar o modal de conciliação também se for débito
+			if (movimento.tipoMovimento === 'D') {
+				setTimeout(() => {
+					onClose();
+				}, 500);
+			}
 		} catch (error) {
 			console.error('Erro ao liquidar parcela:', error);
 			toast.error('Erro ao liquidar parcela');
@@ -1082,6 +1091,26 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							<label className="block text-sm font-medium text-gray-700 mb-1">
 								Associar Financiamento <span className="text-red-500">*</span>
 							</label>
+							{/* Filtro por banco */}
+							<div className="mb-2">
+								<select
+									className="w-full p-2 border rounded text-sm"
+									value={bancoFiltroFinanciamento?.toString() || ''}
+									onChange={(e) => {
+										setBancoFiltroFinanciamento(e.target.value ? parseInt(e.target.value) : null);
+										setBuscaFinanciamento('');
+										setFinanciamentoSelecionado(null);
+									}}
+									disabled={!!financiamentoSelecionado}
+								>
+									<option value="">Todos os bancos</option>
+									{bancos.map((banco) => (
+										<option key={banco.id} value={banco.id}>
+											{banco.nome}
+										</option>
+									))}
+								</select>
+							</div>
 							<div className="flex w-full">
 								<input
 									type="text"
@@ -1134,134 +1163,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 						</div>
 					</div>
 
-					<div className="col-span-2">
-						<div ref={centroCustosRef} className="relative">
-							<label className="block text-sm font-medium text-gray-700 mb-1">
-								Centro de Custos <span className="text-red-500">*</span>
-							</label>
-							<div className="flex w-full">
-								<div className="relative w-full">
-									<input
-										type="text"
-										className={`w-full p-2 border rounded-l cursor-pointer ${rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 || rateiosCentrosPorcentagem.length > 1 ? 'bg-gray-100' : ''}`}
-										placeholder="Clique para selecionar centro de custos..."
-										onClick={() => !(rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 || rateiosCentrosPorcentagem.length > 1) && setShowCentroCustosDropdown(!showCentroCustosDropdown)}
-										value={rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 || rateiosCentrosPorcentagem.length > 1 ? 'Múltiplos Centros' : searchCentroCustos}
-										readOnly
-									/>
-									<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
-								</div>
-								<button
-									type="button"
-									className="px-3 rounded-r bg-green-500 hover:bg-green-600 text-white"
-									onClick={() => setRateioCentrosModalAberto(true)}
-									title="Adicionar múltiplos centros"
-								>
-									<FontAwesomeIcon icon={faPlus} className="font-bolder" />
-								</button>
-							</div>
-							{errors.idCentroCustos && <p className="text-red-500 text-xs col-span-2">{errors.idCentroCustos}</p>}
-
-							{showCentroCustosDropdown && (
-								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1">
-									{isDespesa && (
-										<div className="p-2 border-b bg-gray-50">
-											<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
-											<div className="flex ">
-												<button
-													type="button"
-													onClick={() => {
-														setTipoCentroSelecionado('CUSTEIO');
-														// Limpar seleção de centro quando mudar o tipo
-														setIdCentroCustos(null);
-														setSearchCentroCustos('');
-														setFormData((prev: FormData) => ({ ...prev, idCentroCustos: null }));
-														setCentroCustosSearchValue('');
-													}}
-													className={`flex-1 px-4 py-2 rounded-l-lg font-medium text-sm transition-all ${
-														tipoCentroSelecionado === 'CUSTEIO'
-															? 'bg-yellow-500 text-white shadow-md'
-															: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300	'
-													}`}
-												>
-													Custeio
-												</button>
-												<button
-													type="button"
-													onClick={() => {
-														setTipoCentroSelecionado('INVESTIMENTO');
-														// Limpar seleção de centro quando mudar o tipo
-														setIdCentroCustos(null);
-														setSearchCentroCustos('');
-														setFormData((prev: FormData) => ({ ...prev, idCentroCustos: null }));
-														setCentroCustosSearchValue('');
-													}}
-													className={`flex-1 px-4 py-2 rounded-r-lg font-medium text-sm transition-all ${
-														tipoCentroSelecionado === 'INVESTIMENTO'
-															? 'bg-blue-500 text-white shadow-md'
-															: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300	'
-													}`}
-												>
-													Investimento
-												</button>
-											</div>
-										</div>
-									)}
-									{(!isDespesa || tipoCentroSelecionado !== null) && (
-										<>
-									<div className="p-2 border-b">
-										<input
-											type="text"
-											className="w-full p-2 border rounded"
-											placeholder="Buscar centro de custos..."
-											value={centroCustosSearchValue}
-											onChange={(e) => setCentroCustosSearchValue(e.target.value)}
-											autoFocus
-										/>
-									</div>
-									<ul className="max-h-60 overflow-y-auto">
-												<li 
-													className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
-													onClick={() => selectCentroCustosNew(null)}
-												>
-													Selecione um centro
-												</li>
-										{centroCustosFiltered.length > 0 ? (
-											centroCustosFiltered.map((centro) => (
-												<li 
-													key={centro.id} 
-															className="p-2 hover:bg-orange-100 text-sm cursor-pointer border-b last:border-b-0 flex items-center justify-between"
-													onClick={() => selectCentroCustosNew(centro)}
-												>
-															<span>{centro.descricao}</span>
-															{centro.tipo && centro.tipoReceitaDespesa === 'DESPESA' && (
-																<span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
-																	centro.tipo === 'INVESTIMENTO' 
-																		? 'bg-blue-100 text-blue-800' 
-																		: 'bg-yellow-100 text-yellow-800'
-																}`}>
-																	{centro.tipo === 'INVESTIMENTO' ? 'Inv' : 'Cust'}
-																</span>
-															)}
-												</li>
-											))
-										) : (
-											<li className="p-2 text-sm text-gray-500 text-center">
-												Nenhum resultado encontrado
-											</li>
-										)}
-									</ul>
-										</>
-									)}
-									{isDespesa && !tipoCentroSelecionado && (
-										<div className="p-4 text-center text-gray-500 text-sm">
-											Selecione primeiro o tipo de despesa
-								</div>
-							)}
-						</div>
-							)}
-						</div>
-					</div>
+					{/* Removido campo de Centro de Custos para financiamentos - não é necessário para financiamentos bancários */}
 
 					{financiamentoSelecionado && (
 						<div className="mt-6">
@@ -1372,7 +1274,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									</span>
 								)}
 							</div>
-							<span>Mera Transferência</span>
+							<span>Mera Movimentação interna</span>
 						</label>
 
 						<label className={`flex items-center gap-2 cursor-pointer transition-all text-gray-500`}>
@@ -1401,7 +1303,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					</div>
 					<FontAwesomeIcon icon={faMoneyBillTransfer} size="3x" />
 					<p className="mt-2 font-medium">
-						{transferenciaPlanoMode === 'transferencia' ? 'Mera transferência entre contas próprias da Fazenda' : 'Aplicação/Resgate em fundos'} <br />
+						{transferenciaPlanoMode === 'transferencia' ? 'Mera movimentação interna entre contas próprias da Fazenda' : 'Aplicação/Resgate em fundos'} <br />
 						na qual será ignorada no Fluxo de Caixa!
 					</p>
 				</div>
@@ -1483,7 +1385,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							>
 								{tipo === 'padrao' && 'Padrão'}
 								{tipo === 'financiamento' && 'Financiamento'}
-								{tipo === 'transferencia' && 'Transferência'}
+								{tipo === 'transferencia' && 'Movimentação interna'}
 							</button>
 						))}
 					</div>
@@ -1551,20 +1453,105 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					pessoas={pessoas as any}
 				/>
 			)}
-			<DialogModal
+			{/* Modal customizado para liquidação de parcela com valor editável */}
+			<Modal
 				isOpen={liquidationModalOpen}
-				onClose={() => {
+				onRequestClose={() => {
 					setLiquidationModalOpen(false);
 					setSelectedParcela(null);
 					setLiquidationDate('');
+					setLiquidationValor('');
 				}}
-				onConfirm={handleLiquidarParcela}
-				title="Liquidar Parcela"
-				type="info"
-				message="Selecione a data de liquidação da parcela:"
-				confirmLabel="Liquidar"
-				cancelLabel="Cancelar"
-			/>
+				className="bg-white rounded-lg shadow-lg w-full max-w-md mx-auto z-100"
+				overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-100"
+			>
+				<div className="p-5">
+					<div className="flex justify-between items-center mb-4">
+						<h2 className="text-xl font-semibold text-gray-800">Liquidar Parcela</h2>
+						<button 
+							onClick={() => {
+								setLiquidationModalOpen(false);
+								setSelectedParcela(null);
+								setLiquidationDate('');
+								setLiquidationValor('');
+							}}
+							className="text-gray-500 hover:text-gray-700"
+						>
+							<FontAwesomeIcon icon={faTimes} />
+						</button>
+					</div>
+					
+					{selectedParcela && (
+						<div className="space-y-4">
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Parcela #{selectedParcela.numParcela} - Valor Previsto
+								</label>
+								<input
+									type="text"
+									value={selectedParcela.valor.toFixed(2).replace('.', ',')}
+									disabled
+									className="w-full p-2 border border-gray-300 rounded bg-gray-100 text-gray-600"
+								/>
+							</div>
+							
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Valor da Liquidação <span className="text-red-500">*</span>
+								</label>
+								<input
+									type="text"
+									value={liquidationValor}
+									onChange={(e) => {
+										// Permitir apenas números, vírgula e ponto
+										const value = e.target.value.replace(/[^\d,.-]/g, '');
+										setLiquidationValor(value);
+									}}
+									placeholder="Digite o valor (ex: 1500,00)"
+									className="w-full p-2 border border-gray-300 rounded"
+								/>
+								<p className="text-xs text-gray-500 mt-1">
+									Valor do movimento: R$ {Math.abs(movimento.valor || 0).toFixed(2).replace('.', ',')}
+								</p>
+							</div>
+							
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Data de Liquidação <span className="text-red-500">*</span>
+								</label>
+								<input
+									type="date"
+									value={liquidationDate}
+									onChange={(e) => setLiquidationDate(e.target.value)}
+									className="w-full p-2 border border-gray-300 rounded"
+									required
+								/>
+							</div>
+							
+							<div className="flex justify-end gap-3 mt-6">
+								<button
+									onClick={() => {
+										setLiquidationModalOpen(false);
+										setSelectedParcela(null);
+										setLiquidationDate('');
+										setLiquidationValor('');
+									}}
+									className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+								>
+									Cancelar
+								</button>
+								<button
+									onClick={handleLiquidarParcela}
+									disabled={!liquidationDate || !liquidationValor}
+									className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+								>
+									Liquidar
+								</button>
+							</div>
+						</div>
+					)}
+				</div>
+			</Modal>
 		</>
 	);
 };

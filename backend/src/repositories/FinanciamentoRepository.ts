@@ -4,8 +4,41 @@ import { ParcelaFinanciamento } from "../models/ParcelaFinanciamento";
 export class FinanciamentoRepository {
 	constructor(private db: D1Database) {}
 
+	private async ensureColumnsExist(): Promise<void> {
+		try {
+			// Verificar se as colunas modalidade e nomeModalidadeParticular existem
+			const { results } = await this.db.prepare(`
+				PRAGMA table_info(Financiamento)
+			`).all();
+
+			const columns = results.map((r: any) => r.name);
+			const needsModalidade = !columns.includes('modalidade');
+			const needsNomeModalidadeParticular = !columns.includes('nomeModalidadeParticular');
+
+			if (needsModalidade) {
+				console.log('🔧 Adicionando coluna modalidade à tabela Financiamento...');
+				await this.db.prepare(`
+					ALTER TABLE Financiamento ADD COLUMN modalidade TEXT CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR'))
+				`).run();
+				console.log('✅ Coluna modalidade adicionada com sucesso');
+			}
+
+			if (needsNomeModalidadeParticular) {
+				console.log('🔧 Adicionando coluna nomeModalidadeParticular à tabela Financiamento...');
+				await this.db.prepare(`
+					ALTER TABLE Financiamento ADD COLUMN nomeModalidadeParticular TEXT
+				`).run();
+				console.log('✅ Coluna nomeModalidadeParticular adicionada com sucesso');
+			}
+		} catch (error) {
+			console.error('❌ Erro ao verificar/criar colunas do Financiamento:', error);
+			// Não lançar erro para não quebrar a aplicação se as colunas já existirem
+		}
+	}
+
 	async getAll(): Promise<Financiamento[]> {
 		try {
+			await this.ensureColumnsExist();
 			const { results } = await this.db.prepare(`
 				SELECT f.*, 
 					(SELECT COUNT(*) FROM parcelaFinanciamento WHERE idFinanciamento = f.id) as totalParcelas
@@ -47,6 +80,7 @@ export class FinanciamentoRepository {
 
 	async getById(id: number): Promise<Financiamento | null> {
 		try {
+			await this.ensureColumnsExist();
 			const result = await this.db.prepare(`SELECT * FROM Financiamento WHERE id = ?`).bind(id).first();
 			if (!result) return null;
 
@@ -64,6 +98,7 @@ export class FinanciamentoRepository {
 
 	async create(financiamento: Financiamento): Promise<number> {
 		try {
+			await this.ensureColumnsExist();
 			const {
 				idBanco = null,
 				idPessoa = null,
@@ -77,21 +112,25 @@ export class FinanciamentoRepository {
 				observacao = null,
 				dataVencimentoPrimeiraParcela = null,
 				dataVencimentoUltimaParcela = null,
-				totalJuros = null
+				totalJuros = null,
+				modalidade = null,
+				nomeModalidadeParticular = null
 			} = financiamento;
 
 			console.log("Dados para inserção:", {
 				idBanco, idPessoa, responsavel, dataContrato, valor,
 				taxaJurosAnual, taxaJurosMensal, numeroContrato,
 				numeroGarantia, observacao, dataVencimentoPrimeiraParcela,
-				dataVencimentoUltimaParcela, totalJuros
+				dataVencimentoUltimaParcela, totalJuros, modalidade,
+				nomeModalidadeParticular
 			});
 
 			const bindValues = [
 				idBanco, idPessoa, responsavel, dataContrato, valor,
 				taxaJurosAnual, taxaJurosMensal, numeroContrato,
 				numeroGarantia, observacao, dataVencimentoPrimeiraParcela,
-				dataVencimentoUltimaParcela, totalJuros
+				dataVencimentoUltimaParcela, totalJuros, modalidade,
+				nomeModalidadeParticular
 			];
 
 			// Verificar se há valores undefined no array
@@ -106,9 +145,10 @@ export class FinanciamentoRepository {
 					idBanco, idPessoa, responsavel, dataContrato, valor,
 					taxaJurosAnual, taxaJurosMensal, numeroContrato,
 					numeroGarantia, observacao, dataVencimentoPrimeiraParcela,
-					dataVencimentoUltimaParcela, totalJuros
+					dataVencimentoUltimaParcela, totalJuros, modalidade,
+					nomeModalidadeParticular
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`).bind(...bindValues).run();
 
 			return meta.last_row_id;
@@ -120,6 +160,7 @@ export class FinanciamentoRepository {
 
 	async update(id: number, financiamento: Financiamento): Promise<void> {
 		try {
+			await this.ensureColumnsExist();
 			const {
 				idBanco = null,
 				idPessoa = null,
@@ -133,7 +174,9 @@ export class FinanciamentoRepository {
 				observacao = null,
 				dataVencimentoPrimeiraParcela = null,
 				dataVencimentoUltimaParcela = null,
-				totalJuros = null
+				totalJuros = null,
+				modalidade = null,
+				nomeModalidadeParticular = null
 			} = financiamento;
 
 			console.log("Dados para atualização:", {
@@ -150,7 +193,9 @@ export class FinanciamentoRepository {
 				observacao,
 				dataVencimentoPrimeiraParcela,
 				dataVencimentoUltimaParcela,
-				totalJuros
+				totalJuros,
+				modalidade,
+				nomeModalidadeParticular
 			});
 
 			// Primeiro verifica se o financiamento existe
@@ -173,6 +218,8 @@ export class FinanciamentoRepository {
 				dataVencimentoPrimeiraParcela,
 				dataVencimentoUltimaParcela,
 				totalJuros,
+				modalidade,
+				nomeModalidadeParticular,
 				id
 			];
 
@@ -198,6 +245,8 @@ export class FinanciamentoRepository {
 					dataVencimentoPrimeiraParcela = ?, 
 					dataVencimentoUltimaParcela = ?, 
 					totalJuros = ?, 
+					modalidade = ?,
+					nomeModalidadeParticular = ?,
 					atualizadoEm = CURRENT_TIMESTAMP
 				WHERE id = ?
 			`).bind(...bindValues).run();

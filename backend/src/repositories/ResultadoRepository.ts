@@ -24,6 +24,42 @@ export class ResultadoRepository {
 		}));
 	}
 
+	async getByMovimentos(idsMov: number[]): Promise<Map<number, Resultado[]>> {
+		if (idsMov.length === 0) return new Map();
+
+		// Dividir em lotes de 100 para evitar problemas com SQLite
+		const batchSize = 100;
+		const map = new Map<number, Resultado[]>();
+
+		for (let i = 0; i < idsMov.length; i += batchSize) {
+			const batch = idsMov.slice(i, i + batchSize);
+			const placeholders = batch.map(() => '?').join(',');
+			
+			const { results } = await this.db.prepare(`
+				SELECT * FROM Resultado WHERE idMovimentoBancario IN (${placeholders})
+			`).bind(...batch).all();
+
+			results.forEach((r: any) => {
+				const idMov = r.idMovimentoBancario as number;
+				if (!map.has(idMov)) {
+					map.set(idMov, []);
+				}
+				map.get(idMov)!.push({
+					id: r.id,
+					dtMovimento: r.dtMovimento,
+					idPlanoContas: r.idPlanoContas,
+					idContaCorrente: r.idContaCorrente,
+					idMovimentoBancario: r.idMovimentoBancario,
+					idParcelaFinanciamento: r.idParcelaFinanciamento,
+					valor: r.valor,
+					tipo: r.tipo,
+				});
+			});
+		}
+
+		return map;
+	}
+
 	async deleteByMovimento(idMov: number): Promise<void> {
 		await this.db.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario = ?`)
 			.bind(idMov).run();

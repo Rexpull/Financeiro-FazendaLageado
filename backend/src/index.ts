@@ -10,6 +10,7 @@ import { handleRequest as handleFinanciamento } from "./routes/handleFinanciamen
 import { handleAuthRequest as handleAuthRequest } from "./routes/handleAuthRequest";
 import { handleRequest as handleNotificacaoRequest } from "./routes/handleNotifications";
 import { handleRequest as handleCentroCustosRequest } from "./routes/handleCentroCustos";
+import { handleRequest as handleRelatorioFinanciamentosRequest } from "./routes/handleRelatorioFinanciamentos";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,6 +44,8 @@ export default {
         return handeMovimentoBancario(req, env.DB);
       case pathname.startsWith("/api/fluxoCaixa"):
         return handeMovimentoBancario(req, env.DB);
+      case pathname.startsWith("/api/relatorio/financiamentos"):
+        return handleRelatorioFinanciamentosRequest(req, env.DB);
       case pathname.startsWith("/api/relatorio"):
         return handeMovimentoBancario(req, env.DB);
       case pathname.startsWith("/api/centro-custos"):

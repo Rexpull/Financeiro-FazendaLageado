@@ -414,3 +414,16 @@ body:has(.arvorePlanos) {
 .z-99999999999999{
     z-index: 99999999999999 !important;
 }
+
+.detalhamentoDashboard .apexcharts-canvas{
+    height: 245px !important;
+}
+
+.detalhamentoDashboard .apexcharts-legend{
+    top: 150px !important;
+    left: 30px !important;
+}
+
+.detalhamentoDashboard .apexcharts-graphical{
+    transform: translate(170px, 10px) !important;
+}

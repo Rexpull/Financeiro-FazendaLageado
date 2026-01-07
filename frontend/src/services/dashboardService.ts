@@ -70,6 +70,16 @@ export interface DashboardData {
       data: string;
       classificacao: string;
     }>;
+    agrupadoPor?: Array<{
+      descricao: string;
+      valor: number;
+      tipoMovimento: 'C' | 'D';
+      conciliado: boolean;
+    }>;
+    totalConciliado?: number;
+    totalSemConciliar?: number;
+    totalReceitas?: number;
+    totalDespesas?: number;
   };
 }
 
@@ -141,7 +151,7 @@ export interface ContratosNovos {
   }>;
 }
 
-export const getDashboardData = async (ano: number, mes?: number): Promise<DashboardData> => {
+export const getDashboardData = async (ano: number, mes?: number, contas?: number[], tipoAgrupamento?: 'planos' | 'centros'): Promise<DashboardData> => {
   try {
     const API_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_URL) ? (import.meta as any).env.VITE_API_URL : '';
     const params = new URLSearchParams({
@@ -150,6 +160,14 @@ export const getDashboardData = async (ano: number, mes?: number): Promise<Dashb
     
     if (mes) {
       params.append('mes', String(mes));
+    }
+    
+    if (contas && contas.length > 0) {
+      params.append('contas', contas.join(','));
+    }
+    
+    if (tipoAgrupamento) {
+      params.append('tipoAgrupamento', tipoAgrupamento);
     }
     
     const url = API_URL ? `${API_URL}/api/dashboard?${params.toString()}` : `/api/dashboard?${params.toString()}`;

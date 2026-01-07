@@ -717,9 +717,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 													onClick={() => openModalConcilia(mov)}
 												>
 													{mov.centroCustosList && mov.centroCustosList.length > 1
-														? 'Múltiplos Centros'
-														: mov.centroCustosList && mov.centroCustosList.length > 0
-														? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${mov.centroCustosList[0].idCentroCustos}`
+															? 'Múltiplos Centros'
+															: mov.centroCustosList && mov.centroCustosList.length > 0
+															? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${mov.centroCustosList[0].idCentroCustos}`
 														: centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos'
 													}
 												</td>

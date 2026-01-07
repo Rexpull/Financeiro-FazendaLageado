@@ -120,24 +120,25 @@ const MovimentoBancarioTable: React.FC = () => {
 		return `${nomeBanco} - ${numConta}${responsavel}`;
 	};
 
-	const gerarFluxo = async (contasParaGerar?: string[], tipoAgrupamentoParaGerar?: 'planos' | 'centros') => {
+	const gerarFluxo = async (contasParaGerar?: string[], tipoAgrupamentoParaGerar?: 'planos' | 'centros', anoParaGerar?: string) => {
 		try {
 			setIsLoading(false);
 			const contas = contasParaGerar || contasSelecionadas;
 			const tipoAgrup = tipoAgrupamentoParaGerar || tipoAgrupamento;
+			const ano = anoParaGerar || anoSelecionado;
 			if (contas.length === 0) {
 				console.error('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
 				return;
 			}
-			const dados = await buscarFluxoCaixa(anoSelecionado, contas, tipoAgrup);
-			const dadosAnterior = await buscarFluxoCaixaAnoAnterior(anoSelecionado, contas, tipoAgrup);
+			const dados = await buscarFluxoCaixa(ano, contas, tipoAgrup);
+			const dadosAnterior = await buscarFluxoCaixaAnoAnterior(ano, contas, tipoAgrup);
 			setDadosFluxo(dados);
 			setDadosFluxoAnterior(dadosAnterior);
 			setIsLoading(true);
 			console.log('Dados do fluxo de caixa:', dados);
 
 			const mesesDoAno = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(
-				(mes) => `${mes}/${anoSelecionado}`
+				(mes) => `${mes}/${ano}`
 			);
 			setMeses(mesesDoAno);
 
@@ -412,7 +413,7 @@ const MovimentoBancarioTable: React.FC = () => {
 		return (saldoRD / receitas) * 100;
 	};
 
-	const renderRodapeCentroCustos = () => {
+	const renderSaldoLucratividade = () => {
 		return (
 			<>
 				{/* Saldo (R - D) */}
@@ -447,26 +448,13 @@ const MovimentoBancarioTable: React.FC = () => {
 						);
 					})}
 				</tr>
+			</>
+		);
+	};
 
-				{/* Resultado financiamentos do mês */}
-				<tr 
-					className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-				>
-					<td id="tooltip-resultado-fin-centros" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Resultado financiamentos do mês</td>
-					{dadosFluxo.map((mes, idx) => {
-						const resultado = calcularResultadoFinanciamentos(idx);
-						return (
-							<td
-								key={idx}
-								className={`text-center border border-gray-300 bg-white ${
-									resultado > 0 ? '!text-green-600' : resultado < 0 ? '!text-red-600' : 'text-gray-600'
-								}`}
-							>
-								{`R$ ${formatarMoeda(resultado)}`}
-							</td>
-						);
-					})}
-				</tr>
+	const renderRodapeCentroCustos = () => {
+		return (
+			<>
 
 				{/* Saldo do mês (negócio e financiamentos) */}
 				<tr 
@@ -702,6 +690,26 @@ const MovimentoBancarioTable: React.FC = () => {
 								);
 							})
 						}
+
+						{/* Resultado financiamentos do mês */}
+						<tr className="border border-gray-300 bg-gray-100">
+							<td className="px-6 py-2 sticky left-0 z-10 text-left font-bold bg-gray-100">
+								Resultado financiamentos do mês
+							</td>
+							{meses.map((_, idx) => {
+								const resultado = calcularResultadoFinanciamentos(idx);
+								return (
+									<td
+										key={idx}
+										className={`text-center px-3 py-2 border border-gray-300 bg-gray-100 ${
+											resultado > 0 ? '!text-green-600' : resultado < 0 ? '!text-red-600' : 'text-gray-600'
+										}`}
+									>
+										{`R$ ${formatarMoeda(resultado)}`}
+									</td>
+								);
+							})}
+						</tr>
 					</>
 				)}
 
@@ -952,6 +960,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
 								{renderCategoria('receitas', 'Receitas', '#82b4ff', '#c7eafe')}
 								{renderCategoria('despesas', 'Despesas', '#ffbe82', '#ffe6bc')}
+								{tipoAgrupamento === 'centros' && renderSaldoLucratividade()}
 								{renderCategoria('financiamentos', 'Financiamentos', '#ffc0c0', '#fce1e3')}
 								{/* Quando agrupado por centros, não mostrar seção de investimentos (já está nas despesas) */}
 								{tipoAgrupamento === 'planos' && renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
@@ -1064,7 +1073,7 @@ const MovimentoBancarioTable: React.FC = () => {
 					setAnoSelecionado(ano);
 					setContasSelecionadas(contas);
 					setTipoAgrupamento(tipoAgrup);
-					gerarFluxo(contas, tipoAgrup).then(() => {
+					gerarFluxo(contas, tipoAgrup, ano).then(() => {
 						expandirTodos();
 					});
 				}}

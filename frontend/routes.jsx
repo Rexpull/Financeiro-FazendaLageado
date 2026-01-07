@@ -14,6 +14,7 @@ import Financiamento from "./src/pages/Financeiro/Financiamento";
 import FluxoDeCaixa from "./src/pages/Financeiro/FluxoDeCaixa";
 import RelatorioCentroCustos from "./src/pages/Relatorios/RelatorioCentroCustos";
 import RelatorioItensClassificados from "./src/pages/Relatorios/RelatorioItensClassificados";
+import RelatorioFinanciamentos from "./src/pages/Relatorios/RelatorioFinanciamentos";
 import Login from "./src/pages/Login/index";
 import ProtectedRoute from "./src/pages/Login/ProtectedRoute";
 import { AuthProvider } from "./src/pages/Login/AuthContext";
@@ -70,6 +71,7 @@ const MainLayoutWithLoading = React.memo(() => {
             <Route path="financeiro/financiamento" element={<Financiamento />} />
             <Route path="relatorios/centro-custos" element={<RelatorioCentroCustos />} />
             <Route path="relatorios/itens-classificados" element={<RelatorioItensClassificados />} />
+            <Route path="relatorios/financiamentos" element={<RelatorioFinanciamentos />} />
             <Route path="relatorios/fluxo-de-caixa" element={<FluxoDeCaixa />} />
             <Route path="parametros" element={<Parametros />} />
           </Route>

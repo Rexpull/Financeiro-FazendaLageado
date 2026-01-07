@@ -30,6 +30,34 @@ export class MovimentoCentroCustosRepository {
 		return results as MovimentoCentroCustos[];
 	}
 
+	async buscarPorMovimentos(idsMovimentoBancario: number[]): Promise<Map<number, MovimentoCentroCustos[]>> {
+		if (idsMovimentoBancario.length === 0) return new Map();
+
+		// Dividir em lotes de 100 para evitar problemas com SQLite
+		const batchSize = 100;
+		const map = new Map<number, MovimentoCentroCustos[]>();
+
+		for (let i = 0; i < idsMovimentoBancario.length; i += batchSize) {
+			const batch = idsMovimentoBancario.slice(i, i + batchSize);
+			const placeholders = batch.map(() => '?').join(',');
+			
+			const { results } = await this.db
+				.prepare(`SELECT * FROM MovimentoCentroCustos WHERE idMovimentoBancario IN (${placeholders})`)
+				.bind(...batch)
+				.all();
+
+			results.forEach((r: any) => {
+				const idMov = r.idMovimentoBancario as number;
+				if (!map.has(idMov)) {
+					map.set(idMov, []);
+				}
+				map.get(idMov)!.push(r as MovimentoCentroCustos);
+			});
+		}
+
+		return map;
+	}
+
 	async deleteByMovimento(idMovimentoBancario: number): Promise<void> {
 		await this.db
 			.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario = ?`)

@@ -59,7 +59,6 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 	const [liquidationDate, setLiquidationDate] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const [parcelasToDelete, setParcelasToDelete] = useState<number[]>([]);
-	const [showValueMismatchModal, setShowValueMismatchModal] = useState(false);
 
 	useEffect(() => {
 		if (isOpen && financiamento.parcelasList) {
@@ -190,15 +189,8 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 			return false;
 		}
 
-		const valorTotalParcelas = parcelas.reduce((total, p) => total + p.valor, 0);
-
-		console.log('valorTotalParcelas', valorTotalParcelas);
-		console.log('financiamento.valor', financiamento.valor);
-		if (Math.abs(valorTotalParcelas - financiamento.valor) > 0.01) {
-			setShowValueMismatchModal(true);
-			return false;
-		}
-
+		// Removida a validação que força soma das parcelas igual ao valor do contrato
+		// As parcelas podem incluir juros, então a soma pode ser maior que o valor do contrato
 		return true;
 	};
 
@@ -225,7 +217,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 				return;
 			}
 
-			if(!validarParcelas()){
+			if (!validarParcelas()) {
 				return;
 			}
 
@@ -297,26 +289,6 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 		}
 	};
 
-	const handleConfirmValueMismatch = async () => {
-		const valorTotalParcelas = parcelas.reduce((total, p) => total + p.valor, 0);
-		const financiamentoAtualizado = {
-			...financiamento,
-			valor: valorTotalParcelas,
-			parcelasList: parcelas,
-		};
-
-		try {
-			setIsLoading(true);
-			await onSave(financiamentoAtualizado);
-			setShowValueMismatchModal(false);
-			onClose();
-		} catch (error) {
-			console.error('Erro ao salvar financiamento:', error);
-			toast.error('Erro ao salvar financiamento');
-		} finally {
-			setIsLoading(false);
-		}
-	};
 
 	const handleClose = () => {
 		setParcelasToDelete([]);
@@ -325,7 +297,6 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 		setLiquidationDate('');
 		setShowDeleteConfirmModal(false);
 		setLiquidationModalOpen(false);
-		setShowValueMismatchModal(false);
 		onClose();
 	};
 
@@ -619,17 +590,6 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 				cancelLabel="Cancelar"
 			/>
 
-			{/* Modal de Confirmação de Diferença de Valores */}
-			<DialogModal
-				isOpen={showValueMismatchModal}
-				onClose={() => setShowValueMismatchModal(false)}
-				onConfirm={handleConfirmValueMismatch}
-				title="Atenção"
-				type="warn"
-				message={`O valor total das parcelas (${formatarMoeda(parcelas.reduce((total, p) => total + p.valor, 0))}) é diferente do valor do contrato (${formatarMoeda(financiamento.valor)}). Deseja atualizar o valor do contrato para o valor total das parcelas?`}
-				confirmLabel="Atualizar Valor"
-				cancelLabel="Cancelar"
-			/>
 		</>
 	);
 };

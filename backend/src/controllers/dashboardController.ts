@@ -15,6 +15,16 @@ export class DashboardController {
     if (method === "GET" && path === "/api/dashboard") {
       const ano = parseInt(url.searchParams.get("ano") || new Date().getFullYear().toString());
       const mes = url.searchParams.get("mes") ? parseInt(url.searchParams.get("mes")!) : undefined;
+      
+      // Parsear contas da query string (formato: ?contas=1,2,3)
+      const contasParam = url.searchParams.get("contas");
+      const contas: number[] = contasParam 
+        ? contasParam.split(',').map(c => parseInt(c.trim())).filter(c => !isNaN(c))
+        : [];
+
+      // Parsear tipoAgrupamento da query string (padrão: 'planos')
+      const tipoAgrupamentoParam = url.searchParams.get("tipoAgrupamento");
+      const tipoAgrupamento: 'planos' | 'centros' = (tipoAgrupamentoParam === 'centros' ? 'centros' : 'planos');
 
       try {
         const [
@@ -28,21 +38,21 @@ export class DashboardController {
           parcelasFinanciamento,
           receitasDespesas
         ] = await Promise.all([
-          this.repository.getTotaisAno(ano),
-          this.repository.getReceitasDespesasPorMes(ano),
-          this.repository.getInvestimentosPorMes(ano),
+          this.repository.getTotaisAno(ano, contas),
+          this.repository.getReceitasDespesasPorMes(ano, contas),
+          this.repository.getInvestimentosPorMes(ano, contas),
           this.repository.getFinanciamentosPorMes(ano),
           this.repository.getFinanciamentosPorCredor(ano),
           this.repository.getFinanciamentosPorFaixaJuros(ano),
           this.repository.getFinanciamentosPorBanco(ano),
           this.repository.getParcelasFinanciamento(ano),
-          this.repository.getReceitasDespesas(ano, mes)
+          this.repository.getReceitasDespesas(ano, mes, contas, tipoAgrupamento)
         ]);
 
         // Buscar totais do mês se especificado
         let totaisMes = null;
         if (mes) {
-          totaisMes = await this.repository.getTotaisMes(ano, mes, []); // Array vazio para contas
+          totaisMes = await this.repository.getTotaisMes(ano, mes, contas);
         }
 
         return new Response(JSON.stringify({

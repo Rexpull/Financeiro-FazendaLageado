@@ -1054,12 +1054,12 @@ const MovimentoBancarioTable: React.FC = () => {
 													<Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
 												</td>
 												{/* Coluna Plano de Contas */}
-												<td
+														<td
 													className={`p-2 text-center min-w-[180px] max-w-[220px] truncate ${
 														movBancario.tipoMovimento === 'D'
 															? 'cursor-pointer underline hover:text-gray-500' + (movBancario.resultadoList && movBancario.resultadoList.length > 1
 																? ' text-blue-600 font-semibold'
-																: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																	: !planos.find((p) => p.id === movBancario.idPlanoContas)
 																? ' text-orange-500 font-semibold'
 																: '')
 															: 'text-gray-400'
@@ -1077,23 +1077,30 @@ const MovimentoBancarioTable: React.FC = () => {
 												</td>
 												{/* Coluna Centro de Custos */}
 												<td
-													className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 min-w-[180px] max-w-[220px] ${
-														movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-															? 'text-blue-600 font-semibold'
-															: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) && !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
-															? 'text-orange-500 font-semibold'
-															: ''
+													className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
+														movBancario.modalidadeMovimento === 'transferencia'
+															? 'text-gray-400'
+															: `cursor-pointer underline hover:text-gray-500 ${
+																movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																	? 'text-blue-600 font-semibold'
+																	: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) && !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
+																		? 'text-orange-500 font-semibold'
+																		: ''
+															}`
 													}`}
-													style={{ textUnderlineOffset: '2px' }}
-													onClick={() => openModalConcilia(movBancario)}
+													style={movBancario.modalidadeMovimento !== 'transferencia' ? { textUnderlineOffset: '2px' } : {}}
+													onClick={movBancario.modalidadeMovimento === 'transferencia' ? undefined : () => openModalConcilia(movBancario)}
+													title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : ''}
 												>
-													{movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+													{movBancario.modalidadeMovimento === 'transferencia'
+														? '-'
+														: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
 														? 'Múltiplos Centros'
 														: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
 														? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
 														: centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao || 'Selecione o Centro de Custos'
 													}
-												</td>
+														</td>
 														<td
 															className={`p-2 text-center font-semibold capitalize ${
 																movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
@@ -1224,35 +1231,42 @@ const MovimentoBancarioTable: React.FC = () => {
 															<div>
 																<div className="text-xs text-gray-500">Centro de Custos</div>
 																<div 
-																	className={`text-sm cursor-pointer underline hover:text-gray-500 ${
-																		movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-																			? 'text-blue-600 font-semibold'
-																			: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) && !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
-																			? 'text-orange-500 font-semibold'
-																			: ''
+																	className={`text-sm ${
+																		movBancario.modalidadeMovimento === 'transferencia'
+																			? 'text-gray-400'
+																			: `cursor-pointer underline hover:text-gray-500 ${
+																				movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																					? 'text-blue-600 font-semibold'
+																					: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) && !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
+																					? 'text-orange-500 font-semibold'
+																					: ''
+																			}`
 																	}`}
-																	onClick={() => openModalConcilia(movBancario)}
+																	onClick={movBancario.modalidadeMovimento === 'transferencia' ? undefined : () => openModalConcilia(movBancario)}
+																	title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : ''}
 																>
-																	{movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																	{movBancario.modalidadeMovimento === 'transferencia'
+																		? '-'
+																		: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
 																		? 'Múltiplos Centros'
 																		: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
 																		? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
 																		: centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao || 'Selecione o Centro de Custos'
 																	}
 																</div>
+																</div>
 															</div>
-														</div>
-														<div>
-															<div className="text-xs text-gray-500">Valor</div>
-															<div className={`text-sm font-semibold ${
-																movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
-															}`}>
-																{formatarMoeda(movBancario.valor)}
+															<div>
+																<div className="text-xs text-gray-500">Valor</div>
+																<div className={`text-sm font-semibold ${
+																	movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+																}`}>
+																	{formatarMoeda(movBancario.valor)}
 															</div>
 														</div>
 
 												{/* Menu de ações mobile */}
-												{menuAtivoId === movBancario.id && (
+											{menuAtivoId === movBancario.id && (
 													<div className="mt-3 pt-3 border-t border-gray-200">
 														<div className="flex gap-2 flex-wrap">
 															<button

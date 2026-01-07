@@ -99,9 +99,9 @@ const Sidebar = () => {
       )}
       
       {/* Sidebar */}
-      <div className={`sidebar bg-gray-100 h-screen p-3 fixed top-0 left-0 w-64 h-screen z-40 transform transition-transform duration-300 ease-in-out ${
+      <div className={`sidebar bg-gray-100 h-screen p-3 fixed top-0 left-0 w-64 z-40 transform transition-transform duration-300 ease-in-out overflow-y-auto ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0`} style={{ minHeight: '100vh', height:'100%'}}>
+      } lg:translate-x-0`} style={{ minHeight: '100vh', height:'100vh', maxHeight: '100vh'}}>
         {/* Logo */}
         <div className="flex items-center justify-between mt-1" style={{position: 'relative'}} >
           <img src={logoFazenda} alt="Logo sidebFazenda Lageado"  className="logoSidebar" />
@@ -245,6 +245,11 @@ const Sidebar = () => {
                 <Link to="/relatorios/itens-classificados">
                   <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/relatorios/itens-classificados')}`}>
                     Plano de Contas
+                  </li>
+                </Link>
+                <Link to="/relatorios/financiamentos">
+                  <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/relatorios/financiamentos')}`}>
+                    Financiamentos
                   </li>
                 </Link>
               
