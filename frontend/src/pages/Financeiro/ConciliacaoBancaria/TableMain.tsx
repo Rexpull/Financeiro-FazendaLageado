@@ -634,6 +634,10 @@ const MovimentoBancarioTable: React.FC = () => {
 				movimentoAtualizado.parcelado = data.parcelado ?? false;
 				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? undefined;
 				movimentoAtualizado.idCentroCustos = data.idCentroCustos ?? undefined;
+				// Marcar como conciliado quando há financiamento associado
+				if (data.idFinanciamento) {
+					movimentoAtualizado.ideagro = true;
+				}
 			}
 
 			if (data.modalidadeMovimento === 'transferencia') {

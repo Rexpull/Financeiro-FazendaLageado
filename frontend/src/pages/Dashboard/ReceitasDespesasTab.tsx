@@ -25,7 +25,6 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import PieChartIcon from '@mui/icons-material/PieChart';
 import ListIcon from '@mui/icons-material/List';
-import AddIcon from '@mui/icons-material/Add';
 import * as XLSX from 'xlsx';
 
 const Chart = lazy(() => import("react-apexcharts"));
@@ -154,9 +153,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         
         {/* Layout lado a lado */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 3 }}>
-          {/* Lado Esquerdo: Receitas */}
+          {/* Lado Esquerdo: Receitas - destaque visual + pizza composição */}
           <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'success.main' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'success.main', fontSize: '1.35rem' }}>
               Receitas
             </Typography>
             <Box sx={{ mb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
@@ -168,7 +167,6 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                   {mesSelecionado ? `Total de ${mesSelecionado}/${anoSelecionado}` : `Total Anual de ${anoSelecionado}`}
                 </Typography>
               </Box>
-              {/* Percentual de Investimentos sobre Receita - na mesma linha, do outro lado */}
               {totalReceitasMes > 0 && (
                 <Box sx={{ textAlign: 'right', borderLeft: '2px solid', borderColor: 'divider', pl: 2, minWidth: '140px' }}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', mb: 0.5 }}>
@@ -183,170 +181,105 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                 </Box>
               )}
             </Box>
-            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {dashboardData?.receitasDespesasPorMes?.labels?.length ? (
-                <Suspense fallback={<CircularProgress />}>
-                  <Chart
-                    options={{
-                      chart: { type: 'bar', height: 250, toolbar: { show: false } },
-                      plotOptions: { bar: { horizontal: false, columnWidth: '60%', borderRadius: 4 } },
-                      xaxis: { categories: dashboardData.receitasDespesasPorMes.labels },
-                      yaxis: {
-                        title: { text: "Valor (R$)" },
-                        labels: { formatter: (val: number) => formatCurrency(val) }
-                      },
-                      tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-                      colors: ['#4caf50'],
-                      dataLabels: { enabled: false }
-                    }}
-                    series={[{ name: "Receitas", data: dashboardData.receitasDespesasPorMes.receitas }]}
-                    type="bar"
-                    height={250}
-                    style={{width: '100%'}}
-                  />
-                </Suspense>
-              ) : (
-                <NoData message="Nenhum dado de receitas disponível." />
-              )}
+            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 280 }}>
+              {dashboardData?.receitasDespesas?.agrupadoPor && (() => {
+                const receitasAgrupado = dashboardData.receitasDespesas.agrupadoPor.filter((item: any) => item.tipoMovimento === 'C');
+                const totalR = receitasAgrupado.reduce((s: number, i: any) => s + i.valor, 0);
+                const dadosOrdenados = [...receitasAgrupado].map((item: any) => ({ ...item, percentual: totalR > 0 ? (item.valor / totalR) * 100 : 0 })).sort((a: any, b: any) => b.valor - a.valor);
+                if (dadosOrdenados.length === 0) return <NoData message="Nenhum dado de receitas disponível." />;
+                return (
+                  <Suspense fallback={<CircularProgress />}>
+                    <Chart
+                      options={{
+                        chart: { type: 'pie' },
+                        labels: dadosOrdenados.map((item: any) => `${item.percentual.toFixed(1)}% - ${item.descricao}`),
+                        legend: { position: 'right', fontSize: '12px' },
+                        tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+                        dataLabels: { enabled: true, formatter: (val: number) => `${val.toFixed(1)}%` },
+                        plotOptions: { pie: { expandOnClick: false } },
+                        colors: dadosOrdenados.map(() => '#4caf50'),
+                      }}
+                      series={dadosOrdenados.map((item: any) => item.valor)}
+                      type="pie"
+                      height={280}
+                      width={380}
+                      style={{ maxWidth: '100%' }}
+                    />
+                  </Suspense>
+                );
+              })()}
+              {!dashboardData?.receitasDespesas?.agrupadoPor?.length && <NoData message="Nenhum dado de receitas disponível." />}
             </Box>
           </Paper>
 
-          {/* Lado Direito: Despesas (Operacionais + Investimentos) */}
+          {/* Lado Direito: Despesas - destaque visual + pizza composição */}
           <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'error.main' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'error.main', fontSize: '1.35rem' }}>
               Despesas
             </Typography>
-            
-
-            {/* Totalizador: Despesas Operacionais + Investimentos = Total */}
-            <Box sx={{ 
-              mb: 2, 
-              p: 2, 
-              border: '1px solid #e0e0e0', 
-              borderRadius: 2,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 1
-            }}>
-              {/* Despesas Operacionais */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: '120px' }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem', mb: 0.5 }}>
-                  Despesas Operacionais
-                </Typography>
-                <Typography variant="h6" fontWeight="bold" color="error.main">
-                  {formatCurrency(despesasOperacionaisMes)}
-                </Typography>
-                {totalReceitasMes > 0 && (
-                  <Typography variant="caption" fontWeight="bold" color="error.main" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
-                    {(despesasOperacionaisMes / totalReceitasMes * 100).toFixed(1)}% sobre receita
-                  </Typography>
-                )}
-                {mesSelecionado && (
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', mt: 0.5 }}>
-                    Anual: {formatCurrency(despesasOperacionaisAno)}
-                  </Typography>
-                )}
-              </Box>
-
-              {/* Ícone de Soma */}
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', px: 1 }}>
-                <AddIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-              </Box>
-
-              {/* Investimentos */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: '120px' }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem', mb: 0.5 }}>
-                  Investimentos
-                </Typography>
-                <Typography variant="h6" fontWeight="bold" color="info.main">
-                  {formatCurrency(totalInvestimentosMes)}
-                </Typography>
-                {mesSelecionado && (
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', mt: 0.5 }}>
-                    Anual: {formatCurrency(totalInvestimentosAno)}
-                  </Typography>
-                )}
-              </Box>
-
-              {/* Divisor */}
-              <Box sx={{ 
-                height: '55px', 
-                width: '2px', 
-                bgcolor: '#bdbdbd', 
-                mx: 1,
-                display: { xs: 'none', sm: 'block' }
-              }} />
-
-              {/* Ícone de Igual */}
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', px: 1 }}>
-                <Typography variant="h6" sx={{ color: 'text.secondary', fontWeight: 'bold' }}>=</Typography>
-              </Box>
-
-              {/* Total */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: '120px' }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem', mb: 0.5 }}>
+            <Box sx={{ mb: 1 }}>
+              <Typography variant="h4" fontWeight="bold" color="error.main">
+                {formatCurrency(totalDespesasMes)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
                 {mesSelecionado ? `Total de ${mesSelecionado}/${anoSelecionado}` : `Total Anual de ${anoSelecionado}`}
-                <br />
-                </Typography>
-                <Typography 
-                  variant="h6" 
-                  fontWeight="bold" 
-                  color="error.main"
-                  sx={{
-                    textDecoration: 'underline',
-                    textDecorationThickness: '3px',
-                    textDecorationColor: '#f44336',
-                    textUnderlineOffset: '4px',
-                  }}
-                >
-                  {formatCurrency(despesasOperacionaisMes + totalInvestimentosMes)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', mt: 0.5 }}> Total Anual: {formatCurrency(despesasOperacionaisAno + totalInvestimentosAno)}</Typography>
-
-              </Box>
+              </Typography>
             </Box>
 
-            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {dashboardData?.receitasDespesasPorMes?.labels?.length ? (
-                <Suspense fallback={<CircularProgress />}>
-                  <Chart
-                    options={{
-                      chart: { type: 'bar', height: 250, stacked: true, toolbar: { show: false } },
-                      plotOptions: { bar: { horizontal: false, columnWidth: '60%', borderRadius: 4 } },
-                      xaxis: { categories: dashboardData.receitasDespesasPorMes.labels },
-                      yaxis: {
-                        title: { text: "Valor (R$)" },
-                        labels: { formatter: (val: number) => formatCurrency(val) }
-                      },
-                      tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-                      colors: ['#f44336', '#2196f3'],
-                      legend: { position: 'top' },
-                      dataLabels: { enabled: false }
-                    }}
-                    series={[
-                      { 
-                        name: "Despesas Operacionais", 
-                        data: dashboardData.receitasDespesasPorMes.despesas.map((v, idx) => {
-                          const despesaAbs = Math.abs(v);
-                          const investimento = Math.abs(dashboardData.investimentosPorMes.values[idx] || 0);
-                          return Math.max(0, despesaAbs - investimento);
-                        })
-                      },
-                      { 
-                        name: "Investimentos", 
-                        data: dashboardData.investimentosPorMes.values.map(v => Math.abs(v))
-                      }
-                    ]}
-                    type="bar"
-                    height={250}
-                    style={{width: '100%'}}
-                  />
-                </Suspense>
-              ) : (
-                <NoData message="Nenhum dado de despesas disponível." />
-              )}
+            {/* Seção secundária: Custeio e Investimento (menor prioridade visual) */}
+            <Box sx={{ 
+              mb: 2, 
+              py: 1, 
+              px: 1.5, 
+              bgcolor: 'grey.50', 
+              borderRadius: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              flexWrap: 'wrap'
+            }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                Custeio: <strong>{formatCurrency(despesasOperacionaisMes)}</strong>
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>+</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                Investimento: <strong>{formatCurrency(totalInvestimentosMes)}</strong>
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>=</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                Total: <strong>{formatCurrency(despesasOperacionaisMes + totalInvestimentosMes)}</strong>
+              </Typography>
+            </Box>
+
+            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 280 }}>
+              {dashboardData?.receitasDespesas?.agrupadoPor && (() => {
+                const despesasAgrupado = dashboardData.receitasDespesas.agrupadoPor.filter((item: any) => item.tipoMovimento === 'D');
+                const totalD = despesasAgrupado.reduce((s: number, i: any) => s + Math.abs(i.valor), 0);
+                const dadosOrdenados = [...despesasAgrupado].map((item: any) => ({ ...item, valorAbs: Math.abs(item.valor), percentual: totalD > 0 ? (Math.abs(item.valor) / totalD) * 100 : 0 })).sort((a: any, b: any) => b.valorAbs - a.valorAbs);
+                if (dadosOrdenados.length === 0) return <NoData message="Nenhum dado de despesas disponível." />;
+                return (
+                  <Suspense fallback={<CircularProgress />}>
+                    <Chart
+                      options={{
+                        chart: { type: 'pie' },
+                        labels: dadosOrdenados.map((item: any) => `${item.percentual.toFixed(1)}% - ${item.descricao}`),
+                        legend: { position: 'right', fontSize: '12px' },
+                        tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+                        dataLabels: { enabled: true, formatter: (val: number) => `${val.toFixed(1)}%` },
+                        plotOptions: { pie: { expandOnClick: false } },
+                        colors: dadosOrdenados.map(() => '#f44336'),
+                      }}
+                      series={dadosOrdenados.map((item: any) => item.valorAbs)}
+                      type="pie"
+                      height={280}
+                      width={380}
+                      style={{ maxWidth: '100%' }}
+                    />
+                  </Suspense>
+                );
+              })()}
+              {!dashboardData?.receitasDespesas?.agrupadoPor?.length && <NoData message="Nenhum dado de despesas disponível." />}
             </Box>
           </Paper>
         </Box>

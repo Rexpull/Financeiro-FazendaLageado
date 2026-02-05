@@ -3,7 +3,7 @@ import { getRelatorioFinanciamentos, FiltrosRelatorioFinanciamentos, RelatorioFi
 import { listarBancos } from '../../services/bancoService';
 import { listarPessoas } from '../../services/pessoaService';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFileExcel, faSpinner, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
+import { faFileExcel, faSpinner, faChevronDown, faChevronUp, faFilter } from '@fortawesome/free-solid-svg-icons';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 import { Banco } from '../../../../backend/src/models/Banco';
@@ -22,6 +22,17 @@ const formatDate = (dateString: string) => {
 	return new Date(dateString).toLocaleDateString('pt-BR');
 };
 
+const totalizadoresVazios = {
+	totalContratos: 0,
+	totalValorContratos: 0,
+	totalJuros: 0,
+	totalValorParcelas: 0,
+	totalParcelas: 0,
+	totalParcelasLiquidadas: 0,
+	totalParcelasAberto: 0,
+	totalParcelasVencidas: 0,
+};
+
 const RelatorioFinanciamentos: React.FC = () => {
 	const [dados, setDados] = useState<RelatorioFinanciamentosData | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
@@ -31,6 +42,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 	const [pessoas, setPessoas] = useState<Pessoa[]>([]);
 	
 	const [filtros, setFiltros] = useState<FiltrosRelatorioFinanciamentos>({});
+	const [filtrosExpandidos, setFiltrosExpandidos] = useState(false);
 
 	useEffect(() => {
 		const carregarDados = async () => {
@@ -132,176 +144,224 @@ const RelatorioFinanciamentos: React.FC = () => {
 				</div>
 
 				{/* Filtros */}
-				<div className="bg-white border border-gray-200 shadow-sm rounded-xl p-5 mb-6">
-					<div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-						<h3 className="text-base font-semibold text-gray-800">Filtros</h3>
-					</div>
+				<div className="bg-white border border-gray-200 shadow-sm rounded-xl mb-6 overflow-hidden">
+					<button
+						type="button"
+						onClick={() => setFiltrosExpandidos((v) => !v)}
+						className="w-full flex items-center justify-between gap-2 px-5 py-4 text-left hover:bg-gray-50 transition-colors border-b border-gray-200"
+					>
+						<span className="flex items-center gap-2 text-base font-semibold text-gray-800">
+							<FontAwesomeIcon icon={faFilter} className="text-blue-600" />
+							Filtros
+						</span>
+						<FontAwesomeIcon
+							icon={filtrosExpandidos ? faChevronUp : faChevronDown}
+							className="text-gray-500 text-sm"
+						/>
+					</button>
 
-					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-						{/* Mês de Vencimento */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Mês de Vencimento
-							</label>
-							<select
-								value={filtros.mesVencimento || ''}
-								onChange={(e) => setFiltros({ ...filtros, mesVencimento: e.target.value ? parseInt(e.target.value) : undefined })}
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-							>
-								<option value="">Todos</option>
-								<option value="1">Janeiro</option>
-								<option value="2">Fevereiro</option>
-								<option value="3">Março</option>
-								<option value="4">Abril</option>
-								<option value="5">Maio</option>
-								<option value="6">Junho</option>
-								<option value="7">Julho</option>
-								<option value="8">Agosto</option>
-								<option value="9">Setembro</option>
-								<option value="10">Outubro</option>
-								<option value="11">Novembro</option>
-								<option value="12">Dezembro</option>
-							</select>
-						</div>
+					{filtrosExpandidos && (
+					<div className="p-5">
+					{/* Filtros de Contrato */}
+					<div className="mb-6 pb-4 border-b border-gray-200">
+						<h4 className="text-sm font-semibold text-gray-700 mb-3">Filtros de Contrato</h4>
+						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+							{/* Banco */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Banco
+								</label>
+								<select
+									value={filtros.idBanco || ''}
+									onChange={(e) => setFiltros({ ...filtros, idBanco: e.target.value ? parseInt(e.target.value) : undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+								>
+									<option value="">Todos</option>
+									{bancos.map((banco) => (
+										<option key={banco.id} value={banco.id}>
+											{banco.nome}
+										</option>
+									))}
+								</select>
+							</div>
 
-						{/* Ano de Vencimento */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Ano de Vencimento
-							</label>
-							<input
-								type="number"
-								value={filtros.anoVencimento || ''}
-								onChange={(e) => setFiltros({ ...filtros, anoVencimento: e.target.value ? parseInt(e.target.value) : undefined })}
-								placeholder="Ex: 2025"
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-							/>
-						</div>
+							{/* Tomador */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Tomador
+								</label>
+								<select
+									value={filtros.idPessoa || ''}
+									onChange={(e) => setFiltros({ ...filtros, idPessoa: e.target.value ? parseInt(e.target.value) : undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+								>
+									<option value="">Todos</option>
+									{pessoas.map((pessoa) => (
+										<option key={pessoa.id} value={pessoa.id}>
+											{pessoa.nome}
+										</option>
+									))}
+								</select>
+							</div>
 
-						{/* Banco */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Banco
-							</label>
-							<select
-								value={filtros.idBanco || ''}
-								onChange={(e) => setFiltros({ ...filtros, idBanco: e.target.value ? parseInt(e.target.value) : undefined })}
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-							>
-								<option value="">Todos</option>
-								{bancos.map((banco) => (
-									<option key={banco.id} value={banco.id}>
-										{banco.nome}
-									</option>
-								))}
-							</select>
-						</div>
+							{/* Garantia */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Garantia (Nº Matrícula)
+								</label>
+								<input
+									type="text"
+									value={filtros.numeroGarantia || ''}
+									onChange={(e) => setFiltros({ ...filtros, numeroGarantia: e.target.value || undefined })}
+									placeholder="Número da garantia"
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+								/>
+							</div>
 
-						{/* Tomador */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Tomador
-							</label>
-							<select
-								value={filtros.idPessoa || ''}
-								onChange={(e) => setFiltros({ ...filtros, idPessoa: e.target.value ? parseInt(e.target.value) : undefined })}
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-							>
-								<option value="">Todos</option>
-								{pessoas.map((pessoa) => (
-									<option key={pessoa.id} value={pessoa.id}>
-										{pessoa.nome}
-									</option>
-								))}
-							</select>
-						</div>
+							{/* Modalidade */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Modalidade
+								</label>
+								<select
+									value={filtros.modalidade || ''}
+									onChange={(e) => setFiltros({ ...filtros, modalidade: e.target.value as any || undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+								>
+									<option value="">Todas</option>
+									<option value="INVESTIMENTO">Investimento</option>
+									<option value="CUSTEIO">Custeio</option>
+									<option value="PARTICULAR">Particular</option>
+								</select>
+							</div>
 
-						{/* Garantia */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Garantia (Nº Matrícula)
-							</label>
-							<input
-								type="text"
-								value={filtros.numeroGarantia || ''}
-								onChange={(e) => setFiltros({ ...filtros, numeroGarantia: e.target.value || undefined })}
-								placeholder="Número da garantia"
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-							/>
-						</div>
+							{/* Data Contratação Início */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Data Contratação Início
+								</label>
+								<input
+									type="date"
+									value={filtros.dataContratoInicio || ''}
+									onChange={(e) => setFiltros({ ...filtros, dataContratoInicio: e.target.value || undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+								/>
+							</div>
 
-						{/* Modalidade */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Modalidade
-							</label>
-							<select
-								value={filtros.modalidade || ''}
-								onChange={(e) => setFiltros({ ...filtros, modalidade: e.target.value as any || undefined })}
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-							>
-								<option value="">Todas</option>
-								<option value="INVESTIMENTO">Investimento</option>
-								<option value="CUSTEIO">Custeio</option>
-								<option value="PARTICULAR">Particular</option>
-							</select>
-						</div>
-
-						{/* Data Contratação Início */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Data Contratação Início
-							</label>
-							<input
-								type="date"
-								value={filtros.dataContratoInicio || ''}
-								onChange={(e) => setFiltros({ ...filtros, dataContratoInicio: e.target.value || undefined })}
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-							/>
-						</div>
-
-						{/* Data Contratação Fim */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Data Contratação Fim
-							</label>
-							<input
-								type="date"
-								value={filtros.dataContratoFim || ''}
-								onChange={(e) => setFiltros({ ...filtros, dataContratoFim: e.target.value || undefined })}
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-							/>
-						</div>
-
-						{/* Faixa de Juros */}
-						<div className="space-y-1">
-							<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-								Faixa de Juros (%)
-							</label>
-							<select
-								value={filtros.faixaJuros || ''}
-								onChange={(e) => setFiltros({ ...filtros, faixaJuros: e.target.value || undefined })}
-								className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-							>
-								<option value="">Todas</option>
-								<option value={'<=8'}>≤ 8%</option>
-								<option value={'>8<=10'}>{'>'} 8% ≤ 10%</option>
-								<option value={'>10<=12'}>{'>'} 10% ≤ 12%</option>
-								<option value={'>12<=15'}>{'>'} 12% ≤ 15%</option>
-								<option value={'>15'}>{'>'} 15%</option>
-							</select>
+							{/* Data Contratação Fim */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Data Contratação Fim
+								</label>
+								<input
+									type="date"
+									value={filtros.dataContratoFim || ''}
+									onChange={(e) => setFiltros({ ...filtros, dataContratoFim: e.target.value || undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+								/>
+							</div>
 						</div>
 					</div>
 
-					<div className="mt-5 flex justify-end">
-						<button
-							onClick={() => handleAplicarFiltros(filtros)}
-							disabled={isLoading}
-							className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
-						>
-							{isLoading ? 'Carregando...' : 'Aplicar Filtros'}
-						</button>
+					{/* Filtros de Parcelas */}
+					<div className="mb-6 pb-4 border-b border-gray-200">
+						<h4 className="text-sm font-semibold text-gray-700 mb-3">Filtros de Parcelas</h4>
+						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+							{/* Mês de Vencimento */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Mês de Vencimento
+								</label>
+								<select
+									value={filtros.mesVencimento || ''}
+									onChange={(e) => setFiltros({ ...filtros, mesVencimento: e.target.value ? parseInt(e.target.value) : undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+								>
+									<option value="">Todos</option>
+									<option value="1">Janeiro</option>
+									<option value="2">Fevereiro</option>
+									<option value="3">Março</option>
+									<option value="4">Abril</option>
+									<option value="5">Maio</option>
+									<option value="6">Junho</option>
+									<option value="7">Julho</option>
+									<option value="8">Agosto</option>
+									<option value="9">Setembro</option>
+									<option value="10">Outubro</option>
+									<option value="11">Novembro</option>
+									<option value="12">Dezembro</option>
+								</select>
+							</div>
+
+							{/* Ano de Vencimento */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Ano de Vencimento
+								</label>
+								<input
+									type="number"
+									value={filtros.anoVencimento || ''}
+									onChange={(e) => setFiltros({ ...filtros, anoVencimento: e.target.value ? parseInt(e.target.value) : undefined })}
+									placeholder="Ex: 2025"
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+								/>
+							</div>
+
+							{/* Faixa de Juros */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Faixa de Juros (%)
+								</label>
+								<select
+									value={filtros.faixaJuros || ''}
+									onChange={(e) => setFiltros({ ...filtros, faixaJuros: e.target.value || undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+								>
+									<option value="">Todas</option>
+									<option value={'<=8'}>≤ 8%</option>
+									<option value={'>8<=10'}>{'>'} 8% ≤ 10%</option>
+									<option value={'>10<=12'}>{'>'} 10% ≤ 12%</option>
+									<option value={'>12<=15'}>{'>'} 12% ≤ 15%</option>
+									<option value={'>15'}>{'>'} 15%</option>
+								</select>
+							</div>
+						</div>
 					</div>
+
+					{/* Filtros de Status */}
+					<div className="mb-4">
+						<h4 className="text-sm font-semibold text-gray-700 mb-3">Filtros de Status</h4>
+						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+							{/* Status do Contrato */}
+							<div className="space-y-1">
+								<label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+									Status do Contrato
+								</label>
+								<select
+									value={filtros.statusContrato || ''}
+									onChange={(e) => setFiltros({ ...filtros, statusContrato: e.target.value as any || undefined })}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+								>
+									<option value="">Todos</option>
+									<option value="ATIVO">Ativo</option>
+									<option value="QUITADO">Quitado</option>
+									<option value="NOVO">Novo</option>
+								</select>
+							</div>
+						</div>
+					</div>
+
+						<div className="mt-5 flex justify-end">
+							<button
+								onClick={() => handleAplicarFiltros(filtros)}
+								disabled={isLoading}
+								className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
+							>
+								{isLoading ? 'Carregando...' : 'Aplicar Filtros'}
+							</button>
+						</div>
+					</div>
+					)}
 				</div>
 
 				{isLoading && (
@@ -315,58 +375,84 @@ const RelatorioFinanciamentos: React.FC = () => {
 					</div>
 				)}
 
-				{!isLoading && dados && (
+				{!isLoading && (
 					<>
 						{/* Totalizadores */}
 						<div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-6">
 							<h3 className="text-base font-semibold text-gray-700 mb-5 uppercase tracking-wide">Totalizadores</h3>
 							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-								{/* Total de Contratos */}
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Contratos</p>
-									<p className="text-2xl font-bold text-gray-900">{dados.totalizadores.totalContratos}</p>
+								{(() => {
+									const tot = dados?.totalizadores ?? totalizadoresVazios;
+									return (
+										<>
+											<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Contratos</p>
+												<p className="text-2xl font-bold text-gray-900">{tot.totalContratos}</p>
+											</div>
+											<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor Total Contratos</p>
+												<p className="text-2xl font-bold text-gray-900">{formatCurrency(tot.totalValorContratos)}</p>
+											</div>
+											<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Juros</p>
+												<p className="text-2xl font-bold text-gray-900">{formatCurrency(tot.totalJuros)}</p>
+											</div>
+											<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor Total Parcelas</p>
+												<p className="text-2xl font-bold text-gray-900">{formatCurrency(tot.totalValorParcelas)}</p>
+											</div>
+											<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Parcelas</p>
+												<p className="text-2xl font-bold text-gray-900">{tot.totalParcelas}</p>
+											</div>
+											<div className="border-l-4 border-l-green-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas Liquidadas</p>
+												<p className="text-2xl font-bold text-green-600">{tot.totalParcelasLiquidadas}</p>
+											</div>
+											<div className="border-l-4 border-l-amber-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas em Aberto</p>
+												<p className="text-2xl font-bold text-amber-600">{tot.totalParcelasAberto}</p>
+											</div>
+											<div className="border-l-4 border-l-red-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+												<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas Vencidas</p>
+												<p className="text-2xl font-bold text-red-600">{tot.totalParcelasVencidas}</p>
+											</div>
+										</>
+									);
+								})()}
+							</div>
+						</div>
+
+						{/* Cards de Resumo por Status */}
+						<div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-6">
+							<h3 className="text-base font-semibold text-gray-700 mb-5 uppercase tracking-wide">Resumo por Status</h3>
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+								<div className="border-l-4 border-l-blue-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Contratos Ativos</p>
+									<p className="text-2xl font-bold text-blue-600 mb-1">
+										{dados ? dados.itens.filter(item => item.statusContrato === 'ATIVO').length : 0}
+									</p>
+									<p className="text-sm text-gray-600">
+										{formatCurrency(dados ? dados.itens.filter(item => item.statusContrato === 'ATIVO').reduce((sum, item) => sum + item.valorContrato, 0) : 0)}
+									</p>
 								</div>
-								
-								{/* Valor Total Contratos */}
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor Total Contratos</p>
-									<p className="text-2xl font-bold text-gray-900">{formatCurrency(dados.totalizadores.totalValorContratos)}</p>
-								</div>
-								
-								{/* Total de Juros */}
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Juros</p>
-									<p className="text-2xl font-bold text-gray-900">{formatCurrency(dados.totalizadores.totalJuros)}</p>
-								</div>
-								
-								{/* Valor Total Parcelas */}
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor Total Parcelas</p>
-									<p className="text-2xl font-bold text-gray-900">{formatCurrency(dados.totalizadores.totalValorParcelas)}</p>
-								</div>
-								
-								{/* Total de Parcelas */}
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Parcelas</p>
-									<p className="text-2xl font-bold text-gray-900">{dados.totalizadores.totalParcelas}</p>
-								</div>
-								
-								{/* Parcelas Liquidadas */}
 								<div className="border-l-4 border-l-green-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas Liquidadas</p>
-									<p className="text-2xl font-bold text-green-600">{dados.totalizadores.totalParcelasLiquidadas}</p>
+									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Contratos Quitados</p>
+									<p className="text-2xl font-bold text-green-600 mb-1">
+										{dados ? dados.itens.filter(item => item.statusContrato === 'QUITADO').length : 0}
+									</p>
+									<p className="text-sm text-gray-600">
+										{formatCurrency(dados ? dados.itens.filter(item => item.statusContrato === 'QUITADO').reduce((sum, item) => sum + item.valorContrato, 0) : 0)}
+									</p>
 								</div>
-								
-								{/* Parcelas em Aberto */}
-								<div className="border-l-4 border-l-amber-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas em Aberto</p>
-									<p className="text-2xl font-bold text-amber-600">{dados.totalizadores.totalParcelasAberto}</p>
-								</div>
-								
-								{/* Parcelas Vencidas */}
-								<div className="border-l-4 border-l-red-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas Vencidas</p>
-									<p className="text-2xl font-bold text-red-600">{dados.totalizadores.totalParcelasVencidas}</p>
+								<div className="border-l-4 border-l-purple-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Contratos Novos</p>
+									<p className="text-2xl font-bold text-purple-600 mb-1">
+										{dados ? dados.itens.filter(item => item.statusContrato === 'NOVO').length : 0}
+									</p>
+									<p className="text-sm text-gray-600">
+										{formatCurrency(dados ? dados.itens.filter(item => item.statusContrato === 'NOVO').reduce((sum, item) => sum + item.valorContrato, 0) : 0)}
+									</p>
 								</div>
 							</div>
 						</div>
@@ -376,7 +462,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 							{/* Gráfico Mensal */}
 							<div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
 								<h3 className="text-lg font-semibold text-gray-800 mb-4">Gráfico Mensal</h3>
-								{dados.graficos.mensais.length > 0 ? (
+								{dados?.graficos.mensais?.length ? (
 									<Suspense fallback={<div>Carregando gráfico...</div>}>
 										<Chart
 											options={{
@@ -387,14 +473,19 @@ const RelatorioFinanciamentos: React.FC = () => {
 													title: { text: "Valor (R$)" },
 													labels: { formatter: (val: number) => formatCurrency(val) }
 												},
-												tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-												colors: ['#2196f3', '#4caf50'],
-												legend: { position: 'top' },
+												tooltip: { 
+													y: { formatter: (val: number) => formatCurrency(val) },
+													shared: true,
+													intersect: false
+												},
+												colors: ['#2196f3', '#4caf50', '#ff9800'],
+												legend: { position: 'top', horizontalAlign: 'center' },
 												dataLabels: { enabled: false }
 											}}
 											series={[
-												{ name: "Contratados", data: dados.graficos.mensais.map(g => g.novos) },
-												{ name: "Liquidados", data: dados.graficos.mensais.map(g => g.liquidados) }
+												{ name: "Contratos Novos", data: dados.graficos.mensais.map(g => g.novos || 0) },
+												{ name: "Contratos Quitados", data: dados.graficos.mensais.map(g => g.quitados || 0) },
+												{ name: "Contratos Ativos", data: dados.graficos.mensais.map(g => g.ativos || 0) }
 											]}
 											type="bar"
 											height={350}
@@ -409,7 +500,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 							{/* Gráfico Anual */}
 							<div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
 								<h3 className="text-lg font-semibold text-gray-800 mb-4">Gráfico Anual</h3>
-								{dados.graficos.anuais.length > 0 ? (
+								{dados?.graficos.anuais?.length ? (
 									<Suspense fallback={<div>Carregando gráfico...</div>}>
 										<Chart
 											options={{
@@ -420,14 +511,19 @@ const RelatorioFinanciamentos: React.FC = () => {
 													title: { text: "Valor (R$)" },
 													labels: { formatter: (val: number) => formatCurrency(val) }
 												},
-												tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-												colors: ['#2196f3', '#4caf50'],
-												legend: { position: 'top' },
+												tooltip: { 
+													y: { formatter: (val: number) => formatCurrency(val) },
+													shared: true,
+													intersect: false
+												},
+												colors: ['#2196f3', '#4caf50', '#ff9800'],
+												legend: { position: 'top', horizontalAlign: 'center' },
 												dataLabels: { enabled: false }
 											}}
 											series={[
-												{ name: "Contratados", data: dados.graficos.anuais.map(g => g.novos) },
-												{ name: "Liquidados", data: dados.graficos.anuais.map(g => g.liquidados) }
+												{ name: "Contratos Novos", data: dados.graficos.anuais.map(g => g.novos || 0) },
+												{ name: "Contratos Quitados", data: dados.graficos.anuais.map(g => g.quitados || 0) },
+												{ name: "Contratos Ativos", data: dados.graficos.anuais.map(g => g.ativos || 0) }
 											]}
 											type="bar"
 											height={350}
@@ -462,7 +558,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 										</button>
 										<button
 											onClick={handleExportExcel}
-											disabled={isExporting}
+											disabled={isExporting || !dados?.itens?.length}
 											className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2 shadow-sm"
 										>
 											{isExporting ? (
@@ -481,6 +577,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 									<thead className="bg-gray-50">
 										<tr>
 											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Contrato</th>
+											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
 											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Responsável</th>
 											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Banco/Pessoa</th>
 											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Data Contrato</th>
@@ -494,10 +591,31 @@ const RelatorioFinanciamentos: React.FC = () => {
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-gray-200">
-										{dados.itens.map((item) => (
+										{(dados?.itens ?? []).length === 0 ? (
+											<tr>
+												<td colSpan={12} className="px-4 py-8 text-center text-gray-500">
+													Aplique os filtros para visualizar o relatório.
+												</td>
+											</tr>
+										) : (
+											(dados?.itens ?? []).map((item) => (
 											<React.Fragment key={item.idFinanciamento}>
 												<tr className="hover:bg-gray-50">
 													<td className="px-4 py-3 text-sm font-medium text-gray-900">{item.numeroContrato}</td>
+													<td className="px-4 py-3 text-sm">
+														{item.statusContrato && (
+															<span className={`px-2 py-1 rounded text-xs font-semibold ${
+																item.statusContrato === 'ATIVO' ? 'bg-blue-100 text-blue-800' :
+																item.statusContrato === 'QUITADO' ? 'bg-green-100 text-green-800' :
+																item.statusContrato === 'NOVO' ? 'bg-purple-100 text-purple-800' :
+																'bg-gray-100 text-gray-800'
+															}`}>
+																{item.statusContrato === 'ATIVO' ? 'Ativo' :
+																 item.statusContrato === 'QUITADO' ? 'Quitado' :
+																 item.statusContrato === 'NOVO' ? 'Novo' : '-'}
+															</span>
+														)}
+													</td>
 													<td className="px-4 py-3 text-sm text-gray-700">{item.responsavel}</td>
 													<td className="px-4 py-3 text-sm text-gray-700">{item.banco || item.pessoa || '-'}</td>
 													<td className="px-4 py-3 text-sm text-gray-700">{formatDate(item.dataContrato)}</td>
@@ -522,7 +640,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 												</tr>
 												{financiamentosExpandidos.has(item.idFinanciamento) && (
 													<tr>
-														<td colSpan={11} className="px-4 py-3 bg-gray-50">
+														<td colSpan={12} className="px-4 py-3 bg-gray-50">
 															<div className="overflow-x-auto">
 																<table className="min-w-full text-sm">
 																	<thead>
@@ -559,18 +677,13 @@ const RelatorioFinanciamentos: React.FC = () => {
 													</tr>
 												)}
 											</React.Fragment>
-										))}
+											))
+										)}
 									</tbody>
 								</table>
 							</div>
 						</div>
 					</>
-				)}
-
-				{!isLoading && !dados && (
-					<div className="text-center py-8">
-						<p className="text-gray-600">Aplique os filtros para visualizar o relatório.</p>
-					</div>
 				)}
 			</div>
 		</div>

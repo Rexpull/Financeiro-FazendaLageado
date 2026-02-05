@@ -44,3 +44,8 @@ export interface FluxoCaixaMes {
 	saldoFinal: number;
 	lucro: number;
 }
+
+export interface FluxoCaixaResponse {
+	dadosMensais: FluxoCaixaMes[];
+	parcelasVincendasAnuais?: { [ano: number]: number };
+}

@@ -54,6 +54,11 @@ export class RelatorioFinanciamentosController {
           filtros.faixaJuros = faixaJuros;
         }
 
+        const statusContrato = url.searchParams.get("statusContrato");
+        if (statusContrato && ['ATIVO', 'QUITADO', 'NOVO'].includes(statusContrato)) {
+          filtros.statusContrato = statusContrato as 'ATIVO' | 'QUITADO' | 'NOVO';
+        }
+
         const data = await this.repository.getRelatorioFinanciamentos(filtros);
         
         return new Response(JSON.stringify(data), {

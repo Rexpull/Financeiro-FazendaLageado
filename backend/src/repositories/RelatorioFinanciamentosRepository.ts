@@ -10,6 +10,7 @@ export interface FiltrosRelatorioFinanciamentos {
   dataContratoInicio?: string;
   dataContratoFim?: string;
   faixaJuros?: string; // '<=8', '>8<=10', '>10<=12', '>12<=15', '>15'
+  statusContrato?: 'ATIVO' | 'QUITADO' | 'NOVO';
 }
 
 export interface ItemRelatorioFinanciamentos {
@@ -26,6 +27,7 @@ export interface ItemRelatorioFinanciamentos {
   nomeModalidadeParticular?: string;
   numeroGarantia?: string;
   taxaJurosAnual?: number;
+  statusContrato?: 'ATIVO' | 'QUITADO' | 'NOVO';
   parcelas: Array<{
     idParcela: number;
     numParcela: number;
@@ -194,10 +196,18 @@ export class RelatorioFinanciamentosRepository {
 
     const financiamentosResult = await this.db.prepare(query).bind(...params).all();
     
+    // Usar Map para evitar duplicatas por idFinanciamento
+    const financiamentosMap = new Map<number, any>();
+    for (const row of financiamentosResult.results as any[]) {
+      if (!financiamentosMap.has(row.idFinanciamento)) {
+        financiamentosMap.set(row.idFinanciamento, row);
+      }
+    }
+    
     // Buscar parcelas para cada financiamento
     const itens: ItemRelatorioFinanciamentos[] = [];
     
-    for (const row of financiamentosResult.results as any[]) {
+    for (const row of financiamentosMap.values()) {
       const parcelasQuery = `
         SELECT 
           id as idParcela,
@@ -229,6 +239,43 @@ export class RelatorioFinanciamentosRepository {
         });
       }
 
+      // Calcular status do contrato baseado nas parcelas
+      const temParcelasAbertas = parcelas.some(p => p.status !== 'Liquidado');
+      let statusContrato: 'ATIVO' | 'QUITADO' | 'NOVO' = temParcelasAbertas ? 'ATIVO' : 'QUITADO';
+      
+      // Verificar se é um contrato novo (criado no período filtrado)
+      if (filtros.dataContratoInicio || filtros.dataContratoFim) {
+        const dataContrato = new Date(row.dataContrato);
+        const dataInicio = filtros.dataContratoInicio ? new Date(filtros.dataContratoInicio) : null;
+        const dataFim = filtros.dataContratoFim ? new Date(filtros.dataContratoFim) : null;
+        
+        const dentroDoPeriodo = (!dataInicio || dataContrato >= dataInicio) && 
+                                (!dataFim || dataContrato <= dataFim);
+        
+        if (dentroDoPeriodo && statusContrato === 'ATIVO') {
+          statusContrato = 'NOVO';
+        }
+      }
+
+      // Aplicar filtro por statusContrato se especificado
+      if (filtros.statusContrato) {
+        if (filtros.statusContrato === 'NOVO') {
+          // Para NOVO, verificar se foi criado no período
+          const dataContrato = new Date(row.dataContrato);
+          const dataInicio = filtros.dataContratoInicio ? new Date(filtros.dataContratoInicio) : null;
+          const dataFim = filtros.dataContratoFim ? new Date(filtros.dataContratoFim) : null;
+          
+          const dentroDoPeriodo = (!dataInicio || dataContrato >= dataInicio) && 
+                                  (!dataFim || dataContrato <= dataFim);
+          
+          if (!dentroDoPeriodo || !temParcelasAbertas) {
+            return; // Pular este item se não for NOVO
+          }
+        } else if (filtros.statusContrato !== statusContrato) {
+          return; // Pular este item se o status não corresponder
+        }
+      }
+
       itens.push({
         idFinanciamento: row.idFinanciamento,
         numeroContrato: row.numeroContrato,
@@ -243,6 +290,7 @@ export class RelatorioFinanciamentosRepository {
         nomeModalidadeParticular: row.nomeModalidadeParticular || undefined,
         numeroGarantia: row.numeroGarantia || undefined,
         taxaJurosAnual: row.taxaJurosAnual || undefined,
+        statusContrato: statusContrato,
         parcelas: parcelas.map(p => ({
           idParcela: p.idParcela,
           numParcela: p.numParcela,
@@ -281,44 +329,84 @@ export class RelatorioFinanciamentosRepository {
   }
 
   private async calcularGraficos(filtros: FiltrosRelatorioFinanciamentos): Promise<{
-    mensais: Array<{ mes: string; novos: number; liquidados: number }>;
-    anuais: Array<{ ano: number; novos: number; liquidados: number }>;
+    mensais: Array<{ mes: string; novos: number; quitados: number; ativos: number }>;
+    anuais: Array<{ ano: number; novos: number; quitados: number; ativos: number }>;
   }> {
-    // Gráficos mensais
-    const queryMensais = `
+    // Buscar todos os contratos com informações de parcelas
+    const queryTodosContratos = `
       SELECT 
-        strftime('%m/%Y', f.dataContrato) as mes,
-        SUM(f.valor) as novos
+        f.id,
+        f.valor,
+        f.dataContrato,
+        MAX(CASE WHEN pf.status = 'Liquidado' THEN pf.dt_liquidacao END) as dt_quitacao,
+        COUNT(CASE WHEN pf.status != 'Liquidado' THEN 1 END) as parcelasNaoLiquidadas,
+        COUNT(pf.id) as totalParcelas
       FROM Financiamento f
-      GROUP BY mes
-      ORDER BY f.dataContrato DESC
-      LIMIT 12
+      LEFT JOIN parcelaFinanciamento pf ON f.id = pf.idFinanciamento
+      GROUP BY f.id, f.valor, f.dataContrato
     `;
     
-    const mensaisResult = await this.db.prepare(queryMensais).all();
+    const todosContratosResult = await this.db.prepare(queryTodosContratos).all();
     
-    const queryLiquidadosMensais = `
-      SELECT 
-        strftime('%m/%Y', pf.dt_liquidacao) as mes,
-        SUM(pf.valor) as liquidados
-      FROM parcelaFinanciamento pf
-      WHERE pf.status = 'Liquidado' AND pf.dt_liquidacao IS NOT NULL
-      GROUP BY mes
-      ORDER BY pf.dt_liquidacao DESC
-      LIMIT 12
-    `;
+    const mensaisMap = new Map<string, { novos: number; quitados: number; ativos: number }>();
+    const anuaisMap = new Map<number, { novos: number; quitados: number; ativos: number }>();
     
-    const liquidadosMensaisResult = await this.db.prepare(queryLiquidadosMensais).all();
-    
-    const mensaisMap = new Map<string, { novos: number; liquidados: number }>();
-    
-    for (const row of mensaisResult.results as any[]) {
-      mensaisMap.set(row.mes, { novos: row.novos || 0, liquidados: 0 });
-    }
-    
-    for (const row of liquidadosMensaisResult.results as any[]) {
-      const existing = mensaisMap.get(row.mes) || { novos: 0, liquidados: 0 };
-      mensaisMap.set(row.mes, { ...existing, liquidados: row.liquidados || 0 });
+    // Processar cada contrato
+    for (const row of todosContratosResult.results as any[]) {
+      const dataContrato = new Date(row.dataContrato);
+      const mesContrato = `${String(dataContrato.getMonth() + 1).padStart(2, '0')}/${dataContrato.getFullYear()}`;
+      const anoContrato = dataContrato.getFullYear();
+      
+      const temParcelasAbertas = (row.parcelasNaoLiquidadas || 0) > 0;
+      const temParcelas = (row.totalParcelas || 0) > 0;
+      const estaQuitado = temParcelas && !temParcelasAbertas;
+      
+      // Mensais
+      if (!mensaisMap.has(mesContrato)) {
+        mensaisMap.set(mesContrato, { novos: 0, quitados: 0, ativos: 0 });
+      }
+      const mensal = mensaisMap.get(mesContrato)!;
+      
+      // Contrato novo (criado neste mês)
+      mensal.novos += row.valor || 0;
+      
+      if (estaQuitado && row.dt_quitacao) {
+        // Contrato quitado - adicionar ao mês de quitação
+        const dataQuitacao = new Date(row.dt_quitacao);
+        const mesQuitacao = `${String(dataQuitacao.getMonth() + 1).padStart(2, '0')}/${dataQuitacao.getFullYear()}`;
+        
+        if (!mensaisMap.has(mesQuitacao)) {
+          mensaisMap.set(mesQuitacao, { novos: 0, quitados: 0, ativos: 0 });
+        }
+        const mensalQuitacao = mensaisMap.get(mesQuitacao)!;
+        mensalQuitacao.quitados += row.valor || 0;
+      } else if (temParcelasAbertas) {
+        // Contrato ativo - adicionar ao mês de contrato
+        mensal.ativos += row.valor || 0;
+      }
+      
+      // Anuais
+      if (!anuaisMap.has(anoContrato)) {
+        anuaisMap.set(anoContrato, { novos: 0, quitados: 0, ativos: 0 });
+      }
+      const anual = anuaisMap.get(anoContrato)!;
+      
+      // Contrato novo (criado neste ano)
+      anual.novos += row.valor || 0;
+      
+      if (estaQuitado && row.dt_quitacao) {
+        // Contrato quitado - adicionar ao ano de quitação
+        const anoQuitacao = new Date(row.dt_quitacao).getFullYear();
+        
+        if (!anuaisMap.has(anoQuitacao)) {
+          anuaisMap.set(anoQuitacao, { novos: 0, quitados: 0, ativos: 0 });
+        }
+        const anualQuitacao = anuaisMap.get(anoQuitacao)!;
+        anualQuitacao.quitados += row.valor || 0;
+      } else if (temParcelasAbertas) {
+        // Contrato ativo - adicionar ao ano de contrato
+        anual.ativos += row.valor || 0;
+      }
     }
     
     const mensais = Array.from(mensaisMap.entries())
@@ -328,42 +416,8 @@ export class RelatorioFinanciamentosRepository {
         const [mesB, anoB] = b.mes.split('/').map(Number);
         if (anoA !== anoB) return anoB - anoA;
         return mesB - mesA;
-      });
-
-    // Gráficos anuais
-    const queryAnuais = `
-      SELECT 
-        CAST(strftime('%Y', f.dataContrato) AS INTEGER) as ano,
-        SUM(f.valor) as novos
-      FROM Financiamento f
-      GROUP BY ano
-      ORDER BY ano DESC
-    `;
-    
-    const anuaisResult = await this.db.prepare(queryAnuais).all();
-    
-    const queryLiquidadosAnuais = `
-      SELECT 
-        CAST(strftime('%Y', pf.dt_liquidacao) AS INTEGER) as ano,
-        SUM(pf.valor) as liquidados
-      FROM parcelaFinanciamento pf
-      WHERE pf.status = 'Liquidado' AND pf.dt_liquidacao IS NOT NULL
-      GROUP BY ano
-      ORDER BY ano DESC
-    `;
-    
-    const liquidadosAnuaisResult = await this.db.prepare(queryLiquidadosAnuais).all();
-    
-    const anuaisMap = new Map<number, { novos: number; liquidados: number }>();
-    
-    for (const row of anuaisResult.results as any[]) {
-      anuaisMap.set(row.ano, { novos: row.novos || 0, liquidados: 0 });
-    }
-    
-    for (const row of liquidadosAnuaisResult.results as any[]) {
-      const existing = anuaisMap.get(row.ano) || { novos: 0, liquidados: 0 };
-      anuaisMap.set(row.ano, { ...existing, liquidados: row.liquidados || 0 });
-    }
+      })
+      .slice(0, 12);
     
     const anuais = Array.from(anuaisMap.entries())
       .map(([ano, valores]) => ({ ano, ...valores }))

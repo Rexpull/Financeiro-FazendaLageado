@@ -31,6 +31,7 @@ export interface RelatorioItensClassificadosItem {
 	valor: number;
 	tipoMovimento: string;
 	modalidadeMovimento?: string;
+	idPlanoContas?: number;
 	planoDescricao?: string;
 	centroCustosDescricao?: string;
 	centroCustosTipo?: string;
@@ -160,6 +161,7 @@ export interface FiltrosRelatorioFinanciamentos {
 	dataContratoInicio?: string;
 	dataContratoFim?: string;
 	faixaJuros?: string;
+	statusContrato?: 'ATIVO' | 'QUITADO' | 'NOVO';
 }
 
 export interface ItemRelatorioFinanciamentos {
@@ -176,6 +178,7 @@ export interface ItemRelatorioFinanciamentos {
 	nomeModalidadeParticular?: string;
 	numeroGarantia?: string;
 	taxaJurosAnual?: number;
+	statusContrato?: 'ATIVO' | 'QUITADO' | 'NOVO';
 	parcelas: Array<{
 		idParcela: number;
 		numParcela: number;
@@ -201,8 +204,8 @@ export interface RelatorioFinanciamentosData {
 	itens: ItemRelatorioFinanciamentos[];
 	totalizadores: TotalizadoresRelatorioFinanciamentos;
 	graficos: {
-		mensais: Array<{ mes: string; novos: number; liquidados: number }>;
-		anuais: Array<{ ano: number; novos: number; liquidados: number }>;
+		mensais: Array<{ mes: string; novos: number; quitados: number; ativos: number }>;
+		anuais: Array<{ ano: number; novos: number; quitados: number; ativos: number }>;
 	};
 }
 
@@ -219,6 +222,7 @@ export const getRelatorioFinanciamentos = async (
 	if (filtros.dataContratoInicio) params.append('dataContratoInicio', filtros.dataContratoInicio);
 	if (filtros.dataContratoFim) params.append('dataContratoFim', filtros.dataContratoFim);
 	if (filtros.faixaJuros) params.append('faixaJuros', filtros.faixaJuros);
+	if (filtros.statusContrato) params.append('statusContrato', filtros.statusContrato);
 
 	const res = await fetch(`${API_URL}/api/relatorio/financiamentos?${params}`);
 	if (!res.ok) throw new Error('Erro ao buscar relatório de financiamentos');

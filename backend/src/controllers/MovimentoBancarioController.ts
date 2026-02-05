@@ -754,46 +754,100 @@ export class MovimentoBancarioController {
 						}
 					}
 
-					for (const parcela of parcelas) {
-						const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
-						if (!financiamento) continue;
+					// Processar financiamentos contratados pelo dataContrato (quando agrupado por centros)
+					if (tipoAgrupamento === 'centros') {
+						// Primeiro, processar financiamentos para identificar contratados pelo dataContrato
+						const financiamentosProcessados = new Set<number>();
+						for (const financiamento of financiamentos) {
+							if (financiamentosProcessados.has(financiamento.id)) continue;
+							financiamentosProcessados.add(financiamento.id);
 
-						let credorKey = '';
-						let credorDescricao = 'Não identificado';
+							let credorKey = '';
+							let credorDescricao = 'Não identificado';
 
-						if (financiamento.idPessoa) {
-							const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
-							credorKey = `p_${financiamento.idPessoa}`;
-							credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
-						} else if (financiamento.idBanco) {
-							const banco = bancos.find((b) => b.id === financiamento.idBanco);
-							credorKey = `b_${financiamento.idBanco}`;
-							credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
+							if (financiamento.idPessoa) {
+								const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
+								credorKey = `p_${financiamento.idPessoa}`;
+								credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
+							} else if (financiamento.idBanco) {
+								const banco = bancos.find((b) => b.id === financiamento.idBanco);
+								credorKey = `b_${financiamento.idBanco}`;
+								credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
+							}
+
+							if (!credorKey) continue;
+
+							// Contratados: usar dataContrato do financiamento
+							const dataContrato = new Date(financiamento.dataContrato);
+							const mesContrato = dataContrato.getMonth();
+							const anoContrato = dataContrato.getFullYear();
+							
+							// Só adicionar se o contrato foi feito no ano sendo processado
+							if (anoContrato === ano) {
+								if (!dadosMensais[mesContrato].financiamentos.contratados[credorKey]) {
+									dadosMensais[mesContrato].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
+								}
+								// Usar valor total do financiamento (valor + juros)
+								const valorTotal = financiamento.valor + (financiamento.totalJuros || 0);
+								dadosMensais[mesContrato].financiamentos.contratados[credorKey].valor += valorTotal;
+							}
 						}
 
-						if (!credorKey) continue;
+						// Depois, processar parcelas apenas para pagos
+						for (const parcela of parcelas) {
+							if (!parcela.dt_liquidacao) continue; // Só processar parcelas pagas
 
-						if (tipoAgrupamento === 'centros') {
-							// Separar em pagos e contratados
+							const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
+							if (!financiamento) continue;
+
+							let credorKey = '';
+							let credorDescricao = 'Não identificado';
+
+							if (financiamento.idPessoa) {
+								const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
+								credorKey = `p_${financiamento.idPessoa}`;
+								credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
+							} else if (financiamento.idBanco) {
+								const banco = bancos.find((b) => b.id === financiamento.idBanco);
+								credorKey = `b_${financiamento.idBanco}`;
+								credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
+							}
+
+							if (!credorKey) continue;
+
 							// Pagos: parcelas com dt_liquidacao no mês
-							// Contratados: parcelas com dt_vencimento no mês e sem dt_liquidacao
-							if (parcela.dt_liquidacao) {
-								// Parcela paga
-								const mesLiquidacao = new Date(parcela.dt_liquidacao).getMonth();
+							const mesLiquidacao = new Date(parcela.dt_liquidacao).getMonth();
+							const anoLiquidacao = new Date(parcela.dt_liquidacao).getFullYear();
+							
+							// Só adicionar se a liquidação foi no ano sendo processado
+							if (anoLiquidacao === ano) {
 								if (!dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey]) {
 									dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey] = { valor: 0, descricao: credorDescricao };
 								}
 								dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey].valor += parcela.valor;
 							}
-							
-							// Contratados: sempre considerar pelo vencimento (mesmo que já tenha sido pago)
-							const mesVencimento = new Date(parcela.dt_vencimento).getMonth();
-							if (!dadosMensais[mesVencimento].financiamentos.contratados[credorKey]) {
-								dadosMensais[mesVencimento].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
+						}
+					} else {
+						// Estrutura original para planos de contas (usar lógica antiga)
+						for (const parcela of parcelas) {
+							const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
+							if (!financiamento) continue;
+
+							let credorKey = '';
+							let credorDescricao = 'Não identificado';
+
+							if (financiamento.idPessoa) {
+								const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
+								credorKey = `p_${financiamento.idPessoa}`;
+								credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
+							} else if (financiamento.idBanco) {
+								const banco = bancos.find((b) => b.id === financiamento.idBanco);
+								credorKey = `b_${financiamento.idBanco}`;
+								credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
 							}
-							dadosMensais[mesVencimento].financiamentos.contratados[credorKey].valor += parcela.valor;
-						} else {
-							// Estrutura original para planos de contas
+
+							if (!credorKey) continue;
+
 							const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
 							const mes = dataEfetiva.getMonth();
 							if (!dadosMensais[mes].financiamentos[credorKey]) {
@@ -822,7 +876,7 @@ export class MovimentoBancarioController {
 							// Quando agrupado por centros, financiamentos têm estrutura separada
 							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
 							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-							financiamentos = contratados - pagos; // Resultado do mês
+							financiamentos = pagos - contratados; // Resultado do mês: pagos reduzem dívida (positivo), contratados aumentam (negativo)
 						} else {
 							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
 						}
@@ -848,7 +902,33 @@ export class MovimentoBancarioController {
 						}
 					}
 
-					return new Response(JSON.stringify(dadosMensais), {
+					// Calcular parcelas vincendas por ano (parcelas com dt_vencimento futura)
+					const parcelasVincendasAnuais: { [ano: number]: number } = {};
+					const hoje = new Date();
+					hoje.setHours(0, 0, 0, 0);
+
+					for (const parcela of parcelas) {
+						if (!parcela.dt_vencimento) continue;
+						
+						const dataVencimento = new Date(parcela.dt_vencimento);
+						dataVencimento.setHours(0, 0, 0, 0);
+						
+						// Só considerar parcelas com vencimento futuro e sem liquidação
+						if (dataVencimento >= hoje && !parcela.dt_liquidacao) {
+							const anoVencimento = dataVencimento.getFullYear();
+							if (!parcelasVincendasAnuais[anoVencimento]) {
+								parcelasVincendasAnuais[anoVencimento] = 0;
+							}
+							parcelasVincendasAnuais[anoVencimento] += parcela.valor;
+						}
+					}
+
+					const response = {
+						dadosMensais,
+						parcelasVincendasAnuais
+					};
+
+					return new Response(JSON.stringify(response), {
 						headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 						status: 200,
 					});
@@ -1138,7 +1218,7 @@ export class MovimentoBancarioController {
 							// Quando agrupado por centros, financiamentos têm estrutura separada
 							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
 							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-							financiamentos = contratados - pagos; // Resultado do mês
+							financiamentos = pagos - contratados; // Resultado do mês: pagos reduzem dívida (positivo), contratados aumentam (negativo)
 						} else {
 							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
 						}
@@ -1161,7 +1241,33 @@ export class MovimentoBancarioController {
 						}
 					}
 
-					return new Response(JSON.stringify(dadosMensais), {
+					// Calcular parcelas vincendas por ano (parcelas com dt_vencimento futura)
+					const parcelasVincendasAnuaisAnterior: { [ano: number]: number } = {};
+					const hoje = new Date();
+					hoje.setHours(0, 0, 0, 0);
+
+					for (const parcela of parcelas) {
+						if (!parcela.dt_vencimento) continue;
+						
+						const dataVencimento = new Date(parcela.dt_vencimento);
+						dataVencimento.setHours(0, 0, 0, 0);
+						
+						// Só considerar parcelas com vencimento futuro e sem liquidação
+						if (dataVencimento >= hoje && !parcela.dt_liquidacao) {
+							const anoVencimento = dataVencimento.getFullYear();
+							if (!parcelasVincendasAnuaisAnterior[anoVencimento]) {
+								parcelasVincendasAnuaisAnterior[anoVencimento] = 0;
+							}
+							parcelasVincendasAnuaisAnterior[anoVencimento] += parcela.valor;
+						}
+					}
+
+					const responseAnterior = {
+						dadosMensais,
+						parcelasVincendasAnuais: parcelasVincendasAnuaisAnterior
+					};
+
+					return new Response(JSON.stringify(responseAnterior), {
 						headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 						status: 200,
 					});

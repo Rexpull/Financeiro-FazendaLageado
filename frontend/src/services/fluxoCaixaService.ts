@@ -1,9 +1,9 @@
 // services/fluxoCaixaService.ts
-import { FluxoCaixaMes } from '../../../backend/src/models/FluxoCaixaDTO';
+import { FluxoCaixaMes, FluxoCaixaResponse } from '../../../backend/src/models/FluxoCaixaDTO';
 import { MovimentoDetalhado } from '../../../backend/src/models/MovimentoDetalhado';
 const API_URL = (import.meta as any).env.VITE_API_URL;
 
-export const buscarFluxoCaixa = async (ano: string, contas: string[], tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<FluxoCaixaMes[]> => {
+export const buscarFluxoCaixa = async (ano: string, contas: string[], tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<FluxoCaixaResponse> => {
 
 	console.log('ano:', ano);
 	console.log('contas:', contas);
@@ -48,5 +48,7 @@ export const buscarFluxoCaixaAnoAnterior = async (ano: string, contas: string[],
 		const errorData = await res.json().catch(() => ({ error: 'Erro desconhecido' })) as { error?: string; details?: string };
 		throw new Error(`Erro ao buscar fluxo de caixa do ano anterior: ${errorData.details || errorData.error || res.statusText}`);
 	}
-	return res.json();
+	const response = await res.json();
+	// Compatibilidade: se retornar objeto com dadosMensais, usar isso; senão, usar diretamente
+	return response.dadosMensais || response;
 };

@@ -24,6 +24,7 @@ import DialogModal from '../../../../components/DialogModal';
 import { toast } from 'react-toastify';
 import { ParcelaFinanciamento } from '../../../../../../backend/src/models/ParcelaFinanciamento';
 import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinanciamentoService';
+import { salvarMovimentoBancario } from '../../../../services/movimentoBancarioService';
 import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
   
 Modal.setAppElement('#root');
@@ -520,7 +521,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 	const financiamentosFiltrados = financiamentos.filter(f => {
 		// Aplicar filtro por banco primeiro
-		const matchesBankFilter = bancoFiltroFinanciamento ? f.idBanco === bancoFiltroFinanciamento : true;
+		let matchesBankFilter = true;
+		if (bancoFiltroFinanciamento !== null) {
+			if (bancoFiltroFinanciamento === -1) {
+				// Filtro "Particular": financiamentos com modalidade PARTICULAR ou idPessoa (sem idBanco)
+				matchesBankFilter = f.modalidade === 'PARTICULAR' || (f.idPessoa !== null && f.idBanco === null);
+			} else {
+				// Filtro por banco específico
+				matchesBankFilter = f.idBanco === bancoFiltroFinanciamento;
+			}
+		}
 		
 		// Aplicar filtro de busca por texto
 		const matchesSearch = buscaFinanciamento === '' || 
@@ -758,6 +768,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			};
 
 			await salvarParcelaFinanciamento(parcelaAtualizada);
+
+			// Atualizar o movimento bancário para vínculo com o financiamento (sai de pendente)
+			if (financiamentoSelecionado?.id != null) {
+				await salvarMovimentoBancario({
+					...movimento,
+					modalidadeMovimento: 'financiamento',
+					idFinanciamento: financiamentoSelecionado.id,
+					parcelado: true,
+				});
+			}
 			
 			// Atualiza a lista de parcelas do financiamento selecionado
 			if (financiamentoSelecionado) {
@@ -1097,13 +1117,21 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									className="w-full p-2 border rounded text-sm"
 									value={bancoFiltroFinanciamento?.toString() || ''}
 									onChange={(e) => {
-										setBancoFiltroFinanciamento(e.target.value ? parseInt(e.target.value) : null);
+										const value = e.target.value;
+										if (value === '') {
+											setBancoFiltroFinanciamento(null);
+										} else if (value === 'particular') {
+											setBancoFiltroFinanciamento(-1);
+										} else {
+											setBancoFiltroFinanciamento(parseInt(value));
+										}
 										setBuscaFinanciamento('');
 										setFinanciamentoSelecionado(null);
 									}}
 									disabled={!!financiamentoSelecionado}
 								>
 									<option value="">Todos os bancos</option>
+									<option value="particular">Particular</option>
 									{bancos.map((banco) => (
 										<option key={banco.id} value={banco.id}>
 											{banco.nome}
@@ -1116,7 +1144,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									type="text"
 									className="w-full p-2 border rounded-l"
 									placeholder="Buscar por responsável, credor ou contrato"
-									value={financiamentoSelecionado ? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${bancos.find(b=>b.id===financiamentoSelecionado.idBanco)?.nome || pessoas.find(p=>p.id===financiamentoSelecionado.idPessoa)?.nome})` : buscaFinanciamento}
+									value={financiamentoSelecionado ? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${financiamentoSelecionado.modalidade === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===financiamentoSelecionado.idBanco)?.nome || pessoas.find(p=>p.id===financiamentoSelecionado.idPessoa)?.nome || 'Não identificado')})` : buscaFinanciamento}
 									onChange={e => setBuscaFinanciamento(e.target.value)}
 									disabled={!!financiamentoSelecionado}
 								/>
@@ -1154,7 +1182,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 											className="p-2 cursor-pointer hover:bg-orange-100"
 											onClick={() => setFinanciamentoSelecionado(f)}
 										>
-											<strong>{f.numeroContrato}</strong> - {f.responsavel} - {bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome}
+											<strong>{f.numeroContrato}</strong> - {f.responsavel} - {f.modalidade === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome || 'Não identificado')}
 										</li>
 									))}
 								</ul>

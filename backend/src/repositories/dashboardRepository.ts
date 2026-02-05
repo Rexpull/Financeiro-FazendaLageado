@@ -67,20 +67,29 @@ export class DashboardRepository {
     const despesas = result && typeof result.despesas === 'number' ? result.despesas : 0;
     const investimentos = result && typeof result.investimentos === 'number' ? result.investimentos : 0;
 
-    // Buscar financiamentos do ano (sem usar coluna status inexistente)
+    // Financiamentos: total contratado no ano
     const queryFin = `
       SELECT 
         COUNT(*) as contratosAtivos,
-        COALESCE(SUM(valor),0) as totalFinanciado,
-        0 as totalQuitado,
-        COALESCE(SUM(valor),0) as totalEmAberto
+        COALESCE(SUM(valor),0) as totalFinanciado
       FROM Financiamento
       WHERE CAST(strftime('%Y', dataContrato) AS INTEGER) = ?
     `;
     const fin = await this.db.prepare(queryFin).bind(ano).first();
     const contratosAtivos = fin && typeof fin.contratosAtivos === 'number' ? fin.contratosAtivos : 0;
     const totalFinanciado = fin && typeof fin.totalFinanciado === 'number' ? fin.totalFinanciado : 0;
-    const totalEmAberto = fin && typeof fin.totalEmAberto === 'number' ? fin.totalEmAberto : 0;
+
+    // Total quitado no ano: soma das parcelas com dt_liquidacao no ano
+    const queryQuitado = `
+      SELECT COALESCE(SUM(pf.valor), 0) as totalQuitado
+      FROM parcelaFinanciamento pf
+      JOIN Financiamento f ON pf.idFinanciamento = f.id
+      WHERE pf.dt_liquidacao IS NOT NULL
+        AND CAST(strftime('%Y', pf.dt_liquidacao) AS INTEGER) = ?
+    `;
+    const resQuitado = await this.db.prepare(queryQuitado).bind(ano).first();
+    const totalQuitado = resQuitado && typeof resQuitado.totalQuitado === 'number' ? resQuitado.totalQuitado : 0;
+    const totalEmAberto = Math.max(0, totalFinanciado - totalQuitado);
 
     return {
       receitas,
@@ -89,7 +98,7 @@ export class DashboardRepository {
       financiamentos: {
         contratosAtivos,
         totalFinanciado,
-        totalQuitado: 0,
+        totalQuitado,
         totalEmAberto,
       },
     };
@@ -242,24 +251,51 @@ export class DashboardRepository {
 
   async getFinanciamentosPorMes(ano: number): Promise<{ labels: string[], quitado: number[], emAberto: number[] }> {
     this.validarAno(ano);
-    const query = `
+    // Quitado por mês: soma de pf.valor onde dt_liquidacao está no mês/ano
+    const queryQuitado = `
+      SELECT 
+        CAST(strftime('%m', pf.dt_liquidacao) AS INTEGER) as mes,
+        SUM(pf.valor) as valor_quitado
+      FROM parcelaFinanciamento pf
+      WHERE pf.dt_liquidacao IS NOT NULL
+        AND CAST(strftime('%Y', pf.dt_liquidacao) AS INTEGER) = ?
+      GROUP BY mes
+      ORDER BY mes
+    `;
+    const resQuitado = await this.db.prepare(queryQuitado).bind(ano).all();
+    const quitado = Array(12).fill(0);
+    resQuitado.results.forEach((row: any) => {
+      const idx = row.mes - 1;
+      if (idx >= 0 && idx < 12) quitado[idx] = row.valor_quitado || 0;
+    });
+
+    // Em aberto por mês: ao fim de cada mês, saldo = contratos (até aquele mês) - parcelas liquidadas (até aquele mês)
+    // Contratos no ano: valor total por mês de dataContrato (acumulado até o mês)
+    const queryContratos = `
       SELECT 
         CAST(strftime('%m', dataContrato) AS INTEGER) as mes,
-        0 as quitado,
-        SUM(valor) as emAberto
+        SUM(valor) as valor_contratado
       FROM Financiamento
       WHERE CAST(strftime('%Y', dataContrato) AS INTEGER) = ?
       GROUP BY mes
       ORDER BY mes
     `;
-    const result = await this.db.prepare(query).bind(ano).all();
-    const quitado = Array(12).fill(0);
-    const emAberto = Array(12).fill(0);
-    result.results.forEach((row: any) => {
+    const resContratos = await this.db.prepare(queryContratos).bind(ano).all();
+    const contratadoPorMes = Array(12).fill(0);
+    resContratos.results.forEach((row: any) => {
       const idx = row.mes - 1;
-      quitado[idx] = row.quitado;
-      emAberto[idx] = row.emAberto;
+      if (idx >= 0 && idx < 12) contratadoPorMes[idx] = row.valor_contratado || 0;
     });
+
+    let acumuladoContratos = 0;
+    let acumuladoQuitado = 0;
+    const emAberto = Array(12).fill(0);
+    for (let m = 0; m < 12; m++) {
+      acumuladoContratos += contratadoPorMes[m];
+      acumuladoQuitado += quitado[m];
+      emAberto[m] = Math.max(0, acumuladoContratos - acumuladoQuitado);
+    }
+
     return {
       labels: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
       quitado,

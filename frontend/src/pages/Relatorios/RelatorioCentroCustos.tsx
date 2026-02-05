@@ -138,6 +138,9 @@ const RelatorioCentroCustos: React.FC = () => {
 	
 	const totalGeral = totalReceitas - totalDespesas;
 
+	const dadosReceitas = dados.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA');
+	const dadosDespesas = dados.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA');
+
 	// Função para calcular totais de despesas por tipo para um centro específico
 	const calcularTotaisDespesasPorTipo = (item: RelatorioCentroCustosItem) => {
 		if (item.centro.tipoReceitaDespesa !== 'DESPESA') {
@@ -303,55 +306,27 @@ const RelatorioCentroCustos: React.FC = () => {
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-gray-100">
-									{dados.map((item, idxResumo) => (
+									{/* Bloco 1: Centros de Receita */}
+									{dadosReceitas.map((item, idxResumo) => (
 										<React.Fragment key={item.centro.id}>
 											<tr className={idxResumo % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
 												<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
 													{item.centro.descricao}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-													{item.centro.tipoReceitaDespesa === 'RECEITA' ? (
-														<span className="text-emerald-700">
-															{new Intl.NumberFormat('pt-BR', {
-																style: 'currency',
-																currency: 'BRL'
-															}).format(item.total)}
-														</span>
-													) : (
-														<span className="text-gray-400">-</span>
-													)}
+													<span className="text-emerald-700">
+														{new Intl.NumberFormat('pt-BR', {
+															style: 'currency',
+															currency: 'BRL'
+														}).format(item.total)}
+													</span>
 												</td>
-												{(() => {
-													const totaisDespesas = calcularTotaisDespesasPorTipo(item);
-													return (
-														<>
-															<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-																{item.centro.tipoReceitaDespesa === 'DESPESA' && totaisDespesas.custeio > 0 ? (
-																	<span className="text-rose-700">
-																		{new Intl.NumberFormat('pt-BR', {
-																			style: 'currency',
-																			currency: 'BRL'
-																		}).format(totaisDespesas.custeio)}
-																	</span>
-																) : (
-																	<span className="text-gray-400">-</span>
-																)}
-															</td>
-															<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-																{item.centro.tipoReceitaDespesa === 'DESPESA' && totaisDespesas.investimento > 0 ? (
-																	<span className="text-rose-700">
-																		{new Intl.NumberFormat('pt-BR', {
-																			style: 'currency',
-																			currency: 'BRL'
-																		}).format(totaisDespesas.investimento)}
-																	</span>
-																) : (
-																	<span className="text-gray-400">-</span>
-																)}
-															</td>
-														</>
-													);
-												})()}
+												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
+													<span className="text-gray-400">-</span>
+												</td>
+												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
+													<span className="text-gray-400">-</span>
+												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-center">
 													<button
 														onClick={() => toggleCentro(item.centro.id)}
@@ -371,70 +346,28 @@ const RelatorioCentroCustos: React.FC = () => {
 															<table className="min-w-full">
 																<thead className="bg-slate-100">
 																	<tr>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-																			Data
-																		</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-																			Histórico
-																		</th>
-																		<th className="px-4 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-																			Valor R$
-																		</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-																			Tipo
-																		</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-																			Plano de Contas
-																		</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-																			Pessoa
-																		</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
-																			Conta Corrente
-																		</th>
+																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Data</th>
+																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Histórico</th>
+																		<th className="px-4 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Valor R$</th>
+																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Tipo</th>
+																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Plano de Contas</th>
+																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Pessoa</th>
+																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Conta Corrente</th>
 																	</tr>
 																</thead>
 																<tbody className="divide-y divide-gray-100">
 																	{item.movimentos.map((mov, idx) => (
-																		<tr
-																			key={`${mov.id}-${idx}`}
-																			className={`${
-																				idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
-																			} hover:bg-blue-50 transition-colors`}
-																		>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">
-																				{new Date(mov.dtMovimento).toLocaleDateString('pt-BR')}
-																			</td>
-																			<td className="px-4 py-2 text-sm text-gray-800">
-																				{mov.historico}
-																			</td>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-																				{new Intl.NumberFormat('pt-BR', {
-																					style: 'currency',
-																					currency: 'BRL'
-																				}).format(mov.valor)}
-																			</td>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">
-																				{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}
-																			</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">
-																				{mov.planoDescricao || '-'}
-																			</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">
-																				{mov.pessoaNome || '-'}
-																			</td>
+																		<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
+																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{new Date(mov.dtMovimento).toLocaleDateString('pt-BR')}</td>
+																			<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
+																			<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)}</td>
+																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
+																			<td className="px-4 py-2 text-sm text-gray-700">{mov.planoDescricao || '-'}</td>
+																			<td className="px-4 py-2 text-sm text-gray-700">{mov.pessoaNome || '-'}</td>
 																			<td className="px-4 py-2 text-sm text-gray-700">
 																				<div className="flex items-center gap-2" title={mov.contaDescricao || ''}>
-																					{(mov as any).bancoCodigo && (
-																						<img 
-																							src={getBancoLogo((mov as any).bancoCodigo)} 
-																							alt={(mov as any).bancoNome || 'Banco'} 
-																							className="w-5 h-5 object-contain flex-shrink-0"
-																						/>
-																					)}
-																					<span className="truncate whitespace-nowrap">
-																						{(mov as any).agencia ? `${(mov as any).agencia} - ` : ''}{(mov as any).numConta || '-'}
-																					</span>
+																					{(mov as any).bancoCodigo && <img src={getBancoLogo((mov as any).bancoCodigo)} alt={(mov as any).bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
+																					<span className="truncate whitespace-nowrap">{(mov as any).agencia ? `${(mov as any).agencia} - ` : ''}{(mov as any).numConta || '-'}</span>
 																				</div>
 																			</td>
 																		</tr>
@@ -447,6 +380,90 @@ const RelatorioCentroCustos: React.FC = () => {
 											)}
 										</React.Fragment>
 									))}
+									{/* Linha totalizador Total Receitas */}
+									{dadosReceitas.length > 0 && (
+										<tr className="bg-emerald-50 font-semibold border-t-2 border-emerald-200">
+											<td className="px-6 py-3 whitespace-nowrap text-gray-900">Total Receitas</td>
+											<td className="px-6 py-3 whitespace-nowrap text-right text-emerald-700">
+												{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceitas)}
+											</td>
+											<td className="px-6 py-3"></td>
+											<td className="px-6 py-3"></td>
+											<td className="px-6 py-3"></td>
+										</tr>
+									)}
+									{/* Bloco 2: Centros de Despesa */}
+									{dadosDespesas.map((item, idxResumo) => {
+										const totaisDespesas = calcularTotaisDespesasPorTipo(item);
+										return (
+											<React.Fragment key={item.centro.id}>
+												<tr className={idxResumo % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+													<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{item.centro.descricao}</td>
+													<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900"><span className="text-gray-400">-</span></td>
+													<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
+														{totaisDespesas.custeio > 0 ? <span className="text-rose-700">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totaisDespesas.custeio)}</span> : <span className="text-gray-400">-</span>}
+													</td>
+													<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
+														{totaisDespesas.investimento > 0 ? <span className="text-rose-700">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totaisDespesas.investimento)}</span> : <span className="text-gray-400">-</span>}
+													</td>
+													<td className="px-6 py-4 whitespace-nowrap text-center">
+														<button onClick={() => toggleCentro(item.centro.id)} className="text-blue-600 hover:text-blue-800" title={centrosExpandidos.has(item.centro.id) ? 'Recolher' : 'Expandir'}>
+															<FontAwesomeIcon icon={centrosExpandidos.has(item.centro.id) ? faChevronUp : faChevronDown} />
+														</button>
+													</td>
+												</tr>
+												{centrosExpandidos.has(item.centro.id) && (
+													<tr>
+														<td colSpan={5} className="px-6 py-4 bg-slate-50">
+															<div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+																<table className="min-w-full">
+																	<thead className="bg-slate-100">
+																		<tr>
+																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Data</th>
+																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Histórico</th>
+																			<th className="px-4 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Valor R$</th>
+																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Tipo</th>
+																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Plano de Contas</th>
+																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Pessoa</th>
+																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Conta Corrente</th>
+																		</tr>
+																	</thead>
+																	<tbody className="divide-y divide-gray-100">
+																		{item.movimentos.map((mov, idx) => (
+																			<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
+																				<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{new Date(mov.dtMovimento).toLocaleDateString('pt-BR')}</td>
+																				<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
+																				<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)}</td>
+																				<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
+																				<td className="px-4 py-2 text-sm text-gray-700">{mov.planoDescricao || '-'}</td>
+																				<td className="px-4 py-2 text-sm text-gray-700">{mov.pessoaNome || '-'}</td>
+																				<td className="px-4 py-2 text-sm text-gray-700">
+																					<div className="flex items-center gap-2" title={mov.contaDescricao || ''}>
+																						{(mov as any).bancoCodigo && <img src={getBancoLogo((mov as any).bancoCodigo)} alt={(mov as any).bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
+																						<span className="truncate whitespace-nowrap">{(mov as any).agencia ? `${(mov as any).agencia} - ` : ''}{(mov as any).numConta || '-'}</span>
+																					</div>
+																				</td>
+																			</tr>
+																		))}
+																	</tbody>
+																</table>
+															</div>
+														</td>
+													</tr>
+												)}
+											</React.Fragment>
+										);
+									})}
+									{/* Linha totalizador Total Despesas */}
+									{dadosDespesas.length > 0 && (
+										<tr className="bg-rose-50 font-semibold border-t-2 border-rose-200">
+											<td className="px-6 py-3 whitespace-nowrap text-gray-900">Total Despesas</td>
+											<td className="px-6 py-3"></td>
+											<td className="px-6 py-3 whitespace-nowrap text-right text-rose-700">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasCusteio)}</td>
+											<td className="px-6 py-3 whitespace-nowrap text-right text-rose-700">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasInvestimento)}</td>
+											<td className="px-6 py-3"></td>
+										</tr>
+									)}
 								</tbody>
 							</table>
 						</div>

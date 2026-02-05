@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faMinus, faSearchDollar } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faMinus, faSearchDollar, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
 import { Tooltip } from 'react-tooltip';
 import { listarContas } from '../../../services/contaCorrenteService';
 import { listarPlanoContas } from '../../../services/planoContasService';
 import { listarCentroCustos } from '../../../services/centroCustosService';
 import FiltroFluxoCaixaModal from './FiltroFluxoCaixaModal';
 import { buscarFluxoCaixa, buscarDetalhamento, buscarFluxoCaixaAnoAnterior } from '../../../services/fluxoCaixaService';
-import { FluxoCaixaMes } from '../../../../../backend/src/models/FluxoCaixaDTO';
+import { FluxoCaixaMes, FluxoCaixaResponse } from '../../../../../backend/src/models/FluxoCaixaDTO';
 import { formatarMoeda, formatarMoedaOuTraco, parseMoeda } from '../../../Utils/formataMoeda';
 import ModalDetalhamento from './ModalDetalhamento';
 import { MovimentoDetalhado } from '../../../../../backend/src/models/MovimentoDetalhado';
@@ -20,6 +20,7 @@ import FluxoCaixaGrafico from './FluxoCaixaGrafico';
 const MovimentoBancarioTable: React.FC = () => {
 	const [dadosFluxo, setDadosFluxo] = useState<FluxoCaixaMes[]>([]);
 	const [dadosFluxoAnterior, setDadosFluxoAnterior] = useState<FluxoCaixaMes[]>([]);
+	const [parcelasVincendasAnuais, setParcelasVincendasAnuais] = useState<{ [ano: number]: number }>({});
 	const [activeTab, setActiveTab] = useState<'tabela' | 'grafico'>('tabela');
 	const [modalPesquisaAberto, setModalPesquisaAberto] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
@@ -132,7 +133,8 @@ const MovimentoBancarioTable: React.FC = () => {
 			}
 			const dados = await buscarFluxoCaixa(ano, contas, tipoAgrup);
 			const dadosAnterior = await buscarFluxoCaixaAnoAnterior(ano, contas, tipoAgrup);
-			setDadosFluxo(dados);
+			setDadosFluxo(dados.dadosMensais || dados as any);
+			setParcelasVincendasAnuais(dados.parcelasVincendasAnuais || {});
 			setDadosFluxoAnterior(dadosAnterior);
 			setIsLoading(true);
 			console.log('Dados do fluxo de caixa:', dados);
@@ -374,11 +376,13 @@ const MovimentoBancarioTable: React.FC = () => {
 	const calcularResultadoFinanciamentos = (mesIndex: number): number => {
 		const contratados = calcularFinanciamentosContratados(mesIndex);
 		const pagos = calcularFinanciamentosPagos(mesIndex);
-		return contratados - pagos;
+		return pagos - contratados;
 	};
 
 	const calcularSaldoFinanciamentosAtivos = (mesIndex: number): number => {
 		// Saldo acumulado (contratados - pagos acumulado ao longo dos meses)
+		// Nota: Este cálculo representa o saldo teórico. Para parcelas vincendas detalhadas por mês,
+		// seria necessário calcular no backend as parcelas com vencimento futuro agrupadas por mês
 		let saldoAcumulado = 0;
 		for (let i = 0; i <= mesIndex; i++) {
 			const contratados = calcularFinanciamentosContratados(i);
@@ -452,6 +456,82 @@ const MovimentoBancarioTable: React.FC = () => {
 		);
 	};
 
+	const renderLinhaPendentesAlerta = () => {
+		const possuiDados = dadosFluxo.some((mes) => 
+			mes.pendentesSelecao && Object.keys(mes.pendentesSelecao ?? {}).length > 0
+		);
+		
+		if (!possuiDados) return null;
+
+		const tipo = 'pendentesSelecao';
+		const chaveEstado = 'pendentes'; // Chave usada no estado expandido
+		const label = 'Pendentes Seleção';
+		const mainCor = '#fef3c7'; // Amarelo claro para alerta
+		const valueCor = '#fff4d0'; // Amarelo mais claro para valores
+
+		return (
+			<>
+				{/* Linha principal com estilo de alerta */}
+				<tr className="font-bold border border-gray-300" style={{ borderTop: '3px solid #f59e0b' }}>
+					<td
+						className={`px-3 py-2 sticky left-0 z-10 text-left cursor-pointer`}
+						style={{ backgroundColor: mainCor }}
+						onClick={() => toggleCategoria(chaveEstado)}
+					>
+						<FontAwesomeIcon icon={expandido[chaveEstado] ? faMinus : faPlus} className="mr-2 text-blue-600" />
+						<FontAwesomeIcon icon={faExclamationTriangle} className="mr-2 text-orange-600" />
+						{label}
+					</td>
+					{meses.map((_, idx) => (
+						<td key={idx} className="text-center px-3 py-2 border border-gray-300" style={{ backgroundColor: valueCor }}>
+							{(() => {
+								const total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
+									(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
+									0
+								);
+								return total ? `R$ ${formatarMoeda(total)}` : 'R$ 0,00';
+							})()}
+						</td>
+					))}
+				</tr>
+
+				{/* Subcategorias por conta corrente quando expandido */}
+				{expandido[chaveEstado] && 
+					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idConta) => {
+						const descricao = getDescricaoContaCorrente(idConta);
+						return (
+							<tr key={`pendente-${idConta}`} className="bg-white border border-gray-200">
+								<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
+									<div className="ml-7">{descricao}</div>
+								</td>
+								{meses.map((_, idx) => {
+									const valor = (dadosFluxo[idx]?.[tipo] as any)?.[idConta];
+									return (
+										<td
+											key={`valor-pendente-${idConta}-${idx}`}
+											className="text-center px-3 py-1 border border-gray-300"
+										>
+											{valor ? (
+												<div
+													className="cursor-pointer hover:underline hover:text-blue-600"
+													onClick={() => abrirDetalhamento(idConta, idx, tipo, descricao)}
+												>
+													{`R$ ${formatarMoeda(valor)}`}
+												</div>
+											) : (
+												'R$ 0,00'
+											)}
+										</td>
+									);
+								})}
+							</tr>
+						);
+					})
+				}
+			</>
+		);
+	};
+
 	const renderRodapeCentroCustos = () => {
 		return (
 			<>
@@ -511,6 +591,39 @@ const MovimentoBancarioTable: React.FC = () => {
 						);
 					})}
 				</tr>
+
+				{/* Saldo de Pendências */}
+				<tr 
+					className="bg-gray-100 font-bold border border-gray-300 cursor-help"
+				>
+					<td id="tooltip-saldo-pend-centros" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Pendências</td>
+					{calcularTotais('pendentesSelecao').map((valor, idx) => (
+						<td key={idx} className="text-center border border-gray-300 bg-white">
+							{valor}
+						</td>
+					))}
+				</tr>
+
+				{/* Parcelas vincendas por ano */}
+				{Object.keys(parcelasVincendasAnuais).length > 0 && (
+					<tr className="bg-blue-50 font-bold border border-gray-300">
+						<td className="sticky left-0 border border-gray-300 z-10 text-center bg-blue-100">Parcelas vincendas por ano</td>
+						{meses.map((_, idx) => {
+							// Para cada mês, mostrar o total anual se for o último mês do ano, senão vazio
+							const anoAtual = parseInt(anoSelecionado);
+							const totalAnual = parcelasVincendasAnuais[anoAtual] || 0;
+							const isUltimoMes = idx === meses.length - 1;
+							return (
+								<td
+									key={idx}
+									className="text-center border border-gray-300 bg-blue-50"
+								>
+									{isUltimoMes ? `R$ ${formatarMoeda(totalAnual)}` : ''}
+								</td>
+							);
+						})}
+					</tr>
+				)}
 			</>
 		);
 	};
@@ -964,7 +1077,9 @@ const MovimentoBancarioTable: React.FC = () => {
 								{renderCategoria('financiamentos', 'Financiamentos', '#ffc0c0', '#fce1e3')}
 								{/* Quando agrupado por centros, não mostrar seção de investimentos (já está nas despesas) */}
 								{tipoAgrupamento === 'planos' && renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
-								{renderCategoria('pendentesSelecao', 'Pendentes Seleção', '#e2e8f0', '#f8fafc')}
+
+								{/* Linha de alerta para Pendentes Seleção */}
+								{renderLinhaPendentesAlerta()}
 
 								{/* Totalizadores - Customizado para Centro de Custos ou padrão para Planos de Contas */}
 								{tipoAgrupamento === 'centros' ? (
@@ -1110,8 +1225,8 @@ const MovimentoBancarioTable: React.FC = () => {
 					</Tooltip>
 					<Tooltip anchorId="tooltip-resultado-fin-centros" place="top" className="z-50">
 						<div className="text-sm">
-							<strong>Cálculo:</strong> Financiamentos Contratados - Financiamentos Pagos<br/>
-							Representa o impacto líquido dos financiamentos no mês. Positivo = mais contratados que pagos.
+							<strong>Cálculo:</strong> Pagos – Contratados<br/>
+							Positivo = maior quitação que contratação no mês (melhor para o caixa/endividamento).
 						</div>
 					</Tooltip>
 					<Tooltip anchorId="tooltip-saldo-mes-centros" place="top" className="z-50">
@@ -1124,6 +1239,12 @@ const MovimentoBancarioTable: React.FC = () => {
 						<div className="text-sm">
 							<strong>Cálculo:</strong> Soma acumulada de (Contratados - Pagos) desde o início do ano<br/>
 							Representa o saldo total de financiamentos ainda não quitados até o mês atual.
+						</div>
+					</Tooltip>
+					<Tooltip anchorId="tooltip-saldo-pend-centros" place="top" className="z-50">
+						<div className="text-sm">
+							<strong>Cálculo:</strong> Soma de movimentos sem plano de contas ou centro de custos atribuído<br/>
+							Representa valores que ainda precisam ser classificados corretamente.
 						</div>
 					</Tooltip>
 				</>

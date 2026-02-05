@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import FiltroRelatorio from './FiltroRelatorio';
 import {
 	getRelatorioItensClassificados,
@@ -11,10 +11,13 @@ import { faFileExcel, faFilePdf, faSpinner } from '@fortawesome/free-solid-svg-i
 import { toast } from 'react-toastify';
 import { getBancoLogo } from '../../Utils/bancoUtils';
 
+type OrdenarPor = 'data' | 'plano';
+
 const RelatorioItensClassificados: React.FC = () => {
 	const [dados, setDados] = useState<RelatorioItensClassificadosItem[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [isExporting, setIsExporting] = useState(false);
+	const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>('data');
 	const [filtrosAplicados, setFiltrosAplicados] = useState<{
 		dataInicio?: string;
 		dataFim?: string;
@@ -112,6 +115,56 @@ const RelatorioItensClassificados: React.FC = () => {
 	
 	const totalGeral = totalReceitas - totalDespesas;
 
+	// Agrupamento por plano (para visualização "Por plano de contas")
+	const gruposPorPlano = useMemo(() => {
+		const map = new Map<string | number, RelatorioItensClassificadosItem[]>();
+		for (const item of dados) {
+			const key = item.idPlanoContas ?? item.planoDescricao ?? 'Sem plano';
+			if (!map.has(key)) map.set(key, []);
+			map.get(key)!.push(item);
+		}
+		const entries = Array.from(map.entries()).sort((a, b) => {
+			const nomeA = typeof a[0] === 'string' ? a[0] : (a[1][0]?.planoDescricao ?? String(a[0]));
+			const nomeB = typeof b[0] === 'string' ? b[0] : (b[1][0]?.planoDescricao ?? String(b[0]));
+			return nomeA.localeCompare(nomeB);
+		});
+		return entries;
+	}, [dados]);
+
+	const formatarMoeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+	const renderLinhaItem = (item: RelatorioItensClassificadosItem, idx: number) => (
+		<tr
+			key={item.id}
+			className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}
+		>
+			<td className="px-2 py-2 whitespace-nowrap text-xs text-gray-800">{new Date(item.dtMovimento).toLocaleDateString('pt-BR')}</td>
+			<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.historico}>{item.historico}</td>
+			<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
+				{item.tipoMovimento === 'C' ? <span className="text-emerald-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>}
+			</td>
+			<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
+				{item.tipoMovimento === 'D' && item.centroCustosTipo === 'CUSTEIO' ? <span className="text-rose-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>}
+			</td>
+			<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
+				{(() => {
+					const mostraInvest = item.tipoMovimento === 'D' && (item.centroCustosTipo === 'INVESTIMENTO' || !item.centroCustosTipo);
+					return mostraInvest ? <span className="text-rose-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>;
+				})()}
+			</td>
+			<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.planoDescricao || ''}>{item.planoDescricao || '-'}</td>
+			<td className="px-2 py-2 text-xs truncate" title={item.centroCustosDescricao || ''}>
+				<span className={item.centroCustosDescricao === 'Não definido' ? 'text-red-600 font-medium' : 'text-gray-800'}>{item.centroCustosDescricao || '-'}</span>
+			</td>
+			<td className="px-2 py-2 text-xs text-gray-800">
+				<div className="flex items-center gap-1.5" title={item.contaDescricao || ''}>
+					{item.bancoCodigo && <img src={getBancoLogo(item.bancoCodigo)} alt={item.bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
+					<span className="truncate whitespace-nowrap">{item.agencia ? `${item.agencia} - ` : ''}{item.numConta || '-'}</span>
+				</div>
+			</td>
+		</tr>
+	);
+
 	return (
 		<div className="min-h-screen ">
 			<div className="max-w-8xl mx-auto">
@@ -141,9 +194,19 @@ const RelatorioItensClassificados: React.FC = () => {
 			{!isLoading && dados.length > 0 && (
 				<div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
 					<div className="p-5">
-						<div className="flex items-center justify-between mb-3">
-							<h3 className="text-lg font-semibold text-gray-800">Plano de Contas</h3>
-							{/* Botões de Exportação */}
+						<div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+							<div className="flex items-center gap-3">
+								<h3 className="text-lg font-semibold text-gray-800">Plano de Contas</h3>
+								<span className="text-sm text-gray-500">Visualização:</span>
+								<select
+									value={ordenarPor}
+									onChange={(e) => setOrdenarPor(e.target.value as OrdenarPor)}
+									className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+								>
+									<option value="data">Por data (mais recente primeiro)</option>
+									<option value="plano">Por plano de contas (subtotais)</option>
+								</select>
+							</div>
 							<div className="flex gap-2">
 								<button
 									onClick={handleExportExcel}
@@ -238,84 +301,30 @@ const RelatorioItensClassificados: React.FC = () => {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-100">
-								{dados.map((item, idx) => (
-									<tr
-										key={item.id}
-										className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}
-									>
-										<td className="px-2 py-2 whitespace-nowrap text-xs text-gray-800">
-											{new Date(item.dtMovimento).toLocaleDateString('pt-BR')}
-										</td>
-										<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.historico}>
-											{item.historico}
-										</td>
-										<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-											{item.tipoMovimento === 'C' ? (
-												<span className="text-emerald-700">
-													{new Intl.NumberFormat('pt-BR', {
-														style: 'currency',
-														currency: 'BRL'
-													}).format(item.valor)}
-												</span>
-											) : (
-												<span className="text-gray-400">-</span>
-											)}
-										</td>
-										<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-											{item.tipoMovimento === 'D' && item.centroCustosTipo === 'CUSTEIO' ? (
-												<span className="text-rose-700">
-													{new Intl.NumberFormat('pt-BR', {
-														style: 'currency',
-														currency: 'BRL'
-													}).format(item.valor)}
-												</span>
-											) : (
-												<span className="text-gray-400">-</span>
-											)}
-										</td>
-										<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-											{item.tipoMovimento === 'D' && item.centroCustosTipo === 'INVESTIMENTO' ? (
-												<span className="text-rose-700">
-													{new Intl.NumberFormat('pt-BR', {
-														style: 'currency',
-														currency: 'BRL'
-													}).format(item.valor)}
-												</span>
-											) : item.tipoMovimento === 'D' && !item.centroCustosTipo ? (
-												<span className="text-rose-700">
-													{new Intl.NumberFormat('pt-BR', {
-														style: 'currency',
-														currency: 'BRL'
-													}).format(item.valor)}
-												</span>
-											) : (
-												<span className="text-gray-400">-</span>
-											)}
-										</td>
-										<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.planoDescricao || ''}>
-											{item.planoDescricao || '-'}
-										</td>
-										<td className="px-2 py-2 text-xs truncate" title={item.centroCustosDescricao || ''}>
-											<span className={item.centroCustosDescricao === 'Não definido' ? 'text-red-600 font-medium' : 'text-gray-800'}>
-												{item.centroCustosDescricao || '-'}
-											</span>
-										</td>
-										<td className="px-2 py-2 text-xs text-gray-800">
-											<div className="flex items-center gap-1.5" title={item.contaDescricao || ''}>
-												{item.bancoCodigo && (
-													<img 
-														src={getBancoLogo(item.bancoCodigo)} 
-														alt={item.bancoNome || 'Banco'} 
-														className="w-5 h-5 object-contain flex-shrink-0"
-													/>
-												)}
-												<span className="truncate whitespace-nowrap">
-													{item.agencia ? `${item.agencia} - ` : ''}{item.numConta || '-'}
-												</span>
-											</div>
-										</td>
-									</tr>
-								))}
+								{ordenarPor === 'data' && dados.map((item, idx) => renderLinhaItem(item, idx))}
+								{ordenarPor === 'plano' && gruposPorPlano.map(([chave, itens]) => {
+									const nomePlano = typeof chave === 'string' ? chave : (itens[0]?.planoDescricao ?? String(chave));
+									const subReceita = itens.filter(i => i.tipoMovimento === 'C').reduce((s, i) => s + i.valor, 0);
+									const subDespesaCusteio = itens.filter(i => i.tipoMovimento === 'D' && i.centroCustosTipo === 'CUSTEIO').reduce((s, i) => s + i.valor, 0);
+									const subDespesaInvest = itens.filter(i => i.tipoMovimento === 'D' && (i.centroCustosTipo === 'INVESTIMENTO' || !i.centroCustosTipo)).reduce((s, i) => s + i.valor, 0);
+									return (
+										<React.Fragment key={String(chave)}>
+											<tr className="bg-slate-100 border-t-2 border-slate-200">
+												<td colSpan={8} className="px-2 py-2 text-xs font-semibold text-slate-700">
+													Plano de contas: {nomePlano}
+												</td>
+											</tr>
+											{itens.map((item, idx) => renderLinhaItem(item, idx))}
+											<tr className="bg-slate-50 font-semibold border-t border-slate-200">
+												<td colSpan={2} className="px-2 py-2 text-xs text-gray-700">Subtotal {nomePlano}</td>
+												<td className="px-2 py-2 text-xs text-right text-emerald-700">{subReceita > 0 ? formatarMoeda(subReceita) : '-'}</td>
+												<td className="px-2 py-2 text-xs text-right text-rose-700">{subDespesaCusteio > 0 ? formatarMoeda(subDespesaCusteio) : '-'}</td>
+												<td className="px-2 py-2 text-xs text-right text-rose-700">{subDespesaInvest > 0 ? formatarMoeda(subDespesaInvest) : '-'}</td>
+												<td colSpan={3} className="px-2 py-2"></td>
+											</tr>
+										</React.Fragment>
+									);
+								})}
 							</tbody>
 						</table>
 						</div>

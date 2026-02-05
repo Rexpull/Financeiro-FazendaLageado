@@ -203,10 +203,15 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 			if (data.modalidadeMovimento === 'financiamento') {
 				movimentoAtualizado.idBanco = data.idBanco || undefined;
+				movimentoAtualizado.idPessoa = data.idPessoa || undefined;
 				movimentoAtualizado.numeroDocumento = data.numeroDocumento || undefined;
 				movimentoAtualizado.parcelado = data.parcelado || false;
 				movimentoAtualizado.idFinanciamento = data.idFinanciamento || undefined;
 				movimentoAtualizado.idCentroCustos = data.idCentroCustos || undefined;
+				// Marcar como conciliado quando há financiamento associado
+				if (data.idFinanciamento) {
+					movimentoAtualizado.ideagro = true;
+				}
 			}
 
 			if(data.modalidadeMovimento === 'transferencia') {	

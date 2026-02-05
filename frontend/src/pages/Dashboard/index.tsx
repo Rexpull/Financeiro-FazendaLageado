@@ -161,38 +161,30 @@ const Dashboard = () => {
     fetchDetalhamento();
   }, [tipoAgrupamentoDetalhamento]);
 
-  // Novo useEffect para carregar dados dos filtros rápidos
+  // Carregar dados de financiamentos: quando aba Financiamentos está ativa, carregar as três fontes em paralelo para os cards terem dados
   useEffect(() => {
+    if (activeDashboardTab !== 'financiamentos') return;
+
     const fetchFiltrosRapidos = async () => {
       try {
         const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
         const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
 
-        // Carregar dados baseado na aba ativa
-        switch (activeTab) {
-          case 'parcelas-vencer': {
-            const parcelasData = await getParcelasAVencer(anoSelecionado, mesParam);
-            setParcelasAVencer(parcelasData);
-            break;
-          }
-          case 'contratos-liquidados': {
-            const liquidadosData = await getContratosLiquidados(anoSelecionado, mesParam);
-            setContratosLiquidados(liquidadosData);
-            break;
-          }
-          case 'contratos-novos': {
-            const novosData = await getContratosNovos(anoSelecionado, mesParam);
-            setContratosNovos(novosData);
-            break;
-          }
-        }
+        const [parcelasData, liquidadosData, novosData] = await Promise.all([
+          getParcelasAVencer(anoSelecionado, mesParam),
+          getContratosLiquidados(anoSelecionado, mesParam),
+          getContratosNovos(anoSelecionado, mesParam),
+        ]);
+        setParcelasAVencer(parcelasData);
+        setContratosLiquidados(liquidadosData);
+        setContratosNovos(novosData);
       } catch (err) {
         console.error('Erro ao carregar filtros rápidos:', err);
       }
     };
 
     fetchFiltrosRapidos();
-  }, [activeTab, anoSelecionado, mesSelecionado]);
+  }, [activeDashboardTab, anoSelecionado, mesSelecionado]);
 
   // Filtros inteligentes
   const bancosDisponiveis: any[] = [];

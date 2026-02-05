@@ -1987,6 +1987,13 @@ export class MovimentoBancarioRepository {
 			}
 
 			const resultado = Array.from(agrupados.values());
+			// Ordenar: RECEITA antes de DESPESA; dentro de cada tipo, por centro.descricao (alfabético)
+			resultado.sort((a, b) => {
+				const tipoA = a.centro.tipoReceitaDespesa === 'RECEITA' ? 0 : 1;
+				const tipoB = b.centro.tipoReceitaDespesa === 'RECEITA' ? 0 : 1;
+				if (tipoA !== tipoB) return tipoA - tipoB;
+				return (a.centro.descricao || '').localeCompare(b.centro.descricao || '');
+			});
 			console.log(`✅ Repository: Relatório agrupado em ${resultado.length} centros de custos`);
 			return resultado;
 		} catch (error) {
@@ -2006,8 +2013,10 @@ export class MovimentoBancarioRepository {
 		historico: string;
 		valor: number;
 		tipoMovimento: string;
+		idPlanoContas?: number;
 		planoDescricao?: string;
 		centroCustosDescricao?: string;
+		centroCustosTipo?: string;
 		pessoaNome?: string;
 		bancoNome?: string;
 		responsavel?: string;
@@ -2102,6 +2111,7 @@ export class MovimentoBancarioRepository {
 							valor: Math.abs(cc.valor),
 							tipoMovimento: mov.tipoMovimento,
 							modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
+							idPlanoContas: mov.idPlanoContas,
 							planoDescricao: mov.planoDescricao,
 							centroCustosDescricao: centroInfo?.descricao as string || 'Não definido',
 							centroCustosTipo: centroInfo?.tipo as string || null,
@@ -2123,6 +2133,7 @@ export class MovimentoBancarioRepository {
 						valor: Math.abs(mov.valor),
 						tipoMovimento: mov.tipoMovimento,
 						modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
+						idPlanoContas: mov.idPlanoContas,
 						planoDescricao: mov.planoDescricao,
 						centroCustosDescricao: mov.centroCustosDescricao || 'Não definido',
 						centroCustosTipo: mov.centroCustosTipo || null,
@@ -2199,18 +2210,6 @@ export class MovimentoBancarioRepository {
 				['Centro de Custos', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$']
 			];
 
-			const resumoData = dados.map(item => {
-				const receita = item.centro.tipoReceitaDespesa === 'RECEITA' ? item.total : 0;
-				const despesaCusteio = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO' ? item.total : 0;
-				const despesaInvestimento = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO' ? item.total : 0;
-				return [
-				item.centro.descricao,
-					this.formatarMoedaExcel(receita),
-					this.formatarMoedaExcel(despesaCusteio),
-					this.formatarMoedaExcel(despesaInvestimento)
-				];
-			});
-
 			// Calcular totais
 			const totalReceitas = dados
 				.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA')
@@ -2222,15 +2221,37 @@ export class MovimentoBancarioRepository {
 				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
 				.reduce((sum, item) => sum + item.total, 0);
 
-			// Adicionar linha de total
-			const linhaTotal = [
+			// Montar linhas do resumo: centros na ordem (receitas depois despesas) + Total Receitas após receitas + Total Despesas após despesas + TOTAL
+			const resumoRows: (string | number)[][] = [];
+			let ultimoEraReceita: boolean | null = null;
+			for (const item of dados) {
+				const ehReceita = item.centro.tipoReceitaDespesa === 'RECEITA';
+				if (ultimoEraReceita === true && !ehReceita) {
+					resumoRows.push(['Total Receitas', this.formatarMoedaExcel(totalReceitas), '', '']);
+				}
+				ultimoEraReceita = ehReceita;
+				const receita = ehReceita ? item.total : 0;
+				const despesaCusteio = !ehReceita && item.centro.tipo === 'CUSTEIO' ? item.total : 0;
+				const despesaInvestimento = !ehReceita && item.centro.tipo === 'INVESTIMENTO' ? item.total : 0;
+				resumoRows.push([
+					item.centro.descricao,
+					this.formatarMoedaExcel(receita),
+					this.formatarMoedaExcel(despesaCusteio),
+					this.formatarMoedaExcel(despesaInvestimento)
+				]);
+			}
+			if (ultimoEraReceita === true) {
+				resumoRows.push(['Total Receitas', this.formatarMoedaExcel(totalReceitas), '', '']);
+			}
+			resumoRows.push(['Total Despesas', '', this.formatarMoedaExcel(totalDespesasCusteio), this.formatarMoedaExcel(totalDespesasInvestimento)]);
+			resumoRows.push([
 				'TOTAL',
 				this.formatarMoedaExcel(totalReceitas),
 				this.formatarMoedaExcel(totalDespesasCusteio),
 				this.formatarMoedaExcel(totalDespesasInvestimento)
-			];
+			]);
 
-			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoData, linhaTotal]);
+			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoRows]);
 			XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo por Centro');
 
 			// Planilha 2: Detalhamento
@@ -2464,11 +2485,39 @@ export class MovimentoBancarioRepository {
 			let yPos = drawFilters(32);
 			yPos = drawSummary(yPos);
 
-			// Lista todos os movimentos expandidos, agrupados por centro
+			const dadosReceitas = dados.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA');
+			const dadosDespesas = dados.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA');
+
+			// Função para desenhar linha de totalizador (Total Receitas ou Total Despesas)
+			const drawTotalizador = (label: string, receitaVal: number, custeioVal: number, investVal: number, yStart: number) => {
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				doc.setFillColor(245, 245, 245);
+				doc.rect(20, yStart - 3, 257, 8, 'F');
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.line(20, yStart - 3, 277, yStart - 3);
+				doc.line(20, yStart + 5, 277, yStart + 5);
+				doc.text(label + ':', 22, yStart + 2);
+				if (receitaVal > 0) {
+					doc.setTextColor(0, 128, 0);
+					doc.text(new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(receitaVal), 80, yStart + 2);
+				}
+				if (custeioVal > 0 || investVal > 0) {
+					doc.setTextColor(220, 20, 60);
+					const txt = [custeioVal > 0 ? `Custeio: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(custeioVal)}` : '', investVal > 0 ? `Invest.: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(investVal)}` : ''].filter(Boolean).join(' | ');
+					doc.text(txt, 150, yStart + 2);
+				}
+				doc.setTextColor(0, 0, 0);
+				return yStart + 12;
+			};
+
+			// Lista todos os movimentos expandidos: receitas -> Total Receitas -> despesas -> Total Despesas
 			let isFirstPage = true;
 			let pageNumber = 1;
-			
-			for (const item of dados) {
+
+			for (const item of dadosReceitas) {
 				// Verificar se precisa de nova página
 				if (yPos > 175 && !isFirstPage) {
 					pageNumber++;
@@ -2669,6 +2718,133 @@ export class MovimentoBancarioRepository {
 				} else {
 					yPos += 30; // Fallback
 				}
+			}
+
+			if (dadosReceitas.length > 0) {
+				if (yPos > 180) {
+					pageNumber++;
+					doc.addPage();
+					drawHeader(pageNumber);
+					yPos = 32;
+				}
+				yPos = drawTotalizador('Total Receitas', totalReceitas, 0, 0, yPos);
+			}
+
+			for (const item of dadosDespesas) {
+				// Verificar se precisa de nova página
+				if (yPos > 175 && !isFirstPage) {
+					pageNumber++;
+					doc.addPage();
+					drawHeader(pageNumber);
+					yPos = 32;
+				}
+				isFirstPage = false;
+
+				// Cabeçalho do centro de custos
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				let fillColor = [240, 240, 240];
+				if (item.centro.tipoReceitaDespesa === 'DESPESA') {
+					if (item.centro.tipo === 'INVESTIMENTO') {
+						fillColor = [219, 234, 254];
+					} else {
+						fillColor = [254, 226, 226];
+					}
+				}
+				doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
+				doc.rect(20, yPos - 4, 257, 10, 'F');
+				doc.setDrawColor(200, 200, 200);
+				doc.setLineWidth(0.3);
+				doc.line(20, yPos - 4, 277, yPos - 4);
+				doc.line(20, yPos + 6, 277, yPos + 6);
+				doc.text(item.centro.descricao, 22, yPos);
+				doc.setFontSize(8);
+				doc.setFont('helvetica', 'normal');
+				if (item.centro.tipo === 'INVESTIMENTO') {
+					doc.setTextColor(30, 64, 175);
+				} else {
+					doc.setTextColor(220, 20, 60);
+				}
+				const tipoInfo = `${item.centro.tipoReceitaDespesa || ''}${item.centro.tipo ? ` - ${item.centro.tipo}` : ''}`;
+				doc.text(tipoInfo, 22, yPos + 4);
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'bold');
+				doc.setTextColor(0, 0, 0);
+				const totalFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.total);
+				doc.text(`Total: ${totalFormatado}`, 270, yPos + 2, { align: 'right' });
+				yPos += 7;
+
+				const detalhamentoData = item.movimentos.map(mov => {
+					const valorFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor);
+					let historicoLimpo = String(mov.historico || '');
+					try {
+						if (typeof historicoLimpo === 'string') {
+							historicoLimpo = historicoLimpo.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '').replace(/\x00/g, '').replace(/[\uFFFD]/g, '').trim();
+						}
+					} catch (e) {
+						historicoLimpo = '';
+					}
+					historicoLimpo = historicoLimpo.replace(/\s+/g, ' ');
+					if (historicoLimpo.length > 60) historicoLimpo = historicoLimpo.slice(0, 57) + '...';
+					let planoLimpo = String(mov.planoDescricao || '-');
+					try {
+						planoLimpo = planoLimpo.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '').replace(/\x00/g, '').replace(/[\uFFFD]/g, '').trim();
+					} catch (e) {
+						planoLimpo = '-';
+					}
+					if (planoLimpo.length > 35) planoLimpo = planoLimpo.slice(0, 32) + '...';
+					let pessoaLimpo = String(mov.pessoaNome || '-');
+					try {
+						pessoaLimpo = pessoaLimpo.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '').replace(/\x00/g, '').replace(/[\uFFFD]/g, '').trim();
+					} catch (e) {
+						pessoaLimpo = '-';
+					}
+					return [
+						new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+						historicoLimpo || '-',
+						valorFormatado,
+						mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+						planoLimpo,
+						pessoaLimpo
+					];
+				});
+
+				autoTable(doc, {
+					startY: yPos,
+					head: [['Data', 'Histórico', 'Valor', 'Tipo', 'Plano de Contas', 'Pessoa']],
+					body: detalhamentoData,
+					theme: 'striped',
+					headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9, lineColor: [200, 200, 200], lineWidth: 0.3 },
+					bodyStyles: { fontSize: 8, textColor: [0, 0, 0], lineColor: [220, 220, 220], lineWidth: 0.2 },
+					alternateRowStyles: { fillColor: [250, 250, 250] },
+					columnStyles: { 0: { cellWidth: 22, halign: 'left' }, 1: { cellWidth: 95, halign: 'left' }, 2: { cellWidth: 28, halign: 'right' }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 65, halign: 'left' }, 5: { cellWidth: 27, halign: 'left' } },
+					margin: { left: 20, right: 20, top: 2 },
+					styles: { overflow: 'linebreak', cellPadding: 2, lineColor: [220, 220, 220], lineWidth: 0.2 },
+					didDrawPage: (data: any) => {
+						if (data.pageNumber > pageNumber) {
+							pageNumber = data.pageNumber;
+							drawHeader(pageNumber);
+						}
+					}
+				});
+
+				const finalY2 = (doc as any).lastAutoTable?.finalY;
+				if (finalY2) {
+					yPos = finalY2 + 8;
+				} else {
+					yPos += 30;
+				}
+			}
+
+			if (dadosDespesas.length > 0) {
+				if (yPos > 180) {
+					pageNumber++;
+					doc.addPage();
+					drawHeader(pageNumber);
+					yPos = 32;
+				}
+				yPos = drawTotalizador('Total Despesas', 0, totalDespesasCusteio, totalDespesasInvestimento, yPos);
 			}
 
 			// Rodapé em todas as páginas
