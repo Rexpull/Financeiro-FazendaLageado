@@ -91,7 +91,6 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const [modalFinanciamentoOpen, setModalFinanciamentoOpen] = useState(false);
 	const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
 	const [buscaFinanciamento, setBuscaFinanciamento] = useState('');
-	const [bancoFiltroFinanciamento, setBancoFiltroFinanciamento] = useState<number | null>(null);
 	const [financiamentoSelecionado, setFinanciamentoSelecionado] = useState<Financiamento | null>(null);
 	const [novoFinanciamentoData, setNovoFinanciamentoData] = useState<any>(null);
 	const [transferenciaPlanoMode, setTransferenciaPlanoMode] = useState('transferencia');
@@ -115,7 +114,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const modalInicializado = useRef(false);
 
 	useEffect(() => {
+		console.log('[DEBUG FIN] Effect run', {
+			isOpen,
+			movimentoId: movimento?.id,
+			movimentoIdFinanciamento: movimento?.idFinanciamento,
+			modalidade: movimento?.modalidadeMovimento,
+			modalInicializado: modalInicializado.current,
+			movimentosSelecionadosLength: movimentosSelecionados.length,
+		});
 		if (isOpen && !modalInicializado.current) {
+			console.log('[DEBUG FIN] Entrando no bloco de inicialização (modalInicializado era false)');
 			modalInicializado.current = true;
 			
 			if (movimentosSelecionados.length > 1) {
@@ -168,8 +176,11 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				} else {
 					setRateiosPlanos([]);
 				}
-				setFinanciamentoSelecionado(null);
-				setBuscaFinanciamento('');
+				// Só limpar financiamento quando o movimento não está conciliado como financiamento (evita flash vazio ao reabrir)
+				if (!movimento.idFinanciamento) {
+					setFinanciamentoSelecionado(null);
+					setBuscaFinanciamento('');
+				}
 				
 				setFormData({
 					idPlanoContas: movimento.idPlanoContas || null,
@@ -186,11 +197,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				try {
 					const financiamentosList = await listarFinanciamentos();
 					setFinanciamentos(financiamentosList);
-					
-					if (movimentosSelecionados.length === 1 && movimento.idFinanciamento) {
-						const financiamento = financiamentosList.find(f => f.id === movimento.idFinanciamento);
+					console.log('[DEBUG FIN] inicializarModal: list length=', financiamentosList.length, 'movimento.idFinanciamento=', movimento.idFinanciamento, 'ids na lista=', financiamentosList.slice(0, 5).map((f: Financiamento) => ({ id: f.id, tipo: typeof f.id })));
+					// Carregar financiamento sempre que o movimento tiver idFinanciamento (não depender de movimentosSelecionados.length === 1; ao abrir pelo clique na célula pode ser 0)
+					if (movimento.idFinanciamento) {
+						const financiamento = financiamentosList.find(f => f.id == movimento.idFinanciamento);
+						console.log('[DEBUG FIN] inicializarModal: find result=', financiamento ? { id: financiamento.id, responsavel: financiamento.responsavel } : 'undefined');
 						if (financiamento) {
 							setFinanciamentoSelecionado(financiamento);
+							setBuscaFinanciamento(`${financiamento.numeroContrato || ''} - ${financiamento.responsavel || ''}`);
 						}
 					}
 				} catch (error) {
@@ -202,12 +216,34 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			inicializarModal();
 		}
 
+		// Sempre que o modal está aberto e o movimento tem idFinanciamento, garantir que o financiamento seja carregado no input
+		if (isOpen && movimento?.idFinanciamento) {
+			console.log('[DEBUG FIN] Entrando no bloco carregarFinanciamentoSelecionado, movimento.idFinanciamento=', movimento.idFinanciamento);
+			const carregarFinanciamentoSelecionado = async () => {
+				try {
+					const list = await listarFinanciamentos();
+					setFinanciamentos(list);
+					console.log('[DEBUG FIN] carregarFinanciamentoSelecionado: list length=', list.length, 'buscando id=', movimento.idFinanciamento, 'tipo=', typeof movimento.idFinanciamento);
+					console.log('[DEBUG FIN] primeiros ids da lista:', list.slice(0, 10).map((f: Financiamento) => ({ id: f.id, tipo: typeof f.id })));
+					const fin = list.find((f: Financiamento) => f.id == movimento.idFinanciamento);
+					console.log('[DEBUG FIN] carregarFinanciamentoSelecionado: fin encontrado=', fin ? { id: fin.id, responsavel: fin.responsavel } : 'NÃO ENCONTRADO');
+					if (fin) {
+						setFinanciamentoSelecionado(fin);
+						setBuscaFinanciamento(`${fin.numeroContrato || ''} - ${fin.responsavel || ''}`);
+					}
+				} catch (e) {
+					console.error('Erro ao carregar financiamento:', e);
+				}
+			};
+			carregarFinanciamentoSelecionado();
+		}
+
 		// Reset do flag quando o modal fecha
 		if (!isOpen) {
 			modalInicializado.current = false;
 			setTipoCentroSelecionado(null);
 		}
-	}, [isOpen]);
+	}, [isOpen, movimento?.id, movimento?.idFinanciamento]);
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -520,26 +556,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	};
 
 	const financiamentosFiltrados = financiamentos.filter(f => {
-		// Aplicar filtro por banco primeiro
-		let matchesBankFilter = true;
-		if (bancoFiltroFinanciamento !== null) {
-			if (bancoFiltroFinanciamento === -1) {
-				// Filtro "Particular": financiamentos com modalidade PARTICULAR ou idPessoa (sem idBanco)
-				matchesBankFilter = f.modalidade === 'PARTICULAR' || (f.idPessoa !== null && f.idBanco === null);
-			} else {
-				// Filtro por banco específico
-				matchesBankFilter = f.idBanco === bancoFiltroFinanciamento;
-			}
-		}
-		
-		// Aplicar filtro de busca por texto
-		const matchesSearch = buscaFinanciamento === '' || 
+		const matchesSearch = buscaFinanciamento === '' ||
 			f.responsavel.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
 			f.numeroContrato.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
 			(bancos.find(b => b.id === f.idBanco)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
 			(pessoas.find(p => p.id === f.idPessoa)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase());
-		
-		return matchesBankFilter && matchesSearch;
+		return matchesSearch;
 	});
 
 	const handleSalvar = () => {
@@ -550,16 +572,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			let dados: any = {};
 
 			if (modalidadeMovimento === 'padrao') {
-				// Para receitas, sempre definir idPlanoContas como null
-				const isReceita = movimento.tipoMovimento === 'C';
+				// Permitir plano de contas tanto para receitas quanto para despesas
 				dados = {
-					idPlanoContas: isReceita ? null : (formData.idPlanoContas ? parseInt(formData.idPlanoContas.toString()) : null),
+					idPlanoContas: formData.idPlanoContas ? parseInt(formData.idPlanoContas.toString()) : null,
 					idPessoa: formData.pessoaSelecionada ? parseInt(formData.pessoaSelecionada) : null,
 					idBanco: formData.bancoSelecionado ? parseInt(formData.bancoSelecionado) : null,
 					idCentroCustos: formData.idCentroCustos,
 					modalidadeMovimento,
 				};
-				
+
 				// Se há rateio de planos, usar resultadoList do rateio
 				if (rateiosPlanos.length > 0) {
 					dados.resultadoList = rateiosPlanos.map(rp => ({
@@ -570,11 +591,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 						dtMovimento: movimento.dtMovimento,
 					}));
 					dados.idPlanoContas = null; // Limpar idPlanoContas quando há rateio
-				} else if ((movimento.resultadoList ?? []).length > 0) {
+				} else if ((movimento.resultadoList ?? []).length > 0 && !formData.idPlanoContas && rateiosPlanos.length === 0) {
 					// Se não há rateios novos mas há planos existentes, manter os existentes
 					dados.resultadoList = movimento.resultadoList;
-				} else if (dados.idPlanoContas === null) {
-					// Se idPlanoContas é null e não há rateios, limpar resultadoList
+				} else if ((movimento.resultadoList ?? []).length > 0 && !formData.idPlanoContas) {
+					// Manter resultadoList existente quando não há rateio novo nem plano único selecionado
+					dados.resultadoList = movimento.resultadoList;
+				} else {
+					// Plano único ou nenhum: resultadoList vazio (backend usa idPlanoContas)
 					dados.resultadoList = [];
 				}
 				
@@ -769,13 +793,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 			await salvarParcelaFinanciamento(parcelaAtualizada);
 
-			// Atualizar o movimento bancário para vínculo com o financiamento (sai de pendente)
+			// Atualizar o movimento bancário para vínculo com o financiamento (sai de pendente, conciliado)
 			if (financiamentoSelecionado?.id != null) {
 				await salvarMovimentoBancario({
 					...movimento,
 					modalidadeMovimento: 'financiamento',
 					idFinanciamento: financiamentoSelecionado.id,
 					parcelado: true,
+					ideagro: true,
 				});
 			}
 			
@@ -1111,40 +1136,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							<label className="block text-sm font-medium text-gray-700 mb-1">
 								Associar Financiamento <span className="text-red-500">*</span>
 							</label>
-							{/* Filtro por banco */}
-							<div className="mb-2">
-								<select
-									className="w-full p-2 border rounded text-sm"
-									value={bancoFiltroFinanciamento?.toString() || ''}
-									onChange={(e) => {
-										const value = e.target.value;
-										if (value === '') {
-											setBancoFiltroFinanciamento(null);
-										} else if (value === 'particular') {
-											setBancoFiltroFinanciamento(-1);
-										} else {
-											setBancoFiltroFinanciamento(parseInt(value));
-										}
-										setBuscaFinanciamento('');
-										setFinanciamentoSelecionado(null);
-									}}
-									disabled={!!financiamentoSelecionado}
-								>
-									<option value="">Todos os bancos</option>
-									<option value="particular">Particular</option>
-									{bancos.map((banco) => (
-										<option key={banco.id} value={banco.id}>
-											{banco.nome}
-										</option>
-									))}
-								</select>
-							</div>
 							<div className="flex w-full">
 								<input
 									type="text"
 									className="w-full p-2 border rounded-l"
 									placeholder="Buscar por responsável, credor ou contrato"
-									value={financiamentoSelecionado ? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${financiamentoSelecionado.modalidade === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===financiamentoSelecionado.idBanco)?.nome || pessoas.find(p=>p.id===financiamentoSelecionado.idPessoa)?.nome || 'Não identificado')})` : buscaFinanciamento}
+									value={financiamentoSelecionado ? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${(financiamentoSelecionado.modalidade || '').toUpperCase() === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===financiamentoSelecionado.idBanco)?.nome || pessoas.find(p=>p.id===financiamentoSelecionado.idPessoa)?.nome || 'Não identificado')})` : buscaFinanciamento}
 									onChange={e => setBuscaFinanciamento(e.target.value)}
 									disabled={!!financiamentoSelecionado}
 								/>
@@ -1182,7 +1179,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 											className="p-2 cursor-pointer hover:bg-orange-100"
 											onClick={() => setFinanciamentoSelecionado(f)}
 										>
-											<strong>{f.numeroContrato}</strong> - {f.responsavel} - {f.modalidade === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome || 'Não identificado')}
+											<strong>{f.numeroContrato}</strong> - {f.responsavel} - {(f.modalidade || '').toUpperCase() === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome || 'Não identificado')}
 										</li>
 									))}
 								</ul>
@@ -1191,10 +1188,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 						</div>
 					</div>
 
-					{/* Removido campo de Centro de Custos para financiamentos - não é necessário para financiamentos bancários */}
-
 					{financiamentoSelecionado && (
-						<div className="mt-6">
+						<div className="mt-6 col-span-2">
 							<div className="flex justify-between items-center mb-4">
 								<h3 className="text-lg font-semibold">Parcelas do Financiamento</h3>
 								<button
@@ -1460,10 +1455,21 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				isOpen={modalFinanciamentoOpen}
 				onClose={() => setModalFinanciamentoOpen(false)}
 				onSave={async (financiamento: Financiamento) => {
-					await salvarFinanciamento(financiamento);
 					setModalFinanciamentoOpen(false);
 					await carregarFinanciamentos();
 					setFinanciamentoSelecionado(financiamento);
+					// Conciliar o movimento imediatamente com o novo financiamento (evita ficar pendente e ter que clicar Associar)
+					if (financiamento?.id != null) {
+						const dadosFinanciamento = {
+							modalidadeMovimento: 'financiamento' as const,
+							idFinanciamento: financiamento.id,
+							idPlanoContas: null,
+							idCentroCustos: null,
+							centroCustosList: undefined,
+							resultadoList: [],
+						};
+						handleConcilia(dadosFinanciamento);
+					}
 				}}
 				bancos={bancos as any}
 				pessoas={pessoas as any}

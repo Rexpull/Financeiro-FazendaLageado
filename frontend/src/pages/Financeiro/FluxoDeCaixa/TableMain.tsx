@@ -289,10 +289,10 @@ const MovimentoBancarioTable: React.FC = () => {
 		setExpandidoSub(novasSubs);
 	};
 
-	const abrirDetalhamento = async (planoId: string, mes: number, tipo: string, descricao: string) => {
+	const abrirDetalhamento = async (planoId: string, mes: number, tipo: string, descricao: string, subtipoFinanciamento?: 'pagos' | 'contratados') => {
 		try {
-			console.log('abrirDetalhamento', { planoId, mes, tipo, descricao });
-			const dados = await buscarDetalhamento(planoId, mes, tipo, anoSelecionado, tipoAgrupamento);
+			console.log('abrirDetalhamento', { planoId, mes, tipo, descricao, subtipoFinanciamento });
+			const dados = await buscarDetalhamento(planoId, mes, tipo, anoSelecionado, tipoAgrupamento, subtipoFinanciamento);
 			console.log('dados', dados);
 			setTituloDetalhamento(descricao);
 			console.log('tipo', tipo);
@@ -471,19 +471,19 @@ const MovimentoBancarioTable: React.FC = () => {
 
 		return (
 			<>
-				{/* Linha principal com estilo de alerta */}
-				<tr className="font-bold border border-gray-300" style={{ borderTop: '3px solid #f59e0b' }}>
+				{/* Linha no rodapé, menor evidência */}
+				<tr className="border border-gray-300 text-sm" style={{ borderTop: '1px solid #e5e7eb' }}>
 					<td
-						className={`px-3 py-2 sticky left-0 z-10 text-left cursor-pointer`}
+						className={`px-2 py-1 sticky left-0 z-10 text-left cursor-pointer text-gray-600`}
 						style={{ backgroundColor: mainCor }}
 						onClick={() => toggleCategoria(chaveEstado)}
 					>
-						<FontAwesomeIcon icon={expandido[chaveEstado] ? faMinus : faPlus} className="mr-2 text-blue-600" />
-						<FontAwesomeIcon icon={faExclamationTriangle} className="mr-2 text-orange-600" />
+						<FontAwesomeIcon icon={expandido[chaveEstado] ? faMinus : faPlus} className="mr-1 text-gray-500" style={{ fontSize: '0.7rem' }} />
+						<FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-amber-500" style={{ fontSize: '0.75rem' }} />
 						{label}
 					</td>
 					{meses.map((_, idx) => (
-						<td key={idx} className="text-center px-3 py-2 border border-gray-300" style={{ backgroundColor: valueCor }}>
+						<td key={idx} className="text-center px-2 py-1 border border-gray-300 text-sm" style={{ backgroundColor: valueCor }}>
 							{(() => {
 								const total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
 									(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
@@ -737,7 +737,7 @@ const MovimentoBancarioTable: React.FC = () => {
 													{valor ? (
 														<div
 															className="cursor-pointer hover:underline hover:text-blue-600"
-															onClick={() => abrirDetalhamento(credorKey, idx, 'financiamentos', descricao)}
+															onClick={() => abrirDetalhamento(credorKey, idx, 'financiamentos', descricao, 'pagos')}
 														>
 															{`R$ ${formatarMoeda(valor)}`}
 														</div>
@@ -789,7 +789,7 @@ const MovimentoBancarioTable: React.FC = () => {
 													{valor ? (
 														<div
 															className="cursor-pointer hover:underline hover:text-blue-600"
-															onClick={() => abrirDetalhamento(credorKey, idx, 'financiamentos', descricao)}
+															onClick={() => abrirDetalhamento(credorKey, idx, 'financiamentos', descricao, 'contratados')}
 														>
 															{`R$ ${formatarMoeda(valor)}`}
 														</div>
@@ -1078,7 +1078,7 @@ const MovimentoBancarioTable: React.FC = () => {
 								{/* Quando agrupado por centros, não mostrar seção de investimentos (já está nas despesas) */}
 								{tipoAgrupamento === 'planos' && renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
 
-								{/* Linha de alerta para Pendentes Seleção */}
+								{/* Totalizadores - Pendentes de seleção no rodapé (menor evidência) */}
 								{renderLinhaPendentesAlerta()}
 
 								{/* Totalizadores - Customizado para Centro de Custos ou padrão para Planos de Contas */}

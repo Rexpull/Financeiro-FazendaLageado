@@ -115,7 +115,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	
 	// Modal de confirmação para limpar histórico
 	const [modalConfirmarLimparHistoricoIsOpen, setModalConfirmarLimparHistoricoIsOpen] = useState(false);
-	
+
 	// Estados para edição de conta do histórico OFX
 	const [modalEditarContaIsOpen, setModalEditarContaIsOpen] = useState(false);
 	const [historicoParaEditarConta, setHistoricoParaEditarConta] = useState<any | null>(null);
@@ -602,8 +602,6 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const handleConcilia = async (data: any) => {
 		try {
-			console.log('🔍 Iniciando conciliação com dados:', data);
-
 			// Armazenar a página atual em uma constante
 			const paginaAtual = currentPage;
 
@@ -654,8 +652,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 
 			// Atualizar apenas a lista principal de movimentos
-			// O useEffect cuidará de recalcular as listas filtradas
-			setMovimentos((prevMovimentos) => 
+			setMovimentos((prevMovimentos) =>
 				prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov))
 			);
 
@@ -668,8 +665,9 @@ const MovimentoBancarioTable: React.FC = () => {
 			
 			// Recarregar dados da página atual
 			await fetchMovimentos(paginaAtual);
-			
-			console.log('✅ Movimento conciliado com sucesso:', movimentoSalvo);
+			// Garantir que o movimento recém-salvo use a resposta do save (evita tabela mostrar centro/plano antigo se a listagem vier em cache)
+			setMovimentos((prev) => prev.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
+			setFilteredMovimentos((prev) => prev.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
 		} catch (error) {
 			console.error('❌ Erro ao conciliar movimento:', error);
 		}
@@ -944,6 +942,7 @@ const MovimentoBancarioTable: React.FC = () => {
 									<button
 										onClick={() => setModalConfirmarLimparHistoricoIsOpen(true)}
 										className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50"
+										title="Remove apenas o registro das importações; os movimentos continuam no sistema."
 									>
 										Limpar
 									</button>
@@ -1084,6 +1083,8 @@ const MovimentoBancarioTable: React.FC = () => {
 													className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
 														movBancario.modalidadeMovimento === 'transferencia'
 															? 'text-gray-400'
+															: movBancario.modalidadeMovimento === 'financiamento'
+															? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
 															: `cursor-pointer underline hover:text-gray-500 ${
 																movBancario.centroCustosList && movBancario.centroCustosList.length > 1
 																	? 'text-blue-600 font-semibold'
@@ -1094,15 +1095,19 @@ const MovimentoBancarioTable: React.FC = () => {
 													}`}
 													style={movBancario.modalidadeMovimento !== 'transferencia' ? { textUnderlineOffset: '2px' } : {}}
 													onClick={movBancario.modalidadeMovimento === 'transferencia' ? undefined : () => openModalConcilia(movBancario)}
-													title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : ''}
+													title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 												>
 													{movBancario.modalidadeMovimento === 'transferencia'
 														? '-'
+														: movBancario.modalidadeMovimento === 'financiamento'
+														? 'Financiamento'
 														: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
 														? 'Múltiplos Centros'
-														: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
-														? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
-														: centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao || 'Selecione o Centro de Custos'
+														: (movBancario.idCentroCustos != null
+															? centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao
+															: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
+																? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
+																: null) ?? 'Selecione o Centro de Custos'
 													}
 														</td>
 														<td
@@ -1238,6 +1243,8 @@ const MovimentoBancarioTable: React.FC = () => {
 																	className={`text-sm ${
 																		movBancario.modalidadeMovimento === 'transferencia'
 																			? 'text-gray-400'
+																			: movBancario.modalidadeMovimento === 'financiamento'
+																			? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
 																			: `cursor-pointer underline hover:text-gray-500 ${
 																				movBancario.centroCustosList && movBancario.centroCustosList.length > 1
 																					? 'text-blue-600 font-semibold'
@@ -1247,15 +1254,19 @@ const MovimentoBancarioTable: React.FC = () => {
 																			}`
 																	}`}
 																	onClick={movBancario.modalidadeMovimento === 'transferencia' ? undefined : () => openModalConcilia(movBancario)}
-																	title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : ''}
+																	title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 																>
 																	{movBancario.modalidadeMovimento === 'transferencia'
 																		? '-'
+																		: movBancario.modalidadeMovimento === 'financiamento'
+																		? 'Financiamento'
 																		: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
 																		? 'Múltiplos Centros'
-																		: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
-																		? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
-																		: centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao || 'Selecione o Centro de Custos'
+																		: (movBancario.idCentroCustos != null
+																			? centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao
+																			: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
+																				? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
+																				: null) ?? 'Selecione o Centro de Custos'
 																	}
 																</div>
 																</div>
@@ -1475,6 +1486,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				onClose={() => {
 					setModalConciliaIsOpen(false);
 					setMovimentoParaConciliar(null);
+					fetchMovimentos(currentPage);
 				}}
 				movimento={movimentoParaConciliar || ({} as MovimentoBancario)}
 				planos={planos}
@@ -1529,7 +1541,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				}}
 				title="Confirmar Limpeza"
 				type="warn"
-				message="Tem certeza que deseja limpar todo o histórico de importações OFX? Esta ação não pode ser desfeita."
+				message={'Tem certeza que deseja limpar todo o histórico de importações OFX? Esta ação não pode ser desfeita. Atenção: isso remove apenas o registro das importações; os movimentos bancários já importados continuarão no sistema. Para excluir os movimentos da conta, use "Excluir todos" na listagem.'}
 				confirmLabel="Sim, Limpar"
 				cancelLabel="Cancelar"
 			/>

@@ -115,30 +115,33 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" }, gap: 2, mb: 4 }}>
         <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
           <Box>
-            <Typography variant="subtitle2">Total de Receitas</Typography>
+            <Typography variant="subtitle2">Receitas</Typography>
             <Typography variant="h5" fontWeight="bold" color="success.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalReceitasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalReceitasAno)})</span></Typography>
+              {formatCurrency(totalReceitasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno)})</span></Typography>
             </Typography>
           </Box>
           <TrendingUpIcon color="success" sx={{ fontSize: 48 }} />
         </Paper>
         <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
           <Box>
-            <Typography variant="subtitle2">Total de Despesas</Typography>
+            <Typography variant="subtitle2">Despesas</Typography>
             <Typography variant="h5" fontWeight="bold" color="error.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalDespesasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalDespesasAno)})</span></Typography>
+              {formatCurrency(totalDespesasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalDespesasAno)})</span></Typography>
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block', mt: 0.25 }}>
+              Custeio: {formatCurrency(despesasOperacionaisMes)} | Invest.: {formatCurrency(totalInvestimentosMes)}
             </Typography>
           </Box>
           <TrendingDownIcon color="error" sx={{ fontSize: 48 }} />
         </Paper>
         <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
           <Box>
-            <Typography variant="subtitle2">Total Investido</Typography>
-            <Typography variant="h5" fontWeight="bold" color="info.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalInvestimentosMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Total Anual: {formatCurrency(totalInvestimentosAno)})</span></Typography>
+            <Typography variant="subtitle2">Saldo</Typography>
+            <Typography variant="h5" fontWeight="bold" color={(totalReceitasMes - totalDespesasMes) >= 0 ? 'success.main' : 'error.main'} sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
+              {formatCurrency(totalReceitasMes - totalDespesasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno - Math.abs(totalDespesasAno))})</span></Typography>
             </Typography>
           </Box>
-          <SavingsIcon color="info" sx={{ fontSize: 48 }} />
+          <SavingsIcon sx={{ fontSize: 48, color: (totalReceitasMes - totalDespesasMes) >= 0 ? '#4caf50' : '#f44336' }} />
         </Paper>
       </Box>
 

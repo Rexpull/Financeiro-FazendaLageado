@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   Typography,
   Box,
+  Paper,
   Select,
   MenuItem,
   FormControl,
@@ -28,7 +29,7 @@ const Dashboard = () => {
   const [bancoSelecionado, setBancoSelecionado] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [loadingDetalhamento, setLoadingDetalhamento] = useState(false);
-  const [activeDashboardTab, setActiveDashboardTab] = useState<'receitas-despesas' | 'financiamentos'>('receitas-despesas');
+  const [activeDashboardTab, setActiveDashboardTab] = useState<'receitas-despesas' | 'financiamentos' | 'resultado'>('receitas-despesas');
   const [activeTab, setActiveTab] = useState<'parcelas-vencer' | 'contratos-liquidados' | 'contratos-novos'>('parcelas-vencer');
   const [tipoAgrupamentoDetalhamento, setTipoAgrupamentoDetalhamento] = useState<'planos' | 'centros'>('planos');
   const [tipoVisualizacaoDetalhamento, setTipoVisualizacaoDetalhamento] = useState<'lista' | 'pizza'>('pizza');
@@ -193,7 +194,7 @@ const Dashboard = () => {
     setAnoSelecionado(Number(event.target.value));
   };
 
-  const handleDashboardTabChange = (event: React.SyntheticEvent, newValue: 'receitas-despesas' | 'financiamentos') => {
+  const handleDashboardTabChange = (event: React.SyntheticEvent, newValue: 'receitas-despesas' | 'financiamentos' | 'resultado') => {
     setActiveDashboardTab(newValue);
   };
 
@@ -242,6 +243,7 @@ const Dashboard = () => {
           <Tabs value={activeDashboardTab} onChange={handleDashboardTabChange} sx={{ borderBottom: 'none' }}>
             <Tab label="Receitas e Despesas" value="receitas-despesas" sx={{ fontWeight: 'bold !important' }}/>
             <Tab label="Financiamentos" value="financiamentos" sx={{ fontWeight: 'bold !important' }}/>
+            <Tab label="Resultado Consolidado" value="resultado" sx={{ fontWeight: 'bold !important' }}/>
           </Tabs>
           
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', pb: 1 }}>
@@ -276,7 +278,7 @@ const Dashboard = () => {
             setAnoSelecionado(new Date().getFullYear());
             setMesSelecionado("");
             setBancoSelecionado("");
-          }}>
+          }} title="Zera apenas os filtros da tela (ano, mês, banco). Não apaga dados do sistema.">
             Limpar filtros
           </Button>
         </Box>
@@ -307,6 +309,45 @@ const Dashboard = () => {
             contratosNovos={contratosNovos}
             onActiveTabChange={setActiveTab}
           />
+        )}
+
+        {activeDashboardTab === 'resultado' && (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Resultado consolidado - {anoSelecionado}</Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2 }}>
+              <Paper elevation={2} sx={{ p: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary">Receitas (ano)</Typography>
+                <Typography variant="h5" fontWeight="bold" color="success.main">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas)}
+                </Typography>
+              </Paper>
+              <Paper elevation={2} sx={{ p: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary">Despesas (ano)</Typography>
+                <Typography variant="h5" fontWeight="bold" color="error.main">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(dashboardData.totaisAno.despesas))}
+                </Typography>
+              </Paper>
+              <Paper elevation={2} sx={{ p: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary">Saldo operação (R - D)</Typography>
+                <Typography variant="h5" fontWeight="bold" color={(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.main' : 'error.main'}>
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas)}
+                </Typography>
+              </Paper>
+              <Paper elevation={2} sx={{ p: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary">Financiamentos (ano)</Typography>
+                <Typography variant="body2">Contratado: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalFinanciado)}</Typography>
+                <Typography variant="body2">Quitado: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalQuitado)}</Typography>
+                <Typography variant="body2" fontWeight="bold">Em aberto: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}</Typography>
+              </Paper>
+            </Box>
+            <Paper elevation={2} sx={{ p: 3, mt: 3 }}>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>Resumo</Typography>
+              <Typography variant="body2">
+                Resultado operacional (receitas menos despesas) no ano: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas)}.
+                Financiamentos: {dashboardData.totaisAno.financiamentos.contratosAtivos} contrato(s) ativo(s), valor em aberto {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}.
+              </Typography>
+            </Paper>
+          </Box>
         )}
       </Box>
     </div>

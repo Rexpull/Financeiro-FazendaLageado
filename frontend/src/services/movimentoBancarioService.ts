@@ -355,6 +355,19 @@ export const excluirTodosMovimentosBancarios = async (idContaCorrente: number): 
 	}
 };
 
+/** Zerar dados para testes: remove movimentos das contas informadas, opcionalmente filtrado por ano. */
+export const zerarDadosParaTestes = async (contasIds: number[], ano?: number): Promise<{ excluidos: number }> => {
+	const params = new URLSearchParams();
+	params.set('contas', contasIds.join(','));
+	if (ano != null && !isNaN(ano)) params.set('ano', String(ano));
+	const res = await fetch(`${API_URL}/api/movBancario/reset-teste?${params.toString()}`, { method: 'DELETE' });
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({}));
+		throw new Error(err.details || err.error || 'Erro ao zerar dados para testes');
+	}
+	return res.json();
+};
+
 export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Promise<any> => {
 	try {
 		const res = await fetch(`${API_URL}/api/movBancario/${id}`, {

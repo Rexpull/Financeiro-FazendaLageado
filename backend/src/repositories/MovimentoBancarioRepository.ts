@@ -674,23 +674,34 @@ export class MovimentoBancarioRepository {
 		console.log('🧹 Limpando centros de custos antigos...');
 		await this.movimentoCentroCustosRepo.deleteByMovimento(id);
 
-		let centroCustosList = movimento.centroCustosList;
+		let centroCustosList: { idMovimentoBancario: number; idCentroCustos: number; valor: number }[] | undefined = movimento.centroCustosList as any;
 		console.log('🔍 Processando centroCustosList:', JSON.stringify(centroCustosList, null, 2));
 
-		if (!centroCustosList || centroCustosList.length === 0) {
+		// Quando idCentroCustos é atualizado, a lista deve acompanhar (um único item com esse centro).
+		// Assim evitamos que centroCustosList fique desatualizado quando o usuário só altera o centro único.
+		if (camposAlterados.idCentroCustos !== undefined) {
+			console.log('📌 idCentroCustos alterado: alinhando centroCustosList com um único item');
+			centroCustosList = [
+				{
+					idMovimentoBancario: id,
+					idCentroCustos: camposAlterados.idCentroCustos,
+					valor: Math.abs(movimentoAtual.valor),
+				},
+			];
+		} else if (!centroCustosList || centroCustosList.length === 0) {
 			console.log('⚠️ Nenhum centroCustosList fornecido, verificando se precisa criar centro padrão...');
-			if (camposAlterados.idCentroCustos) {
-				console.log('⚠️ Nenhum centro informado. Criando centro padrão...');
+			if (movimentoAtual.idCentroCustos) {
+				console.log('⚠️ Mantendo centro atual na lista (um único item)...');
 				centroCustosList = [
 					{
 						idMovimentoBancario: id,
-						idCentroCustos: camposAlterados.idCentroCustos,
+						idCentroCustos: movimentoAtual.idCentroCustos,
 						valor: Math.abs(movimentoAtual.valor),
 					},
 				];
 			}
 		} else {
-			console.log('✅ centroCustosList fornecido, processando múltiplos centros...');
+			console.log('✅ centroCustosList fornecido (rateio), processando múltiplos centros...');
 		}
 
 		if (centroCustosList?.length) {
@@ -821,6 +832,54 @@ export class MovimentoBancarioRepository {
 			console.error(`❌ Erro geral:`, error);
 			throw error;
 		}
+	}
+
+	/** Tamanho do lote para bulk delete (evita "Too many API requests" no worker). */
+	private static readonly RESET_TESTE_BATCH_SIZE = 150;
+
+	/**
+	 * Remove movimentos para testes (por contas e opcionalmente ano).
+	 * Usado pela opção "Zerar dados para testes".
+	 * Faz exclusão em lote (poucas queries) para não estourar limite do worker.
+	 */
+	async deleteForResetTeste(contasIds: number[], ano?: number): Promise<{ excluidos: number }> {
+		if (!contasIds || contasIds.length === 0) {
+			return { excluidos: 0 };
+		}
+		const placeholders = contasIds.map(() => '?').join(',');
+		let sql = `SELECT id FROM MovimentoBancario WHERE idContaCorrente IN (${placeholders})`;
+		const params: any[] = [...contasIds];
+		if (ano != null && !isNaN(ano)) {
+			sql += ` AND CAST(strftime('%Y', dtMovimento) AS INTEGER) = ?`;
+			params.push(ano);
+		}
+		const { results } = await this.db.prepare(sql).bind(...params).all();
+		if (!results || results.length === 0) {
+			return { excluidos: 0 };
+		}
+		const ids = (results as { id: number }[])
+			.map((row) => Number(row.id))
+			.filter((id) => !isNaN(id) && id > 0);
+		if (ids.length === 0) {
+			return { excluidos: 0 };
+		}
+		const batchSize = MovimentoBancarioRepository.RESET_TESTE_BATCH_SIZE;
+		let excluidos = 0;
+		for (let i = 0; i < ids.length; i += batchSize) {
+			const chunk = ids.slice(i, i + batchSize);
+			const placeholdersChunk = chunk.map(() => '?').join(',');
+			try {
+				await this.db.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk).run();
+				await this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk).run();
+				await this.db.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk).run();
+				await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id IN (${placeholdersChunk})`).bind(...chunk).run();
+				excluidos += chunk.length;
+			} catch (err) {
+				console.error(`Erro ao excluir lote de movimentos (reset teste):`, err);
+				throw err;
+			}
+		}
+		return { excluidos };
 	}
 
 	async updateIdeagro(id: number, ideagro: boolean): Promise<void> {
@@ -1185,6 +1244,54 @@ export class MovimentoBancarioRepository {
 		return Array.from(financiamentosMap.values());
 	}
 
+	/** Retorna financiamentos contratados no mês/ano (dataContrato no período) para o credor, para detalhamento da linha "Contratados". */
+	async getDetalhesFinanciamentoContratados(credorKey: string, mes: number, ano: number): Promise<FinanciamentoDetalhadoDTO[]> {
+		const [credorType, credorIdStr] = credorKey.split('_');
+		const credorId = parseInt(credorIdStr, 10);
+
+		if (isNaN(credorId)) {
+			return [];
+		}
+
+		const primeiroDiaMes = new Date(ano, mes, 1).toISOString().split('T')[0];
+		const ultimoDiaMes = new Date(ano, mes + 1, 0).toISOString().split('T')[0];
+
+		let credorField = '';
+		if (credorType === 'p') {
+			credorField = 'f.idPessoa';
+		} else if (credorType === 'b') {
+			credorField = 'f.idBanco';
+		} else {
+			return [];
+		}
+
+		const sql = `
+			SELECT
+				f.id,
+				f.numeroContrato,
+				f.valor,
+				f.totalJuros,
+				p.nome as nomePessoa,
+				b.nome as nomeBanco
+			FROM Financiamento f
+			LEFT JOIN Pessoa p ON f.idPessoa = p.id
+			LEFT JOIN Banco b ON f.idBanco = b.id
+			WHERE ${credorField} = ?
+			  AND f.dataContrato BETWEEN ? AND ?
+			ORDER BY f.dataContrato, f.id
+		`;
+
+		const { results } = await this.db.prepare(sql).bind(credorId, primeiroDiaMes, ultimoDiaMes).all();
+
+		return (results as any[]).map((row) => ({
+			id: row.id,
+			numeroContrato: row.numeroContrato,
+			valorTotal: (row.valor || 0) + (row.totalJuros || 0),
+			credor: row.nomePessoa || row.nomeBanco || 'Não identificado',
+			parcelas: [],
+		}));
+	}
+
 	async getByIds(ids: number[]): Promise<MovimentoBancario[]> {
 		if (ids.length === 0) return [];
 
@@ -1315,7 +1422,9 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.status === 'pendentes') {
+				// Pendente = sem plano E não conciliado como financiamento (quem tem modalidade financiamento + idFinanciamento já está conciliado)
 				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
 			}
 
 			if (filters.planosIds && filters.planosIds.length > 0) {
@@ -1448,6 +1557,7 @@ export class MovimentoBancarioRepository {
 
 			if (filters.status === 'pendentes') {
 				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
 			}
 
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -1554,6 +1664,7 @@ export class MovimentoBancarioRepository {
 
 			if (filters.status === 'pendentes') {
 				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
+				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
 			}
 
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -1839,7 +1950,7 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.status === 'pendentes') {
-				// Pendentes: despesas sem plano de contas OU receitas sem centro de custos
+				// Pendentes: despesas sem plano OU receitas sem centro; excluir conciliados como financiamento
 				whereConditions.push(`(
 					(mb.tipoMovimento = 'D' AND (mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0))
 					OR
@@ -1853,6 +1964,7 @@ export class MovimentoBancarioRepository {
 						)
 					)
 				)`);
+				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
 			}
 
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';

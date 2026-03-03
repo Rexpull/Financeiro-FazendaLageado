@@ -452,6 +452,7 @@ export class MovimentoBancarioController {
 			if (method === 'GET' && pathname === '/api/fluxoCaixa/detalhar') {
 				const urlObj = new URL(req.url);
 				const tipo = urlObj.searchParams.get('tipo') || '';
+				const subtipo = urlObj.searchParams.get('subtipo') || '';
 				const mes = parseInt(urlObj.searchParams.get('mes') || '');
 				const ano = parseInt(urlObj.searchParams.get('ano') || new Date().getFullYear().toString());
 				const tipoAgrupamento = urlObj.searchParams.get('tipoAgrupamento') || 'planos';
@@ -460,7 +461,11 @@ export class MovimentoBancarioController {
 
 				if (tipo === 'financiamentos') {
 					const credorKey = urlObj.searchParams.get('planoId') || '';
-					movimentos = await this.movBancarioRepository.getDetalhesFinanciamento(credorKey, mes, ano);
+					if (subtipo === 'contratados') {
+						movimentos = await this.movBancarioRepository.getDetalhesFinanciamentoContratados(credorKey, mes, ano) as any;
+					} else {
+						movimentos = await this.movBancarioRepository.getDetalhesFinanciamento(credorKey, mes, ano);
+					}
 				} else if (tipoAgrupamento === 'centros') {
 					// Detalhamento por centro de custos
 					const centroCustosId = parseInt(urlObj.searchParams.get('planoId') || '');
@@ -782,8 +787,8 @@ export class MovimentoBancarioController {
 							const mesContrato = dataContrato.getMonth();
 							const anoContrato = dataContrato.getFullYear();
 							
-							// Só adicionar se o contrato foi feito no ano sendo processado
-							if (anoContrato === ano) {
+							// Só adicionar se o contrato foi feito no ano sendo processado (ano vem string do body)
+							if (anoContrato.toString() === ano) {
 								if (!dadosMensais[mesContrato].financiamentos.contratados[credorKey]) {
 									dadosMensais[mesContrato].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
 								}
@@ -793,10 +798,8 @@ export class MovimentoBancarioController {
 							}
 						}
 
-						// Depois, processar parcelas apenas para pagos
+						// Depois, processar parcelas para "pagos" (mesma lógica do modo planos: data efetiva = liquidação ou vencimento)
 						for (const parcela of parcelas) {
-							if (!parcela.dt_liquidacao) continue; // Só processar parcelas pagas
-
 							const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
 							if (!financiamento) continue;
 
@@ -815,17 +818,19 @@ export class MovimentoBancarioController {
 
 							if (!credorKey) continue;
 
-							// Pagos: parcelas com dt_liquidacao no mês
-							const mesLiquidacao = new Date(parcela.dt_liquidacao).getMonth();
-							const anoLiquidacao = new Date(parcela.dt_liquidacao).getFullYear();
-							
-							// Só adicionar se a liquidação foi no ano sendo processado
-							if (anoLiquidacao === ano) {
-								if (!dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey]) {
-									dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey] = { valor: 0, descricao: credorDescricao };
-								}
-								dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey].valor += parcela.valor;
+							// Data efetiva: liquidação se existir, senão vencimento (igual ao modo planos)
+							const dataEfetivaStr = parcela.dt_liquidacao || parcela.dt_vencimento;
+							if (!dataEfetivaStr) continue;
+							const dataEfetiva = new Date(dataEfetivaStr);
+							const mesEfetivo = dataEfetiva.getMonth();
+							const anoEfetivo = dataEfetiva.getFullYear();
+
+							if (anoEfetivo.toString() !== ano) continue;
+
+							if (!dadosMensais[mesEfetivo].financiamentos.pagos[credorKey]) {
+								dadosMensais[mesEfetivo].financiamentos.pagos[credorKey] = { valor: 0, descricao: credorDescricao };
 							}
+							dadosMensais[mesEfetivo].financiamentos.pagos[credorKey].valor += parcela.valor;
 						}
 					} else {
 						// Estrutura original para planos de contas (usar lógica antiga)
@@ -1304,6 +1309,45 @@ export class MovimentoBancarioController {
 					status: 200,
 					headers: corsHeaders,
 				});
+			}
+
+			// Zerar dados para testes: remove movimentos por contas e opcionalmente ano
+			if (method === 'DELETE' && pathname === '/api/movBancario/reset-teste') {
+				try {
+					const contasParam = url.searchParams.get('contas');
+					const anoParam = url.searchParams.get('ano');
+					if (!contasParam || contasParam.trim() === '') {
+						return new Response(JSON.stringify({ error: 'Parâmetro "contas" é obrigatório (IDs separados por vírgula)' }), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+					const contasIds = contasParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+					if (contasIds.length === 0) {
+						return new Response(JSON.stringify({ error: 'Nenhum ID de conta válido em "contas"' }), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
+					const ano = anoParam ? parseInt(anoParam, 10) : undefined;
+					const resultado = await this.movBancarioRepository.deleteForResetTeste(contasIds, ano);
+					return new Response(JSON.stringify({
+						message: `Zeragem para testes concluída. ${resultado.excluidos} movimento(s) excluído(s).`,
+						excluidos: resultado.excluidos,
+					}), {
+						status: 200,
+						headers: corsHeaders,
+					});
+				} catch (error) {
+					console.error('Erro no reset-teste:', error);
+					return new Response(JSON.stringify({
+						error: 'Erro ao zerar dados para testes',
+						details: error instanceof Error ? error.message : 'Erro desconhecido',
+					}), {
+						status: 500,
+						headers: corsHeaders,
+					});
+				}
 			}
 
 			// Exclusão em massa de todos os movimentos de uma conta corrente

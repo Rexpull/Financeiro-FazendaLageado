@@ -37,7 +37,10 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 		return 'bg-yellow-100 text-yellow-800';
 	};
 
-	const totalGeral = financiamentos.reduce((acc, fin) => acc + fin.parcelas.reduce((pAcc, p) => pAcc + p.valor, 0), 0);
+	const totalGeral = financiamentos.reduce(
+		(acc, fin) => acc + (fin.parcelas.length > 0 ? fin.parcelas.reduce((pAcc, p) => pAcc + p.valor, 0) : fin.valorTotal),
+		0
+	);
 
 	return (
 		<Modal

@@ -23,8 +23,17 @@ export const buscarFluxoCaixa = async (ano: string, contas: string[], tipoAgrupa
 	return res.json();
 };
 
-export const buscarDetalhamento = async (planoId: string, mes: number, tipo: string, ano: string, tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<MovimentoDetalhado[] | any[]> => {
-	const res = await fetch(`${API_URL}/api/fluxoCaixa/detalhar?planoId=${planoId}&mes=${mes}&tipo=${tipo}&ano=${ano}&tipoAgrupamento=${tipoAgrupamento}`, {
+export const buscarDetalhamento = async (
+	planoId: string,
+	mes: number,
+	tipo: string,
+	ano: string,
+	tipoAgrupamento: 'planos' | 'centros' = 'planos',
+	subtipo?: 'pagos' | 'contratados'
+): Promise<MovimentoDetalhado[] | any[]> => {
+	const params = new URLSearchParams({ planoId, mes: String(mes), tipo, ano, tipoAgrupamento });
+	if (subtipo) params.set('subtipo', subtipo);
+	const res = await fetch(`${API_URL}/api/fluxoCaixa/detalhar?${params.toString()}`, {
 		method: 'GET',
 		headers: { 'Accept': 'application/json' },
 	});

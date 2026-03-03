@@ -79,7 +79,7 @@ export class DashboardRepository {
     const contratosAtivos = fin && typeof fin.contratosAtivos === 'number' ? fin.contratosAtivos : 0;
     const totalFinanciado = fin && typeof fin.totalFinanciado === 'number' ? fin.totalFinanciado : 0;
 
-    // Total quitado no ano: soma das parcelas com dt_liquidacao no ano
+    // Total quitado no ano: soma das parcelas com dt_liquidacao no ano (valor efetivamente pago/liquidado)
     const queryQuitado = `
       SELECT COALESCE(SUM(pf.valor), 0) as totalQuitado
       FROM parcelaFinanciamento pf
@@ -89,7 +89,16 @@ export class DashboardRepository {
     `;
     const resQuitado = await this.db.prepare(queryQuitado).bind(ano).first();
     const totalQuitado = resQuitado && typeof resQuitado.totalQuitado === 'number' ? resQuitado.totalQuitado : 0;
-    const totalEmAberto = Math.max(0, totalFinanciado - totalQuitado);
+
+    // Saldo da dívida: soma das parcelas ainda não liquidadas (inclui juros nas parcelas)
+    const queryEmAberto = `
+      SELECT COALESCE(SUM(pf.valor), 0) as totalEmAberto
+      FROM parcelaFinanciamento pf
+      JOIN Financiamento f ON pf.idFinanciamento = f.id
+      WHERE pf.dt_liquidacao IS NULL
+    `;
+    const resEmAberto = await this.db.prepare(queryEmAberto).first();
+    const totalEmAberto = resEmAberto && typeof resEmAberto.totalEmAberto === 'number' ? resEmAberto.totalEmAberto : 0;
 
     return {
       receitas,
