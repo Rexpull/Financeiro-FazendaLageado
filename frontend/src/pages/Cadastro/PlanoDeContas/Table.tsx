@@ -117,9 +117,12 @@ const PlanoContasTable: React.FC = () => {
 
 		// 🔹 Filtro de busca
 		if (searchTerm) {
-			filtered = filtered.filter(
-				(plano) => plano.descricao.toLowerCase().includes(searchTerm.toLowerCase()) || plano.hierarquia.includes(searchTerm)
-			);
+			const termo = searchTerm.toLowerCase();
+			filtered = filtered.filter((plano) => {
+				const descricao = (plano.descricao ?? '').toString().toLowerCase();
+				const hierarquia = (plano.hierarquia ?? '').toString();
+				return descricao.includes(termo) || hierarquia.includes(searchTerm);
+			});
 		}
 
 		// 🔹 Filtro de "Ocultar Inativos"

@@ -90,14 +90,16 @@ export class DashboardRepository {
     const resQuitado = await this.db.prepare(queryQuitado).bind(ano).first();
     const totalQuitado = resQuitado && typeof resQuitado.totalQuitado === 'number' ? resQuitado.totalQuitado : 0;
 
-    // Saldo da dívida: soma das parcelas ainda não liquidadas (inclui juros nas parcelas)
+    // Saldo em aberto: soma das parcelas ainda não liquidadas apenas dos contratos do ano (mesmo escopo de totalFinanciado)
+    // Assim: valor contratado (ano) ≈ quitado desses contratos + em aberto desses contratos
     const queryEmAberto = `
       SELECT COALESCE(SUM(pf.valor), 0) as totalEmAberto
       FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
       WHERE pf.dt_liquidacao IS NULL
+        AND CAST(strftime('%Y', f.dataContrato) AS INTEGER) = ?
     `;
-    const resEmAberto = await this.db.prepare(queryEmAberto).first();
+    const resEmAberto = await this.db.prepare(queryEmAberto).bind(ano).first();
     const totalEmAberto = resEmAberto && typeof resEmAberto.totalEmAberto === 'number' ? resEmAberto.totalEmAberto : 0;
 
     return {

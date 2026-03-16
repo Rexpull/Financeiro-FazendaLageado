@@ -29,8 +29,11 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
   const [searchReferente, setSearchReferente] = useState<string>("");
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
 
-  // 🔹 Remove "Referente" se o nível for "Nível 1"
+  // 🔹 Controle automático de "Referente" apenas para NOVOS planos
   useEffect(() => {
+    if (!isOpen) return;
+    if (planoData.id) return; // não mexe automaticamente quando está editando
+
     if (planoData.nivel == 1) {
       handleInputChange({ target: { name: "idReferente", value: "" } } as any);
       setSearchReferente("");
@@ -38,15 +41,35 @@ const BancoModal: React.FC<PlanoContaModalProps> = ({
       handleInputChange({ target: { name: "idReferente", value: null } } as any);
       setSearchReferente(""); // 🔹 Limpa o campo de pesquisa
     }
-  }, [planoData.nivel]);
+  }, [planoData.nivel, planoData.id, isOpen]);
 
-  // 🔹 Limpa o referente quando o tipo for alterado (apenas para nível 3)
+  // 🔹 Limpa o referente quando o tipo for alterado (apenas para nível 3) – só em novos
   useEffect(() => {
+    if (!isOpen) return;
+    if (planoData.id) return;
+
     if (planoData.nivel === 3) {
       handleInputChange({ target: { name: "idReferente", value: null } } as any);
       setSearchReferente("");
     }
-  }, [planoData.tipo]);
+  }, [planoData.tipo, planoData.nivel, planoData.id, isOpen]);
+
+  // 🔹 Quando editar, preencher o texto do campo "Referente" com o plano já salvo
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!planoData.idReferente) {
+      // Se não tiver referente salvo, não força nada
+      if (planoData.nivel === 1) {
+        setSearchReferente("");
+      }
+      return;
+    }
+
+    const planoRef = planos.find((p) => p.id === planoData.idReferente);
+    if (planoRef) {
+      setSearchReferente(`${planoRef.hierarquia} | ${planoRef.descricao}`);
+    }
+  }, [isOpen, planoData.idReferente, planos, planoData.nivel]);
 
   // 🔹 Filtragem de planos de conta para pesquisa no campo "Referente"
   const filteredPlanos = planos

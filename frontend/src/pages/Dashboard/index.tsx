@@ -14,6 +14,7 @@ import {
   Tabs,
   Tab,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import BreadCrumb from "../../components/BreadCrumb";
 import { getDashboardData, DashboardData, getParcelasAVencer, getContratosLiquidados, getContratosNovos, ParcelasAVencer, ContratosLiquidados, ContratosNovos } from "../../services/dashboardService";
 import { getContasCorrentes } from '../../services/contaCorrenteService';
@@ -313,38 +314,140 @@ const Dashboard = () => {
 
         {activeDashboardTab === 'resultado' && (
           <Box sx={{ mt: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Resultado consolidado - {anoSelecionado}</Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2 }}>
-              <Paper elevation={2} sx={{ p: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary">Receitas (ano)</Typography>
-                <Typography variant="h5" fontWeight="bold" color="success.main">
+            <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: 'text.primary' }}>
+              Resultado consolidado — {anoSelecionado}
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2.5 }}>
+              <Paper
+                elevation={0}
+                sx={(theme) => ({
+                  p: 2.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderLeft: '4px solid',
+                  borderLeftColor: 'success.main',
+                  bgcolor: alpha(theme.palette.success.main, 0.08),
+                  transition: 'box-shadow 0.2s',
+                  '&:hover': { boxShadow: 2 },
+                })}
+              >
+                <Typography variant="overline" sx={{ color: 'success.dark', fontWeight: 600, letterSpacing: 0.8 }}>
+                  Receitas (ano)
+                </Typography>
+                <Typography variant="h5" fontWeight="bold" color="success.dark" sx={{ mt: 0.5 }}>
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas)}
                 </Typography>
               </Paper>
-              <Paper elevation={2} sx={{ p: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary">Despesas (ano)</Typography>
-                <Typography variant="h5" fontWeight="bold" color="error.main">
+              <Paper
+                elevation={0}
+                sx={(theme) => ({
+                  p: 2.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderLeft: '4px solid',
+                  borderLeftColor: 'error.main',
+                  bgcolor: alpha(theme.palette.error.main, 0.08),
+                  transition: 'box-shadow 0.2s',
+                  '&:hover': { boxShadow: 2 },
+                })}
+              >
+                <Typography variant="overline" sx={{ color: 'error.dark', fontWeight: 600, letterSpacing: 0.8 }}>
+                  Despesas (ano)
+                </Typography>
+                <Typography variant="h5" fontWeight="bold" color="error.dark" sx={{ mt: 0.5 }}>
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(dashboardData.totaisAno.despesas))}
                 </Typography>
               </Paper>
-              <Paper elevation={2} sx={{ p: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary">Saldo operação (R - D)</Typography>
-                <Typography variant="h5" fontWeight="bold" color={(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.main' : 'error.main'}>
+              <Paper
+                elevation={0}
+                sx={(theme) => ({
+                  p: 2.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderLeft: '4px solid',
+                  borderLeftColor: (dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.main' : 'error.main',
+                  bgcolor: (dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? alpha(theme.palette.success.main, 0.08) : alpha(theme.palette.error.main, 0.08),
+                  transition: 'box-shadow 0.2s',
+                  '&:hover': { boxShadow: 2 },
+                })}
+              >
+                <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.8 }}>
+                  Saldo operação (R − D)
+                </Typography>
+                <Typography variant="h5" fontWeight="bold" color={(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.dark' : 'error.dark'} sx={{ mt: 0.5 }}>
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas)}
                 </Typography>
               </Paper>
-              <Paper elevation={2} sx={{ p: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary">Financiamentos (ano)</Typography>
-                <Typography variant="body2">Contratado: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalFinanciado)}</Typography>
-                <Typography variant="body2">Quitado: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalQuitado)}</Typography>
-                <Typography variant="body2" fontWeight="bold">Em aberto: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}</Typography>
+              <Paper
+                elevation={0}
+                sx={(theme) => ({
+                  p: 2.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderLeft: '4px solid',
+                  borderLeftColor: 'info.main',
+                  bgcolor: alpha(theme.palette.info.main, 0.08),
+                  transition: 'box-shadow 0.2s',
+                  '&:hover': { boxShadow: 2 },
+                })}
+              >
+                <Typography variant="overline" sx={{ color: 'info.dark', fontWeight: 600, letterSpacing: 0.8 }}>
+                  Financiamentos (ano)
+                </Typography>
+                <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary">Contratado</Typography>
+                    <Typography variant="subtitle1" fontWeight="600" color="info.dark">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalFinanciado)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary">Quitado</Typography>
+                    <Typography variant="subtitle1" fontWeight="600" color="success.dark">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalQuitado)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="body2" fontWeight="600" color="text.primary">Em aberto</Typography>
+                    <Typography variant="h6" fontWeight="bold" color="info.dark">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}
+                    </Typography>
+                  </Box>
+                </Box>
               </Paper>
             </Box>
-            <Paper elevation={2} sx={{ p: 3, mt: 3 }}>
-              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>Resumo</Typography>
-              <Typography variant="body2">
-                Resultado operacional (receitas menos despesas) no ano: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas)}.
-                Financiamentos: {dashboardData.totaisAno.financiamentos.contratosAtivos} contrato(s) ativo(s), valor em aberto {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}.
+            <Paper
+              elevation={0}
+              sx={(theme) => ({
+                p: 3,
+                mt: 3,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: theme.palette.mode === 'light' ? alpha(theme.palette.grey[500], 0.06) : alpha(theme.palette.grey[500], 0.12),
+              })}
+            >
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.primary' }}>
+                Resumo
+              </Typography>
+              <Typography variant="body1" sx={{ lineHeight: 1.7, color: 'text.secondary' }}>
+                Resultado operacional (receitas menos despesas) no ano:{' '}
+                <Box component="span" fontWeight="bold" color={(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.dark' : 'error.dark'}>
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas)}
+                </Box>
+                . Financiamentos:{' '}
+                <Box component="span" fontWeight="bold" color="text.primary">
+                  {dashboardData.totaisAno.financiamentos.contratosAtivos} contrato(s) ativo(s)
+                </Box>
+                , valor em aberto{' '}
+                <Box component="span" fontWeight="bold" color="info.dark">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}
+                </Box>
+                .
               </Typography>
             </Paper>
           </Box>
