@@ -454,22 +454,34 @@ const ConciliacaoOFXModal = ({
 			const movimentosAtualizados: MovimentoBancario[] = [];
 			const erros: number[] = [];
 
-			for (const movimento of movimentosSelecionados) {
+			// Com rateio por %, ConciliarPlano envia um array: um movimento completo por linha (resultadoList + centroCustosList).
+			// Sem rateio %, envia um único objeto `dados` e iteramos movimentosSelecionados (igual TableMain).
+			const movimentosParaProcessar = Array.isArray(data) ? data : movimentosSelecionados;
+
+			for (const movimento of movimentosParaProcessar) {
 				try {
-					const movimentoAtualizado: MovimentoBancario = {
-						...movimento,
-						modalidadeMovimento: data.modalidadeMovimento,
-						idPlanoContas: movimento.tipoMovimento === 'C' ? undefined : (data.idPlanoContas || undefined),
-						idPessoa: data.idPessoa || undefined,
-						idBanco: data.idBanco || undefined,
-						numeroDocumento: data.numeroDocumento || undefined,
-						parcelado: data.parcelado || false,
-						idFinanciamento: data.idFinanciamento || undefined,
-						idUsuario: movimento.idUsuario || undefined,
-						idCentroCustos: data.idCentroCustos || undefined,
-						centroCustosList: data.centroCustosList,
-						resultadoList: movimento.tipoMovimento === 'C' ? [] : (data.resultadoList || []),
-					};
+					let movimentoAtualizado: MovimentoBancario;
+
+					if (Array.isArray(data)) {
+						movimentoAtualizado = movimento as MovimentoBancario;
+					} else {
+						movimentoAtualizado = {
+							...movimento,
+							modalidadeMovimento: data.modalidadeMovimento,
+							idPlanoContas: movimento.tipoMovimento === 'C' ? undefined : (data.idPlanoContas || undefined),
+							idPessoa: data.idPessoa || undefined,
+							idBanco: data.idBanco || undefined,
+							numeroDocumento: data.numeroDocumento || undefined,
+							parcelado: data.parcelado || false,
+							idFinanciamento: data.idFinanciamento || undefined,
+							idUsuario: movimento.idUsuario || undefined,
+							idCentroCustos: data.idCentroCustos || undefined,
+							resultadoList: movimento.tipoMovimento === 'C' ? [] : (data.resultadoList || []),
+						};
+						if (data.centroCustosList !== undefined) {
+							movimentoAtualizado.centroCustosList = data.centroCustosList;
+						}
+					}
 
 					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 					movimentosAtualizados.push(resultadoSalvo);
@@ -480,12 +492,14 @@ const ConciliacaoOFXModal = ({
 			}
 
 			// Atualiza a lista de movimentos apenas com os campos alterados
-			const movimentosAtualizadosList = movimentosSendoConciliados.map(mov => {
-				const atualizado = movimentosAtualizados.find(m => 
-					m.id === mov.id || m.identificadorOfx === mov.identificadorOfx
+			const movimentosAtualizadosList = movimentosSendoConciliados.map((mov) => {
+				const atualizado = movimentosAtualizados.find(
+					(m) => m.id === mov.id || m.identificadorOfx === mov.identificadorOfx,
 				);
-				
+
 				if (atualizado) {
+					const idPlanoRef =
+						mov.tipoMovimento === 'C' ? undefined : atualizado.idPlanoContas ?? atualizado.resultadoList?.[0]?.idPlanoContas;
 					return {
 						...mov,
 						idPlanoContas: mov.tipoMovimento === 'C' ? undefined : atualizado.idPlanoContas,
@@ -498,7 +512,8 @@ const ConciliacaoOFXModal = ({
 						idCentroCustos: atualizado.idCentroCustos,
 						centroCustosList: atualizado.centroCustosList,
 						resultadoList: mov.tipoMovimento === 'C' ? [] : (atualizado.resultadoList || []),
-						planosDescricao: mov.tipoMovimento === 'C' ? '' : (planos.find((p) => p.id === data.idPlanoContas)?.descricao || ''),
+						planosDescricao:
+							mov.tipoMovimento === 'C' ? '' : (planos.find((p) => p.id === idPlanoRef)?.descricao || ''),
 					};
 				}
 				return mov;
