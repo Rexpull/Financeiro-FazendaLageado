@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCheck, faEquals, faMinus, faSearch, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { faCheck, faEquals, faMinus, faSearch, faSort, faSortDown, faSortUp, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { formatarMoeda } from '../../../Utils/formataMoeda';
 import { getBancoLogo } from '../../../Utils/bancoUtils';
-import { buscarSaldoContaCorrente, buscarMovimentoBancarioById, salvarMovimentoBancario } from '../../../services/movimentoBancarioService';
+import { buscarMovimentoBancarioById, salvarMovimentoBancario } from '../../../services/movimentoBancarioService';
+import { listarContas } from '../../../services/contaCorrenteService';
 import { listarPlanoContas } from '../../../services/planoContasService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import ConciliarPlano from './Modals/ConciliarPlano';
-import { formatarData, formatarDataSemHora, calcularDataAnteriorFimDia } from '../../../Utils/formatarData';
+import { formatarData, formatarDataSemHora } from '../../../Utils/formatarData';
 import { toast } from 'react-toastify';
 import MultiSelectDropdown from '../../../components/MultiSelectDropdown';
 import { listarCentroCustos } from '../../../services/centroCustosService';
@@ -18,11 +19,33 @@ import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
 
 Modal.setAppElement('#root');
 
-const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => {
+type ColunaOrdenacaoOFX = 'data' | 'historico' | 'plano' | 'centro' | 'valor';
+
+type ConciliacaoOFXModalProps = {
+	isOpen: boolean;
+	onClose: () => void;
+	movimentos: MovimentoBancario[];
+	totalizadores: {
+		receitas: number;
+		despesas: number;
+		liquido: number;
+		saldoFinal?: number;
+		dtInicialExtrato: string;
+		dtFinalExtrato: string;
+	};
+	/** Conta à qual o extrato pertence (ex.: ao reabrir pelo histórico de importações). Se omitido, usa a conta em localStorage (fluxo após importação). */
+	idContaCorrenteExtrato?: number | null;
+};
+
+const ConciliacaoOFXModal = ({
+	isOpen,
+	onClose,
+	movimentos,
+	totalizadores,
+	idContaCorrenteExtrato,
+}: ConciliacaoOFXModalProps) => {
 	const [contaSelecionada, setContaSelecionada] = useState<any | null>(null);
 	const [status, setStatus] = useState<string>('todos');
-	const [saldoConta, setSaldoConta] = useState(0);
-	const [saldoPosExtrato, setSaldoPosExtrato] = useState<number>(0);
 	const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
 	const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
 	const [planos, setPlanos] = useState<PlanoConta[]>([]);
@@ -38,6 +61,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 	const [centrosDisponiveis, setCentrosDisponiveis] = useState<CentroCustos[]>([]);
 	const [planosSelecionados, setPlanosSelecionados] = useState<PlanoConta[]>([]);
 	const [centrosSelecionados, setCentrosSelecionados] = useState<CentroCustos[]>([]);
+	const [colunaOrdenacao, setColunaOrdenacao] = useState<ColunaOrdenacaoOFX>('data');
+	const [direcaoOrdenacao, setDirecaoOrdenacao] = useState<'asc' | 'desc'>('asc');
 	const formatarISOParaInput = (iso: string): string => {
 		if (!iso || isNaN(new Date(iso).getTime())) {
 			return '';
@@ -78,34 +103,69 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 	};
 
 	useEffect(() => {
-		if (isOpen) {
-			const storedConta = localStorage.getItem('contaSelecionada');
-			if (storedConta) {
-				setContaSelecionada(JSON.parse(storedConta));
-			}
-			if (contaSelecionada) {
-				const dataAnterior = calcularDataAnteriorFimDia(totalizadores.dtInicialExtrato);
-
-				buscarSaldoContaCorrente(contaSelecionada.id, dataAnterior).then((response) => {
-					setSaldoConta((response as { saldo: number }).saldo);
-				});
-			}
-			setSaldoPosExtrato(saldoConta + totalizadores.liquido);
-			setFiltroDataInicio(formatarISOParaInput(totalizadores.dtInicialExtrato));
-			setFiltroDataFim(formatarISOParaInput(totalizadores.dtFinalExtrato));
-		}
 		listarPlanoContas().then((planos) => {
 			setPlanos(planos);
-			setPlanosDisponiveis(planos.filter(p => p.nivel === 3));
+			setPlanosDisponiveis(planos.filter((p) => p.nivel === 3));
 		});
-
 		listarCentroCustos().then((centros) => {
 			setCentrosDisponiveis(centros);
 		});
+	}, []);
 
-		setMovimentosSendoConciliados(movimentos);
-		setStatus('todos');
-	}, [isOpen]);
+	useEffect(() => {
+		if (!isOpen) {
+			return;
+		}
+
+		let cancelled = false;
+
+		const aplicarContaDoExtrato = async () => {
+			let conta: any = null;
+
+			if (idContaCorrenteExtrato != null && idContaCorrenteExtrato > 0) {
+				try {
+					const contas = await listarContas();
+					conta = contas.find((c: any) => c.id === idContaCorrenteExtrato) ?? null;
+				} catch (e) {
+					console.error('Erro ao listar contas para o extrato:', e);
+				}
+			} else {
+				const storedConta = localStorage.getItem('contaSelecionada');
+				if (storedConta) {
+					try {
+						conta = JSON.parse(storedConta);
+					} catch {
+						conta = null;
+					}
+				}
+			}
+
+			if (cancelled) {
+				return;
+			}
+
+			setContaSelecionada(conta);
+
+			setFiltroDataInicio(formatarISOParaInput(totalizadores.dtInicialExtrato));
+			setFiltroDataFim(formatarISOParaInput(totalizadores.dtFinalExtrato));
+			setMovimentosSendoConciliados(movimentos);
+			setStatus('todos');
+			setColunaOrdenacao('data');
+			setDirecaoOrdenacao('asc');
+		};
+
+		void aplicarContaDoExtrato();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		isOpen,
+		idContaCorrenteExtrato,
+		movimentos,
+		totalizadores.dtInicialExtrato,
+		totalizadores.dtFinalExtrato,
+	]);
 
 	useEffect(() => {
 		const handleClickFora = (event) => {
@@ -125,41 +185,116 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 		};
 	}, [dropdownAberto]);
 
-	const isMovimentoPendente = (mov: MovimentoBancario) => {
-		// Para receitas: pendente se não tiver centro de custos
+	const isMovimentoPendente = useCallback((mov: MovimentoBancario) => {
 		if (mov.tipoMovimento === 'C') {
 			const temCentroUnico = mov.idCentroCustos !== null && mov.idCentroCustos !== undefined;
 			const temCentroCustosList = mov.centroCustosList && mov.centroCustosList.length > 0;
 			return !temCentroUnico && !temCentroCustosList;
 		}
-		
-		// Para despesas: pendente se não tiver plano de contas
+
 		const temPlanoUnico = mov.idPlanoContas !== null && mov.idPlanoContas !== undefined;
 		const temResultadoList = mov.resultadoList && mov.resultadoList.length > 0;
 		return !temPlanoUnico && !temResultadoList;
+	}, []);
+
+	const movimentosFiltrados = useMemo(() => {
+		return (status === 'pendentes' ? movimentosSendoConciliados.filter(isMovimentoPendente) : movimentosSendoConciliados).filter((m) => {
+			if (!m || !m.historico) {
+				console.warn('Movimento inválido encontrado:', m);
+				return false;
+			}
+
+			const descricaoMatch = filtroDescricao === '' || m.historico.toLowerCase().includes(filtroDescricao.toLowerCase());
+			const valorMatch = filtroValor === '' || formatarMoeda(m.valor, 2).includes(filtroValor);
+			const dataMatch =
+				(!filtroDataInicio || new Date(m.dtMovimento) >= new Date(filtroDataInicio)) &&
+				(!filtroDataFim || new Date(m.dtMovimento) <= new Date(filtroDataFim));
+
+			const planoMatch = planosSelecionados.length === 0 || planosSelecionados.some((p) => p.id === m.idPlanoContas);
+			const centroMatch = centrosSelecionados.length === 0 || centrosSelecionados.some((c) => c.id === m.idCentroCustos);
+
+			return descricaoMatch && valorMatch && dataMatch && planoMatch && centroMatch;
+		});
+	}, [
+		movimentosSendoConciliados,
+		status,
+		isMovimentoPendente,
+		filtroDescricao,
+		filtroValor,
+		filtroDataInicio,
+		filtroDataFim,
+		planosSelecionados,
+		centrosSelecionados,
+	]);
+
+	const textoPlanoOrdenacao = (mov: MovimentoBancario) => {
+		if (mov.tipoMovimento !== 'D') {
+			return '\u0000';
+		}
+		if (mov.resultadoList && mov.resultadoList.length > 1) {
+			return 'Múltiplos Planos';
+		}
+		return planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas';
 	};
 
-	const movimentosFiltrados = (
-		status === 'pendentes' ? movimentosSendoConciliados.filter(isMovimentoPendente) : movimentosSendoConciliados
-	).filter((m) => {
-		// Verificação de segurança para evitar erros de undefined
-		if (!m || !m.historico) {
-			console.warn('Movimento inválido encontrado:', m);
-			return false;
+	const textoCentroOrdenacao = (mov: MovimentoBancario) => {
+		if (mov.centroCustosList && mov.centroCustosList.length > 1) {
+			return 'Múltiplos Centros';
 		}
+		if (mov.centroCustosList && mov.centroCustosList.length > 0) {
+			return (
+				centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao ||
+				`Centro ${mov.centroCustosList[0].idCentroCustos}`
+			);
+		}
+		return centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos';
+	};
 
-		const descricaoMatch = filtroDescricao === '' || m.historico.toLowerCase().includes(filtroDescricao.toLowerCase());
-		const valorMatch = filtroValor === '' || formatarMoeda(m.valor, 2).includes(filtroValor);
-		const dataMatch =
-			(!filtroDataInicio || new Date(m.dtMovimento) >= new Date(filtroDataInicio)) &&
-			(!filtroDataFim || new Date(m.dtMovimento) <= new Date(filtroDataFim));
-		
-		// Novos filtros
-		const planoMatch = planosSelecionados.length === 0 || planosSelecionados.some(p => p.id === m.idPlanoContas);
-		const centroMatch = centrosSelecionados.length === 0 || centrosSelecionados.some(c => c.id === m.idCentroCustos);
-		
-		return descricaoMatch && valorMatch && dataMatch && planoMatch && centroMatch;
-	});
+	const movimentosOrdenados = useMemo(() => {
+		const cmp = (a: MovimentoBancario, b: MovimentoBancario): number => {
+			let r = 0;
+			switch (colunaOrdenacao) {
+				case 'data':
+					r = new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime();
+					break;
+				case 'historico':
+					r = (a.historico || '').localeCompare(b.historico || '', 'pt-BR', { sensitivity: 'base' });
+					break;
+				case 'plano':
+					r = textoPlanoOrdenacao(a).localeCompare(textoPlanoOrdenacao(b), 'pt-BR', { sensitivity: 'base' });
+					break;
+				case 'centro':
+					r = textoCentroOrdenacao(a).localeCompare(textoCentroOrdenacao(b), 'pt-BR', { sensitivity: 'base' });
+					break;
+				case 'valor':
+					r = a.valor - b.valor;
+					break;
+				default:
+					r = 0;
+			}
+			if (r !== 0) {
+				return direcaoOrdenacao === 'asc' ? r : -r;
+			}
+			return (a.id ?? 0) - (b.id ?? 0);
+		};
+		return [...movimentosFiltrados].sort(cmp);
+	}, [movimentosFiltrados, colunaOrdenacao, direcaoOrdenacao, planos, centrosDisponiveis]);
+
+	const alternarOrdenacaoColuna = (col: ColunaOrdenacaoOFX) => {
+		if (col === colunaOrdenacao) {
+			setDirecaoOrdenacao((d) => (d === 'asc' ? 'desc' : 'asc'));
+		} else {
+			setColunaOrdenacao(col);
+			setDirecaoOrdenacao('asc');
+		}
+	};
+
+	const iconeOrdenacaoColuna = (col: ColunaOrdenacaoOFX) => {
+		if (colunaOrdenacao !== col) {
+			return faSort;
+		}
+		return direcaoOrdenacao === 'asc' ? faSortUp : faSortDown;
+	};
 
 	const openModalConcilia = async (movimento: MovimentoBancario) => {
 		try {
@@ -278,27 +413,25 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 
 	const handleSelecionarTodos = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.checked) {
-			// Verificação de segurança para evitar erro de undefined
-			if (movimentosFiltrados.length === 0) {
+			if (movimentosOrdenados.length === 0) {
 				console.warn('Nenhum movimento disponível para seleção');
 				e.target.checked = false;
 				return;
 			}
 
-			const primeiroMovimento = movimentosFiltrados[0];
-			
-			// Verificação adicional de segurança
+			const primeiroMovimento = movimentosOrdenados[0];
+
 			if (!primeiroMovimento || !primeiroMovimento.tipoMovimento) {
 				console.warn('Primeiro movimento inválido:', primeiroMovimento);
 				e.target.checked = false;
 				return;
 			}
 
-			const todosMesmoTipo = movimentosFiltrados.every(m => m && m.tipoMovimento === primeiroMovimento.tipoMovimento);
-			
+			const todosMesmoTipo = movimentosOrdenados.every((m) => m && m.tipoMovimento === primeiroMovimento.tipoMovimento);
+
 			if (todosMesmoTipo) {
 				setTipoMovimentoSelecionado(primeiroMovimento.tipoMovimento);
-				setMovimentosSelecionados(movimentosFiltrados);
+				setMovimentosSelecionados(movimentosOrdenados);
 			} else {
 				toast.warning('Não é possível selecionar movimentos de tipos diferentes (Crédito/Débito)');
 				e.target.checked = false;
@@ -591,14 +724,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 								</span>
 							</div>
 						</div>
-						<div className="mt-4 flex items-center justify-between text-center text-lg font-bold">
-							<div className="flex flex-col items-start">
-								<span className="text-gray-600" style={{ fontSize: '0.950rem' }}>
-									Saldo na conta corrente atualmente
-								</span>
-								<span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(saldoConta, 2)} </span>
-							</div>
-							<div className="totalDivider" />
+						<div className="mt-4 flex flex-wrap items-center justify-center gap-x-12 gap-y-3 text-center text-lg font-bold">
 							<div className="flex flex-col items-center">
 								<span className="text-gray-600" style={{ fontSize: '0.950rem' }}>
 									Valor das Receitas do Extrato
@@ -633,13 +759,6 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 									R$ {formatarMoeda(totalizadores.liquido, 2)}
 								</span>
 							</div>
-							<div className="totalDivider" />
-							<div className="flex flex-col items-center">
-								<span className="text-gray-600" style={{ fontSize: '0.950rem' }}>
-									Saldo na conta após o Extrato
-								</span>
-								<span className="text-2xl font-bold text-green-600">R$ {formatarMoeda(saldoPosExtrato, 2)}</span>
-							</div>
 						</div>
 					</div>
 
@@ -652,16 +771,79 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 										<th className="p-2 text-center w-12 min-w-[48px]">
 											<input
 												type="checkbox"
-												checked={movimentosFiltrados.length > 0 && movimentosFiltrados.every(m => movimentosSelecionados.some(ms => ms.id === m.id))}
+												checked={
+													movimentosOrdenados.length > 0 &&
+													movimentosOrdenados.every((m) => movimentosSelecionados.some((ms) => ms.id === m.id))
+												}
 												onChange={handleSelecionarTodos}
 												className="w-4 h-4"
 											/>
 										</th>
-										<th className="p-2 text-left min-w-[140px]">Data</th>
-										<th className="p-2 text-left min-w-[200px]">Histórico</th>
-										<th className="p-2 text-center min-w-[180px]">Plano de Contas</th>
-										<th className="p-2 text-center min-w-[180px]">Centro de Custos</th>
-										<th className="p-2 text-center min-w-[120px]">Valor</th>
+										<th
+											className="p-2 text-left min-w-[140px] cursor-pointer select-none hover:bg-gray-300/70 transition-colors"
+											onClick={() => alternarOrdenacaoColuna('data')}
+											title="Ordenar por data"
+										>
+											<span className="inline-flex items-center gap-1.5">
+												Data
+												<FontAwesomeIcon
+													icon={iconeOrdenacaoColuna('data')}
+													className={`text-xs ${colunaOrdenacao === 'data' ? 'text-gray-800' : 'text-gray-400'}`}
+												/>
+											</span>
+										</th>
+										<th
+											className="p-2 text-left min-w-[200px] cursor-pointer select-none hover:bg-gray-300/70 transition-colors"
+											onClick={() => alternarOrdenacaoColuna('historico')}
+											title="Ordenar por histórico"
+										>
+											<span className="inline-flex items-center gap-1.5">
+												Histórico
+												<FontAwesomeIcon
+													icon={iconeOrdenacaoColuna('historico')}
+													className={`text-xs ${colunaOrdenacao === 'historico' ? 'text-gray-800' : 'text-gray-400'}`}
+												/>
+											</span>
+										</th>
+										<th
+											className="p-2 text-center min-w-[180px] cursor-pointer select-none hover:bg-gray-300/70 transition-colors"
+											onClick={() => alternarOrdenacaoColuna('plano')}
+											title="Ordenar por plano de contas"
+										>
+											<span className="inline-flex items-center justify-center gap-1.5 w-full">
+												Plano de Contas
+												<FontAwesomeIcon
+													icon={iconeOrdenacaoColuna('plano')}
+													className={`text-xs ${colunaOrdenacao === 'plano' ? 'text-gray-800' : 'text-gray-400'}`}
+												/>
+											</span>
+										</th>
+										<th
+											className="p-2 text-center min-w-[180px] cursor-pointer select-none hover:bg-gray-300/70 transition-colors"
+											onClick={() => alternarOrdenacaoColuna('centro')}
+											title="Ordenar por centro de custos"
+										>
+											<span className="inline-flex items-center justify-center gap-1.5 w-full">
+												Centro de Custos
+												<FontAwesomeIcon
+													icon={iconeOrdenacaoColuna('centro')}
+													className={`text-xs ${colunaOrdenacao === 'centro' ? 'text-gray-800' : 'text-gray-400'}`}
+												/>
+											</span>
+										</th>
+										<th
+											className="p-2 text-center min-w-[120px] cursor-pointer select-none hover:bg-gray-300/70 transition-colors"
+											onClick={() => alternarOrdenacaoColuna('valor')}
+											title="Ordenar por valor"
+										>
+											<span className="inline-flex items-center justify-center gap-1.5 w-full">
+												Valor
+												<FontAwesomeIcon
+													icon={iconeOrdenacaoColuna('valor')}
+													className={`text-xs ${colunaOrdenacao === 'valor' ? 'text-gray-800' : 'text-gray-400'}`}
+												/>
+											</span>
+										</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -672,8 +854,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores }) => 
 											</td>
 										</tr>
 									) : (
-										movimentosFiltrados.map((mov, index) => (
-											<tr key={index} className="border-b">
+										movimentosOrdenados.map((mov) => (
+											<tr key={mov.id ?? `ofx-${mov.identificadorOfx}`} className="border-b">
 												<td className="p-2 text-center">
 													<input
 														type="checkbox"

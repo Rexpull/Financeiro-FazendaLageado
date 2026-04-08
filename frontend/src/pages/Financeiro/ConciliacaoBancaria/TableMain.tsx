@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import DialogModal from '../../../components/DialogModal';
 import LancamentoManual from './Modals/LancarManual';
@@ -108,11 +108,13 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [dropdownHistoricoAberto, setDropdownHistoricoAberto] = useState(false);
 	const [modalConciliacaoHistoricoIsOpen, setModalConciliacaoHistoricoIsOpen] = useState(false);
 	const [isLoadingHistorico, setIsLoadingHistorico] = useState(false);
+	const [progressoCarregamentoHistorico, setProgressoCarregamentoHistorico] = useState(0);
 	const [historicoSelecionado, setHistoricoSelecionado] = useState<{
 		movimentos: MovimentoBancario[];
 		totalizadores: TotalizadoresOFX;
+		idContaCorrente: number;
 	} | null>(null);
-	
+
 	// Modal de confirmação para limpar histórico
 	const [modalConfirmarLimparHistoricoIsOpen, setModalConfirmarLimparHistoricoIsOpen] = useState(false);
 
@@ -123,6 +125,8 @@ const MovimentoBancarioTable: React.FC = () => {
 	// Estados para seleção múltipla e conciliação em lote
 	const [movimentosSelecionados, setMovimentosSelecionados] = useState<MovimentoBancario[]>([]);
 	const [tipoMovimentoSelecionado, setTipoMovimentoSelecionado] = useState<'C' | 'D' | null>(null);
+	/** Lista efetiva no modal de conciliação: um movimento ao abrir pela linha; todos os selecionados só pelo botão "Conciliar n Movimento(s)". */
+	const [movimentosConciliacaoModal, setMovimentosConciliacaoModal] = useState<MovimentoBancario[]>([]);
 
 	// 🔹 Paginação
 	const [currentPage, setCurrentPage] = useState(1);
@@ -136,19 +140,19 @@ const MovimentoBancarioTable: React.FC = () => {
 	useEffect(() => {
 		if (location.state?.fromNotification && location.state?.contaSelecionada) {
 			const contaDaNotificacao = location.state.contaSelecionada;
-			
+
 			// Atualizar a conta selecionada
 			setContaSelecionada(contaDaNotificacao);
 			localStorage.setItem('contaSelecionada', JSON.stringify(contaDaNotificacao));
-			
+
 			// Se vier com filtro de pendentes, aplicar automaticamente
 			if (location.state?.filtroPendentes) {
 				setStatusFiltro('pendentes');
 			}
-			
+
 			// Limpar o state da navegação para evitar reaplicação
 			window.history.replaceState({}, document.title);
-			
+
 			console.log('✅ Conta selecionada automaticamente da notificação:', contaDaNotificacao);
 		}
 	}, [location.state]);
@@ -194,12 +198,12 @@ const MovimentoBancarioTable: React.FC = () => {
 	// useEffect principal para carregar dados quando conta e filtros estiverem prontos
 	useEffect(() => {
 		if (contaSelecionada && dataInicio && dataFim) {
-			console.log('🚀 Carregando dados iniciais:', { 
+			console.log('🚀 Carregando dados iniciais:', {
 				contaId: contaSelecionada.id,
-				dataInicio, 
-				dataFim, 
-				statusFiltro, 
-				itemsPerPage
+				dataInicio,
+				dataFim,
+				statusFiltro,
+				itemsPerPage,
 			});
 			fetchMovimentos(1);
 		}
@@ -221,7 +225,6 @@ const MovimentoBancarioTable: React.FC = () => {
 		console.log(movimentos);
 		setFilteredMovimentos(movimentos.filter((m) => m.idContaCorrente === parsedConta?.id));
 	};
-
 
 	const fetchMovimentos = async (page: number = 1) => {
 		setIsLoading(true);
@@ -248,7 +251,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				contaId: contaSelecionada.id,
 				dataInicio,
 				dataFim,
-				statusFiltro
+				statusFiltro,
 			});
 
 			const result = await listarMovimentosBancariosPaginado(
@@ -259,7 +262,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				dataFim,
 				statusFiltro,
 				planosFiltroIds,
-				centrosFiltroIds
+				centrosFiltroIds,
 			);
 
 			console.log('📊 Resultado da busca:', result);
@@ -290,12 +293,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			setAcoesMenu(false);
 			setIsExporting(true);
 
-			const blob = await exportarMovimentosBancariosExcel(
-				contaSelecionada?.id,
-				dataInicio,
-				dataFim,
-				statusFiltro
-			);
+			const blob = await exportarMovimentosBancariosExcel(contaSelecionada?.id, dataInicio, dataFim, statusFiltro);
 
 			// Criar link para download
 			const url = window.URL.createObjectURL(blob);
@@ -321,12 +319,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			setAcoesMenu(false);
 			setIsExporting(true);
 
-			const blob = await exportarMovimentosBancariosPDF(
-				contaSelecionada?.id,
-				dataInicio,
-				dataFim,
-				statusFiltro
-			);
+			const blob = await exportarMovimentosBancariosPDF(contaSelecionada?.id, dataInicio, dataFim, statusFiltro);
 
 			// Criar link para download
 			const url = window.URL.createObjectURL(blob);
@@ -347,15 +340,14 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
-
 	const handleImportFile = (file: File) => {
 		console.log('Arquivo importado:', file);
 		// Aqui você pode processar o arquivo OFX
 	};
 
-	const handleSearchFilters = (filters: { 
-		dataInicio: string; 
-		dataFim: string; 
+	const handleSearchFilters = (filters: {
+		dataInicio: string;
+		dataFim: string;
 		status: string;
 		planosIds?: number[];
 		centrosIds?: number[];
@@ -406,6 +398,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			const movimentoCompleto = await buscarMovimentoBancarioById(movimento.id);
 			console.log('Movimento completo:', movimentoCompleto);
 			setMovimentoParaConciliar(movimentoCompleto);
+			setMovimentosConciliacaoModal([movimentoCompleto]);
 			setTimeout(() => {
 				setModalConciliaIsOpen(true);
 			}, 0);
@@ -507,17 +500,17 @@ const MovimentoBancarioTable: React.FC = () => {
 			console.error(`❌ Conta selecionada inválida:`, contaSelecionada);
 			return;
 		}
-		
+
 		console.log(`🚀 Iniciando exclusão em massa para conta:`, contaSelecionada);
-		
+
 		try {
 			setIsSaving(true);
 			const resultado = await excluirTodosMovimentosBancarios(contaSelecionada.id);
-			
+
 			// Limpar todos os movimentos da conta atual
 			setMovimentos([]);
 			setFilteredMovimentos([]);
-			
+
 			setConfirmDeleteAllModalOpen(false);
 			console.log(`✅ Exclusão em massa concluída: ${resultado.excluidos} movimentos excluídos`);
 		} catch (error) {
@@ -545,12 +538,12 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const handleLimparConciliacaoConfirm = async () => {
 		if (limparConciliacaoMovimentoId === null) return;
-		
+
 		try {
 			setIsSaving(true);
 			// Buscar o movimento completo
 			const movimentoCompleto = await buscarMovimentoBancarioById(limparConciliacaoMovimentoId);
-			
+
 			// Limpar todos os campos de conciliação
 			const movimentoLimpo: MovimentoBancario = {
 				...movimentoCompleto,
@@ -563,10 +556,10 @@ const MovimentoBancarioTable: React.FC = () => {
 			};
 
 			await salvarMovimentoBancario(movimentoLimpo);
-			
+
 			// Atualizar a lista
 			await fetchMovimentos(currentPage);
-			
+
 			setConfirmLimparConciliacaoModalOpen(false);
 			setLimparConciliacaoMovimentoId(null);
 			toast.success('Conciliação limpa com sucesso!');
@@ -652,17 +645,21 @@ const MovimentoBancarioTable: React.FC = () => {
 			const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 
 			// Atualizar apenas a lista principal de movimentos
-			setMovimentos((prevMovimentos) =>
-				prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov))
-			);
+			setMovimentos((prevMovimentos) => prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
 
 			setCurrentPage(paginaAtual);
 			setModalConciliaIsOpen(false);
-			
-			// Limpar seleção
-			setMovimentosSelecionados([]);
-			setTipoMovimentoSelecionado(null);
-			
+			setMovimentosConciliacaoModal([]);
+
+			// Remove da seleção só o movimento conciliado (mantém outros checkboxes)
+			setMovimentosSelecionados((prev) => {
+				const next = prev.filter((m) => m.id !== movimentoSalvo.id);
+				if (next.length === 0) {
+					setTipoMovimentoSelecionado(null);
+				}
+				return next;
+			});
+
 			// Recarregar dados da página atual
 			await fetchMovimentos(paginaAtual);
 			// Garantir que o movimento recém-salvo use a resposta do save (evita tabela mostrar centro/plano antigo se a listagem vier em cache)
@@ -681,17 +678,16 @@ const MovimentoBancarioTable: React.FC = () => {
 			console.log(`🔄 Atualizando conta de ${historicoParaEditarConta.idMovimentos.length} movimentos para conta ${novaContaId}`);
 
 			const resultado = await atualizarContaMovimentosOFX(historicoParaEditarConta.idMovimentos, novaContaId);
-			
+
 			console.log(`✅ ${resultado.atualizados} movimentos atualizados com sucesso`);
 			toast.success(` movimentos atualizados para a nova conta!`);
-			
+
 			// Fechar modal e limpar estados
 			setModalEditarContaIsOpen(false);
 			setHistoricoParaEditarConta(null);
-			
+
 			// Recarregar movimentos para refletir as mudanças
 			await fetchMovimentos(currentPage);
-			
 		} catch (error) {
 			console.error('❌ Erro ao atualizar conta dos movimentos:', error);
 			toast.error('Erro ao atualizar conta dos movimentos');
@@ -705,9 +701,9 @@ const MovimentoBancarioTable: React.FC = () => {
 			setTipoMovimentoSelecionado(movimento.tipoMovimento || null);
 			setMovimentosSelecionados([movimento]);
 		} else if (tipoMovimentoSelecionado === movimento.tipoMovimento) {
-			const jaSelecionado = movimentosSelecionados.some(m => m.id === movimento.id);
+			const jaSelecionado = movimentosSelecionados.some((m) => m.id === movimento.id);
 			if (jaSelecionado) {
-				const novosSelecionados = movimentosSelecionados.filter(m => m.id !== movimento.id);
+				const novosSelecionados = movimentosSelecionados.filter((m) => m.id !== movimento.id);
 				setMovimentosSelecionados(novosSelecionados);
 				if (novosSelecionados.length === 0) {
 					setTipoMovimentoSelecionado(null);
@@ -729,15 +725,15 @@ const MovimentoBancarioTable: React.FC = () => {
 			}
 
 			const primeiroMovimento = currentItems[0];
-			
+
 			if (!primeiroMovimento || !primeiroMovimento.tipoMovimento) {
 				console.warn('Primeiro movimento inválido:', primeiroMovimento);
 				e.target.checked = false;
 				return;
 			}
 
-			const todosMesmoTipo = currentItems.every(m => m && m.tipoMovimento === primeiroMovimento.tipoMovimento);
-			
+			const todosMesmoTipo = currentItems.every((m) => m && m.tipoMovimento === primeiroMovimento.tipoMovimento);
+
 			if (todosMesmoTipo) {
 				setTipoMovimentoSelecionado(primeiroMovimento.tipoMovimento);
 				setMovimentosSelecionados(currentItems);
@@ -754,6 +750,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const handleConciliarSelecionados = () => {
 		if (movimentosSelecionados.length > 0) {
 			setMovimentoParaConciliar(movimentosSelecionados[0]);
+			setMovimentosConciliacaoModal(movimentosSelecionados);
 			setModalConciliaIsOpen(true);
 		}
 	};
@@ -764,7 +761,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			const erros: number[] = [];
 
 			// Verificar se data é um array de movimentos (quando há rateio por porcentagem)
-			const movimentosParaProcessar = Array.isArray(data) ? data : movimentosSelecionados;
+			const movimentosParaProcessar = Array.isArray(data) ? data : movimentosConciliacaoModal;
 
 			console.log('🔍 DEBUG - handleConciliaMultiplos:');
 			console.log('  - data é array?', Array.isArray(data));
@@ -799,7 +796,12 @@ const MovimentoBancarioTable: React.FC = () => {
 						}
 					}
 
-					console.log('  - movimentoAtualizado antes de salvar:', movimentoAtualizado.id, 'centroCustosList:', movimentoAtualizado.centroCustosList);
+					console.log(
+						'  - movimentoAtualizado antes de salvar:',
+						movimentoAtualizado.id,
+						'centroCustosList:',
+						movimentoAtualizado.centroCustosList,
+					);
 					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 					movimentosAtualizados.push(resultadoSalvo);
 				} catch (error) {
@@ -808,12 +810,19 @@ const MovimentoBancarioTable: React.FC = () => {
 				}
 			}
 
-			// Limpa a seleção
-			setMovimentosSelecionados([]);
-			setTipoMovimentoSelecionado(null);
+			// Remove da seleção os movimentos que foram conciliados neste fluxo
+			const idsProcessados = movimentosParaProcessar.map((m) => m.id);
+			setMovimentosSelecionados((prev) => {
+				const next = prev.filter((m) => !idsProcessados.includes(m.id));
+				if (next.length === 0) {
+					setTipoMovimentoSelecionado(null);
+				}
+				return next;
+			});
 
 			// Fecha o modal
 			setMovimentoParaConciliar(null);
+			setMovimentosConciliacaoModal([]);
 			setModalConciliaIsOpen(false);
 
 			// Recarrega a página atual
@@ -834,14 +843,80 @@ const MovimentoBancarioTable: React.FC = () => {
 
 	const currentItems = filteredMovimentos;
 
+	const linhasResumoFiltrosVazio = useMemo(() => {
+		const fmtData = (s: string) => {
+			const raw = s.split('T')[0];
+			const p = raw.split('-').map(Number);
+			if (p.length !== 3 || p.some((n) => Number.isNaN(n))) return s;
+			const [y, m, d] = p;
+			return new Date(y, m - 1, d).toLocaleDateString('pt-BR');
+		};
+
+		const linhas: string[] = [];
+
+		if (contaSelecionada) {
+			linhas.push(
+				`Conta: ${contaSelecionada.numConta} — ${contaSelecionada.bancoNome} — ${contaSelecionada.responsavel}`,
+			);
+		}
+
+		if (dataInicio && dataFim) {
+			linhas.push(`Período: ${fmtData(dataInicio)} a ${fmtData(dataFim)}`);
+		} else if (dataInicio) {
+			linhas.push(`A partir de: ${fmtData(dataInicio)}`);
+		} else if (dataFim) {
+			linhas.push(`Até: ${fmtData(dataFim)}`);
+		}
+
+		linhas.push(statusFiltro === 'pendentes' ? 'Status: apenas pendentes' : 'Status: mostrar todos');
+
+		if (planosFiltroIds?.length) {
+			const nomes = planosFiltroIds
+				.map((id) => planos.find((p) => p.id === id)?.descricao)
+				.filter(Boolean) as string[];
+			if (nomes.length) {
+				linhas.push(`Planos de contas: ${nomes.join(', ')}`);
+			}
+		}
+
+		if (centrosFiltroIds?.length) {
+			const nomes = centrosFiltroIds
+				.map((id) => centrosDisponiveis.find((c) => c.id === id)?.descricao)
+				.filter(Boolean) as string[];
+			if (nomes.length) {
+				linhas.push(`Centros de custos: ${nomes.join(', ')}`);
+			}
+		}
+
+		return linhas;
+	}, [
+		contaSelecionada,
+		dataInicio,
+		dataFim,
+		statusFiltro,
+		planosFiltroIds,
+		centrosFiltroIds,
+		planos,
+		centrosDisponiveis,
+	]);
+
 	return (
 		<div>
 			{/* Loading bloqueante para histórico */}
 			{isLoadingHistorico && (
 				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-					<div className="bg-white rounded-lg p-8 flex flex-col items-center gap-4">
+					<div className="bg-white rounded-lg p-8 flex flex-col items-center gap-4 w-full max-w-sm shadow-lg">
 						<div className="loader"></div>
-						<p className="text-gray-700 font-semibold">Carregando movimentos...</p>
+						<p className="text-gray-800 font-semibold text-center">Carregando movimentos do extrato...</p>
+						<div className="w-full">
+							<div className="h-3 w-full rounded-full bg-gray-200 overflow-hidden">
+								<div
+									className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
+									style={{ width: `${progressoCarregamentoHistorico}%` }}
+								/>
+							</div>
+							<p className="text-center text-sm font-bold text-gray-700 mt-2 tabular-nums">{progressoCarregamentoHistorico}%</p>
+						</div>
 					</div>
 				</div>
 			)}
@@ -951,23 +1026,23 @@ const MovimentoBancarioTable: React.FC = () => {
 									<div className="text-sm text-gray-600 px-4 py-2">Nenhum histórico encontrado.</div>
 								) : (
 									historicoImportacoes.map((item, index) => (
-										<div
-											key={index}
-											className="block w-full text-left text-sm border-b border-gray-200 px-4 py-2 hover:bg-gray-100"
-										>
+										<div key={index} className="block w-full text-left text-sm border-b border-gray-200 px-4 py-2 hover:bg-gray-100">
 											<div className="flex justify-between items-start gap-2">
 												<button
 													onClick={async () => {
 														try {
+															setProgressoCarregamentoHistorico(0);
 															setIsLoadingHistorico(true);
 															setDropdownHistoricoAberto(false);
-															
-															// Busca os movimentos atualizados do banco de dados
-															const movimentosAtualizados = await buscarMovimentosPorIds(item.idMovimentos);
-															
-															setHistoricoSelecionado({ 
-																movimentos: movimentosAtualizados, 
-																totalizadores: item.totalizadores 
+
+															const movimentosAtualizados = await buscarMovimentosPorIds(item.idMovimentos, (pct) =>
+																setProgressoCarregamentoHistorico(pct),
+															);
+
+															setHistoricoSelecionado({
+																movimentos: movimentosAtualizados,
+																totalizadores: item.totalizadores,
+																idContaCorrente: item.idContaCorrente,
 															});
 															setModalConciliacaoHistoricoIsOpen(true);
 														} catch (error) {
@@ -975,6 +1050,7 @@ const MovimentoBancarioTable: React.FC = () => {
 															toast.error('Erro ao carregar movimentos do histórico');
 														} finally {
 															setIsLoadingHistorico(false);
+															setProgressoCarregamentoHistorico(0);
 														}
 													}}
 													className="flex-1 text-left min-w-0"
@@ -1020,7 +1096,7 @@ const MovimentoBancarioTable: React.FC = () => {
 										<th className="p-2 text-center w-12 min-w-[48px]">
 											<input
 												type="checkbox"
-												checked={currentItems.length > 0 && currentItems.every(m => movimentosSelecionados.some(ms => ms.id === m.id))}
+												checked={currentItems.length > 0 && currentItems.every((m) => movimentosSelecionados.some((ms) => ms.id === m.id))}
 												onChange={handleSelecionarTodos}
 												className="w-4 h-4"
 											/>
@@ -1032,20 +1108,29 @@ const MovimentoBancarioTable: React.FC = () => {
 										<th className="p-2 text-center min-w-[120px]">Valor R$</th>
 									</tr>
 								</thead>
-							<tbody>
-								{currentItems.length === 0 ? (
-									<tr>
-										<td colSpan={7} className="text-center py-5 text-gray-600 text-lg font-medium border-b">
-											Nenhum movimento encontrado!
-										</td>
-									</tr>
-								) : (
-									currentItems.map((movBancario) => (
+								<tbody>
+									{currentItems.length === 0 ? (
+										<tr>
+											<td colSpan={7} className="border-b p-0">
+												<div className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center">
+													<p className="text-gray-600 text-lg font-medium m-0">Nenhum movimento encontrado!</p>
+													<div className="text-xs sm:text-sm text-gray-500 max-w-2xl leading-relaxed">
+														{linhasResumoFiltrosVazio.map((linha, idx) => (
+															<p key={idx} className="m-0">
+																{linha}
+															</p>
+														))}
+													</div>
+												</div>
+											</td>
+										</tr>
+									) : (
+										currentItems.map((movBancario) => (
 											<tr key={movBancario.id} className="border-b">
 												<td className="p-2 text-center">
 													<input
 														type="checkbox"
-														checked={movimentosSelecionados.some(m => m.id === movBancario.id)}
+														checked={movimentosSelecionados.some((m) => m.id === movBancario.id)}
 														onChange={() => handleSelecionarMovimento(movBancario)}
 														className="w-4 h-4"
 														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== movBancario.tipoMovimento}
@@ -1056,271 +1141,308 @@ const MovimentoBancarioTable: React.FC = () => {
 													<span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
 													<Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
 												</td>
-												{/* Coluna Plano de Contas */}
-														<td
-													className={`p-2 text-center min-w-[180px] max-w-[220px] truncate ${
-														movBancario.tipoMovimento === 'D'
-															? 'cursor-pointer underline hover:text-gray-500' + (movBancario.resultadoList && movBancario.resultadoList.length > 1
-																? ' text-blue-600 font-semibold'
-																	: !planos.find((p) => p.id === movBancario.idPlanoContas)
-																? ' text-orange-500 font-semibold'
-																: '')
-															: 'text-gray-400'
-													}`}
-													style={{ textUnderlineOffset: '2px' }}
-													onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
-													title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
-												>
-													{movBancario.tipoMovimento === 'D'
-														? (movBancario.resultadoList && movBancario.resultadoList.length > 1
+												{movBancario.modalidadeMovimento === 'transferencia' ? (
+													<td
+														colSpan={2}
+														className={`p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 ${
+															movBancario.resultadoList && movBancario.resultadoList.length > 1
+																? 'text-blue-600 font-semibold'
+																: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																	? 'text-orange-500 font-semibold'
+																	: 'text-gray-900'
+														}`}
+														style={{ textUnderlineOffset: '2px' }}
+														onClick={() => openModalConcilia(movBancario)}
+														title="Movimentação interna — clique para editar a conciliação"
+													>
+														{movBancario.resultadoList && movBancario.resultadoList.length > 1
 															? 'Múltiplos Planos'
-															: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
-														: '-'
-													}
-												</td>
-												{/* Coluna Centro de Custos */}
-												<td
-													className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
-														movBancario.modalidadeMovimento === 'transferencia'
-															? 'text-gray-400'
-															: movBancario.modalidadeMovimento === 'financiamento'
-															? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
-															: `cursor-pointer underline hover:text-gray-500 ${
-																movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-																	? 'text-blue-600 font-semibold'
-																	: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) && !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
-																		? 'text-orange-500 font-semibold'
-																		: ''
-															}`
-													}`}
-													style={movBancario.modalidadeMovimento !== 'transferencia' ? { textUnderlineOffset: '2px' } : {}}
-													onClick={movBancario.modalidadeMovimento === 'transferencia' ? undefined : () => openModalConcilia(movBancario)}
-													title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
-												>
-													{movBancario.modalidadeMovimento === 'transferencia'
-														? '-'
-														: movBancario.modalidadeMovimento === 'financiamento'
-														? 'Financiamento'
-														: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-														? 'Múltiplos Centros'
-														: (movBancario.idCentroCustos != null
-															? centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao
-															: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
-																? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
-																: null) ?? 'Selecione o Centro de Custos'
-													}
-														</td>
+															: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Transferência entre contas'}
+													</td>
+												) : (
+													<>
+														{/* Coluna Plano de Contas */}
 														<td
-															className={`p-2 text-center font-semibold capitalize ${
-																movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+															className={`p-2 text-center min-w-[180px] max-w-[220px] truncate ${
+																movBancario.tipoMovimento === 'D'
+																	? 'cursor-pointer underline hover:text-gray-500' +
+																		(movBancario.resultadoList && movBancario.resultadoList.length > 1
+																			? ' text-blue-600 font-semibold'
+																			: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																				? ' text-orange-500 font-semibold'
+																				: '')
+																	: 'text-gray-400'
 															}`}
+															style={{ textUnderlineOffset: '2px' }}
+															onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
+															title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
 														>
-															{formatarMoeda(movBancario.valor)}
+															{movBancario.tipoMovimento === 'D'
+																? movBancario.resultadoList && movBancario.resultadoList.length > 1
+																	? 'Múltiplos Planos'
+																	: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'
+																: '-'}
 														</td>
-														<td className="p-2 justify-end mr-1 capitalize flex items-center gap-6 relative">
-															<button
-																className="text-gray-700 hover:text-black px-2"
-																onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
-															>
-																<FontAwesomeIcon icon={faEllipsisV} />
-															</button>
+														{/* Coluna Centro de Custos */}
+														<td
+															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
+																movBancario.modalidadeMovimento === 'financiamento'
+																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
+																	: `cursor-pointer underline hover:text-gray-500 ${
+																			movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																				? 'text-blue-600 font-semibold'
+																				: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) &&
+																					  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
+																					? 'text-orange-500 font-semibold'
+																					: ''
+																		}`
+															}`}
+															style={{ textUnderlineOffset: '2px' }}
+															onClick={() => openModalConcilia(movBancario)}
+															title={movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
+														>
+															{movBancario.modalidadeMovimento === 'financiamento'
+																? 'Financiamento'
+																: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																	? 'Múltiplos Centros'
+																	: ((movBancario.idCentroCustos != null
+																			? centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao
+																			: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
+																				? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)
+																						?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
+																				: null) ?? 'Selecione o Centro de Custos')}
+														</td>
+													</>
+												)}
+												<td
+													className={`p-2 text-center font-semibold capitalize ${
+														movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
+													}`}
+												>
+													{formatarMoeda(movBancario.valor)}
+												</td>
+												<td className="p-2 justify-end mr-1 capitalize flex items-center gap-6 relative">
+													<button
+														className="text-gray-700 hover:text-black px-2"
+														onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+													>
+														<FontAwesomeIcon icon={faEllipsisV} />
+													</button>
 
-															{menuAtivoId === movBancario.id && (
-																<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-33 font-semibold">
-																	<button
-																		className="w-full px-4 py-2 hover:bg-gray-100 text-left text-blue-600"
-																		style={{ textWrap: 'nowrap' }}
-																		onClick={() => {
-																			setMovimentoSelecionado(movBancario);
-																			setModalDetalheOpen(true);
-																		}}
-																	>
-																		<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
-																	</button>
-																	{movBancario.idPlanoContas && (
-																		<button
-																			className="w-full px-4 py-2 hover:bg-orange-100 text-left text-orange-600"
-																			onClick={() => {
-																				handleLimparConciliacao(movBancario.id);
-																				setMenuAtivoId(null);
-																			}}
-																		>
-																			<FontAwesomeIcon icon={faUndo} className="mr-1" /> Limpar
-																		</button>
-																	)}
-																	<button
-																		className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
-																		onClick={() => handleDelete(movBancario.id)}
-																	>
-																		<FontAwesomeIcon icon={faTrash} className="mr-1" /> Excluir
-																	</button>
-																</div>
+													{menuAtivoId === movBancario.id && (
+														<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-33 font-semibold">
+															<button
+																className="w-full px-4 py-2 hover:bg-gray-100 text-left text-blue-600"
+																style={{ textWrap: 'nowrap' }}
+																onClick={() => {
+																	setMovimentoSelecionado(movBancario);
+																	setModalDetalheOpen(true);
+																}}
+															>
+																<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
+															</button>
+															{movBancario.idPlanoContas && (
+																<button
+																	className="w-full px-4 py-2 hover:bg-orange-100 text-left text-orange-600"
+																	onClick={() => {
+																		handleLimparConciliacao(movBancario.id);
+																		setMenuAtivoId(null);
+																	}}
+																>
+																	<FontAwesomeIcon icon={faUndo} className="mr-1" /> Limpar
+																</button>
 															)}
-														</td>
+															<button
+																className="w-full px-4 py-2 hover:bg-red-100 text-left text-red-600"
+																onClick={() => handleDelete(movBancario.id)}
+															>
+																<FontAwesomeIcon icon={faTrash} className="mr-1" /> Excluir
+															</button>
+														</div>
+													)}
+												</td>
 											</tr>
-									))
-								)}
-							</tbody>
+										))
+									)}
+								</tbody>
 							</table>
 						</div>
 
 						{/* Cards Mobile */}
 						<div className="lg:hidden">
 							{currentItems.length === 0 ? (
-								<div className="text-center py-8 text-gray-600 text-lg font-medium">
-									Nenhum movimento encontrado!
+								<div className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center">
+									<p className="text-gray-600 text-lg font-medium m-0">Nenhum movimento encontrado!</p>
+									<div className="text-xs sm:text-sm text-gray-500 max-w-2xl leading-relaxed">
+										{linhasResumoFiltrosVazio.map((linha, idx) => (
+											<p key={idx} className="m-0">
+												{linha}
+											</p>
+										))}
+									</div>
 								</div>
 							) : (
 								<div className="space-y-3 p-4">
 									{currentItems.map((movBancario) => (
-											<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-												{/* Header do card */}
-												<div className="flex justify-between items-start mb-3">
-													<div className="flex items-center gap-2">
+										<div key={movBancario.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+											{/* Header do card */}
+											<div className="flex justify-between items-start mb-3">
+												<div className="flex items-center gap-2">
+													<input
+														type="checkbox"
+														checked={movimentosSelecionados.some((m) => m.id === movBancario.id)}
+														onChange={() => handleSelecionarMovimento(movBancario)}
+														className="w-4 h-4"
+														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== movBancario.tipoMovimento}
+													/>
+													<div className="flex-1">
+														<div className="text-sm font-medium text-gray-900">{formatarData(movBancario.dtMovimento)}</div>
+														<div className="text-xs text-gray-500 mt-1">{movBancario.historico}</div>
+													</div>
+												</div>
+												<div className="flex items-center gap-2">
+													<label className="relative inline-flex items-center cursor-pointer">
 														<input
 															type="checkbox"
-															checked={movimentosSelecionados.some(m => m.id === movBancario.id)}
-															onChange={() => handleSelecionarMovimento(movBancario)}
-															className="w-4 h-4"
-															disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== movBancario.tipoMovimento}
+															className="sr-only peer"
+															checked={movBancario.ideagro}
+															onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
 														/>
-														<div className="flex-1">
-															<div className="text-sm font-medium text-gray-900">
-																{formatarData(movBancario.dtMovimento)}
-															</div>
-															<div className="text-xs text-gray-500 mt-1">
-																{movBancario.historico}
-															</div>
+														<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+													</label>
+													<button
+														className="text-gray-700 hover:text-black p-1"
+														onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+													>
+														<FontAwesomeIcon icon={faEllipsisV} />
+													</button>
+												</div>
+											</div>
+
+											{/* Conteúdo do card */}
+											{movBancario.modalidadeMovimento === 'transferencia' ? (
+												<div className="mb-3">
+													<div className="text-xs text-gray-500">Movimentação interna</div>
+													<div
+														className={`text-sm cursor-pointer underline hover:text-gray-500 ${
+															movBancario.resultadoList && movBancario.resultadoList.length > 1
+																? 'text-blue-600 font-semibold'
+																: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																	? 'text-orange-500 font-semibold'
+																	: ''
+														}`}
+														onClick={() => openModalConcilia(movBancario)}
+														title="Movimentação interna — clique para editar a conciliação"
+													>
+														{movBancario.resultadoList && movBancario.resultadoList.length > 1
+															? 'Múltiplos Planos'
+															: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Transferência entre contas'}
+													</div>
+												</div>
+											) : (
+												<div className="grid grid-cols-2 gap-3 mb-3">
+													{/* Plano de Contas */}
+													<div>
+														<div className="text-xs text-gray-500">Plano de Contas</div>
+														<div
+															className={`text-sm ${movBancario.tipoMovimento === 'D' ? 'cursor-pointer underline hover:text-gray-500' : 'text-gray-400'} ${
+																movBancario.tipoMovimento === 'D' && movBancario.resultadoList && movBancario.resultadoList.length > 1
+																	? 'text-blue-600 font-semibold'
+																	: movBancario.tipoMovimento === 'D' && !planos.find((p) => p.id === movBancario.idPlanoContas)
+																		? 'text-orange-500 font-semibold'
+																		: ''
+															}`}
+															onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
+															title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
+														>
+															{movBancario.tipoMovimento === 'D'
+																? movBancario.resultadoList && movBancario.resultadoList.length > 1
+																	? 'Múltiplos Planos'
+																	: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'
+																: '-'}
 														</div>
 													</div>
-														<div className="flex items-center gap-2">
-															<label className="relative inline-flex items-center cursor-pointer">
-																<input
-																	type="checkbox"
-																	className="sr-only peer"
-																	checked={movBancario.ideagro}
-																	onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
-																/>
-																<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
-															</label>
-															<button
-																className="text-gray-700 hover:text-black p-1"
-																onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
-															>
-																<FontAwesomeIcon icon={faEllipsisV} />
-															</button>
-														</div>
-												</div>
-
-												{/* Conteúdo do card */}
-														<div className="grid grid-cols-2 gap-3 mb-3">
-															{/* Plano de Contas */}
-															<div>
-																<div className="text-xs text-gray-500">Plano de Contas</div>
-																<div 
-																	className={`text-sm ${movBancario.tipoMovimento === 'D' ? 'cursor-pointer underline hover:text-gray-500' : 'text-gray-400'} ${
-																		movBancario.tipoMovimento === 'D' && movBancario.resultadoList && movBancario.resultadoList.length > 1
-																			? 'text-blue-600 font-semibold'
-																			: movBancario.tipoMovimento === 'D' && !planos.find((p) => p.id === movBancario.idPlanoContas)
-																			? 'text-orange-500 font-semibold'
-																			: ''
-																	}`}
-																	onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
-																	title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
-																>
-																	{movBancario.tipoMovimento === 'D'
-																		? (movBancario.resultadoList && movBancario.resultadoList.length > 1
-																			? 'Múltiplos Planos'
-																			: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
-																		: '-'
-																	}
-																</div>
-															</div>
-															{/* Centro de Custos */}
-															<div>
-																<div className="text-xs text-gray-500">Centro de Custos</div>
-																<div 
-																	className={`text-sm ${
-																		movBancario.modalidadeMovimento === 'transferencia'
-																			? 'text-gray-400'
-																			: movBancario.modalidadeMovimento === 'financiamento'
-																			? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
-																			: `cursor-pointer underline hover:text-gray-500 ${
-																				movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-																					? 'text-blue-600 font-semibold'
-																					: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) && !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
+													{/* Centro de Custos */}
+													<div>
+														<div className="text-xs text-gray-500">Centro de Custos</div>
+														<div
+															className={`text-sm ${
+																movBancario.modalidadeMovimento === 'financiamento'
+																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
+																	: `cursor-pointer underline hover:text-gray-500 ${
+																			movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																				? 'text-blue-600 font-semibold'
+																				: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) &&
+																					  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
 																					? 'text-orange-500 font-semibold'
 																					: ''
-																			}`
-																	}`}
-																	onClick={movBancario.modalidadeMovimento === 'transferencia' ? undefined : () => openModalConcilia(movBancario)}
-																	title={movBancario.modalidadeMovimento === 'transferencia' ? 'Movimentação interna não usa Centro de Custos' : movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
-																>
-																	{movBancario.modalidadeMovimento === 'transferencia'
-																		? '-'
-																		: movBancario.modalidadeMovimento === 'financiamento'
-																		? 'Financiamento'
-																		: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-																		? 'Múltiplos Centros'
-																		: (movBancario.idCentroCustos != null
+																		}`
+															}`}
+															onClick={() => openModalConcilia(movBancario)}
+															title={movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
+														>
+															{movBancario.modalidadeMovimento === 'financiamento'
+																? 'Financiamento'
+																: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																	? 'Múltiplos Centros'
+																	: ((movBancario.idCentroCustos != null
 																			? centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao
 																			: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
-																				? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
-																				: null) ?? 'Selecione o Centro de Custos'
-																	}
-																</div>
-																</div>
-															</div>
-															<div>
-																<div className="text-xs text-gray-500">Valor</div>
-																<div className={`text-sm font-semibold ${
-																	movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'
-																}`}>
-																	{formatarMoeda(movBancario.valor)}
-															</div>
-														</div>
-
-												{/* Menu de ações mobile */}
-											{menuAtivoId === movBancario.id && (
-													<div className="mt-3 pt-3 border-t border-gray-200">
-														<div className="flex gap-2 flex-wrap">
-															<button
-																className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
-																onClick={() => {
-																	setMovimentoSelecionado(movBancario);
-																	setModalDetalheOpen(true);
-																	setMenuAtivoId(null);
-																}}
-															>
-																<FontAwesomeIcon icon={faInfoCircle} />
-																Informação
-															</button>
-															{movBancario.idPlanoContas && (
-																<button
-																	className="flex-1 px-3 py-2 text-sm bg-orange-50 text-orange-600 rounded hover:bg-orange-100 flex items-center justify-center gap-2"
-																	onClick={() => {
-																		handleLimparConciliacao(movBancario.id);
-																		setMenuAtivoId(null);
-																	}}
-																>
-																	<FontAwesomeIcon icon={faUndo} />
-																	Limpar
-																</button>
-															)}
-															<button
-																className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
-																onClick={() => {
-																	handleDelete(movBancario.id);
-																	setMenuAtivoId(null);
-																}}
-															>
-																<FontAwesomeIcon icon={faTrash} />
-																Excluir
-															</button>
+																				? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)
+																						?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
+																				: null) ?? 'Selecione o Centro de Custos')}
 														</div>
 													</div>
-												)}
+												</div>
+											)}
+											<div>
+												<div className="text-xs text-gray-500">Valor</div>
+												<div className={`text-sm font-semibold ${movBancario.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+													{formatarMoeda(movBancario.valor)}
+												</div>
 											</div>
+
+											{/* Menu de ações mobile */}
+											{menuAtivoId === movBancario.id && (
+												<div className="mt-3 pt-3 border-t border-gray-200">
+													<div className="flex gap-2 flex-wrap">
+														<button
+															className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2"
+															onClick={() => {
+																setMovimentoSelecionado(movBancario);
+																setModalDetalheOpen(true);
+																setMenuAtivoId(null);
+															}}
+														>
+															<FontAwesomeIcon icon={faInfoCircle} />
+															Informação
+														</button>
+														{movBancario.idPlanoContas && (
+															<button
+																className="flex-1 px-3 py-2 text-sm bg-orange-50 text-orange-600 rounded hover:bg-orange-100 flex items-center justify-center gap-2"
+																onClick={() => {
+																	handleLimparConciliacao(movBancario.id);
+																	setMenuAtivoId(null);
+																}}
+															>
+																<FontAwesomeIcon icon={faUndo} />
+																Limpar
+															</button>
+														)}
+														<button
+															className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
+															onClick={() => {
+																handleDelete(movBancario.id);
+																setMenuAtivoId(null);
+															}}
+														>
+															<FontAwesomeIcon icon={faTrash} />
+															Excluir
+														</button>
+													</div>
+												</div>
+											)}
+										</div>
 									))}
 								</div>
 							)}
@@ -1382,11 +1504,12 @@ const MovimentoBancarioTable: React.FC = () => {
 
 			{/* Botão fixo de conciliação em lote */}
 			{movimentosSelecionados.length > 0 && (
-				<div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50" style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}>
+				<div
+					className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50"
+					style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}
+				>
 					<div className="container mx-auto flex justify-between items-center">
-						<span className="text-gray-600 font-semibold text-lg">
-							{movimentosSelecionados.length} movimento(s) selecionado(s)
-						</span>
+						<span className="text-gray-600 font-semibold text-lg">{movimentosSelecionados.length} movimento(s) selecionado(s)</span>
 						<button
 							onClick={handleConciliarSelecionados}
 							className="bg-blue-600 text-white text-lg px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"
@@ -1486,12 +1609,13 @@ const MovimentoBancarioTable: React.FC = () => {
 				onClose={() => {
 					setModalConciliaIsOpen(false);
 					setMovimentoParaConciliar(null);
+					setMovimentosConciliacaoModal([]);
 					fetchMovimentos(currentPage);
 				}}
 				movimento={movimentoParaConciliar || ({} as MovimentoBancario)}
 				planos={planos}
 				handleConcilia={handleConcilia}
-				movimentosSelecionados={movimentosSelecionados}
+				movimentosSelecionados={movimentosConciliacaoModal}
 				onConciliaMultiplos={handleConciliaMultiplos}
 			/>
 
@@ -1504,6 +1628,7 @@ const MovimentoBancarioTable: React.FC = () => {
 					}}
 					movimentos={historicoSelecionado.movimentos}
 					totalizadores={historicoSelecionado.totalizadores}
+					idContaCorrenteExtrato={historicoSelecionado.idContaCorrente}
 				/>
 			)}
 
@@ -1541,7 +1666,9 @@ const MovimentoBancarioTable: React.FC = () => {
 				}}
 				title="Confirmar Limpeza"
 				type="warn"
-				message={'Tem certeza que deseja limpar todo o histórico de importações OFX? Esta ação não pode ser desfeita. Atenção: isso remove apenas o registro das importações; os movimentos bancários já importados continuarão no sistema. Para excluir os movimentos da conta, use "Excluir todos" na listagem.'}
+				message={
+					'Tem certeza que deseja limpar todo o histórico de importações OFX? Esta ação não pode ser desfeita. Atenção: isso remove apenas o registro das importações; os movimentos bancários já importados continuarão no sistema. Para excluir os movimentos da conta, use "Excluir todos" na listagem.'
+				}
 				confirmLabel="Sim, Limpar"
 				cancelLabel="Cancelar"
 			/>

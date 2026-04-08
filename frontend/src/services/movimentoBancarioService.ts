@@ -425,49 +425,61 @@ export const buscarSaldoContaCorrente = async (idConta: number, data: string) =>
 	return res.json();
 };
 
-export const buscarMovimentosPorIds = async (ids: number[]): Promise<MovimentoBancario[]> => {
+export const buscarMovimentosPorIds = async (
+	ids: number[],
+	onProgress?: (percent: number) => void,
+): Promise<MovimentoBancario[]> => {
 	try {
+		if (!ids?.length) {
+			onProgress?.(100);
+			return [];
+		}
+
 		// Processar em lotes para evitar erro "too many SQL variables"
 		const BATCH_SIZE = 100; // SQLite suporta até 999 variáveis, usamos 100 para máxima segurança
 		const movimentos: MovimentoBancario[] = [];
 		const totalLotes = Math.ceil(ids.length / BATCH_SIZE);
-		
+
+		onProgress?.(0);
+
 		console.log(`🔄 Iniciando busca de ${ids.length} movimentos em ${totalLotes} lotes de ${BATCH_SIZE}`);
-		
+
 		for (let i = 0; i < ids.length; i += BATCH_SIZE) {
 			const batch = ids.slice(i, i + BATCH_SIZE);
 			const numeroLote = Math.floor(i / BATCH_SIZE) + 1;
-			
+
 			console.log(`🔍 Processando lote ${numeroLote}/${totalLotes}: ${batch.length} IDs`);
-			
+
 			try {
 				const res = await fetch(`${API_URL}/api/movBancario/porIds`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ ids: batch }),
 				});
-				
+
 				if (!res.ok) {
 					const errorData = await res.json().catch(() => ({}));
 					throw new Error(errorData.message || `Erro ao buscar lote ${numeroLote}`);
 				}
-				
+
 				const batchResult = await res.json() as MovimentoBancario[];
 				movimentos.push(...batchResult);
-				
+
+				const percent = Math.min(100, Math.round((numeroLote / totalLotes) * 100));
+				onProgress?.(percent);
+
 				console.log(`✅ Lote ${numeroLote} processado: ${batchResult.length} movimentos encontrados`);
-				
+
 				// Pequena pausa entre lotes para não sobrecarregar o servidor
 				if (numeroLote < totalLotes) {
-					await new Promise(resolve => setTimeout(resolve, 200));
+					await new Promise((resolve) => setTimeout(resolve, 200));
 				}
-				
 			} catch (error) {
 				console.error(`❌ Erro no lote ${numeroLote}:`, error);
 				throw new Error(`Falha no lote ${numeroLote}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
 			}
 		}
-		
+
 		console.log(`🎉 Busca concluída: ${movimentos.length} movimentos encontrados em ${totalLotes} lotes`);
 		return movimentos;
 	} catch (error) {
