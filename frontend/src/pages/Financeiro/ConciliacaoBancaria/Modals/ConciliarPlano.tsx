@@ -860,7 +860,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 										type="text"
 											className={`w-full p-2 border rounded-l cursor-pointer ${(movimento.resultadoList ?? []).length > 1 || rateiosPlanos.length > 1 ? 'bg-gray-100' : ''}`}
 										placeholder="Clique para selecionar plano de contas..."
-											onClick={() => !((movimento.resultadoList ?? []).length > 1 || rateiosPlanos.length > 1) && setShowPlanoDropdown(!showPlanoDropdown)}
+											onClick={() => {
+											if ((movimento.resultadoList ?? []).length > 1 || rateiosPlanos.length > 1) return;
+											const next = !showPlanoDropdown;
+											setShowPlanoDropdown(next);
+											if (next && isDespesa && tipoPlanoSelecionado === null) {
+												setTipoPlanoSelecionado('CUSTEIO');
+											}
+										}}
 											value={(movimento.resultadoList ?? []).length > 1 || rateiosPlanos.length > 1 ? 'Multiplos Planos' : searchPlano}
 										readOnly
 									/>
@@ -987,7 +994,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 										type="text"
 										className={`w-full p-2 border rounded-l cursor-pointer ${rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 ? 'bg-gray-100' : ''}`}
 										placeholder="Clique para selecionar centro de custos..."
-										onClick={() => !(rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1) && setShowCentroCustosDropdown(!showCentroCustosDropdown)}
+										onClick={() => {
+											if (rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1) return;
+											const next = !showCentroCustosDropdown;
+											setShowCentroCustosDropdown(next);
+											if (next && isDespesa && tipoCentroSelecionado === null) {
+												setTipoCentroSelecionado('CUSTEIO');
+											}
+										}}
 										value={rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 ? 'Múltiplos Centros' : searchCentroCustos}
 										readOnly
 									/>

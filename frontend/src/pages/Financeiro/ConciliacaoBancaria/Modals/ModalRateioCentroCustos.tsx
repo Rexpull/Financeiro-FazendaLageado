@@ -194,8 +194,10 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			setTipoCentroSelecionado(null);
 			setEditandoPorcentagem(null);
 			setValorPorcentagemEditando('');
+		} else if (isDespesa) {
+			setTipoCentroSelecionado('CUSTEIO');
 		}
-	}, [isOpen]);
+	}, [isOpen, isDespesa]);
 
 	const handleCancelar = () => {
 		setRateios([]);
@@ -408,7 +410,14 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 							type="text"
 							className={`w-full p-2 border rounded cursor-pointer ${!podeAdicionarCentro ? 'bg-gray-100' : ''}`}
 							placeholder="Clique para selecionar centro de custos..."
-							onClick={() => (podeAdicionarCentro ? setShowCentroCustosDropdown(!showCentroCustosDropdown) : undefined)}
+							onClick={() => {
+								if (!podeAdicionarCentro) return;
+								const next = !showCentroCustosDropdown;
+								setShowCentroCustosDropdown(next);
+								if (next && isDespesa && tipoCentroSelecionado === null) {
+									setTipoCentroSelecionado('CUSTEIO');
+								}
+							}}
 							value={searchCentro}
 							readOnly
 							disabled={!podeAdicionarCentro}
