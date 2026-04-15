@@ -186,6 +186,13 @@ const ConciliacaoOFXModal = ({
 	}, [dropdownAberto]);
 
 	const isMovimentoPendente = useCallback((mov: MovimentoBancario) => {
+		// Movimentação interna: não exige centro; pendente só sem plano (nem resultadoList com planos)
+		if (mov.modalidadeMovimento === 'transferencia') {
+			const temPlanoUnico = mov.idPlanoContas !== null && mov.idPlanoContas !== undefined;
+			const temResultadoList = mov.resultadoList && mov.resultadoList.length > 0;
+			return !temPlanoUnico && !temResultadoList;
+		}
+
 		if (mov.tipoMovimento === 'C') {
 			const temCentroUnico = mov.idCentroCustos !== null && mov.idCentroCustos !== undefined;
 			const temCentroCustosList = mov.centroCustosList && mov.centroCustosList.length > 0;
@@ -228,6 +235,12 @@ const ConciliacaoOFXModal = ({
 	]);
 
 	const textoPlanoOrdenacao = (mov: MovimentoBancario) => {
+		if (mov.modalidadeMovimento === 'transferencia') {
+			if (mov.resultadoList && mov.resultadoList.length > 1) {
+				return 'Múltiplos Planos';
+			}
+			return planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Transferência entre contas';
+		}
 		if (mov.tipoMovimento !== 'D') {
 			return '\u0000';
 		}
@@ -238,6 +251,9 @@ const ConciliacaoOFXModal = ({
 	};
 
 	const textoCentroOrdenacao = (mov: MovimentoBancario) => {
+		if (mov.modalidadeMovimento === 'transferencia') {
+			return '\u0000';
+		}
 		if (mov.centroCustosList && mov.centroCustosList.length > 1) {
 			return 'Múltiplos Centros';
 		}
@@ -313,20 +329,15 @@ const ConciliacaoOFXModal = ({
 			console.log('data:', data);
 			const movimentoAtualizado: MovimentoBancario = {
 				...movimentoParaConciliar!,
-				idPlanoContas: movimentoParaConciliar!.tipoMovimento === 'C' ? undefined : (data.idPlanoContas || undefined),
+				idPlanoContas: data.idPlanoContas,
 				modalidadeMovimento: data.modalidadeMovimento,
-				idPessoa: data.idPessoa || undefined,
-				idCentroCustos: data.idCentroCustos || undefined,
+				idPessoa: data.idPessoa ?? null,
+				idCentroCustos: data.idCentroCustos ?? null,
 			};
 
 			// Incluir centroCustosList se presente
 			if (data.centroCustosList !== undefined) {
 				movimentoAtualizado.centroCustosList = data.centroCustosList;
-			}
-			
-			// Para receitas, garantir que resultadoList está vazio
-			if (movimentoParaConciliar!.tipoMovimento === 'C') {
-				movimentoAtualizado.resultadoList = [];
 			}
 
 			if (data.modalidadeMovimento === 'padrao') {
@@ -337,25 +348,26 @@ const ConciliacaoOFXModal = ({
 			}
 
 			if (data.modalidadeMovimento === 'financiamento') {
-				movimentoAtualizado.idBanco = data.idBanco || undefined;
-				movimentoAtualizado.idPessoa = data.idPessoa || undefined;
-				movimentoAtualizado.numeroDocumento = data.numeroDocumento || undefined;
-				movimentoAtualizado.parcelado = data.parcelado || false;
-				movimentoAtualizado.idFinanciamento = data.idFinanciamento || undefined;
-				movimentoAtualizado.idCentroCustos = data.idCentroCustos || undefined;
+				movimentoAtualizado.idBanco = data.idBanco ?? undefined;
+				movimentoAtualizado.idPessoa = data.idPessoa ?? null;
+				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? undefined;
+				movimentoAtualizado.parcelado = data.parcelado ?? false;
+				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? undefined;
+				movimentoAtualizado.idCentroCustos = data.idCentroCustos ?? undefined;
 				// Marcar como conciliado quando há financiamento associado
 				if (data.idFinanciamento) {
 					movimentoAtualizado.ideagro = true;
 				}
 			}
 
-			if(data.modalidadeMovimento === 'transferencia') {	
-				movimentoAtualizado.resultadoList = [];
-				movimentoAtualizado.idFinanciamento = undefined;
+			if (data.modalidadeMovimento === 'transferencia') {
 				movimentoAtualizado.idBanco = undefined;
 				movimentoAtualizado.parcelado = false;
 				movimentoAtualizado.numeroDocumento = undefined;
+				movimentoAtualizado.idFinanciamento = undefined;
 				movimentoAtualizado.idCentroCustos = undefined;
+				movimentoAtualizado.resultadoList = [];
+				movimentoAtualizado.centroCustosList = undefined;
 			}
 
 			console.log('Movimento atualizado:', movimentoAtualizado);
@@ -366,7 +378,7 @@ const ConciliacaoOFXModal = ({
 				if (m.id === movimentoAtualizado.id || m.identificadorOfx === movimentoAtualizado.identificadorOfx) {
 					return {
 						...m,
-						idPlanoContas: m.tipoMovimento === 'C' ? undefined : resultadoSalvo.idPlanoContas,
+						idPlanoContas: resultadoSalvo.idPlanoContas,
 						modalidadeMovimento: resultadoSalvo.modalidadeMovimento,
 						idPessoa: resultadoSalvo.idPessoa,
 						idBanco: resultadoSalvo.idBanco,
@@ -375,8 +387,7 @@ const ConciliacaoOFXModal = ({
 						idFinanciamento: resultadoSalvo.idFinanciamento,
 						idCentroCustos: resultadoSalvo.idCentroCustos,
 						centroCustosList: resultadoSalvo.centroCustosList,
-						resultadoList: m.tipoMovimento === 'C' ? [] : (resultadoSalvo.resultadoList || []),
-						planosDescricao: m.tipoMovimento === 'C' ? '' : (planos.find((p) => p.id === data.idPlanoContas)?.descricao || ''),
+						resultadoList: resultadoSalvo.resultadoList || [],
 					};
 				}
 				return m;
@@ -468,18 +479,26 @@ const ConciliacaoOFXModal = ({
 						movimentoAtualizado = {
 							...movimento,
 							modalidadeMovimento: data.modalidadeMovimento,
-							idPlanoContas: movimento.tipoMovimento === 'C' ? undefined : (data.idPlanoContas || undefined),
-							idPessoa: data.idPessoa || undefined,
+							idPlanoContas: data.idPlanoContas || undefined,
+							idPessoa: data.idPessoa ?? null,
 							idBanco: data.idBanco || undefined,
 							numeroDocumento: data.numeroDocumento || undefined,
 							parcelado: data.parcelado || false,
 							idFinanciamento: data.idFinanciamento || undefined,
 							idUsuario: movimento.idUsuario || undefined,
-							idCentroCustos: data.idCentroCustos || undefined,
-							resultadoList: movimento.tipoMovimento === 'C' ? [] : (data.resultadoList || []),
+							idCentroCustos: data.idCentroCustos ?? null,
 						};
 						if (data.centroCustosList !== undefined) {
 							movimentoAtualizado.centroCustosList = data.centroCustosList;
+						}
+						if (data.modalidadeMovimento === 'transferencia') {
+							movimentoAtualizado.idBanco = undefined;
+							movimentoAtualizado.parcelado = false;
+							movimentoAtualizado.numeroDocumento = undefined;
+							movimentoAtualizado.idFinanciamento = undefined;
+							movimentoAtualizado.idCentroCustos = undefined;
+							movimentoAtualizado.resultadoList = [];
+							movimentoAtualizado.centroCustosList = undefined;
 						}
 					}
 
@@ -498,11 +517,9 @@ const ConciliacaoOFXModal = ({
 				);
 
 				if (atualizado) {
-					const idPlanoRef =
-						mov.tipoMovimento === 'C' ? undefined : atualizado.idPlanoContas ?? atualizado.resultadoList?.[0]?.idPlanoContas;
 					return {
 						...mov,
-						idPlanoContas: mov.tipoMovimento === 'C' ? undefined : atualizado.idPlanoContas,
+						idPlanoContas: atualizado.idPlanoContas,
 						modalidadeMovimento: atualizado.modalidadeMovimento,
 						idPessoa: atualizado.idPessoa,
 						idBanco: atualizado.idBanco,
@@ -511,9 +528,7 @@ const ConciliacaoOFXModal = ({
 						idFinanciamento: atualizado.idFinanciamento,
 						idCentroCustos: atualizado.idCentroCustos,
 						centroCustosList: atualizado.centroCustosList,
-						resultadoList: mov.tipoMovimento === 'C' ? [] : (atualizado.resultadoList || []),
-						planosDescricao:
-							mov.tipoMovimento === 'C' ? '' : (planos.find((p) => p.id === idPlanoRef)?.descricao || ''),
+						resultadoList: atualizado.resultadoList || [],
 					};
 				}
 				return mov;
@@ -884,47 +899,78 @@ const ConciliacaoOFXModal = ({
 												<td className="p-2 text-left min-w-[200px] max-w-[300px] truncate" title={mov.historico}>
 													{mov.historico}
 												</td>
-												{/* Coluna Plano de Contas */}
-												<td
-													className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
-														mov.tipoMovimento === 'D'
-															? 'cursor-pointer underline hover:text-gray-500' + ((mov.resultadoList && mov.resultadoList.length > 1)
-																? ' text-blue-600 font-semibold'
+												{mov.modalidadeMovimento === 'transferencia' ? (
+													<td
+														colSpan={2}
+														className={`p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 ${
+															mov.resultadoList && mov.resultadoList.length > 1
+																? 'text-blue-600 font-semibold'
 																: !planos.find((p) => p.id === mov.idPlanoContas)
-																? ' text-orange-500 font-semibold'
-																: '')
-															: 'text-gray-400'
-													}`}
-													style={{ textUnderlineOffset: '2px' }}
-													onClick={() => mov.tipoMovimento === 'D' && openModalConcilia(mov)}
-													title={mov.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
-												>
-													{mov.tipoMovimento === 'D'
-														? ((mov.resultadoList && mov.resultadoList.length > 1)
+																	? 'text-orange-500 font-semibold'
+																	: 'text-gray-900'
+														}`}
+														style={{ textUnderlineOffset: '2px' }}
+														onClick={() => openModalConcilia(mov)}
+														title="Movimentação interna — clique para editar a conciliação"
+													>
+														{mov.resultadoList && mov.resultadoList.length > 1
 															? 'Múltiplos Planos'
-															: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
-														: '-'
-													}
-												</td>
-												{/* Coluna Centro de Custos */}
-												<td
-													className={`p-2 text-center cursor-pointer underline truncate hover:text-gray-500 min-w-[180px] max-w-[220px] ${
-														mov.centroCustosList && mov.centroCustosList.length > 1
-															? 'text-blue-600 font-semibold'
-															: !centrosDisponiveis.find((c) => c.id === mov.idCentroCustos) && !(mov.centroCustosList && mov.centroCustosList.length > 0)
-															? 'text-orange-500 font-semibold'
-															: ''
-													}`}
-													style={{ textUnderlineOffset: '2px' }}
-													onClick={() => openModalConcilia(mov)}
-												>
-													{mov.centroCustosList && mov.centroCustosList.length > 1
-															? 'Múltiplos Centros'
-															: mov.centroCustosList && mov.centroCustosList.length > 0
-															? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao || `Centro ${mov.centroCustosList[0].idCentroCustos}`
-														: centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos'
-													}
-												</td>
+															: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Transferência entre contas'}
+													</td>
+												) : (
+													<>
+														{/* Coluna Plano de Contas */}
+														<td
+															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
+																mov.tipoMovimento === 'D'
+																	? 'cursor-pointer underline hover:text-gray-500' +
+																		((mov.resultadoList && mov.resultadoList.length > 1)
+																			? ' text-blue-600 font-semibold'
+																			: !planos.find((p) => p.id === mov.idPlanoContas)
+																				? ' text-orange-500 font-semibold'
+																				: '')
+																	: 'text-gray-400'
+															}`}
+															style={{ textUnderlineOffset: '2px' }}
+															onClick={() => mov.tipoMovimento === 'D' && openModalConcilia(mov)}
+															title={mov.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
+														>
+															{mov.tipoMovimento === 'D'
+																? (mov.resultadoList && mov.resultadoList.length > 1
+																		? 'Múltiplos Planos'
+																		: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
+																: '-'}
+														</td>
+														{/* Coluna Centro de Custos */}
+														<td
+															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
+																mov.modalidadeMovimento === 'financiamento'
+																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
+																	: `cursor-pointer underline hover:text-gray-500 ${
+																			mov.centroCustosList && mov.centroCustosList.length > 1
+																				? 'text-blue-600 font-semibold'
+																				: !centrosDisponiveis.find((c) => c.id === mov.idCentroCustos) &&
+																					  !(mov.centroCustosList && mov.centroCustosList.length > 0)
+																					? 'text-orange-500 font-semibold'
+																					: ''
+																		}`
+															}`}
+															style={{ textUnderlineOffset: '2px' }}
+															onClick={() => openModalConcilia(mov)}
+															title={mov.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
+														>
+															{mov.modalidadeMovimento === 'financiamento'
+																? 'Financiamento'
+																: mov.centroCustosList && mov.centroCustosList.length > 1
+																	? 'Múltiplos Centros'
+																	: mov.centroCustosList && mov.centroCustosList.length > 0
+																		? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao ||
+																			`Centro ${mov.centroCustosList[0].idCentroCustos}`
+																		: centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao ||
+																			'Selecione o Centro de Custos'}
+														</td>
+													</>
+												)}
 
 												<td className={`p-2 font-medium text-center ${mov.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
 													R$ {formatarMoeda(mov.valor, 2)}
