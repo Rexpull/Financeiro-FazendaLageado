@@ -27,7 +27,7 @@ export class MovimentoBancarioController {
 		financiamentoRepo: FinanciamentoRepository,
 		pessoaRepo: PessoaRepository,
 		bancoRepo: BancoRepository,
-		centroCustosRepository: CentroCustosRepository
+		centroCustosRepository: CentroCustosRepository,
 	) {
 		this.movBancarioRepository = movBancarioRepository;
 		this.planoContaRepository = planoContaRepository;
@@ -57,7 +57,7 @@ export class MovimentoBancarioController {
 		try {
 			if (method === 'GET' && pathname === '/api/movBancario/por-centro-custos') {
 				console.log('📥 Requisição GET /api/movBancario/por-centro-custos recebida');
-				
+
 				const searchParams = url.searchParams;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
 				const dataFim = searchParams.get('dataFim') || undefined;
@@ -66,13 +66,13 @@ export class MovimentoBancarioController {
 
 				const result = await this.movBancarioRepository.getMovimentosPorCentroCustos({
 					dataInicio,
-					dataFim
+					dataFim,
 				});
 
 				console.log('📤 Retornando', result.length, 'grupos de movimentos');
 
-				return new Response(JSON.stringify(result), { 
-					headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+				return new Response(JSON.stringify(result), {
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 				});
 			}
 
@@ -86,7 +86,7 @@ export class MovimentoBancarioController {
 
 			if (method === 'GET' && pathname === '/api/movBancario/paginado') {
 				console.log('📥 Requisição GET /api/movBancario/paginado recebida');
-				
+
 				const searchParams = url.searchParams;
 				const page = parseInt(searchParams.get('page') || '1');
 				const limit = parseInt(searchParams.get('limit') || '50');
@@ -94,15 +94,29 @@ export class MovimentoBancarioController {
 				const dataInicio = searchParams.get('dataInicio') || undefined;
 				const dataFim = searchParams.get('dataFim') || undefined;
 				const status = searchParams.get('status') || undefined;
-				
+
 				// Novos filtros: planos e centros
 				const planosIdsParam = searchParams.get('planosIds');
-				const planosIds = planosIdsParam ? planosIdsParam.split(',').map(id => parseInt(id)) : undefined;
-				
-				const centrosIdsParam = searchParams.get('centrosIds');
-				const centrosIds = centrosIdsParam ? centrosIdsParam.split(',').map(id => parseInt(id)) : undefined;
+				const planosIds = planosIdsParam ? planosIdsParam.split(',').map((id) => parseInt(id)) : undefined;
 
-				console.log('🔍 Parâmetros de paginação:', { page, limit, contaId, dataInicio, dataFim, status, planosIds, centrosIds });
+				const centrosIdsParam = searchParams.get('centrosIds');
+				const centrosIds = centrosIdsParam ? centrosIdsParam.split(',').map((id) => parseInt(id)) : undefined;
+
+				const historicoContem = searchParams.get('historicoContem') || undefined;
+				const valorBusca = searchParams.get('valorBusca') || undefined;
+
+				console.log('🔍 Parâmetros de paginação:', {
+					page,
+					limit,
+					contaId,
+					dataInicio,
+					dataFim,
+					status,
+					planosIds,
+					centrosIds,
+					historicoContem,
+					valorBusca,
+				});
 
 				const result = await this.movBancarioRepository.getPaginado({
 					page,
@@ -112,19 +126,21 @@ export class MovimentoBancarioController {
 					dataFim,
 					status,
 					planosIds,
-					centrosIds
+					centrosIds,
+					historicoContem,
+					valorBusca,
 				});
 
 				console.log('📤 Retornando', result.movimentos.length, 'movimentos de', result.total, 'total');
 
-				return new Response(JSON.stringify(result), { 
-					headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+				return new Response(JSON.stringify(result), {
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 				});
 			}
 
 			if (method === 'GET' && pathname === '/api/movBancario/export') {
 				console.log('📥 Requisição GET /api/movBancario/export recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -137,7 +153,7 @@ export class MovimentoBancarioController {
 					contaId,
 					dataInicio,
 					dataFim,
-					status
+					status,
 				});
 
 				console.log('📤 Retornando arquivo Excel de', excelBuffer.length, 'bytes');
@@ -146,14 +162,14 @@ export class MovimentoBancarioController {
 					headers: {
 						...corsHeaders,
 						'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-						'Content-Disposition': 'attachment; filename="movimentos_bancarios.xlsx"'
-					}
+						'Content-Disposition': 'attachment; filename="movimentos_bancarios.xlsx"',
+					},
 				});
 			}
 
 			if (method === 'GET' && pathname === '/api/movBancario/export-pdf') {
 				console.log('📥 Requisição GET /api/movBancario/export-pdf recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -166,24 +182,25 @@ export class MovimentoBancarioController {
 					contaId,
 					dataInicio,
 					dataFim,
-					status
+					status,
 				});
 
 				console.log('📤 Retornando arquivo PDF de', pdfBuffer.length, 'bytes');
 
-				return new Response(pdfBuffer as any, { // Cast para compatibilidade com Response
+				return new Response(pdfBuffer as any, {
+					// Cast para compatibilidade com Response
 					headers: {
 						...corsHeaders,
 						'Content-Type': 'application/pdf',
-						'Content-Disposition': 'attachment; filename="movimentos_bancarios.pdf"'
-					}
+						'Content-Disposition': 'attachment; filename="movimentos_bancarios.pdf"',
+					},
 				});
 			}
 
 			// Endpoints de Relatórios
 			if (method === 'GET' && pathname === '/api/relatorio/centro-custos') {
 				console.log('📥 Requisição GET /api/relatorio/centro-custos recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -196,17 +213,17 @@ export class MovimentoBancarioController {
 					dataInicio,
 					dataFim,
 					status,
-					centroCustosId
+					centroCustosId,
 				});
 
 				return new Response(JSON.stringify(dados), {
-					headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 				});
 			}
 
 			if (method === 'GET' && pathname === '/api/relatorio/itens-classificados') {
 				console.log('📥 Requisição GET /api/relatorio/itens-classificados recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -217,17 +234,17 @@ export class MovimentoBancarioController {
 					contaId,
 					dataInicio,
 					dataFim,
-					status
+					status,
 				});
 
 				return new Response(JSON.stringify(dados), {
-					headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 				});
 			}
 
 			if (method === 'GET' && pathname === '/api/relatorio/centro-custos/excel') {
 				console.log('📥 Requisição GET /api/relatorio/centro-custos/excel recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -240,21 +257,21 @@ export class MovimentoBancarioController {
 					dataInicio,
 					dataFim,
 					status,
-					centroCustosId
+					centroCustosId,
 				});
 
 				return new Response(excelBuffer as any, {
 					headers: {
 						...corsHeaders,
 						'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-						'Content-Disposition': 'attachment; filename="relatorio_centro_custos.xlsx"'
-					}
+						'Content-Disposition': 'attachment; filename="relatorio_centro_custos.xlsx"',
+					},
 				});
 			}
 
 			if (method === 'GET' && pathname === '/api/relatorio/centro-custos/pdf') {
 				console.log('📥 Requisição GET /api/relatorio/centro-custos/pdf recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -267,21 +284,21 @@ export class MovimentoBancarioController {
 					dataInicio,
 					dataFim,
 					status,
-					centroCustosId
+					centroCustosId,
 				});
 
 				return new Response(pdfBuffer as any, {
 					headers: {
 						...corsHeaders,
 						'Content-Type': 'application/pdf',
-						'Content-Disposition': 'attachment; filename="relatorio_centro_custos.pdf"'
-					}
+						'Content-Disposition': 'attachment; filename="relatorio_centro_custos.pdf"',
+					},
 				});
 			}
 
 			if (method === 'GET' && pathname === '/api/relatorio/itens-classificados/excel') {
 				console.log('📥 Requisição GET /api/relatorio/itens-classificados/excel recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -292,21 +309,21 @@ export class MovimentoBancarioController {
 					contaId,
 					dataInicio,
 					dataFim,
-					status
+					status,
 				});
 
 				return new Response(excelBuffer as any, {
 					headers: {
 						...corsHeaders,
 						'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-						'Content-Disposition': 'attachment; filename="relatorio_itens_classificados.xlsx"'
-					}
+						'Content-Disposition': 'attachment; filename="relatorio_itens_classificados.xlsx"',
+					},
 				});
 			}
 
 			if (method === 'GET' && pathname === '/api/relatorio/itens-classificados/pdf') {
 				console.log('📥 Requisição GET /api/relatorio/itens-classificados/pdf recebida');
-				
+
 				const searchParams = url.searchParams;
 				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
 				const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -317,15 +334,15 @@ export class MovimentoBancarioController {
 					contaId,
 					dataInicio,
 					dataFim,
-					status
+					status,
 				});
 
 				return new Response(pdfBuffer as any, {
 					headers: {
 						...corsHeaders,
 						'Content-Type': 'application/pdf',
-						'Content-Disposition': 'attachment; filename="relatorio_itens_classificados.pdf"'
-					}
+						'Content-Disposition': 'attachment; filename="relatorio_itens_classificados.pdf"',
+					},
 				});
 			}
 
@@ -416,7 +433,7 @@ export class MovimentoBancarioController {
 			// 📌 PATCH - Atualizar conta de movimentos OFX
 			if (method === 'PATCH' && pathname === '/api/movBancario/update-conta-ofx') {
 				try {
-					const body: { idMovimentos: number[], novaContaId: number } = await req.json();
+					const body: { idMovimentos: number[]; novaContaId: number } = await req.json();
 					console.log(`📥 Atualizando conta de ${body.idMovimentos.length} movimentos para conta ${body.novaContaId}`);
 
 					if (!body.idMovimentos || !Array.isArray(body.idMovimentos) || body.idMovimentos.length === 0) {
@@ -462,7 +479,7 @@ export class MovimentoBancarioController {
 				if (tipo === 'financiamentos') {
 					const credorKey = urlObj.searchParams.get('planoId') || '';
 					if (subtipo === 'contratados') {
-						movimentos = await this.movBancarioRepository.getDetalhesFinanciamentoContratados(credorKey, mes, ano) as any;
+						movimentos = (await this.movBancarioRepository.getDetalhesFinanciamentoContratados(credorKey, mes, ano)) as any;
 					} else {
 						movimentos = await this.movBancarioRepository.getDetalhesFinanciamento(credorKey, mes, ano);
 					}
@@ -485,11 +502,24 @@ export class MovimentoBancarioController {
 			if (method === 'POST' && pathname === '/api/fluxoCaixa') {
 				try {
 					const body = await req.json();
-					const { ano, contas, tipoAgrupamento: tipoAgrupamentoRaw = 'planos' } = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
+					const {
+						ano,
+						contas,
+						tipoAgrupamento: tipoAgrupamentoRaw = 'planos',
+					} = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
 					// Garantir que tipoAgrupamento seja string e normalize para 'centros' ou 'planos'
-					const tipoAgrupamento = (tipoAgrupamentoRaw === 'centros' || tipoAgrupamentoRaw === 'Centro de Custos') ? 'centros' : 'planos';
+					const tipoAgrupamento = tipoAgrupamentoRaw === 'centros' || tipoAgrupamentoRaw === 'Centro de Custos' ? 'centros' : 'planos';
 					const contasNumber = contas.map(Number);
-					console.log('📊 Gerando fluxo de caixa para ano:', ano, 'contas:', contas, 'tipoAgrupamento (raw):', tipoAgrupamentoRaw, 'tipoAgrupamento (normalizado):', tipoAgrupamento);
+					console.log(
+						'📊 Gerando fluxo de caixa para ano:',
+						ano,
+						'contas:',
+						contas,
+						'tipoAgrupamento (raw):',
+						tipoAgrupamentoRaw,
+						'tipoAgrupamento (normalizado):',
+						tipoAgrupamento,
+					);
 
 					const todosMovimentos = await this.movBancarioRepository.getAllFiltrado(ano, contasNumber);
 					console.log('📥 Total movimentos carregados:', todosMovimentos.length);
@@ -527,7 +557,14 @@ export class MovimentoBancarioController {
 					});
 
 					console.log('🎯 Movimentos filtrados:', movimentosFiltrados.length);
-					console.log('🔍 Tipo de agrupamento recebido:', tipoAgrupamento, 'Tipo:', typeof tipoAgrupamento, 'É igual a "centros"?', tipoAgrupamento === 'centros');
+					console.log(
+						'🔍 Tipo de agrupamento recebido:',
+						tipoAgrupamento,
+						'Tipo:',
+						typeof tipoAgrupamento,
+						'É igual a "centros"?',
+						tipoAgrupamento === 'centros',
+					);
 
 					// Estrutura de dados diferente baseada no tipo de agrupamento
 					const dadosMensais: any[] = Array(12)
@@ -535,16 +572,21 @@ export class MovimentoBancarioController {
 						.map(() => ({
 							// Quando agrupado por centros, receitas são valores diretos (números)
 							// Quando agrupado por planos, receitas têm estrutura com descricao e filhos
-							receitas: tipoAgrupamento === 'centros' 
-								? {} as { [key: number]: number }
-								: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
+							receitas:
+								tipoAgrupamento === 'centros'
+									? ({} as { [key: number]: number })
+									: ({} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } }),
 							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							investimentos: {} as { [key: number]: number },
 							// Quando agrupado por centros, financiamentos têm estrutura separada (pagos/contratados)
 							// Quando agrupado por planos, financiamentos têm estrutura simples
-							financiamentos: tipoAgrupamento === 'centros'
-								? { pagos: {} as { [key: string]: { valor: number; descricao: string } }, contratados: {} as { [key: string]: { valor: number; descricao: string } } }
-								: {} as { [key: string]: { valor: number; descricao: string } },
+							financiamentos:
+								tipoAgrupamento === 'centros'
+									? {
+											pagos: {} as { [key: string]: { valor: number; descricao: string } },
+											contratados: {} as { [key: string]: { valor: number; descricao: string } },
+										}
+									: ({} as { [key: string]: { valor: number; descricao: string } }),
 							pendentesSelecao: {} as { [key: number]: number },
 							saldoInicial: 0,
 							saldoFinal: 0,
@@ -557,25 +599,27 @@ export class MovimentoBancarioController {
 						// Agrupamento por Centro de Custos
 						for (const movimento of movimentosFiltrados) {
 							const mes = new Date(movimento.dtMovimento).getMonth();
-							
+
 							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
 								continue;
 							}
 
 							// Obter centros de custos do movimento (pode ser lista ou único)
 							const centrosDoMovimento: { id: number; valor: number }[] = [];
-							
+
 							if (movimento.centroCustosList && movimento.centroCustosList.length > 0) {
 								// Múltiplos centros (rateio)
-								centrosDoMovimento.push(...movimento.centroCustosList.map(cc => ({
-									id: cc.idCentroCustos,
-									valor: Math.abs(cc.valor)
-								})));
+								centrosDoMovimento.push(
+									...movimento.centroCustosList.map((cc) => ({
+										id: cc.idCentroCustos,
+										valor: Math.abs(cc.valor),
+									})),
+								);
 							} else if (movimento.idCentroCustos) {
 								// Centro único
 								centrosDoMovimento.push({
 									id: movimento.idCentroCustos,
-									valor: Math.abs(movimento.valor)
+									valor: Math.abs(movimento.valor),
 								});
 							}
 
@@ -590,7 +634,7 @@ export class MovimentoBancarioController {
 
 							// Processar cada centro de custos do movimento
 							for (const centroMov of centrosDoMovimento) {
-								const centro = centrosCustos.find(c => c.id === centroMov.id);
+								const centro = centrosCustos.find((c) => c.id === centroMov.id);
 								if (!centro) {
 									console.warn('⚠️ Centro de custos não encontrado:', centroMov.id);
 									continue;
@@ -598,7 +642,7 @@ export class MovimentoBancarioController {
 
 								// Determinar se é receita ou despesa baseado no tipoMovimento
 								const grupo = movimento.tipoMovimento === 'C' ? 'receitas' : 'despesas';
-								
+
 								if (grupo === 'receitas') {
 									// Receitas: agrupar diretamente por centro de custos (sem hierarquia)
 									// Armazenar como valor direto, não em estrutura de filhos
@@ -611,11 +655,11 @@ export class MovimentoBancarioController {
 									// Usar IDs especiais para categorias: 1000 = Custeio, 2000 = Investimentos
 									const categoriaId = centro.tipo === 'CUSTEIO' ? 1000 : 2000;
 									const categoriaDesc = centro.tipo === 'CUSTEIO' ? 'Custeio' : 'Investimentos';
-									
+
 									if (!dadosMensais[mes].despesas[categoriaId]) {
 										dadosMensais[mes].despesas[categoriaId] = {
 											descricao: categoriaDesc,
-											filhos: {}
+											filhos: {},
 										};
 									}
 									if (!dadosMensais[mes].despesas[categoriaId].filhos[centro.id]) {
@@ -696,7 +740,7 @@ export class MovimentoBancarioController {
 											', Modalidade do Movimento: ' +
 											movimento.modalidadeMovimento +
 											', Parcelado?: ' +
-											movimento.parcelado
+											movimento.parcelado,
 									);
 									if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
 										console.log('➕ Adicionando investimento:', resultado.valor);
@@ -786,7 +830,7 @@ export class MovimentoBancarioController {
 							const dataContrato = new Date(financiamento.dataContrato);
 							const mesContrato = dataContrato.getMonth();
 							const anoContrato = dataContrato.getFullYear();
-							
+
 							// Só adicionar se o contrato foi feito no ano sendo processado (ano vem string do body)
 							if (anoContrato.toString() === ano) {
 								if (!dadosMensais[mesContrato].financiamentos.contratados[credorKey]) {
@@ -866,7 +910,10 @@ export class MovimentoBancarioController {
 						let receitas = 0;
 						if (tipoAgrupamento === 'centros') {
 							// Quando agrupado por centros, receitas são valores diretos (números)
-							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce(
+								(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
+								0,
+							);
 						} else {
 							receitas = Object.values(dadosMensais[i].receitas ?? {})
 								.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
@@ -875,17 +922,26 @@ export class MovimentoBancarioController {
 						const despesas = Object.values(dadosMensais[i].despesas ?? {})
 							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
 							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce(
+							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
+							0,
+						);
 						let financiamentos = 0;
 						if (tipoAgrupamento === 'centros') {
 							// Quando agrupado por centros, financiamentos têm estrutura separada
 							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
+							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce(
+								(a: number, b: any) => a + (b.valor || 0),
+								0,
+							);
 							financiamentos = pagos - contratados; // Resultado do mês: pagos reduzem dívida (positivo), contratados aumentam (negativo)
 						} else {
 							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
 						}
-						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce(
+							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
+							0,
+						);
 
 						if (i > 0) {
 							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;
@@ -914,10 +970,10 @@ export class MovimentoBancarioController {
 
 					for (const parcela of parcelas) {
 						if (!parcela.dt_vencimento) continue;
-						
+
 						const dataVencimento = new Date(parcela.dt_vencimento);
 						dataVencimento.setHours(0, 0, 0, 0);
-						
+
 						// Só considerar parcelas com vencimento futuro e sem liquidação
 						if (dataVencimento >= hoje && !parcela.dt_liquidacao) {
 							const anoVencimento = dataVencimento.getFullYear();
@@ -930,7 +986,7 @@ export class MovimentoBancarioController {
 
 					const response = {
 						dadosMensais,
-						parcelasVincendasAnuais
+						parcelasVincendasAnuais,
 					};
 
 					return new Response(JSON.stringify(response), {
@@ -939,21 +995,28 @@ export class MovimentoBancarioController {
 					});
 				} catch (error) {
 					console.error('🚨 Erro ao gerar fluxo de caixa:', error);
-					return new Response(JSON.stringify({ 
-						error: 'Erro ao gerar fluxo de caixa', 
-						details: error instanceof Error ? error.message : 'Erro desconhecido',
-						stack: error instanceof Error ? error.stack : undefined
-					}), {
-						status: 500,
-						headers: corsHeaders,
-					});
+					return new Response(
+						JSON.stringify({
+							error: 'Erro ao gerar fluxo de caixa',
+							details: error instanceof Error ? error.message : 'Erro desconhecido',
+							stack: error instanceof Error ? error.stack : undefined,
+						}),
+						{
+							status: 500,
+							headers: corsHeaders,
+						},
+					);
 				}
 			}
 
 			if (method === 'POST' && pathname === '/api/fluxoCaixa/anoAnterior') {
 				try {
 					const body = await req.json();
-					const { ano, contas, tipoAgrupamento = 'planos' } = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
+					const {
+						ano,
+						contas,
+						tipoAgrupamento = 'planos',
+					} = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
 					const anoAnterior = (parseInt(ano) - 1).toString();
 					const contasNumber = contas.map(Number);
 					console.log('📊 Gerando fluxo de caixa do ano anterior:', anoAnterior, 'contas:', contas, 'tipoAgrupamento:', tipoAgrupamento);
@@ -987,7 +1050,9 @@ export class MovimentoBancarioController {
 						if (contemPlanoIgnorado) {
 							return false;
 						}
-						return typeof mov.dtMovimento === 'string' && mov.dtMovimento.startsWith(anoAnterior) && contasNumber.includes(mov.idContaCorrente);
+						return (
+							typeof mov.dtMovimento === 'string' && mov.dtMovimento.startsWith(anoAnterior) && contasNumber.includes(mov.idContaCorrente)
+						);
 					});
 
 					// Estrutura de dados diferente baseada no tipo de agrupamento
@@ -996,16 +1061,21 @@ export class MovimentoBancarioController {
 						.map(() => ({
 							// Quando agrupado por centros, receitas são valores diretos (números)
 							// Quando agrupado por planos, receitas têm estrutura com descricao e filhos
-							receitas: tipoAgrupamento === 'centros' 
-								? {} as { [key: number]: number }
-								: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
+							receitas:
+								tipoAgrupamento === 'centros'
+									? ({} as { [key: number]: number })
+									: ({} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } }),
 							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
 							investimentos: {} as { [key: number]: number },
 							// Quando agrupado por centros, financiamentos têm estrutura separada (pagos/contratados)
 							// Quando agrupado por planos, financiamentos têm estrutura simples
-							financiamentos: tipoAgrupamento === 'centros'
-								? { pagos: {} as { [key: string]: { valor: number; descricao: string } }, contratados: {} as { [key: string]: { valor: number; descricao: string } } }
-								: {} as { [key: string]: { valor: number; descricao: string } },
+							financiamentos:
+								tipoAgrupamento === 'centros'
+									? {
+											pagos: {} as { [key: string]: { valor: number; descricao: string } },
+											contratados: {} as { [key: string]: { valor: number; descricao: string } },
+										}
+									: ({} as { [key: string]: { valor: number; descricao: string } }),
 							pendentesSelecao: {} as { [key: number]: number },
 							saldoInicial: 0,
 							saldoFinal: 0,
@@ -1017,25 +1087,27 @@ export class MovimentoBancarioController {
 						// Agrupamento por Centro de Custos
 						for (const movimento of movimentosFiltrados) {
 							const mes = new Date(movimento.dtMovimento).getMonth();
-							
+
 							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
 								continue;
 							}
 
 							// Obter centros de custos do movimento (pode ser lista ou único)
 							const centrosDoMovimento: { id: number; valor: number }[] = [];
-							
+
 							if (movimento.centroCustosList && movimento.centroCustosList.length > 0) {
 								// Múltiplos centros (rateio)
-								centrosDoMovimento.push(...movimento.centroCustosList.map(cc => ({
-									id: cc.idCentroCustos,
-									valor: Math.abs(cc.valor)
-								})));
+								centrosDoMovimento.push(
+									...movimento.centroCustosList.map((cc) => ({
+										id: cc.idCentroCustos,
+										valor: Math.abs(cc.valor),
+									})),
+								);
 							} else if (movimento.idCentroCustos) {
 								// Centro único
 								centrosDoMovimento.push({
 									id: movimento.idCentroCustos,
-									valor: Math.abs(movimento.valor)
+									valor: Math.abs(movimento.valor),
 								});
 							}
 
@@ -1050,7 +1122,7 @@ export class MovimentoBancarioController {
 
 							// Processar cada centro de custos do movimento
 							for (const centroMov of centrosDoMovimento) {
-								const centro = centrosCustos.find(c => c.id === centroMov.id);
+								const centro = centrosCustos.find((c) => c.id === centroMov.id);
 								if (!centro) {
 									console.warn('⚠️ Centro de custos não encontrado:', centroMov.id);
 									continue;
@@ -1058,7 +1130,7 @@ export class MovimentoBancarioController {
 
 								// Determinar se é receita ou despesa baseado no tipoMovimento
 								const grupo = movimento.tipoMovimento === 'C' ? 'receitas' : 'despesas';
-								
+
 								if (grupo === 'receitas') {
 									// Receitas: agrupar diretamente por centro de custos (sem hierarquia)
 									// Armazenar como valor direto, não em estrutura de filhos
@@ -1071,11 +1143,11 @@ export class MovimentoBancarioController {
 									// Usar IDs especiais para categorias: 1000 = Custeio, 2000 = Investimentos
 									const categoriaId = centro.tipo === 'CUSTEIO' ? 1000 : 2000;
 									const categoriaDesc = centro.tipo === 'CUSTEIO' ? 'Custeio' : 'Investimentos';
-									
+
 									if (!dadosMensais[mes].despesas[categoriaId]) {
 										dadosMensais[mes].despesas[categoriaId] = {
 											descricao: categoriaDesc,
-											filhos: {}
+											filhos: {},
 										};
 									}
 									if (!dadosMensais[mes].despesas[categoriaId].filhos[centro.id]) {
@@ -1186,7 +1258,7 @@ export class MovimentoBancarioController {
 								}
 								dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey].valor += parcela.valor;
 							}
-							
+
 							// Contratados: sempre considerar pelo vencimento (mesmo que já tenha sido pago)
 							const mesVencimento = new Date(parcela.dt_vencimento).getMonth();
 							if (!dadosMensais[mesVencimento].financiamentos.contratados[credorKey]) {
@@ -1208,7 +1280,10 @@ export class MovimentoBancarioController {
 						let receitas = 0;
 						if (tipoAgrupamento === 'centros') {
 							// Quando agrupado por centros, receitas são valores diretos (números)
-							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce(
+								(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
+								0,
+							);
 						} else {
 							receitas = Object.values(dadosMensais[i].receitas ?? {})
 								.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
@@ -1217,17 +1292,26 @@ export class MovimentoBancarioController {
 						const despesas = Object.values(dadosMensais[i].despesas ?? {})
 							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
 							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce(
+							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
+							0,
+						);
 						let financiamentos = 0;
 						if (tipoAgrupamento === 'centros') {
 							// Quando agrupado por centros, financiamentos têm estrutura separada
 							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
+							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce(
+								(a: number, b: any) => a + (b.valor || 0),
+								0,
+							);
 							financiamentos = pagos - contratados; // Resultado do mês: pagos reduzem dívida (positivo), contratados aumentam (negativo)
 						} else {
 							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
 						}
-						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce(
+							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
+							0,
+						);
 						if (i > 0) {
 							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;
 						}
@@ -1253,10 +1337,10 @@ export class MovimentoBancarioController {
 
 					for (const parcela of parcelas) {
 						if (!parcela.dt_vencimento) continue;
-						
+
 						const dataVencimento = new Date(parcela.dt_vencimento);
 						dataVencimento.setHours(0, 0, 0, 0);
-						
+
 						// Só considerar parcelas com vencimento futuro e sem liquidação
 						if (dataVencimento >= hoje && !parcela.dt_liquidacao) {
 							const anoVencimento = dataVencimento.getFullYear();
@@ -1269,7 +1353,7 @@ export class MovimentoBancarioController {
 
 					const responseAnterior = {
 						dadosMensais,
-						parcelasVincendasAnuais: parcelasVincendasAnuaisAnterior
+						parcelasVincendasAnuais: parcelasVincendasAnuaisAnterior,
 					};
 
 					return new Response(JSON.stringify(responseAnterior), {
@@ -1278,14 +1362,17 @@ export class MovimentoBancarioController {
 					});
 				} catch (error) {
 					console.error('🚨 Erro ao gerar fluxo de caixa do ano anterior:', error);
-					return new Response(JSON.stringify({ 
-						error: 'Erro ao gerar fluxo de caixa do ano anterior', 
-						details: error instanceof Error ? error.message : 'Erro desconhecido',
-						stack: error instanceof Error ? error.stack : undefined
-					}), {
-						status: 500,
-						headers: corsHeaders,
-					});
+					return new Response(
+						JSON.stringify({
+							error: 'Erro ao gerar fluxo de caixa do ano anterior',
+							details: error instanceof Error ? error.message : 'Erro desconhecido',
+							stack: error instanceof Error ? error.stack : undefined,
+						}),
+						{
+							status: 500,
+							headers: corsHeaders,
+						},
+					);
 				}
 			}
 
@@ -1322,7 +1409,10 @@ export class MovimentoBancarioController {
 							headers: corsHeaders,
 						});
 					}
-					const contasIds = contasParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+					const contasIds = contasParam
+						.split(',')
+						.map((s) => parseInt(s.trim(), 10))
+						.filter((n) => !isNaN(n) && n > 0);
 					if (contasIds.length === 0) {
 						return new Response(JSON.stringify({ error: 'Nenhum ID de conta válido em "contas"' }), {
 							status: 400,
@@ -1331,22 +1421,28 @@ export class MovimentoBancarioController {
 					}
 					const ano = anoParam ? parseInt(anoParam, 10) : undefined;
 					const resultado = await this.movBancarioRepository.deleteForResetTeste(contasIds, ano);
-					return new Response(JSON.stringify({
-						message: `Zeragem para testes concluída. ${resultado.excluidos} movimento(s) excluído(s).`,
-						excluidos: resultado.excluidos,
-					}), {
-						status: 200,
-						headers: corsHeaders,
-					});
+					return new Response(
+						JSON.stringify({
+							message: `Zeragem para testes concluída. ${resultado.excluidos} movimento(s) excluído(s).`,
+							excluidos: resultado.excluidos,
+						}),
+						{
+							status: 200,
+							headers: corsHeaders,
+						},
+					);
 				} catch (error) {
 					console.error('Erro no reset-teste:', error);
-					return new Response(JSON.stringify({
-						error: 'Erro ao zerar dados para testes',
-						details: error instanceof Error ? error.message : 'Erro desconhecido',
-					}), {
-						status: 500,
-						headers: corsHeaders,
-					});
+					return new Response(
+						JSON.stringify({
+							error: 'Erro ao zerar dados para testes',
+							details: error instanceof Error ? error.message : 'Erro desconhecido',
+						}),
+						{
+							status: 500,
+							headers: corsHeaders,
+						},
+					);
 				}
 			}
 
@@ -1362,12 +1458,15 @@ export class MovimentoBancarioController {
 					const pathParts = pathname.split('/');
 					console.log(`🔍 Partes da URL:`, pathParts);
 					console.log(`🔍 Quantidade de partes:`, pathParts.length);
-					console.log(`🔍 Todas as partes:`, pathParts.map((part, index) => `${index}: "${part}"`));
-					
+					console.log(
+						`🔍 Todas as partes:`,
+						pathParts.map((part, index) => `${index}: "${part}"`),
+					);
+
 					// Tentar diferentes índices para encontrar o ID
 					let idContaCorrenteStr = pathParts[4];
 					console.log(`🔍 ID extraído da URL (índice 4):`, idContaCorrenteStr, `Tipo:`, typeof idContaCorrenteStr);
-					
+
 					// Se não encontrou no índice 4, tentar outros índices
 					if (!idContaCorrenteStr || idContaCorrenteStr.trim() === '') {
 						console.log(`🔍 Tentando outros índices...`);
@@ -1381,7 +1480,7 @@ export class MovimentoBancarioController {
 							}
 						}
 					}
-					
+
 					if (!idContaCorrenteStr || idContaCorrenteStr.trim() === '') {
 						console.error(`❌ ID não encontrado na URL:`, pathname);
 						return new Response(JSON.stringify({ error: 'ID da conta corrente é obrigatório na URL' }), {
@@ -1389,18 +1488,18 @@ export class MovimentoBancarioController {
 							headers: corsHeaders,
 						});
 					}
-					
+
 					// Converter para número com validação mais robusta
 					console.log(`🔍 Antes do parseInt - String: "${idContaCorrenteStr}"`);
 					console.log(`🔍 Antes do parseInt - Trimmed: "${idContaCorrenteStr.trim()}"`);
 					console.log(`🔍 Antes do parseInt - Length: ${idContaCorrenteStr.trim().length}`);
-					
+
 					const idContaCorrenteNumero = parseInt(idContaCorrenteStr.trim(), 10);
 					console.log(`🔍 ID convertido:`, idContaCorrenteNumero, `Tipo:`, typeof idContaCorrenteNumero);
 					console.log(`🔍 isNaN check:`, isNaN(idContaCorrenteNumero));
 					console.log(`🔍 > 0 check:`, idContaCorrenteNumero > 0);
 					console.log(`🔍 === 38 check:`, idContaCorrenteNumero === 38);
-					
+
 					if (isNaN(idContaCorrenteNumero) || idContaCorrenteNumero <= 0) {
 						console.error(`❌ ID inválido 2:`, idContaCorrenteStr, `convertido para:`, idContaCorrenteNumero);
 						console.error(`❌ Debug info:`, {
@@ -1408,44 +1507,58 @@ export class MovimentoBancarioController {
 							trimmedString: idContaCorrenteStr.trim(),
 							parsedNumber: idContaCorrenteNumero,
 							isNaN: isNaN(idContaCorrenteNumero),
-							isPositive: idContaCorrenteNumero > 0
+							isPositive: idContaCorrenteNumero > 0,
 						});
-						return new Response(JSON.stringify({ 
-							error: 'Erro no servidor', 
-							details: `ID inválido: ${idContaCorrenteNumero}` 
-						}), {
-							status: 500,
-							headers: corsHeaders,
-						});
+						return new Response(
+							JSON.stringify({
+								error: 'Erro no servidor',
+								details: `ID inválido: ${idContaCorrenteNumero}`,
+							}),
+							{
+								status: 500,
+								headers: corsHeaders,
+							},
+						);
 					}
-					
+
 					console.log(`✅ ID da conta corrente válido: ${idContaCorrenteNumero}`);
 
 					console.log(`🗑 Iniciando exclusão em massa de todos os movimentos da conta corrente ${idContaCorrenteNumero}`);
-					console.log(`🔍 Chamando repository.deleteAllByContaCorrente com ID:`, idContaCorrenteNumero, `tipo:`, typeof idContaCorrenteNumero);
-					
+					console.log(
+						`🔍 Chamando repository.deleteAllByContaCorrente com ID:`,
+						idContaCorrenteNumero,
+						`tipo:`,
+						typeof idContaCorrenteNumero,
+					);
+
 					const resultado = await this.movBancarioRepository.deleteAllByContaCorrente(idContaCorrenteNumero);
 					console.log(`✅ Exclusão em massa concluída: ${resultado.excluidos} movimentos excluídos`);
 
-					return new Response(JSON.stringify({ 
-						message: `Exclusão em massa concluída! ${resultado.excluidos} movimentos foram excluídos.`,
-						excluidos: resultado.excluidos
-					}), {
-						status: 200,
-						headers: corsHeaders,
-					});
+					return new Response(
+						JSON.stringify({
+							message: `Exclusão em massa concluída! ${resultado.excluidos} movimentos foram excluídos.`,
+							excluidos: resultado.excluidos,
+						}),
+						{
+							status: 200,
+							headers: corsHeaders,
+						},
+					);
 				} catch (error) {
 					console.error('❌ Erro na exclusão em massa:', error);
 					console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
 					console.error('❌ Error type:', typeof error);
 					console.error('❌ Error constructor:', error?.constructor?.name);
-					return new Response(JSON.stringify({ 
-						error: 'Erro ao excluir movimentos em massa',
-						details: error instanceof Error ? error.message : 'Erro desconhecido'
-					}), {
-						status: 500,
-						headers: corsHeaders,
-					});
+					return new Response(
+						JSON.stringify({
+							error: 'Erro ao excluir movimentos em massa',
+							details: error instanceof Error ? error.message : 'Erro desconhecido',
+						}),
+						{
+							status: 500,
+							headers: corsHeaders,
+						},
+					);
 				}
 			}
 
@@ -1460,7 +1573,6 @@ export class MovimentoBancarioController {
 					headers: corsHeaders,
 				});
 			}
-
 
 			if (method === 'PATCH' && pathname.startsWith('/api/movBancario/')) {
 				const id = parseInt(pathname.split('/')[3]);
@@ -1561,9 +1673,9 @@ export class MovimentoBancarioController {
 			if (method === 'POST' && pathname === '/api/movBancario/porIds') {
 				try {
 					const body: { ids: number[] } = await req.json();
-					console.log('🔍 Buscando movimentos por IDs:', { 
+					console.log('🔍 Buscando movimentos por IDs:', {
 						totalIds: body.ids?.length || 0,
-						primeirosIds: body.ids?.slice(0, 5) || []
+						primeirosIds: body.ids?.slice(0, 5) || [],
 					});
 
 					if (!body.ids || !Array.isArray(body.ids) || body.ids.length === 0) {
@@ -1576,26 +1688,32 @@ export class MovimentoBancarioController {
 					// Validar se não há muitos IDs (limite de segurança)
 					if (body.ids.length > 100) {
 						console.warn('⚠️ Tentativa de buscar muitos IDs:', body.ids.length);
-						return new Response(JSON.stringify({ 
-							error: 'Limite de IDs excedido. Máximo permitido: 100',
-							received: body.ids.length
-						}), {
-							status: 400,
-							headers: corsHeaders,
-						});
+						return new Response(
+							JSON.stringify({
+								error: 'Limite de IDs excedido. Máximo permitido: 100',
+								received: body.ids.length,
+							}),
+							{
+								status: 400,
+								headers: corsHeaders,
+							},
+						);
 					}
 
 					// Validação adicional para garantir que nenhum lote exceda o limite
 					if (body.ids.length > 100) {
 						console.error('🚨 CRÍTICO: Lote com mais de 100 IDs recebido:', body.ids.length);
-						return new Response(JSON.stringify({ 
-							error: 'Lote muito grande recebido. Máximo permitido: 100',
-							received: body.ids.length,
-							suggestion: 'Reduza o tamanho do lote no frontend'
-						}), {
-							status: 400,
-							headers: corsHeaders,
-						});
+						return new Response(
+							JSON.stringify({
+								error: 'Lote muito grande recebido. Máximo permitido: 100',
+								received: body.ids.length,
+								suggestion: 'Reduza o tamanho do lote no frontend',
+							}),
+							{
+								status: 400,
+								headers: corsHeaders,
+							},
+						);
 					}
 
 					const movimentos = await this.movBancarioRepository.getByIds(body.ids);
@@ -1609,15 +1727,18 @@ export class MovimentoBancarioController {
 					console.error('🔥 Erro ao buscar movimentos por IDs:', {
 						message: error instanceof Error ? error.message : 'Erro desconhecido',
 						stack: error instanceof Error ? error.stack : undefined,
-						error: error
+						error: error,
 					});
-					return new Response(JSON.stringify({ 
-						error: 'Erro ao buscar movimentos por IDs',
-						details: error instanceof Error ? error.message : 'Erro desconhecido'
-					}), {
-						status: 500,
-						headers: corsHeaders,
-					});
+					return new Response(
+						JSON.stringify({
+							error: 'Erro ao buscar movimentos por IDs',
+							details: error instanceof Error ? error.message : 'Erro desconhecido',
+						}),
+						{
+							status: 500,
+							headers: corsHeaders,
+						},
+					);
 				}
 			}
 

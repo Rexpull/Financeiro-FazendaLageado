@@ -25,7 +25,7 @@ export class MovimentoBancarioRepository {
 	private formatarMoedaExcel(valor: number): string {
 		return valor.toLocaleString('pt-BR', {
 			minimumFractionDigits: 2,
-			maximumFractionDigits: 2
+			maximumFractionDigits: 2,
 		});
 	}
 
@@ -37,7 +37,7 @@ export class MovimentoBancarioRepository {
 		const primeiroDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-01`;
 		const ultimoDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-31`;
 
-		if (tipo === 'receitas' || tipo === 'despesas' || tipo === 'investimentos' ) {
+		if (tipo === 'receitas' || tipo === 'despesas' || tipo === 'investimentos') {
 			sql = `
 				SELECT
 					mb.id,
@@ -57,7 +57,7 @@ export class MovimentoBancarioRepository {
 				ORDER BY mb.dtMovimento ASC
 			`;
 			params = [planoId, primeiroDiaMes, ultimoDiaMes];
-		} else if ( tipo === 'pendentesSelecao') {
+		} else if (tipo === 'pendentesSelecao') {
 			sql = `
 				SELECT
 					mb.id,
@@ -97,7 +97,7 @@ export class MovimentoBancarioRepository {
 			`;
 			params = [planoId, primeiroDiaMes, ultimoDiaMes];
 		}
-		
+
 		const { results } = await this.db
 			.prepare(sql)
 			.bind(...params)
@@ -117,7 +117,12 @@ export class MovimentoBancarioRepository {
 		});
 	}
 
-	async getMovimentosPorCentroCustosDetalhamento(centroCustosId: number, mes: number, tipo: string, ano?: number): Promise<MovimentoDetalhado[]> {
+	async getMovimentosPorCentroCustosDetalhamento(
+		centroCustosId: number,
+		mes: number,
+		tipo: string,
+		ano?: number,
+	): Promise<MovimentoDetalhado[]> {
 		let sql = '';
 		let params: any[] = [];
 
@@ -153,7 +158,7 @@ export class MovimentoBancarioRepository {
 			// Para outros tipos, retornar vazio ou tratar conforme necessário
 			return [];
 		}
-		
+
 		const { results } = await this.db
 			.prepare(sql)
 			.bind(...params)
@@ -179,7 +184,7 @@ export class MovimentoBancarioRepository {
 				`
 			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_Documento, descricao, transf_origem, transf_destino, identificador_ofx, criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 			FROM MovimentoBancario
-		`
+		`,
 			)
 			.all();
 
@@ -209,7 +214,7 @@ export class MovimentoBancarioRepository {
 					idCentroCustos: result.idCentroCustos as number | undefined,
 					resultadoList: resultadoList,
 				};
-			})
+			}),
 		);
 
 		return movimentos;
@@ -249,7 +254,7 @@ export class MovimentoBancarioRepository {
 				FROM MovimentoBancario
 				WHERE dtMovimento BETWEEN ? AND ?
 				AND idContaCorrente IN (${contas.map(() => '?').join(',')})
-				`
+				`,
 			)
 			.bind(inicioAno, fimAno, ...contas)
 			.all();
@@ -258,7 +263,7 @@ export class MovimentoBancarioRepository {
 		const idsMovimentos = results.map((r: any) => r.id as number);
 		const [resultadosMap, centrosCustosMap] = await Promise.all([
 			this.resultadoRepo.getByMovimentos(idsMovimentos),
-			this.movimentoCentroCustosRepo.buscarPorMovimentos(idsMovimentos)
+			this.movimentoCentroCustosRepo.buscarPorMovimentos(idsMovimentos),
 		]);
 
 		// Mapear os resultados para os movimentos
@@ -266,40 +271,40 @@ export class MovimentoBancarioRepository {
 			const id = result.id as number;
 			const resultadoList = resultadosMap.get(id) || [];
 			const centroCustosList = centrosCustosMap.get(id) || [];
-			
-				return {
+
+			return {
 				id,
-					dtMovimento: result.dtMovimento as string,
-					historico: result.historico as string,
-					idPlanoContas: result.idPlanoContas as number,
-					idPessoa: result.idPessoa as number,
-					idBanco: result.idBanco as number,
-					parcelado: result.parcelado === 1,
-					idContaCorrente: result.idContaCorrente as number,
-					valor: result.valor as number,
-					saldo: result.saldo as number,
-					ideagro: result.ideagro === 1,
-					numeroDocumento: result.numero_documento as string,
-					descricao: result.descricao as string,
-					transfOrigem: result.transf_origem as number | null,
-					transfDestino: result.transf_destino as number | null,
-					identificadorOfx: result.identificador_ofx as string,
-					criadoEm: result.criado_em as string,
-					atualizadoEm: result.atualizado_em as string,
-					idUsuario: result.idUsuario as number,
-					tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
-					modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
-					idFinanciamento: result.idFinanciamento as number | undefined,
-					resultadoList,
-					centroCustosList,
-					idCentroCustos: result.idCentroCustos as number | undefined,
-				};
+				dtMovimento: result.dtMovimento as string,
+				historico: result.historico as string,
+				idPlanoContas: result.idPlanoContas as number,
+				idPessoa: result.idPessoa as number,
+				idBanco: result.idBanco as number,
+				parcelado: result.parcelado === 1,
+				idContaCorrente: result.idContaCorrente as number,
+				valor: result.valor as number,
+				saldo: result.saldo as number,
+				ideagro: result.ideagro === 1,
+				numeroDocumento: result.numero_documento as string,
+				descricao: result.descricao as string,
+				transfOrigem: result.transf_origem as number | null,
+				transfDestino: result.transf_destino as number | null,
+				identificadorOfx: result.identificador_ofx as string,
+				criadoEm: result.criado_em as string,
+				atualizadoEm: result.atualizado_em as string,
+				idUsuario: result.idUsuario as number,
+				tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+				modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
+				idFinanciamento: result.idFinanciamento as number | undefined,
+				resultadoList,
+				centroCustosList,
+				idCentroCustos: result.idCentroCustos as number | undefined,
+			};
 		});
 
 		return movimentos;
 	}
 
-	async createBatch(movimentos: MovimentoBancario[]): Promise<{ movimentos: MovimentoBancario[], novos: number, existentes: number }> {
+	async createBatch(movimentos: MovimentoBancario[]): Promise<{ movimentos: MovimentoBancario[]; novos: number; existentes: number }> {
 		const movimentosProcessados: MovimentoBancario[] = [];
 		let novos = 0;
 		let existentes = 0;
@@ -310,7 +315,7 @@ export class MovimentoBancarioRepository {
 			try {
 				// Verificar se o movimento já existe pelo identificador OFX
 				const movimentoExistente = await this.getByIdentificadorOfx(movimento.identificadorOfx);
-				
+
 				if (movimentoExistente) {
 					console.log(`📋 Movimento existente encontrado: ${movimento.identificadorOfx}`);
 					movimentosProcessados.push(movimentoExistente);
@@ -328,7 +333,6 @@ export class MovimentoBancarioRepository {
 					movimentosProcessados.push(movimentoCompleto);
 					novos++;
 				}
-
 			} catch (error) {
 				console.error(`❌ Erro ao processar movimento ${movimento.identificadorOfx}:`, error);
 				// Continuar processando outros movimentos mesmo se houver erro
@@ -385,11 +389,11 @@ export class MovimentoBancarioRepository {
 			idBanco || null,
 			idPessoa || null,
 			parcelado ? 1 : 0,
-			idFinanciamento || null
+			idFinanciamento || null,
 		];
 
 		// Verificar se há valores undefined no array
-		const hasUndefined = bindValues.some(value => value === undefined);
+		const hasUndefined = bindValues.some((value) => value === undefined);
 		if (hasUndefined) {
 			console.error('❌ Valores undefined detectados no bindValues:', bindValues);
 			throw new Error('Valores undefined não são suportados pelo D1 Database');
@@ -405,7 +409,7 @@ export class MovimentoBancarioRepository {
 				criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento
 			)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`
+		`,
 			)
 			.bind(...bindValues)
 			.run();
@@ -447,7 +451,7 @@ export class MovimentoBancarioRepository {
 
 		// Criar objeto com apenas os campos que foram alterados
 		const camposAlterados: Partial<MovimentoBancario> = {};
-		
+
 		// Comparar e adicionar apenas campos alterados
 		if (movimento.dtMovimento !== undefined && movimento.dtMovimento !== movimentoAtual.dtMovimento) {
 			camposAlterados.dtMovimento = movimento.dtMovimento;
@@ -620,7 +624,10 @@ export class MovimentoBancarioRepository {
 			console.log('🔧 Query de atualização:', query);
 			console.log('🔧 Valores para bind:', bindValues);
 
-			await this.db.prepare(query).bind(...bindValues).run();
+			await this.db
+				.prepare(query)
+				.bind(...bindValues)
+				.run();
 		} else {
 			console.log('ℹ️ Nenhum campo da tabela para atualizar, apenas processando resultadoList');
 		}
@@ -674,7 +681,8 @@ export class MovimentoBancarioRepository {
 		console.log('🧹 Limpando centros de custos antigos...');
 		await this.movimentoCentroCustosRepo.deleteByMovimento(id);
 
-		let centroCustosList: { idMovimentoBancario: number; idCentroCustos: number; valor: number }[] | undefined = movimento.centroCustosList as any;
+		let centroCustosList: { idMovimentoBancario: number; idCentroCustos: number; valor: number }[] | undefined =
+			movimento.centroCustosList as any;
 		console.log('🔍 Processando centroCustosList:', JSON.stringify(centroCustosList, null, 2));
 
 		// Quando idCentroCustos é atualizado, a lista deve acompanhar (um único item com esse centro).
@@ -723,33 +731,33 @@ export class MovimentoBancarioRepository {
 	async deleteById(id: number): Promise<void> {
 		console.log(`🚀 ENTRANDO NO deleteById - ID: ${id} (tipo: ${typeof id})`);
 		console.log(`🔍 Stack trace do deleteById:`, new Error().stack);
-		
+
 		// Validar se o ID é válido
 		if (isNaN(id) || id <= 0) {
 			console.error(`❌ ID inválido no deleteById: ${id} (tipo: ${typeof id})`);
 			console.error(`❌ Stack trace do erro:`, new Error().stack);
 			throw new Error(`ID inválido: ${id}`);
 		}
-		
+
 		console.log(`🗑 Iniciando exclusão em cascata do movimento ID ${id}`);
-		
+
 		try {
 			// 1. Primeiro, remover registros da tabela Resultado que referenciam este movimento
 			console.log(`🧹 Removendo resultados relacionados ao movimento ${id}`);
 			await this.resultadoRepo.deleteByMovimento(id);
-			
+
 			// 2. Remover registros da tabela parcelaFinanciamento que referenciam este movimento
 			console.log(`🧹 Removendo parcelas de financiamento relacionadas ao movimento ${id}`);
 			await this.parcelaRepo.deleteByMovimentoBancario(id);
-			
+
 			// 3. Remover registros da tabela MovimentoCentroCustos que referenciam este movimento
 			console.log(`🧹 Removendo centros de custos relacionados ao movimento ${id}`);
 			await this.movimentoCentroCustosRepo.deleteByMovimento(id);
-			
+
 			// 4. Por último, remover o movimento bancário principal
 			console.log(`🗑 Removendo movimento bancário principal ID ${id}`);
 			await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(id).run();
-			
+
 			console.log(`✅ Exclusão em cascata concluída com sucesso para movimento ID ${id}`);
 		} catch (error) {
 			console.error(`❌ Erro durante exclusão em cascata do movimento ${id}:`, error);
@@ -759,75 +767,78 @@ export class MovimentoBancarioRepository {
 
 	async deleteAllByContaCorrente(idContaCorrente: number): Promise<{ excluidos: number }> {
 		console.log(`🚀🚀🚀 INICIANDO deleteAllByContaCorrente - ID: ${idContaCorrente} 🚀🚀🚀`);
-		
+
 		try {
 			// SOLUÇÃO ULTRA SIMPLES - Excluir diretamente sem usar deleteById
 			console.log(`🔍 Buscando movimentos para conta corrente ID: ${idContaCorrente}`);
-			
+
 			// Buscar todos os movimentos
-			const movimentos = await this.db.prepare(`
+			const movimentos = await this.db
+				.prepare(
+					`
 				SELECT id FROM MovimentoBancario WHERE idContaCorrente = ?
-			`).bind(idContaCorrente).all();
-			
+			`,
+				)
+				.bind(idContaCorrente)
+				.all();
+
 			console.log(`📊 Resultado da query:`, movimentos);
 			console.log(`📊 Tipo:`, typeof movimentos);
 			console.log(`📊 Results:`, movimentos.results);
 			console.log(`📊 Quantidade:`, movimentos.results?.length || 0);
-			
+
 			if (!movimentos.results || movimentos.results.length === 0) {
 				console.log(`ℹ️ Nenhum movimento encontrado`);
 				return { excluidos: 0 };
 			}
-			
+
 			let excluidos = 0;
-			
+
 			// Excluir cada movimento diretamente sem usar deleteById
 			for (let i = 0; i < movimentos.results.length; i++) {
 				const movimento = movimentos.results[i];
 				console.log(`🔄 Processando movimento ${i + 1}:`, movimento);
-				
+
 				// Extrair ID de forma ultra simples
 				const movimentoId = movimento.id;
 				console.log(`🔍 ID extraído: ${movimentoId} (tipo: ${typeof movimentoId})`);
-				
+
 				// Validar ID
 				if (!movimentoId || isNaN(Number(movimentoId)) || Number(movimentoId) <= 0) {
 					console.error(`❌ ID inválido: ${movimentoId}`);
 					continue;
 				}
-				
+
 				const idNumerico = Number(movimentoId);
 				console.log(`✅ ID numérico: ${idNumerico}`);
-				
+
 				try {
 					// Excluir resultados relacionados
 					console.log(`🧹 Excluindo resultados para movimento ${idNumerico}`);
 					await this.resultadoRepo.deleteByMovimento(idNumerico);
-					
+
 					// Excluir parcelas relacionadas
 					console.log(`🧹 Excluindo parcelas para movimento ${idNumerico}`);
 					await this.parcelaRepo.deleteByMovimentoBancario(idNumerico);
-					
+
 					// Excluir centros de custos relacionados
 					console.log(`🧹 Excluindo centros de custos para movimento ${idNumerico}`);
 					await this.movimentoCentroCustosRepo.deleteByMovimento(idNumerico);
-					
+
 					// Excluir movimento principal
 					console.log(`🗑 Excluindo movimento principal ${idNumerico}`);
 					await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(idNumerico).run();
-					
+
 					excluidos++;
 					console.log(`✅ Movimento ${idNumerico} excluído com sucesso`);
-					
 				} catch (error) {
 					console.error(`❌ Erro ao excluir movimento ${idNumerico}:`, error);
 					continue;
 				}
 			}
-			
+
 			console.log(`🎉 Exclusão concluída: ${excluidos} movimentos excluídos`);
 			return { excluidos };
-			
 		} catch (error) {
 			console.error(`❌ Erro geral:`, error);
 			throw error;
@@ -853,13 +864,14 @@ export class MovimentoBancarioRepository {
 			sql += ` AND CAST(strftime('%Y', dtMovimento) AS INTEGER) = ?`;
 			params.push(ano);
 		}
-		const { results } = await this.db.prepare(sql).bind(...params).all();
+		const { results } = await this.db
+			.prepare(sql)
+			.bind(...params)
+			.all();
 		if (!results || results.length === 0) {
 			return { excluidos: 0 };
 		}
-		const ids = (results as { id: number }[])
-			.map((row) => Number(row.id))
-			.filter((id) => !isNaN(id) && id > 0);
+		const ids = (results as { id: number }[]).map((row) => Number(row.id)).filter((id) => !isNaN(id) && id > 0);
 		if (ids.length === 0) {
 			return { excluidos: 0 };
 		}
@@ -869,10 +881,22 @@ export class MovimentoBancarioRepository {
 			const chunk = ids.slice(i, i + batchSize);
 			const placeholdersChunk = chunk.map(() => '?').join(',');
 			try {
-				await this.db.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk).run();
-				await this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk).run();
-				await this.db.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk).run();
-				await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id IN (${placeholdersChunk})`).bind(...chunk).run();
+				await this.db
+					.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario IN (${placeholdersChunk})`)
+					.bind(...chunk)
+					.run();
+				await this.db
+					.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario IN (${placeholdersChunk})`)
+					.bind(...chunk)
+					.run();
+				await this.db
+					.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario IN (${placeholdersChunk})`)
+					.bind(...chunk)
+					.run();
+				await this.db
+					.prepare(`DELETE FROM MovimentoBancario WHERE id IN (${placeholdersChunk})`)
+					.bind(...chunk)
+					.run();
 				excluidos += chunk.length;
 			} catch (err) {
 				console.error(`Erro ao excluir lote de movimentos (reset teste):`, err);
@@ -889,7 +913,7 @@ export class MovimentoBancarioRepository {
 		  UPDATE MovimentoBancario
 		  SET ideagro = ?, atualizado_em = datetime('now')
 		  WHERE id = ?
-		`
+		`,
 			)
 			.bind(ideagro ? 1 : 0, id)
 			.run();
@@ -897,7 +921,7 @@ export class MovimentoBancarioRepository {
 
 	async updateContaMovimentosOFX(idMovimentos: number[], novaContaId: number): Promise<{ atualizados: number }> {
 		console.log(`🔄 Atualizando conta de ${idMovimentos.length} movimentos para conta ${novaContaId}`);
-		
+
 		if (!idMovimentos || idMovimentos.length === 0) {
 			throw new Error('Lista de IDs de movimentos não pode estar vazia');
 		}
@@ -910,53 +934,55 @@ export class MovimentoBancarioRepository {
 		const BATCH_SIZE = 10; // Reduzido para 10 para máxima segurança com SQLite
 		let totalAtualizados = 0;
 		const totalLotes = Math.ceil(idMovimentos.length / BATCH_SIZE);
-		
+
 		console.log(`📦 Processando ${idMovimentos.length} movimentos em ${totalLotes} lotes de ${BATCH_SIZE}`);
-		
+
 		for (let i = 0; i < idMovimentos.length; i += BATCH_SIZE) {
 			const batch = idMovimentos.slice(i, i + BATCH_SIZE);
 			const numeroLote = Math.floor(i / BATCH_SIZE) + 1;
-			
-			console.log(`🔍 Processando lote ${numeroLote}/${totalLotes}: ${batch.length} movimentos`);
-			
-				try {
-					// Criar placeholders para a query IN
-					const placeholders = batch.map(() => '?').join(',');
 
-					const sql = `
+			console.log(`🔍 Processando lote ${numeroLote}/${totalLotes}: ${batch.length} movimentos`);
+
+			try {
+				// Criar placeholders para a query IN
+				const placeholders = batch.map(() => '?').join(',');
+
+				const sql = `
 						UPDATE MovimentoBancario
 						SET idContaCorrente = ?, atualizado_em = datetime('now')
 						WHERE id IN (${placeholders})
 					`;
 
-					const params = [novaContaId, ...batch];
+				const params = [novaContaId, ...batch];
 
-					console.log(`📝 Executando lote ${numeroLote}/${totalLotes}:`, sql);
-					console.log(`📝 Parâmetros do lote ${numeroLote} (${params.length} parâmetros):`, params);
-					console.log(`📝 IDs no lote ${numeroLote}:`, batch);
+				console.log(`📝 Executando lote ${numeroLote}/${totalLotes}:`, sql);
+				console.log(`📝 Parâmetros do lote ${numeroLote} (${params.length} parâmetros):`, params);
+				console.log(`📝 IDs no lote ${numeroLote}:`, batch);
 
-					const result = await this.db.prepare(sql).bind(...params).run();
+				const result = await this.db
+					.prepare(sql)
+					.bind(...params)
+					.run();
 
-					const atualizadosNoLote = (result as any).changes || 0;
-					totalAtualizados += atualizadosNoLote;
+				const atualizadosNoLote = (result as any).changes || 0;
+				totalAtualizados += atualizadosNoLote;
 
-					console.log(`✅ Lote ${numeroLote}/${totalLotes} processado: ${atualizadosNoLote} movimentos atualizados`);
+				console.log(`✅ Lote ${numeroLote}/${totalLotes} processado: ${atualizadosNoLote} movimentos atualizados`);
 
-					// Pequena pausa entre lotes para evitar sobrecarga
-					if (numeroLote < totalLotes) {
-						await new Promise(resolve => setTimeout(resolve, 10));
-					}
-
-				} catch (error) {
-					console.error(`❌ Erro no lote ${numeroLote}/${totalLotes}:`, error);
-					console.error(`❌ Batch que falhou:`, batch);
-					console.error(`❌ Parâmetros que falharam:`, [novaContaId, ...batch]);
-					throw new Error(`Falha no lote ${numeroLote}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+				// Pequena pausa entre lotes para evitar sobrecarga
+				if (numeroLote < totalLotes) {
+					await new Promise((resolve) => setTimeout(resolve, 10));
 				}
+			} catch (error) {
+				console.error(`❌ Erro no lote ${numeroLote}/${totalLotes}:`, error);
+				console.error(`❌ Batch que falhou:`, batch);
+				console.error(`❌ Parâmetros que falharam:`, [novaContaId, ...batch]);
+				throw new Error(`Falha no lote ${numeroLote}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+			}
 		}
-		
+
 		console.log(`🎉 Processamento concluído: ${totalAtualizados} movimentos atualizados em ${totalLotes} lotes`);
-		
+
 		return { atualizados: totalAtualizados };
 	}
 
@@ -992,7 +1018,7 @@ export class MovimentoBancarioRepository {
 					criado_em, atualizado_em
 				)
 				VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, null, ?, ?, ?, 'D', 'transferencia', datetime('now'), datetime('now'))
-			`
+			`,
 				)
 				.bind(
 					data.data,
@@ -1003,7 +1029,7 @@ export class MovimentoBancarioRepository {
 					data.descricao,
 					data.contaDestinoId,
 					identificador,
-					data.idUsuario
+					data.idUsuario,
 				)
 				.run();
 
@@ -1032,7 +1058,7 @@ export class MovimentoBancarioRepository {
 					criado_em, atualizado_em
 				)
 				VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, ?, null, ?, ?, 'C', 'transferencia', datetime('now'), datetime('now'))
-			`
+			`,
 				)
 				.bind(
 					data.data,
@@ -1043,7 +1069,7 @@ export class MovimentoBancarioRepository {
 					data.descricao,
 					idSaida,
 					identificador,
-					data.idUsuario
+					data.idUsuario,
 				)
 				.run();
 
@@ -1076,7 +1102,7 @@ export class MovimentoBancarioRepository {
 					idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 				FROM MovimentoBancario
 				WHERE identificador_ofx = ?
-			`
+			`,
 			)
 			.bind(identificadorOfx)
 			.all();
@@ -1133,7 +1159,7 @@ export class MovimentoBancarioRepository {
 					   idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 				FROM MovimentoBancario
 				WHERE id = ?
-			`
+			`,
 			)
 			.bind(id)
 			.all();
@@ -1296,7 +1322,7 @@ export class MovimentoBancarioRepository {
 		if (ids.length === 0) return [];
 
 		console.log(`🔍 Repository: Buscando ${ids.length} movimentos por IDs`);
-		
+
 		// Validar se não há muitos IDs (limite de segurança)
 		if (ids.length > 100) {
 			throw new Error(`Limite de IDs excedido: ${ids.length} > 100`);
@@ -1319,7 +1345,7 @@ export class MovimentoBancarioRepository {
 		`;
 
 		console.log(`🔍 Repository: Executando query com ${ids.length} placeholders`);
-		
+
 		// Alertar se estiver próximo do limite do SQLite
 		if (ids.length > 50) {
 			console.warn(`⚠️ Repository: ${ids.length} placeholders pode estar próximo do limite do SQLite`);
@@ -1328,51 +1354,51 @@ export class MovimentoBancarioRepository {
 		try {
 			const { results } = await this.db
 				.prepare(query)
-			.bind(...ids)
-			.all();
+				.bind(...ids)
+				.all();
 
 			console.log(`🔍 Repository: Query executada, ${results.length} resultados encontrados`);
 
-		const movimentos = await Promise.all(
-			results.map(async (result) => {
-				const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
-				return {
-					id: result.id as number,
-					dtMovimento: result.dtMovimento as string,
-					historico: result.historico as string,
-					idPlanoContas: result.idPlanoContas as number,
-					idContaCorrente: result.idContaCorrente as number,
-					valor: result.valor as number,
-					saldo: result.saldo as number,
-					ideagro: result.ideagro as boolean,
-					numeroDocumento: result.numero_documento as string,
-					descricao: result.descricao as string,
-					transfOrigem: result.transf_origem as number | null,
-					transfDestino: result.transf_destino as number | null,
-					identificadorOfx: result.identificador_ofx as string,
-					criadoEm: result.criado_em as string,
-					atualizadoEm: result.atualizado_em as string,
-					idUsuario: result.idUsuario as number,
-					tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
-					modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
-					idBanco: result.idBanco as number,
-					idPessoa: result.idPessoa as number,
-					parcelado: result.parcelado === 1,
-					idFinanciamento: result.idFinanciamento as number | undefined,
-					idCentroCustos: result.idCentroCustos as number | undefined,
-					resultadoList: resultadoList,
-				};
-			})
-		);
+			const movimentos = await Promise.all(
+				results.map(async (result) => {
+					const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
+					return {
+						id: result.id as number,
+						dtMovimento: result.dtMovimento as string,
+						historico: result.historico as string,
+						idPlanoContas: result.idPlanoContas as number,
+						idContaCorrente: result.idContaCorrente as number,
+						valor: result.valor as number,
+						saldo: result.saldo as number,
+						ideagro: result.ideagro as boolean,
+						numeroDocumento: result.numero_documento as string,
+						descricao: result.descricao as string,
+						transfOrigem: result.transf_origem as number | null,
+						transfDestino: result.transf_destino as number | null,
+						identificadorOfx: result.identificador_ofx as string,
+						criadoEm: result.criado_em as string,
+						atualizadoEm: result.atualizado_em as string,
+						idUsuario: result.idUsuario as number,
+						tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+						modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
+						idBanco: result.idBanco as number,
+						idPessoa: result.idPessoa as number,
+						parcelado: result.parcelado === 1,
+						idFinanciamento: result.idFinanciamento as number | undefined,
+						idCentroCustos: result.idCentroCustos as number | undefined,
+						resultadoList: resultadoList,
+					};
+				}),
+			);
 
 			console.log(`✅ Repository: Processamento concluído, retornando ${movimentos.length} movimentos`);
-		return movimentos;
+			return movimentos;
 		} catch (error) {
 			console.error('🔥 Repository: Erro ao executar query getByIds:', {
 				message: error instanceof Error ? error.message : 'Erro desconhecido',
 				stack: error instanceof Error ? error.stack : undefined,
 				idsCount: ids.length,
-				query: query.substring(0, 100) + '...'
+				query: query.substring(0, 100) + '...',
 			});
 			throw error;
 		}
@@ -1387,6 +1413,10 @@ export class MovimentoBancarioRepository {
 		status?: string;
 		planosIds?: number[];
 		centrosIds?: number[];
+		/** Substring em histórico (case-insensitive), alinhado ao filtro do OFX */
+		historicoContem?: string;
+		/** Busca textual no valor (ex.: trecho do valor formatado), alinhado ao filtro do OFX */
+		valorBusca?: string;
 	}): Promise<{
 		movimentos: MovimentoBancario[];
 		total: number;
@@ -1410,14 +1440,14 @@ export class MovimentoBancarioRepository {
 			if (filters.dataInicio) {
 				// Usar DATE() para comparar apenas a parte da data, garantindo inclusão do dia inteiro
 				// Isso resolve problemas de timezone e formato (ex: '2025-11-06T00:00:00.000Z' vs '2025-11-06 23:59:59')
-				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) >= DATE(?)');
 				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
 				// Usar DATE() para comparar apenas a parte da data, garantindo inclusão do dia inteiro
 				// Isso resolve problemas de timezone e formato (ex: '2025-11-06T00:00:00.000Z' vs '2025-11-06 23:59:59')
-				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) <= DATE(?)');
 				params.push(filters.dataFim);
 			}
 
@@ -1439,6 +1469,22 @@ export class MovimentoBancarioRepository {
 				params.push(...filters.centrosIds);
 			}
 
+			const historicoTrim = filters.historicoContem?.trim();
+			if (historicoTrim) {
+				whereConditions.push('instr(LOWER(IFNULL(mb.historico, "")), LOWER(?)) > 0');
+				params.push(historicoTrim);
+			}
+
+			const valorTrim = filters.valorBusca?.trim();
+			if (valorTrim) {
+				// Substring no valor bruto e na forma com vírgula decimal (similar a formatarMoeda + includes)
+				whereConditions.push(`(
+					instr(LOWER(CAST(mb.valor AS TEXT)), LOWER(?)) > 0
+					OR instr(LOWER(REPLACE(CAST(ABS(CAST(mb.valor AS REAL)) AS TEXT), '.', ',')), LOWER(?)) > 0
+				)`);
+				params.push(valorTrim, valorTrim);
+			}
+
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
 			// Query para contar total
@@ -1453,7 +1499,7 @@ export class MovimentoBancarioRepository {
 				.bind(...params)
 				.first();
 
-			const total = countResult?.total as number || 0;
+			const total = (countResult?.total as number) || 0;
 			const totalPages = Math.ceil(total / filters.limit);
 			const offset = (filters.page - 1) * filters.limit;
 
@@ -1507,7 +1553,7 @@ export class MovimentoBancarioRepository {
 						resultadoList: resultadoList,
 						centroCustosList: centroCustosList,
 					};
-				})
+				}),
 			);
 
 			console.log(`✅ Repository: Retornando ${movimentos.length} movimentos da página ${filters.page}`);
@@ -1518,21 +1564,15 @@ export class MovimentoBancarioRepository {
 				totalPages,
 				currentPage: filters.page,
 				hasNext: filters.page < totalPages,
-				hasPrev: filters.page > 1
+				hasPrev: filters.page > 1,
 			};
-
 		} catch (error) {
 			console.error('🔥 Repository: Erro na busca paginada:', error);
 			throw error;
 		}
 	}
 
-	async exportToExcel(filters: {
-		contaId?: number;
-		dataInicio?: string;
-		dataFim?: string;
-		status?: string;
-	}): Promise<Buffer> {
+	async exportToExcel(filters: { contaId?: number; dataInicio?: string; dataFim?: string; status?: string }): Promise<Buffer> {
 		try {
 			console.log('📊 Repository: Iniciando exportação Excel com filtros:', filters);
 
@@ -1546,12 +1586,12 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.dataInicio) {
-				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) >= DATE(?)');
 				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
-				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) <= DATE(?)');
 				params.push(filters.dataFim);
 			}
 
@@ -1590,17 +1630,17 @@ export class MovimentoBancarioRepository {
 			// Preparar dados para Excel
 			const dadosParaExportar = results.map((mov: any) => ({
 				'Data do Movimento': new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
-				'Histórico': mov.historico,
-				'Tipo': mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
-				'Modalidade': mov.modalidadeMovimento || 'Padrão',
+				Histórico: mov.historico,
+				Tipo: mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+				Modalidade: mov.modalidadeMovimento || 'Padrão',
 				'Plano de Contas': mov.planoDescricao || 'Não definido',
 				'Valor R$': mov.valor,
-				'IdeAgri': mov.ideagro ? 'Sim' : 'Não',
-				'Pessoa': mov.pessoaNome || '',
-				'Banco': mov.bancoNome || '',
-				'Parcelado': mov.parcelado ? 'Sim' : 'Não',
+				IdeAgri: mov.ideagro ? 'Sim' : 'Não',
+				Pessoa: mov.pessoaNome || '',
+				Banco: mov.bancoNome || '',
+				Parcelado: mov.parcelado ? 'Sim' : 'Não',
 				'Nº Documento': mov.modalidadeMovimento === 'financiamento' ? mov.numeroDocumento : '',
-				'Conta': `${mov.numConta || ''} - ${mov.responsavel || ''}`,
+				Conta: `${mov.numConta || ''} - ${mov.responsavel || ''}`,
 			}));
 
 			// Criar workbook
@@ -1627,19 +1667,13 @@ export class MovimentoBancarioRepository {
 			console.log(`✅ Repository: Excel gerado com sucesso, ${excelBuffer.length} bytes`);
 
 			return excelBuffer;
-
 		} catch (error) {
 			console.error('🔥 Repository: Erro na exportação Excel:', error);
 			throw error;
 		}
 	}
 
-	async exportToPDF(filters: {
-		contaId?: number;
-		dataInicio?: string;
-		dataFim?: string;
-		status?: string;
-	}): Promise<Uint8Array> {
+	async exportToPDF(filters: { contaId?: number; dataInicio?: string; dataFim?: string; status?: string }): Promise<Uint8Array> {
 		try {
 			console.log('🔍 Repository: Iniciando exportação PDF com filtros:', filters);
 
@@ -1653,12 +1687,12 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.dataInicio) {
-				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) >= DATE(?)');
 				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
-				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) <= DATE(?)');
 				params.push(filters.dataFim);
 			}
 
@@ -1712,7 +1746,7 @@ export class MovimentoBancarioRepository {
 			// Informações da conta e período
 			doc.setFontSize(12);
 			doc.setTextColor(60, 60, 60);
-			
+
 			let yPos = 35;
 			if (results.length > 0) {
 				const primeiroMovimento = results[0] as any;
@@ -1721,7 +1755,7 @@ export class MovimentoBancarioRepository {
 				doc.text(`Responsável: ${primeiroMovimento.responsavel || 'N/A'}`, 20, yPos);
 				yPos += 8;
 			}
-			
+
 			doc.text(`Período: ${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`, 20, yPos);
 			yPos += 8;
 			doc.text(`Status: ${filters.status === 'pendentes' ? 'Apenas Pendentes' : 'Todos os Movimentos'}`, 20, yPos);
@@ -1740,7 +1774,7 @@ export class MovimentoBancarioRepository {
 				`R$ ${Math.abs(result.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
 				result.planoDescricao || 'Não conciliado',
 				result.pessoaNome || '',
-				result.statusConciliacao || 'Pendente'
+				result.statusConciliacao || 'Pendente',
 			]);
 
 			// Configurar tabela
@@ -1753,14 +1787,14 @@ export class MovimentoBancarioRepository {
 					fillColor: [41, 128, 185],
 					textColor: 255,
 					fontSize: 10,
-					fontStyle: 'bold'
+					fontStyle: 'bold',
 				},
 				bodyStyles: {
 					fontSize: 9,
-					textColor: [50, 50, 50]
+					textColor: [50, 50, 50],
 				},
 				alternateRowStyles: {
-					fillColor: [245, 245, 245]
+					fillColor: [245, 245, 245],
 				},
 				margin: { left: 20, right: 20 },
 				tableWidth: 'auto',
@@ -1771,7 +1805,7 @@ export class MovimentoBancarioRepository {
 					3: { cellWidth: 20 }, // Valor
 					4: { cellWidth: 35 }, // Plano de Contas
 					5: { cellWidth: 25 }, // Pessoa
-					6: { cellWidth: 20 }  // Status
+					6: { cellWidth: 20 }, // Status
 				},
 				didDrawPage: (data) => {
 					// Rodapé em cada página
@@ -1780,9 +1814,9 @@ export class MovimentoBancarioRepository {
 					doc.text(
 						`Página ${data.pageNumber} - Sistema Financeiro Fazenda Lageado`,
 						data.settings.margin.left,
-						doc.internal.pageSize.height - 10
+						doc.internal.pageSize.height - 10,
 					);
-				}
+				},
 			});
 
 			// Converter para buffer (compatível com Cloudflare Workers)
@@ -1792,7 +1826,6 @@ export class MovimentoBancarioRepository {
 			console.log(`✅ Repository: PDF gerado com sucesso, ${pdfBuffer.length} bytes`);
 
 			return pdfBuffer as any; // Cast para compatibilidade com tipo Buffer
-
 		} catch (error) {
 			console.error('🔥 Repository: Erro na exportação PDF:', error);
 			throw error;
@@ -1832,7 +1865,10 @@ export class MovimentoBancarioRepository {
 
 			sql += ` ORDER BY mb.dtMovimento ASC`;
 
-			const { results } = await this.db.prepare(sql).bind(...params).all();
+			const { results } = await this.db
+				.prepare(sql)
+				.bind(...params)
+				.all();
 
 			// Agrupar por centro de custos
 			const agrupados: { [key: string]: any } = {};
@@ -1853,10 +1889,10 @@ export class MovimentoBancarioRepository {
 				}
 
 				const valor = Number(row.valor);
-				
+
 				// Formatar nome da conta bancária
 				const contaFormatada = `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'}${row.responsavel ? ` - ${row.responsavel}` : ''}`;
-				
+
 				agrupados[key].movimentos.push({
 					id: row.idMovimento,
 					data: row.dtMovimento,
@@ -1880,12 +1916,12 @@ export class MovimentoBancarioRepository {
 				return grupo;
 			});
 
-		return result;
-	} catch (error) {
-		console.error('Erro ao buscar movimentos por centro de custos:', error);
-		throw error;
+			return result;
+		} catch (error) {
+			console.error('Erro ao buscar movimentos por centro de custos:', error);
+			throw error;
+		}
 	}
-}
 
 	async getRelatorioCentroCustos(filters: {
 		dataInicio?: string;
@@ -1893,21 +1929,23 @@ export class MovimentoBancarioRepository {
 		contaId?: number;
 		status?: string;
 		centroCustosId?: number;
-	}): Promise<Array<{
-		centro: { id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string };
-		total: number;
-		movimentos: Array<{
-			id: number;
-			dtMovimento: string;
-			historico: string;
-			valor: number;
-			tipoMovimento: string;
-			planoDescricao?: string;
-			pessoaNome?: string;
-			bancoNome?: string;
-			contaDescricao?: string;
-		}>;
-	}>> {
+	}): Promise<
+		Array<{
+			centro: { id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string };
+			total: number;
+			movimentos: Array<{
+				id: number;
+				dtMovimento: string;
+				historico: string;
+				valor: number;
+				tipoMovimento: string;
+				planoDescricao?: string;
+				pessoaNome?: string;
+				bancoNome?: string;
+				contaDescricao?: string;
+			}>;
+		}>
+	> {
 		try {
 			console.log('🔍 Repository: Buscando relatório de centro de custos com filtros:', filters);
 
@@ -1940,12 +1978,12 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.dataInicio) {
-				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) >= DATE(?)');
 				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
-				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) <= DATE(?)');
 				params.push(filters.dataFim);
 			}
 
@@ -2015,15 +2053,18 @@ export class MovimentoBancarioRepository {
 				results.map(async (mov: any) => {
 					const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(mov.id);
 					return { ...mov, centroCustosList };
-				})
+				}),
 			);
 
 			// Agrupar por centro de custos
-			const agrupados: Map<number, {
-				centro: { id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string };
-				total: number;
-				movimentos: any[];
-			}> = new Map();
+			const agrupados: Map<
+				number,
+				{
+					centro: { id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string };
+					total: number;
+					movimentos: any[];
+				}
+			> = new Map();
 
 			for (const mov of movimentosComRateio as any[]) {
 				const centrosDoMovimento: Array<{ id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string; valor: number }> = [];
@@ -2036,14 +2077,14 @@ export class MovimentoBancarioRepository {
 							.prepare('SELECT id, descricao, tipo, tipoReceitaDespesa FROM CentroCustos WHERE id = ?')
 							.bind(cc.idCentroCustos)
 							.first();
-						
+
 						if (centroInfo) {
 							centrosDoMovimento.push({
 								id: centroInfo.id as number,
 								descricao: centroInfo.descricao as string,
 								tipo: centroInfo.tipo as string,
 								tipoReceitaDespesa: centroInfo.tipoReceitaDespesa as string,
-								valor: Math.abs(cc.valor)
+								valor: Math.abs(cc.valor),
 							});
 						}
 					}
@@ -2054,13 +2095,13 @@ export class MovimentoBancarioRepository {
 						descricao: mov.centroCustosDescricao || 'Não definido',
 						tipo: mov.centroCustosTipo,
 						tipoReceitaDespesa: mov.centroCustosTipoReceitaDespesa,
-						valor: Math.abs(mov.valor)
+						valor: Math.abs(mov.valor),
 					});
 				}
 
 				// Filtrar por centroCustosId se especificado
 				if (filters.centroCustosId) {
-					const temCentro = centrosDoMovimento.some(cc => cc.id === filters.centroCustosId);
+					const temCentro = centrosDoMovimento.some((cc) => cc.id === filters.centroCustosId);
 					if (!temCentro) continue;
 				}
 
@@ -2072,10 +2113,10 @@ export class MovimentoBancarioRepository {
 								id: centroMov.id,
 								descricao: centroMov.descricao,
 								tipo: centroMov.tipo,
-								tipoReceitaDespesa: centroMov.tipoReceitaDespesa
+								tipoReceitaDespesa: centroMov.tipoReceitaDespesa,
 							},
 							total: 0,
-							movimentos: []
+							movimentos: [],
 						});
 					}
 
@@ -2093,7 +2134,8 @@ export class MovimentoBancarioRepository {
 						bancoCodigo: mov.bancoCodigo,
 						agencia: mov.agencia,
 						numConta: mov.numConta,
-						contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
+						contaDescricao:
+							`${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim(),
 					});
 				}
 			}
@@ -2114,26 +2156,23 @@ export class MovimentoBancarioRepository {
 		}
 	}
 
-	async getRelatorioItensClassificados(filters: {
-		dataInicio?: string;
-		dataFim?: string;
-		contaId?: number;
-		status?: string;
-	}): Promise<Array<{
-		id: number;
-		dtMovimento: string;
-		historico: string;
-		valor: number;
-		tipoMovimento: string;
-		idPlanoContas?: number;
-		planoDescricao?: string;
-		centroCustosDescricao?: string;
-		centroCustosTipo?: string;
-		pessoaNome?: string;
-		bancoNome?: string;
-		responsavel?: string;
-		contaDescricao?: string;
-	}>> {
+	async getRelatorioItensClassificados(filters: { dataInicio?: string; dataFim?: string; contaId?: number; status?: string }): Promise<
+		Array<{
+			id: number;
+			dtMovimento: string;
+			historico: string;
+			valor: number;
+			tipoMovimento: string;
+			idPlanoContas?: number;
+			planoDescricao?: string;
+			centroCustosDescricao?: string;
+			centroCustosTipo?: string;
+			pessoaNome?: string;
+			bancoNome?: string;
+			responsavel?: string;
+			contaDescricao?: string;
+		}>
+	> {
 		try {
 			console.log('🔍 Repository: Buscando relatório de itens classificados com filtros:', filters);
 
@@ -2150,12 +2189,12 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.dataInicio) {
-				whereConditions.push("DATE(mb.dtMovimento) >= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) >= DATE(?)');
 				params.push(filters.dataInicio);
 			}
 
 			if (filters.dataFim) {
-				whereConditions.push("DATE(mb.dtMovimento) <= DATE(?)");
+				whereConditions.push('DATE(mb.dtMovimento) <= DATE(?)');
 				params.push(filters.dataFim);
 			}
 
@@ -2225,15 +2264,16 @@ export class MovimentoBancarioRepository {
 							modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
 							idPlanoContas: mov.idPlanoContas,
 							planoDescricao: mov.planoDescricao,
-							centroCustosDescricao: centroInfo?.descricao as string || 'Não definido',
-							centroCustosTipo: centroInfo?.tipo as string || null,
+							centroCustosDescricao: (centroInfo?.descricao as string) || 'Não definido',
+							centroCustosTipo: (centroInfo?.tipo as string) || null,
 							pessoaNome: mov.pessoaNome,
 							bancoNome: mov.bancoNome,
 							bancoCodigo: mov.bancoCodigo,
 							agencia: mov.agencia,
 							numConta: mov.numConta,
 							responsavel: mov.responsavel || '',
-							contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
+							contaDescricao:
+								`${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim(),
 						});
 					}
 				} else {
@@ -2255,7 +2295,8 @@ export class MovimentoBancarioRepository {
 						agencia: mov.agencia,
 						numConta: mov.numConta,
 						responsavel: mov.responsavel || '',
-						contaDescricao: `${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim()
+						contaDescricao:
+							`${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim(),
 					});
 				}
 			}
@@ -2283,27 +2324,26 @@ export class MovimentoBancarioRepository {
 			let contaNome = 'Todas';
 			if (filters.contaId) {
 				const contaResult = await this.db
-					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.prepare(
+						'SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?',
+					)
 					.bind(filters.contaId)
 					.first();
 				if (contaResult) {
-					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+					contaNome =
+						`${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
 				}
 			}
 
 			let centroCustosNome = 'Todos';
 			if (filters.centroCustosId) {
-				const centroResult = await this.db
-					.prepare('SELECT descricao FROM CentroCustos WHERE id = ?')
-					.bind(filters.centroCustosId)
-					.first();
+				const centroResult = await this.db.prepare('SELECT descricao FROM CentroCustos WHERE id = ?').bind(filters.centroCustosId).first();
 				if (centroResult) {
 					centroCustosNome = centroResult.descricao as string;
 				}
 			}
 
-			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
-			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
 
 			// Criar workbook
 			const wb = XLSX.utils.book_new();
@@ -2319,18 +2359,16 @@ export class MovimentoBancarioRepository {
 				[`Centro de Custos: ${centroCustosNome}`],
 				[''],
 				['Resumo por Centro de Custos'],
-				['Centro de Custos', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$']
+				['Centro de Custos', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$'],
 			];
 
 			// Calcular totais
-			const totalReceitas = dados
-				.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA')
-				.reduce((sum, item) => sum + item.total, 0);
+			const totalReceitas = dados.filter((item) => item.centro.tipoReceitaDespesa === 'RECEITA').reduce((sum, item) => sum + item.total, 0);
 			const totalDespesasCusteio = dados
-				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
+				.filter((item) => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
 				.reduce((sum, item) => sum + item.total, 0);
 			const totalDespesasInvestimento = dados
-				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
+				.filter((item) => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
 				.reduce((sum, item) => sum + item.total, 0);
 
 			// Montar linhas do resumo: centros na ordem (receitas depois despesas) + Total Receitas após receitas + Total Despesas após despesas + TOTAL
@@ -2349,18 +2387,23 @@ export class MovimentoBancarioRepository {
 					item.centro.descricao,
 					this.formatarMoedaExcel(receita),
 					this.formatarMoedaExcel(despesaCusteio),
-					this.formatarMoedaExcel(despesaInvestimento)
+					this.formatarMoedaExcel(despesaInvestimento),
 				]);
 			}
 			if (ultimoEraReceita === true) {
 				resumoRows.push(['Total Receitas', this.formatarMoedaExcel(totalReceitas), '', '']);
 			}
-			resumoRows.push(['Total Despesas', '', this.formatarMoedaExcel(totalDespesasCusteio), this.formatarMoedaExcel(totalDespesasInvestimento)]);
+			resumoRows.push([
+				'Total Despesas',
+				'',
+				this.formatarMoedaExcel(totalDespesasCusteio),
+				this.formatarMoedaExcel(totalDespesasInvestimento),
+			]);
 			resumoRows.push([
 				'TOTAL',
 				this.formatarMoedaExcel(totalReceitas),
 				this.formatarMoedaExcel(totalDespesasCusteio),
-				this.formatarMoedaExcel(totalDespesasInvestimento)
+				this.formatarMoedaExcel(totalDespesasInvestimento),
 			]);
 
 			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoRows]);
@@ -2377,7 +2420,7 @@ export class MovimentoBancarioRepository {
 				[`Centro de Custos: ${centroCustosNome}`],
 				[''],
 				['Detalhamento de Movimentos'],
-				['Centro de Custos', 'Data', 'Histórico', 'Valor R$', 'Tipo', 'Plano de Contas', 'Pessoa', 'Conta']
+				['Centro de Custos', 'Data', 'Histórico', 'Valor R$', 'Tipo', 'Plano de Contas', 'Pessoa', 'Conta'],
 			];
 
 			const detalhamentoData: any[] = [];
@@ -2391,7 +2434,7 @@ export class MovimentoBancarioRepository {
 						mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
 						mov.planoDescricao || '',
 						mov.pessoaNome || '',
-						mov.contaDescricao || ''
+						mov.contaDescricao || '',
 					]);
 				}
 			}
@@ -2424,45 +2467,40 @@ export class MovimentoBancarioRepository {
 			let contaNome = 'Todas';
 			if (filters.contaId) {
 				const contaResult = await this.db
-					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.prepare(
+						'SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?',
+					)
 					.bind(filters.contaId)
 					.first();
 				if (contaResult) {
-					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+					contaNome =
+						`${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
 				}
 			}
 
 			let centroCustosNome = 'Todos';
 			if (filters.centroCustosId) {
-				const centroResult = await this.db
-					.prepare('SELECT descricao FROM CentroCustos WHERE id = ?')
-					.bind(filters.centroCustosId)
-					.first();
+				const centroResult = await this.db.prepare('SELECT descricao FROM CentroCustos WHERE id = ?').bind(filters.centroCustosId).first();
 				if (centroResult) {
 					centroCustosNome = centroResult.descricao as string;
 				}
 			}
 
-			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
-			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
 
 			// Calcular totais
-			const totalReceitas = dados
-				.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA')
-				.reduce((sum, item) => sum + item.total, 0);
-			
-			const totalDespesas = dados
-				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA')
-				.reduce((sum, item) => sum + item.total, 0);
-			
+			const totalReceitas = dados.filter((item) => item.centro.tipoReceitaDespesa === 'RECEITA').reduce((sum, item) => sum + item.total, 0);
+
+			const totalDespesas = dados.filter((item) => item.centro.tipoReceitaDespesa === 'DESPESA').reduce((sum, item) => sum + item.total, 0);
+
 			const totalDespesasCusteio = dados
-				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
+				.filter((item) => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
 				.reduce((sum, item) => sum + item.total, 0);
-			
+
 			const totalDespesasInvestimento = dados
-				.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
+				.filter((item) => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
 				.reduce((sum, item) => sum + item.total, 0);
-			
+
 			const totalGeral = totalReceitas - totalDespesas;
 
 			const jsPDF = (await import('jspdf')).default;
@@ -2476,24 +2514,24 @@ export class MovimentoBancarioRepository {
 				doc.setDrawColor(0, 0, 0);
 				doc.setLineWidth(0.5);
 				doc.line(20, 15, 277, 15);
-				
+
 				// Título principal
 				doc.setTextColor(0, 0, 0);
 				doc.setFontSize(16);
 				doc.setFont('helvetica', 'bold');
 				doc.text('RELATÓRIO DE CENTRO DE CUSTOS', 20, 22);
-				
+
 				// Data de geração
 				doc.setFontSize(9);
 				doc.setFont('helvetica', 'normal');
-				const dataGeracao = new Date().toLocaleDateString('pt-BR', { 
-					weekday: 'long', 
-					year: 'numeric', 
-					month: 'long', 
-					day: 'numeric' 
+				const dataGeracao = new Date().toLocaleDateString('pt-BR', {
+					weekday: 'long',
+					year: 'numeric',
+					month: 'long',
+					day: 'numeric',
 				});
 				doc.text(dataGeracao, 277, 22, { align: 'right' });
-				
+
 				// Linha inferior do cabeçalho
 				doc.line(20, 26, 277, 26);
 			};
@@ -2503,37 +2541,37 @@ export class MovimentoBancarioRepository {
 				doc.setFontSize(9);
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
-				
+
 				// Primeira coluna
 				let yPos = yStart;
 				doc.text('Período:', 20, yPos);
 				doc.setFont('helvetica', 'normal');
 				const periodoTexto = `${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`;
 				doc.text(periodoTexto, 55, yPos);
-				
+
 				doc.setFont('helvetica', 'bold');
 				doc.text('Conta Corrente:', 20, yPos + 5);
 				doc.setFont('helvetica', 'normal');
 				doc.text(contaNome, 55, yPos + 5);
-				
+
 				// Segunda coluna
 				doc.setFont('helvetica', 'bold');
 				doc.text('Status:', 150, yPos);
 				doc.setFont('helvetica', 'normal');
 				doc.text(statusNome, 185, yPos);
-				
+
 				doc.setFont('helvetica', 'bold');
 				doc.text('Centro de Custos:', 150, yPos + 5);
 				doc.setFont('helvetica', 'normal');
 				// Truncar se muito longo
 				const centroTexto = centroCustosNome.length > 30 ? centroCustosNome.substring(0, 27) + '...' : centroCustosNome;
 				doc.text(centroTexto, 185, yPos + 5);
-				
+
 				// Linha separadora
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
 				doc.line(20, yPos + 10, 277, yPos + 10);
-				
+
 				return yPos + 15;
 			};
 
@@ -2542,26 +2580,26 @@ export class MovimentoBancarioRepository {
 				doc.setFontSize(10);
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
-				
+
 				// Fundo cinza claro
 				doc.setFillColor(245, 245, 245);
 				doc.rect(20, yStart - 5, 257, 15, 'F');
-				
+
 				// Bordas
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
 				doc.rect(20, yStart - 5, 257, 15);
-				
+
 				// Totais - ajustar posicionamento para evitar sobreposição
 				doc.text('Total Receitas:', 25, yStart + 2);
 				doc.setFont('helvetica', 'normal');
 				doc.setTextColor(0, 128, 0);
 				const receitasFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
-					currency: 'BRL'
+					currency: 'BRL',
 				}).format(totalReceitas);
 				doc.text(receitasFormatado, 55, yStart + 2);
-				
+
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
 				doc.text('Total Despesas:', 125, yStart + 2);
@@ -2569,26 +2607,30 @@ export class MovimentoBancarioRepository {
 				doc.setTextColor(220, 20, 60);
 				const despesasFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
-					currency: 'BRL'
+					currency: 'BRL',
 				}).format(totalDespesas);
 				doc.text(despesasFormatado, 155, yStart + 2);
-				
+
 				// Adicionar detalhamento de despesas
 				doc.setFont('helvetica', 'normal');
 				doc.setFontSize(8);
-				doc.text(`(Custeio: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasCusteio)} | Investimento: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasInvestimento)})`, 125, yStart + 5);
-				
+				doc.text(
+					`(Custeio: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasCusteio)} | Investimento: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesasInvestimento)})`,
+					125,
+					yStart + 5,
+				);
+
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
 				doc.text('Total Geral:', 225, yStart + 2);
 				const geralFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
-					currency: 'BRL'
+					currency: 'BRL',
 				}).format(totalGeral);
 				doc.text(geralFormatado, 248, yStart + 2);
-				
+
 				doc.setTextColor(0, 0, 0);
-				
+
 				return yStart + 15;
 			};
 
@@ -2597,8 +2639,8 @@ export class MovimentoBancarioRepository {
 			let yPos = drawFilters(32);
 			yPos = drawSummary(yPos);
 
-			const dadosReceitas = dados.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA');
-			const dadosDespesas = dados.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA');
+			const dadosReceitas = dados.filter((item) => item.centro.tipoReceitaDespesa === 'RECEITA');
+			const dadosDespesas = dados.filter((item) => item.centro.tipoReceitaDespesa === 'DESPESA');
 
 			// Função para desenhar linha de totalizador (Total Receitas ou Total Despesas)
 			const drawTotalizador = (label: string, receitaVal: number, custeioVal: number, investVal: number, yStart: number) => {
@@ -2618,7 +2660,12 @@ export class MovimentoBancarioRepository {
 				}
 				if (custeioVal > 0 || investVal > 0) {
 					doc.setTextColor(220, 20, 60);
-					const txt = [custeioVal > 0 ? `Custeio: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(custeioVal)}` : '', investVal > 0 ? `Invest.: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(investVal)}` : ''].filter(Boolean).join(' | ');
+					const txt = [
+						custeioVal > 0 ? `Custeio: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(custeioVal)}` : '',
+						investVal > 0 ? `Invest.: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(investVal)}` : '',
+					]
+						.filter(Boolean)
+						.join(' | ');
 					doc.text(txt, 150, yStart + 2);
 				}
 				doc.setTextColor(0, 0, 0);
@@ -2643,7 +2690,7 @@ export class MovimentoBancarioRepository {
 				doc.setFontSize(10);
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
-				
+
 				// Determinar cor do fundo baseado em tipoReceitaDespesa e tipo
 				let fillColor = [240, 240, 240]; // Cinza padrão
 				if (item.centro.tipoReceitaDespesa === 'RECEITA') {
@@ -2655,26 +2702,26 @@ export class MovimentoBancarioRepository {
 						fillColor = [254, 226, 226]; // Vermelho claro para custeio
 					}
 				}
-				
+
 				// Fundo colorido para o cabeçalho do grupo
 				doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
 				doc.rect(20, yPos - 4, 257, 10, 'F');
-				
+
 				// Borda superior
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
 				doc.line(20, yPos - 4, 277, yPos - 4);
-				
+
 				// Borda inferior para fechar o retângulo
 				doc.line(20, yPos + 6, 277, yPos + 6);
-				
+
 				// Nome do centro
 				doc.text(item.centro.descricao, 22, yPos);
-				
+
 				// Tipo e classificação com cores
 				doc.setFontSize(8);
 				doc.setFont('helvetica', 'normal');
-				
+
 				// Cor baseada no tipo
 				if (item.centro.tipoReceitaDespesa === 'RECEITA') {
 					doc.setTextColor(0, 128, 0); // Verde
@@ -2687,32 +2734,32 @@ export class MovimentoBancarioRepository {
 				} else {
 					doc.setTextColor(100, 100, 100); // Cinza padrão
 				}
-				
+
 				const tipoInfo = `${item.centro.tipoReceitaDespesa || ''}${item.centro.tipo ? ` - ${item.centro.tipo}` : ''}`;
 				doc.text(tipoInfo, 22, yPos + 4);
-				
+
 				// Total formatado à direita - ajustar posição para não sobrepor
 				doc.setFontSize(10);
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
 				const totalFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
-					currency: 'BRL'
+					currency: 'BRL',
 				}).format(item.total);
 				doc.text(`Total: ${totalFormatado}`, 270, yPos + 2, { align: 'right' });
-				
+
 				yPos += 7;
 
 				// Tabela de movimentos deste centro
-				const detalhamentoData = item.movimentos.map(mov => {
+				const detalhamentoData = item.movimentos.map((mov) => {
 					const valorFormatado = new Intl.NumberFormat('pt-BR', {
 						style: 'currency',
-						currency: 'BRL'
+						currency: 'BRL',
 					}).format(mov.valor);
-					
+
 					// Limpar e sanitizar histórico para evitar problemas de encoding
 					let historicoLimpo = String(mov.historico || '');
-					
+
 					// Decodificar se necessário e remover caracteres problemáticos
 					try {
 						// Tentar decodificar como UTF-8 se vier como buffer ou com encoding incorreto
@@ -2729,16 +2776,16 @@ export class MovimentoBancarioRepository {
 						// Se houver erro, usar string vazia
 						historicoLimpo = '';
 					}
-					
+
 					// Normalizar espaços múltiplos
 					historicoLimpo = historicoLimpo.replace(/\s+/g, ' ');
-					
+
 					// Truncar se muito longo (usar método seguro para UTF-8)
 					if (historicoLimpo.length > 60) {
 						// Usar slice em vez de substring para melhor suporte UTF-8
 						historicoLimpo = historicoLimpo.slice(0, 57) + '...';
 					}
-					
+
 					// Sanitizar plano de contas também
 					let planoLimpo = String(mov.planoDescricao || '-');
 					try {
@@ -2750,11 +2797,11 @@ export class MovimentoBancarioRepository {
 					} catch (e) {
 						planoLimpo = '-';
 					}
-					
+
 					if (planoLimpo.length > 35) {
 						planoLimpo = planoLimpo.slice(0, 32) + '...';
 					}
-					
+
 					// Sanitizar pessoa também
 					let pessoaLimpo = String(mov.pessoaNome || '-');
 					try {
@@ -2766,14 +2813,14 @@ export class MovimentoBancarioRepository {
 					} catch (e) {
 						pessoaLimpo = '-';
 					}
-					
+
 					return [
 						new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
 						historicoLimpo || '-',
 						valorFormatado,
 						mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
 						planoLimpo,
-						pessoaLimpo
+						pessoaLimpo,
 					];
 				});
 
@@ -2782,22 +2829,22 @@ export class MovimentoBancarioRepository {
 					head: [['Data', 'Histórico', 'Valor', 'Tipo', 'Plano de Contas', 'Pessoa']],
 					body: detalhamentoData,
 					theme: 'striped',
-					headStyles: { 
+					headStyles: {
 						fillColor: [240, 240, 240],
 						textColor: [0, 0, 0],
 						fontStyle: 'bold',
 						fontSize: 9,
 						lineColor: [200, 200, 200],
-						lineWidth: 0.3
+						lineWidth: 0.3,
 					},
 					bodyStyles: {
 						fontSize: 8,
 						textColor: [0, 0, 0],
 						lineColor: [220, 220, 220],
-						lineWidth: 0.2
+						lineWidth: 0.2,
 					},
 					alternateRowStyles: {
-						fillColor: [250, 250, 250]
+						fillColor: [250, 250, 250],
 					},
 					columnStyles: {
 						0: { cellWidth: 22, halign: 'left' }, // Data
@@ -2805,14 +2852,14 @@ export class MovimentoBancarioRepository {
 						2: { cellWidth: 28, halign: 'right' }, // Valor
 						3: { cellWidth: 20, halign: 'center' }, // Tipo
 						4: { cellWidth: 65, halign: 'left' }, // Plano de Contas
-						5: { cellWidth: 27, halign: 'left' } // Pessoa
+						5: { cellWidth: 27, halign: 'left' }, // Pessoa
 					},
 					margin: { left: 20, right: 20, top: 2 },
 					styles: {
 						overflow: 'linebreak',
 						cellPadding: 2,
 						lineColor: [220, 220, 220],
-						lineWidth: 0.2
+						lineWidth: 0.2,
 					},
 					didDrawPage: (data: any) => {
 						// Se precisar de nova página, adicionar cabeçalho novamente
@@ -2820,7 +2867,7 @@ export class MovimentoBancarioRepository {
 							pageNumber = data.pageNumber;
 							drawHeader(pageNumber);
 						}
-					}
+					},
 				});
 
 				// Obter posição final da tabela
@@ -2887,12 +2934,16 @@ export class MovimentoBancarioRepository {
 				doc.text(`Total: ${totalFormatado}`, 270, yPos + 2, { align: 'right' });
 				yPos += 7;
 
-				const detalhamentoData = item.movimentos.map(mov => {
+				const detalhamentoData = item.movimentos.map((mov) => {
 					const valorFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor);
 					let historicoLimpo = String(mov.historico || '');
 					try {
 						if (typeof historicoLimpo === 'string') {
-							historicoLimpo = historicoLimpo.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '').replace(/\x00/g, '').replace(/[\uFFFD]/g, '').trim();
+							historicoLimpo = historicoLimpo
+								.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+								.replace(/\x00/g, '')
+								.replace(/[\uFFFD]/g, '')
+								.trim();
 						}
 					} catch (e) {
 						historicoLimpo = '';
@@ -2901,14 +2952,22 @@ export class MovimentoBancarioRepository {
 					if (historicoLimpo.length > 60) historicoLimpo = historicoLimpo.slice(0, 57) + '...';
 					let planoLimpo = String(mov.planoDescricao || '-');
 					try {
-						planoLimpo = planoLimpo.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '').replace(/\x00/g, '').replace(/[\uFFFD]/g, '').trim();
+						planoLimpo = planoLimpo
+							.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+							.replace(/\x00/g, '')
+							.replace(/[\uFFFD]/g, '')
+							.trim();
 					} catch (e) {
 						planoLimpo = '-';
 					}
 					if (planoLimpo.length > 35) planoLimpo = planoLimpo.slice(0, 32) + '...';
 					let pessoaLimpo = String(mov.pessoaNome || '-');
 					try {
-						pessoaLimpo = pessoaLimpo.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '').replace(/\x00/g, '').replace(/[\uFFFD]/g, '').trim();
+						pessoaLimpo = pessoaLimpo
+							.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+							.replace(/\x00/g, '')
+							.replace(/[\uFFFD]/g, '')
+							.trim();
 					} catch (e) {
 						pessoaLimpo = '-';
 					}
@@ -2918,7 +2977,7 @@ export class MovimentoBancarioRepository {
 						valorFormatado,
 						mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
 						planoLimpo,
-						pessoaLimpo
+						pessoaLimpo,
 					];
 				});
 
@@ -2927,10 +2986,24 @@ export class MovimentoBancarioRepository {
 					head: [['Data', 'Histórico', 'Valor', 'Tipo', 'Plano de Contas', 'Pessoa']],
 					body: detalhamentoData,
 					theme: 'striped',
-					headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9, lineColor: [200, 200, 200], lineWidth: 0.3 },
+					headStyles: {
+						fillColor: [240, 240, 240],
+						textColor: [0, 0, 0],
+						fontStyle: 'bold',
+						fontSize: 9,
+						lineColor: [200, 200, 200],
+						lineWidth: 0.3,
+					},
 					bodyStyles: { fontSize: 8, textColor: [0, 0, 0], lineColor: [220, 220, 220], lineWidth: 0.2 },
 					alternateRowStyles: { fillColor: [250, 250, 250] },
-					columnStyles: { 0: { cellWidth: 22, halign: 'left' }, 1: { cellWidth: 95, halign: 'left' }, 2: { cellWidth: 28, halign: 'right' }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 65, halign: 'left' }, 5: { cellWidth: 27, halign: 'left' } },
+					columnStyles: {
+						0: { cellWidth: 22, halign: 'left' },
+						1: { cellWidth: 95, halign: 'left' },
+						2: { cellWidth: 28, halign: 'right' },
+						3: { cellWidth: 20, halign: 'center' },
+						4: { cellWidth: 65, halign: 'left' },
+						5: { cellWidth: 27, halign: 'left' },
+					},
 					margin: { left: 20, right: 20, top: 2 },
 					styles: { overflow: 'linebreak', cellPadding: 2, lineColor: [220, 220, 220], lineWidth: 0.2 },
 					didDrawPage: (data: any) => {
@@ -2938,7 +3011,7 @@ export class MovimentoBancarioRepository {
 							pageNumber = data.pageNumber;
 							drawHeader(pageNumber);
 						}
-					}
+					},
 				});
 
 				const finalY2 = (doc as any).lastAutoTable?.finalY;
@@ -2963,12 +3036,12 @@ export class MovimentoBancarioRepository {
 			const totalPages = doc.getNumberOfPages();
 			for (let i = 1; i <= totalPages; i++) {
 				doc.setPage(i);
-				
+
 				// Linha separadora do rodapé
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
 				doc.line(20, 195, 277, 195);
-				
+
 				// Numeração de páginas
 				doc.setFontSize(8);
 				doc.setFont('helvetica', 'normal');
@@ -3000,16 +3073,18 @@ export class MovimentoBancarioRepository {
 			let contaNome = 'Todas';
 			if (filters.contaId) {
 				const contaResult = await this.db
-					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.prepare(
+						'SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?',
+					)
 					.bind(filters.contaId)
 					.first();
 				if (contaResult) {
-					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+					contaNome =
+						`${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
 				}
 			}
 
-			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
-			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
 
 			// Criar header igual ao de Centro de Custos
 			const headerData = [
@@ -3021,37 +3096,44 @@ export class MovimentoBancarioRepository {
 				[`Status: ${statusNome}`],
 				[''],
 				['Plano de Contas'],
-				['Data', 'Histórico', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$', 'Plano de Contas', 'Centro de Custos', 'Conta Corrente']
+				[
+					'Data',
+					'Histórico',
+					'Receita R$',
+					'Despesa Custeio R$',
+					'Despesa Investimento R$',
+					'Plano de Contas',
+					'Centro de Custos',
+					'Conta Corrente',
+				],
 			];
 
 			// Preparar dados para Excel
-			const dadosParaExportar = dados.map(mov => {
+			const dadosParaExportar = dados.map((mov) => {
 				const receita = mov.tipoMovimento === 'C' ? mov.valor : 0;
 				const despesaCusteio = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO' ? mov.valor : 0;
 				const despesaInvestimento = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO' ? mov.valor : 0;
 				// Se despesa sem tipo definido, colocar em custeio
 				const despesaSemTipo = mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo ? mov.valor : 0;
 				return [
-				new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
-				mov.historico || '',
+					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
+					mov.historico || '',
 					this.formatarMoedaExcel(receita),
 					this.formatarMoedaExcel(despesaCusteio || despesaSemTipo),
 					this.formatarMoedaExcel(despesaInvestimento),
-				mov.planoDescricao || '',
-				mov.centroCustosDescricao || '',
-					(mov as any).responsavel || ''
+					mov.planoDescricao || '',
+					mov.centroCustosDescricao || '',
+					(mov as any).responsavel || '',
 				];
 			});
 
 			// Calcular totais
-			const totalReceitas = dados
-				.filter(mov => mov.tipoMovimento === 'C')
-				.reduce((sum, mov) => sum + mov.valor, 0);
+			const totalReceitas = dados.filter((mov) => mov.tipoMovimento === 'C').reduce((sum, mov) => sum + mov.valor, 0);
 			const totalDespesasCusteio = dados
-				.filter(mov => mov.tipoMovimento === 'D' && ((mov as any).centroCustosTipo === 'CUSTEIO' || !(mov as any).centroCustosTipo))
+				.filter((mov) => mov.tipoMovimento === 'D' && ((mov as any).centroCustosTipo === 'CUSTEIO' || !(mov as any).centroCustosTipo))
 				.reduce((sum, mov) => sum + mov.valor, 0);
 			const totalDespesasInvestimento = dados
-				.filter(mov => mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO')
+				.filter((mov) => mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO')
 				.reduce((sum, mov) => sum + mov.valor, 0);
 
 			// Adicionar linha de total
@@ -3063,7 +3145,7 @@ export class MovimentoBancarioRepository {
 				this.formatarMoedaExcel(totalDespesasInvestimento),
 				'',
 				'',
-				''
+				'',
 			];
 
 			const wb = XLSX.utils.book_new();
@@ -3094,34 +3176,32 @@ export class MovimentoBancarioRepository {
 			let contaNome = 'Todas';
 			if (filters.contaId) {
 				const contaResult = await this.db
-					.prepare('SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?')
+					.prepare(
+						'SELECT cc.numConta, cc.responsavel, b.nome as bancoNome FROM ContaCorrente cc LEFT JOIN Banco b ON cc.idBanco = b.id WHERE cc.id = ?',
+					)
 					.bind(filters.contaId)
 					.first();
 				if (contaResult) {
-					contaNome = `${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
+					contaNome =
+						`${contaResult.bancoNome || ''} - ${contaResult.numConta || ''}${contaResult.responsavel ? ` (${contaResult.responsavel})` : ''}`.trim();
 				}
 			}
 
-			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : 
-			                   filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
+			const statusNome = filters.status === 'conciliados' ? 'Conciliados' : filters.status === 'pendentes' ? 'Pendentes' : 'Todos';
 
 			// Calcular totais
-			const totalReceitas = dados
-				.filter(item => item.tipoMovimento === 'C')
-				.reduce((sum, item) => sum + item.valor, 0);
-			
-			const totalDespesas = dados
-				.filter(item => item.tipoMovimento === 'D')
-				.reduce((sum, item) => sum + item.valor, 0);
-			
+			const totalReceitas = dados.filter((item) => item.tipoMovimento === 'C').reduce((sum, item) => sum + item.valor, 0);
+
+			const totalDespesas = dados.filter((item) => item.tipoMovimento === 'D').reduce((sum, item) => sum + item.valor, 0);
+
 			const totalDespesasCusteio = dados
-				.filter(item => item.tipoMovimento === 'D' && (item as any).centroCustosTipo === 'CUSTEIO')
+				.filter((item) => item.tipoMovimento === 'D' && (item as any).centroCustosTipo === 'CUSTEIO')
 				.reduce((sum, item) => sum + item.valor, 0);
-			
+
 			const totalDespesasInvestimento = dados
-				.filter(item => item.tipoMovimento === 'D' && (item as any).centroCustosTipo === 'INVESTIMENTO')
+				.filter((item) => item.tipoMovimento === 'D' && (item as any).centroCustosTipo === 'INVESTIMENTO')
 				.reduce((sum, item) => sum + item.valor, 0);
-			
+
 			const totalGeral = totalReceitas - totalDespesas;
 
 			const jsPDF = (await import('jspdf')).default;
@@ -3135,24 +3215,24 @@ export class MovimentoBancarioRepository {
 				doc.setDrawColor(0, 0, 0);
 				doc.setLineWidth(0.5);
 				doc.line(20, 15, 277, 15);
-				
+
 				// Título principal
 				doc.setTextColor(0, 0, 0);
 				doc.setFontSize(16);
 				doc.setFont('helvetica', 'bold');
 				doc.text('RELATÓRIO DE PLANO DE CONTAS', 20, 22);
-				
+
 				// Data de geração
 				doc.setFontSize(9);
 				doc.setFont('helvetica', 'normal');
-				const dataGeracao = new Date().toLocaleDateString('pt-BR', { 
-					weekday: 'long', 
-					year: 'numeric', 
-					month: 'long', 
-					day: 'numeric' 
+				const dataGeracao = new Date().toLocaleDateString('pt-BR', {
+					weekday: 'long',
+					year: 'numeric',
+					month: 'long',
+					day: 'numeric',
 				});
 				doc.text(dataGeracao, 277, 22, { align: 'right' });
-				
+
 				// Linha inferior do cabeçalho
 				doc.line(20, 26, 277, 26);
 			};
@@ -3162,30 +3242,30 @@ export class MovimentoBancarioRepository {
 				doc.setFontSize(9);
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
-				
+
 				// Primeira coluna
 				let yPos = yStart;
 				doc.text('Período:', 20, yPos);
 				doc.setFont('helvetica', 'normal');
 				const periodoTexto = `${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`;
 				doc.text(periodoTexto, 55, yPos);
-				
+
 				doc.setFont('helvetica', 'bold');
 				doc.text('Conta Corrente:', 20, yPos + 5);
 				doc.setFont('helvetica', 'normal');
 				doc.text(contaNome, 55, yPos + 5);
-				
+
 				// Segunda coluna
 				doc.setFont('helvetica', 'bold');
 				doc.text('Status:', 150, yPos);
 				doc.setFont('helvetica', 'normal');
 				doc.text(statusNome, 185, yPos);
-				
+
 				// Linha separadora
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
 				doc.line(20, yPos + 10, 277, yPos + 10);
-				
+
 				return yPos + 15;
 			};
 
@@ -3194,26 +3274,26 @@ export class MovimentoBancarioRepository {
 				doc.setFontSize(10);
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
-				
+
 				// Fundo cinza claro
 				doc.setFillColor(245, 245, 245);
 				doc.rect(20, yStart - 5, 257, 12, 'F');
-				
+
 				// Bordas
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
 				doc.rect(20, yStart - 5, 257, 12);
-				
+
 				// Totais - ajustar posicionamento para evitar sobreposição
 				doc.text('Total Receitas:', 25, yStart + 2);
 				doc.setFont('helvetica', 'normal');
 				doc.setTextColor(0, 128, 0);
 				const receitasFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
-					currency: 'BRL'
+					currency: 'BRL',
 				}).format(totalReceitas);
 				doc.text(receitasFormatado, 55, yStart + 2);
-				
+
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
 				doc.text('Total Despesas:', 125, yStart + 2);
@@ -3221,21 +3301,21 @@ export class MovimentoBancarioRepository {
 				doc.setTextColor(220, 20, 60);
 				const despesasFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
-					currency: 'BRL'
+					currency: 'BRL',
 				}).format(totalDespesas);
 				doc.text(despesasFormatado, 155, yStart + 2);
-				
+
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
 				doc.text('Total Geral:', 225, yStart + 2);
 				const geralFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
-					currency: 'BRL'
+					currency: 'BRL',
 				}).format(totalGeral);
 				doc.text(geralFormatado, 248, yStart + 2);
-				
+
 				doc.setTextColor(0, 0, 0);
-				
+
 				return yStart + 12;
 			};
 
@@ -3245,7 +3325,7 @@ export class MovimentoBancarioRepository {
 			yPos = drawSummary(yPos);
 
 			// Preparar dados para tabela com sanitização
-			const tableData = dados.map(mov => {
+			const tableData = dados.map((mov) => {
 				// Sanitizar histórico
 				let historicoLimpo = String(mov.historico || '');
 				try {
@@ -3304,10 +3384,20 @@ export class MovimentoBancarioRepository {
 					pessoaLimpo = '-';
 				}
 
-				const receita = mov.tipoMovimento === 'C' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
-				const despesaCusteio = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
-				const despesaInvestimento = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
-				const despesaSemTipo = mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
+				const receita =
+					mov.tipoMovimento === 'C' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor) : '-';
+				const despesaCusteio =
+					mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO'
+						? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)
+						: '-';
+				const despesaInvestimento =
+					mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO'
+						? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)
+						: '-';
+				const despesaSemTipo =
+					mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo
+						? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)
+						: '-';
 
 				return [
 					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
@@ -3317,33 +3407,44 @@ export class MovimentoBancarioRepository {
 					despesaInvestimento,
 					planoLimpo,
 					centroLimpo,
-					String((mov as any).contaDescricao || '-')
+					String((mov as any).contaDescricao || '-'),
 				];
 			});
 
 			let pageNumber = 1;
-			
+
 			autoTable(doc, {
 				startY: yPos,
-				head: [['Data', 'Histórico', 'Receita R$', 'Despesa Custeio R$', 'Despesa Investimento R$', 'Plano de Contas', 'Centro de Custos', 'Conta Corrente']],
+				head: [
+					[
+						'Data',
+						'Histórico',
+						'Receita R$',
+						'Despesa Custeio R$',
+						'Despesa Investimento R$',
+						'Plano de Contas',
+						'Centro de Custos',
+						'Conta Corrente',
+					],
+				],
 				body: tableData,
 				theme: 'striped',
-				headStyles: { 
+				headStyles: {
 					fillColor: [240, 240, 240],
 					textColor: [0, 0, 0],
 					fontStyle: 'bold',
 					fontSize: 9,
 					lineColor: [200, 200, 200],
-					lineWidth: 0.3
+					lineWidth: 0.3,
 				},
 				bodyStyles: {
 					fontSize: 8,
 					textColor: [0, 0, 0],
 					lineColor: [220, 220, 220],
-					lineWidth: 0.2
+					lineWidth: 0.2,
 				},
 				alternateRowStyles: {
-					fillColor: [250, 250, 250]
+					fillColor: [250, 250, 250],
 				},
 				columnStyles: {
 					0: { cellWidth: 20, halign: 'left' }, // Data
@@ -3353,14 +3454,14 @@ export class MovimentoBancarioRepository {
 					4: { cellWidth: 28, halign: 'center' }, // Modalidade
 					5: { cellWidth: 40, halign: 'left' }, // Plano de Contas
 					6: { cellWidth: 40, halign: 'left' }, // Centro de Custos
-					7: { cellWidth: 16, halign: 'left' } // Pessoa
+					7: { cellWidth: 16, halign: 'left' }, // Pessoa
 				},
 				margin: { left: 20, right: 20, top: 2 },
 				styles: {
 					overflow: 'linebreak',
 					cellPadding: 2,
 					lineColor: [220, 220, 220],
-					lineWidth: 0.2
+					lineWidth: 0.2,
 				},
 				willDrawPage: (data: any) => {
 					// Desenhar header ANTES da tabela começar em novas páginas
@@ -3370,19 +3471,19 @@ export class MovimentoBancarioRepository {
 						// Ajustar startY para começar após o header (26mm é onde termina o header)
 						data.settings.startY = 32;
 					}
-				}
+				},
 			});
 
 			// Rodapé em todas as páginas
 			const totalPages = doc.getNumberOfPages();
 			for (let i = 1; i <= totalPages; i++) {
 				doc.setPage(i);
-				
+
 				// Linha separadora do rodapé
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
 				doc.line(20, 195, 277, 195);
-				
+
 				// Numeração de páginas
 				doc.setFontSize(8);
 				doc.setFont('helvetica', 'normal');

@@ -17,7 +17,9 @@ export const listarMovimentosBancariosPaginado = async (
 	dataFim?: string,
 	status?: string,
 	planosIds?: number[],
-	centrosIds?: number[]
+	centrosIds?: number[],
+	historicoContem?: string,
+	valorBusca?: string
 ): Promise<{
 	movimentos: MovimentoBancario[];
 	total: number;
@@ -34,11 +36,24 @@ export const listarMovimentosBancariosPaginado = async (
 		...(dataFim && { dataFim }),
 		...(status && { status }),
 		...(planosIds && planosIds.length > 0 && { planosIds: planosIds.join(',') }),
-		...(centrosIds && centrosIds.length > 0 && { centrosIds: centrosIds.join(',') })
+		...(centrosIds && centrosIds.length > 0 && { centrosIds: centrosIds.join(',') }),
+		...(historicoContem && historicoContem.trim() && { historicoContem: historicoContem.trim() }),
+		...(valorBusca && valorBusca.trim() && { valorBusca: valorBusca.trim() }),
 	});
 	
 	console.log('🌐 Service: Enviando requisição para:', `${API_URL}/api/movBancario/paginado?${params}`);
-	console.log('🌐 Service: Parâmetros enviados:', { page, limit, contaId, dataInicio, dataFim, status, planosIds, centrosIds });
+	console.log('🌐 Service: Parâmetros enviados:', {
+		page,
+		limit,
+		contaId,
+		dataInicio,
+		dataFim,
+		status,
+		planosIds,
+		centrosIds,
+		historicoContem,
+		valorBusca,
+	});
 	
 	const res = await fetch(`${API_URL}/api/movBancario/paginado?${params}`);
 	if (!res.ok) throw new Error(`Erro ao listar movimentos bancários paginados`);

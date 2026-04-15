@@ -97,6 +97,8 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [centrosFiltroIds, setCentrosFiltroIds] = useState<number[] | undefined>(undefined);
 	const [planosSelecao, setPlanosSelecao] = useState<any[]>([]);
 	const [centrosSelecao, setCentrosSelecao] = useState<any[]>([]);
+	const [historicoContem, setHistoricoContem] = useState<string>('');
+	const [valorBusca, setValorBusca] = useState<string>('');
 
 	const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
 	const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
@@ -207,7 +209,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			});
 			fetchMovimentos(1);
 		}
-	}, [contaSelecionada, dataInicio, dataFim, statusFiltro, itemsPerPage, planosFiltroIds, centrosFiltroIds]);
+	}, [contaSelecionada, dataInicio, dataFim, statusFiltro, itemsPerPage, planosFiltroIds, centrosFiltroIds, historicoContem, valorBusca]);
 
 	useEffect(() => {
 		if (!contaSelecionada) {
@@ -263,6 +265,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				statusFiltro,
 				planosFiltroIds,
 				centrosFiltroIds,
+				historicoContem || undefined,
+				valorBusca || undefined,
 			);
 
 			console.log('📊 Resultado da busca:', result);
@@ -353,6 +357,8 @@ const MovimentoBancarioTable: React.FC = () => {
 		centrosIds?: number[];
 		planosSelecionados?: any[];
 		centrosSelecionados?: any[];
+		historicoContem?: string;
+		valorBusca?: string;
 	}) => {
 		console.log('🔍 Aplicando filtros:', filters);
 		setDataInicio(filters.dataInicio);
@@ -362,6 +368,8 @@ const MovimentoBancarioTable: React.FC = () => {
 		setCentrosFiltroIds(filters.centrosIds);
 		setPlanosSelecao(filters.planosSelecionados || []);
 		setCentrosSelecao(filters.centrosSelecionados || []);
+		setHistoricoContem(filters.historicoContem?.trim() || '');
+		setValorBusca(filters.valorBusca?.trim() || '');
 		setCurrentPage(1);
 		// O useEffect vai detectar a mudança e chamar fetchMovimentos automaticamente
 	};
@@ -1417,7 +1425,7 @@ const MovimentoBancarioTable: React.FC = () => {
 															<FontAwesomeIcon icon={faInfoCircle} />
 															Informação
 														</button>
-														{movBancario.idPlanoContas && (
+														{movBancario.idPlanoContas || movBancario.resultadoList && movBancario.resultadoList.length > 0 && (
 															<button
 																className="flex-1 px-3 py-2 text-sm bg-orange-50 text-orange-600 rounded hover:bg-orange-100 flex items-center justify-center gap-2"
 																onClick={() => {
@@ -1533,6 +1541,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				status={statusFiltro}
 				planosIniciais={planosSelecao}
 				centrosIniciais={centrosSelecao}
+				historicoContemInicial={historicoContem}
+				valorBuscaInicial={valorBusca}
 			/>
 
 			<DialogModal

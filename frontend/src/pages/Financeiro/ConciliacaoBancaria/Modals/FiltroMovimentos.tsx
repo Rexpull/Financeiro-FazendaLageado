@@ -21,12 +21,16 @@ interface FiltroMovimentosModalProps {
     centrosIds?: number[];
     planosSelecionados?: any[];
     centrosSelecionados?: any[];
+    historicoContem?: string;
+    valorBusca?: string;
   }) => void;
   dataInicio: string;
   dataFim: string;
   status: string;
   planosIniciais?: any[];
   centrosIniciais?: any[];
+  historicoContemInicial?: string;
+  valorBuscaInicial?: string;
 }
 
 const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({ 
@@ -35,8 +39,11 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
   handleSearch, 
   dataInicio: dataInicioProp, 
   dataFim: dataFimProp,
+  status: statusProp,
   planosIniciais = [],
-  centrosIniciais = []
+  centrosIniciais = [],
+  historicoContemInicial = "",
+  valorBuscaInicial = "",
 }) => {
 
   const getCurrentMonthRange = () => {
@@ -61,6 +68,8 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
   const [centrosDisponiveis, setCentrosDisponiveis] = useState<CentroCustos[]>([]);
   const [planosSelecionados, setPlanosSelecionados] = useState<PlanoConta[]>([]);
   const [centrosSelecionados, setCentrosSelecionados] = useState<CentroCustos[]>([]);
+  const [filtroDescricao, setFiltroDescricao] = useState("");
+  const [filtroValor, setFiltroValor] = useState("");
 
   // 🔹 Carregar planos e centros ao abrir o modal
   useEffect(() => {
@@ -86,12 +95,14 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
     if (isOpen) {
       setDataInicio(dataInicioProp);
       setDataFim(dataFimProp);
-      setStatus(status); 
+      setStatus(statusProp);
       setErroData("");
       setPlanosSelecionados(planosIniciais);
       setCentrosSelecionados(centrosIniciais);
+      setFiltroDescricao(historicoContemInicial);
+      setFiltroValor(valorBuscaInicial);
     }
-  }, [isOpen, dataInicioProp, dataFimProp, status, planosIniciais, centrosIniciais]);
+  }, [isOpen, dataInicioProp, dataFimProp, statusProp, planosIniciais, centrosIniciais, historicoContemInicial, valorBuscaInicial]);
 
 
   // 🔹 Validação das datas
@@ -114,6 +125,8 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
     setErroData("");
     setPlanosSelecionados([]);
     setCentrosSelecionados([]);
+    setFiltroDescricao("");
+    setFiltroValor("");
   };
 
   // Funções para gerenciar planos selecionados
@@ -146,7 +159,9 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
       planosIds,
       centrosIds,
       planosSelecionados,
-      centrosSelecionados
+      centrosSelecionados,
+      historicoContem: filtroDescricao.trim() || undefined,
+      valorBusca: filtroValor.trim() || undefined,
     });
     onClose(); // Fecha o modal após a busca
   };
@@ -187,6 +202,30 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
             </div>
             <span>Apenas pendentes</span>
           </label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+            <input
+              type="text"
+              value={filtroDescricao}
+              placeholder="Digite a descrição"
+              onChange={(e) => setFiltroDescricao(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Valor</label>
+            <input
+              type="text"
+              name="valor"
+              className="w-full p-2 bg-white border border-gray-300 rounded"
+              placeholder="R$ 0,00"
+              value={filtroValor}
+              onChange={(e) => setFiltroValor(e.target.value)}
+            />
+          </div>
         </div>
 
         {/* 🔹 Data Início e Data Fim */}
@@ -256,7 +295,7 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
               dataInicio && dataFim ? "bg-red-500 hover:bg-red-600" : "bg-gray-300 cursor-not-allowed"
             }`}
             onClick={buscarMovimentos}
-            disabled={!!erroData}
+            disabled={!!erroData || !dataInicio || !dataFim}
           >
             {erroData ? (
               <>
