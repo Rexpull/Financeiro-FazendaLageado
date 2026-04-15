@@ -15,7 +15,17 @@ import MultiSelectDropdown from '../../../components/MultiSelectDropdown';
 import { listarCentroCustos } from '../../../services/centroCustosService';
 import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
 import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
-
+import {
+	idCentroCustosEfetivo,
+	idPlanoContasEfetivo,
+	isCentroRateioMultiplo,
+	isPlanoRateioMultiplo,
+	textoCentroOrdenacaoOFX,
+	textoCentroPadrao,
+	textoPlanoDespesa,
+	textoPlanoOrdenacaoOFX,
+	textoPlanoTransferencia,
+} from './conciliacaoLabels';
 
 Modal.setAppElement('#root');
 
@@ -234,37 +244,9 @@ const ConciliacaoOFXModal = ({
 		centrosSelecionados,
 	]);
 
-	const textoPlanoOrdenacao = (mov: MovimentoBancario) => {
-		if (mov.modalidadeMovimento === 'transferencia') {
-			if (mov.resultadoList && mov.resultadoList.length > 1) {
-				return 'Múltiplos Planos';
-			}
-			return planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Transferência entre contas';
-		}
-		if (mov.tipoMovimento !== 'D') {
-			return '\u0000';
-		}
-		if (mov.resultadoList && mov.resultadoList.length > 1) {
-			return 'Múltiplos Planos';
-		}
-		return planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas';
-	};
+	const textoPlanoOrdenacao = (mov: MovimentoBancario) => textoPlanoOrdenacaoOFX(mov, planos);
 
-	const textoCentroOrdenacao = (mov: MovimentoBancario) => {
-		if (mov.modalidadeMovimento === 'transferencia') {
-			return '\u0000';
-		}
-		if (mov.centroCustosList && mov.centroCustosList.length > 1) {
-			return 'Múltiplos Centros';
-		}
-		if (mov.centroCustosList && mov.centroCustosList.length > 0) {
-			return (
-				centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao ||
-				`Centro ${mov.centroCustosList[0].idCentroCustos}`
-			);
-		}
-		return centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos';
-	};
+	const textoCentroOrdenacao = (mov: MovimentoBancario) => textoCentroOrdenacaoOFX(mov, centrosDisponiveis);
 
 	const movimentosOrdenados = useMemo(() => {
 		const cmp = (a: MovimentoBancario, b: MovimentoBancario): number => {
@@ -903,9 +885,9 @@ const ConciliacaoOFXModal = ({
 													<td
 														colSpan={2}
 														className={`p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 ${
-															mov.resultadoList && mov.resultadoList.length > 1
+															isPlanoRateioMultiplo(mov)
 																? 'text-blue-600 font-semibold'
-																: !planos.find((p) => p.id === mov.idPlanoContas)
+																: !planos.find((p) => p.id === idPlanoContasEfetivo(mov))
 																	? 'text-orange-500 font-semibold'
 																	: 'text-gray-900'
 														}`}
@@ -913,9 +895,7 @@ const ConciliacaoOFXModal = ({
 														onClick={() => openModalConcilia(mov)}
 														title="Movimentação interna — clique para editar a conciliação"
 													>
-														{mov.resultadoList && mov.resultadoList.length > 1
-															? 'Múltiplos Planos'
-															: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Transferência entre contas'}
+														{textoPlanoTransferencia(mov, planos)}
 													</td>
 												) : (
 													<>
@@ -924,9 +904,9 @@ const ConciliacaoOFXModal = ({
 															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
 																mov.tipoMovimento === 'D'
 																	? 'cursor-pointer underline hover:text-gray-500' +
-																		((mov.resultadoList && mov.resultadoList.length > 1)
+																		(isPlanoRateioMultiplo(mov)
 																			? ' text-blue-600 font-semibold'
-																			: !planos.find((p) => p.id === mov.idPlanoContas)
+																			: !planos.find((p) => p.id === idPlanoContasEfetivo(mov))
 																				? ' text-orange-500 font-semibold'
 																				: '')
 																	: 'text-gray-400'
@@ -935,11 +915,7 @@ const ConciliacaoOFXModal = ({
 															onClick={() => mov.tipoMovimento === 'D' && openModalConcilia(mov)}
 															title={mov.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
 														>
-															{mov.tipoMovimento === 'D'
-																? (mov.resultadoList && mov.resultadoList.length > 1
-																		? 'Múltiplos Planos'
-																		: planos.find((p) => p.id === mov.idPlanoContas)?.descricao || 'Selecione um Plano de Contas')
-																: '-'}
+															{mov.tipoMovimento === 'D' ? textoPlanoDespesa(mov, planos) : '-'}
 														</td>
 														{/* Coluna Centro de Custos */}
 														<td
@@ -947,9 +923,9 @@ const ConciliacaoOFXModal = ({
 																mov.modalidadeMovimento === 'financiamento'
 																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
 																	: `cursor-pointer underline hover:text-gray-500 ${
-																			mov.centroCustosList && mov.centroCustosList.length > 1
+																			isCentroRateioMultiplo(mov)
 																				? 'text-blue-600 font-semibold'
-																				: !centrosDisponiveis.find((c) => c.id === mov.idCentroCustos) &&
+																				: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(mov)) &&
 																					  !(mov.centroCustosList && mov.centroCustosList.length > 0)
 																					? 'text-orange-500 font-semibold'
 																					: ''
@@ -961,13 +937,7 @@ const ConciliacaoOFXModal = ({
 														>
 															{mov.modalidadeMovimento === 'financiamento'
 																? 'Financiamento'
-																: mov.centroCustosList && mov.centroCustosList.length > 1
-																	? 'Múltiplos Centros'
-																	: mov.centroCustosList && mov.centroCustosList.length > 0
-																		? centrosDisponiveis.find((c) => c.id === mov.centroCustosList![0].idCentroCustos)?.descricao ||
-																			`Centro ${mov.centroCustosList[0].idCentroCustos}`
-																		: centrosDisponiveis.find((c) => c.id === mov.idCentroCustos)?.descricao ||
-																			'Selecione o Centro de Custos'}
+																: textoCentroPadrao(mov, centrosDisponiveis)}
 														</td>
 													</>
 												)}

@@ -152,17 +152,28 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			} else {
 				// Mantém o comportamento existente para um único movimento
 				setModalidadeMovimento(movimento.modalidadeMovimento || 'padrao');
-				setIdPlanoContas(movimento.idPlanoContas || null);
-				setIdCentroCustos(movimento.idCentroCustos || null);
-				setSearchCentroCustos(movimento.idCentroCustos ? centroCustos.find(c => c.id === movimento.idCentroCustos)?.descricao || '' : '');
-				// Define o plano de contas selecionado
-				if (movimento.idPlanoContas) {
-					const planoSelecionado = planos.find(p => p.id === movimento.idPlanoContas);
+				// Um único resultado = tratar como plano único (dados legados ou antes da normalização)
+				const idPlanoInicial =
+					movimento.resultadoList?.length === 1
+						? movimento.resultadoList[0].idPlanoContas
+						: movimento.idPlanoContas ?? null;
+				const idCentroInicial =
+					!movimento.idCentroCustos && movimento.centroCustosList?.length === 1
+						? movimento.centroCustosList[0].idCentroCustos
+						: movimento.idCentroCustos ?? null;
+
+				setIdPlanoContas(idPlanoInicial);
+				setIdCentroCustos(idCentroInicial);
+				setSearchCentroCustos(
+					idCentroInicial ? centroCustos.find((c) => c.id === idCentroInicial)?.descricao || '' : '',
+				);
+				if (movimento.idPlanoContas || movimento.resultadoList?.length === 1) {
+					const planoSelecionado = planos.find((p) => p.id === idPlanoInicial);
 					setSearchPlano(planoSelecionado ? planoSelecionado.descricao : '');
 				} else {
 					setSearchPlano('');
 				}
-				// Carregar rateios de planos existentes
+				// Carregar rateios de planos existentes (múltiplos apenas)
 				if (movimento.resultadoList && movimento.resultadoList.length > 1) {
 					const convertidos = movimento.resultadoList.map((r) => {
 						const plano = planos.find((p) => p.id === r.idPlanoContas);
@@ -183,12 +194,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				}
 				
 				setFormData({
-					idPlanoContas: movimento.idPlanoContas || null,
+					idPlanoContas: idPlanoInicial,
 					pessoaSelecionada: movimento.idPessoa ? movimento.idPessoa.toString() : '',
 					bancoSelecionado: movimento.idBanco ? movimento.idBanco.toString() : '',
 					idPessoa: movimento.idPessoa || null,
 					idBanco: movimento.idBanco || null,
-					idCentroCustos: movimento.idCentroCustos || null,
+					idCentroCustos: idCentroInicial,
 					idFinanciamento: movimento.idFinanciamento || null,
 				});
 			}
@@ -295,6 +306,26 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			setRateiosPlanos(convertidos);
 		}
 	}, [planos, movimento?.resultadoList, isOpen, modalInicializado.current]);
+
+	useEffect(() => {
+		if (
+			centroCustos.length > 0 &&
+			movimento?.centroCustosList &&
+			movimento.centroCustosList.length > 1 &&
+			isOpen &&
+			modalInicializado.current
+		) {
+			const convertidos = movimento.centroCustosList.map((c) => {
+				const centro = centroCustos.find((ct) => ct.id === c.idCentroCustos);
+				return {
+					idCentro: c.idCentroCustos,
+					descricao: centro?.descricao || `Centro ${c.idCentroCustos}`,
+					valor: c.valor,
+				};
+			});
+			setRateiosCentros(convertidos);
+		}
+	}, [centroCustos, movimento?.centroCustosList, isOpen, modalInicializado.current]);
 
 	const aplicarRateioCentrosComoCentroCustosList = (centros: MovimentoCentroCustos[] | { idCentro: number; porcentagem: number }[]) => {
 		// Verificar se é rateio por porcentagem (múltiplos movimentos)
@@ -415,12 +446,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				// Validação: verificar se há plano único ou múltiplos planos (rateio)
 				const temPlanoUnico = formData.idPlanoContas !== null && formData.idPlanoContas !== undefined;
 				const temMultiplosPlanosExistentes = movimento.resultadoList && movimento.resultadoList.length > 1;
+				const temUmPlanoEmResultadoList = (movimento.resultadoList?.length ?? 0) === 1;
 				const temRateiosPlanos = rateiosPlanos.length > 0;
 				const temRateiosPlanosPorcentagem = (rateiosPlanosPorcentagem ?? []).length > 0;
 				const movimentoJaConciliado = movimento.idPlanoContas !== null && movimento.idPlanoContas !== undefined;
 				
 				// Permitir null apenas se o movimento já estava conciliado (para permitir limpar)
-				if (!temPlanoUnico && !temMultiplosPlanosExistentes && !temRateiosPlanos && !temRateiosPlanosPorcentagem && !movimentoJaConciliado) {
+				if (!temPlanoUnico && !temMultiplosPlanosExistentes && !temUmPlanoEmResultadoList && !temRateiosPlanos && !temRateiosPlanosPorcentagem && !movimentoJaConciliado) {
 				newErrors.idPlanoContas = 'Selecione um plano de contas ou defina múltiplos!';
 				}
 			}
@@ -428,12 +460,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			// Validar centro de custos obrigatório
 			// Permitir null apenas se o movimento já tinha centro de custos (para permitir limpar)
 			const temCentroUnico = formData.idCentroCustos !== null && formData.idCentroCustos !== undefined;
-			const temCentroCustosList = (movimento.centroCustosList ?? []).length > 0;
+			const temCentroCustosListMultiplo = (movimento.centroCustosList ?? []).length > 1;
+			const temUmCentroEmLista = (movimento.centroCustosList?.length ?? 0) === 1;
 			const temRateiosCentros = rateiosCentros.length > 0;
 			const temRateiosCentrosPorcentagem = (rateiosCentrosPorcentagem ?? []).length > 0;
 			const movimentoJaTinhaCentro = movimento.idCentroCustos !== null && movimento.idCentroCustos !== undefined;
 			
-			if (!temCentroUnico && !temCentroCustosList && !temRateiosCentros && !temRateiosCentrosPorcentagem && !movimentoJaTinhaCentro) {
+			if (!temCentroUnico && !temCentroCustosListMultiplo && !temUmCentroEmLista && !temRateiosCentros && !temRateiosCentrosPorcentagem && !movimentoJaTinhaCentro) {
 				newErrors.idCentroCustos = 'Selecione um centro de custos ou defina múltiplos!';
 			}
 		}
@@ -616,6 +649,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					// Se não há rateios novos mas há centros existentes, manter os existentes
 					dados.centroCustosList = movimento.centroCustosList;
 				}
+
+				// Um único item no rateio equivale a plano/centro únicos (evita resultadoList com 1 linha)
+				if (Array.isArray(dados.resultadoList) && dados.resultadoList.length === 1) {
+					dados.idPlanoContas = dados.resultadoList[0].idPlanoContas;
+					dados.resultadoList = [];
+				}
+				if (Array.isArray(dados.centroCustosList) && dados.centroCustosList.length === 1) {
+					dados.idCentroCustos = dados.centroCustosList[0].idCentroCustos;
+					dados.centroCustosList = undefined;
+				}
 			} else if (modalidadeMovimento === 'financiamento') {
 				dados = {
 					idPlanoContas: null, // Não exigir plano de contas para financiamentos
@@ -744,13 +787,22 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 						// Remover centroCustosList de dados se existir, pois já foi calculado acima
 						const { centroCustosList: _, ...dadosSemCentros } = dados as any;
 						
-						const movimentoComRateio = {
+						const movimentoComRateio: MovimentoBancario = {
 							...mov,
 							...dadosSemCentros,
 							resultadoList,
-							centroCustosList, // Usar o centroCustosList calculado, não o de dados
-						};
-						
+							centroCustosList,
+						} as MovimentoBancario;
+
+						if (movimentoComRateio.resultadoList?.length === 1) {
+							movimentoComRateio.idPlanoContas = movimentoComRateio.resultadoList[0].idPlanoContas;
+							movimentoComRateio.resultadoList = [];
+						}
+						if (movimentoComRateio.centroCustosList?.length === 1) {
+							movimentoComRateio.idCentroCustos = movimentoComRateio.centroCustosList[0].idCentroCustos;
+							movimentoComRateio.centroCustosList = undefined;
+						}
+
 						return movimentoComRateio;
 					});
 					
@@ -845,6 +897,24 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const renderCampos = () => {
 		if (modalidadeMovimento === 'padrao') {
 			const isReceita = movimento.tipoMovimento === 'C';
+			const rl = movimento.resultadoList ?? [];
+			const ccl = movimento.centroCustosList ?? [];
+			const bloqueioMultiplosPlanos = rl.length > 1 || rateiosPlanos.length > 1;
+			const textoPlanoCampo = bloqueioMultiplosPlanos
+				? 'Multiplos Planos'
+				: rateiosPlanos.length === 1
+					? rateiosPlanos[0].descricao
+					: rl.length === 1
+						? planos.find((p) => p.id === rl[0].idPlanoContas)?.descricao || searchPlano
+						: searchPlano;
+			const bloqueioMultiplosCentros = ccl.length > 1 || rateiosCentros.length > 1;
+			const textoCentroCampo = bloqueioMultiplosCentros
+				? 'Múltiplos Centros'
+				: rateiosCentros.length === 1
+					? rateiosCentros[0].descricao
+					: ccl.length === 1
+						? centroCustos.find((c) => c.id === ccl[0].idCentroCustos)?.descricao || searchCentroCustos
+						: searchCentroCustos;
 			return (
 				<>
 					{/* Linha 1: Plano de Contas e Centro de Custos lado a lado (ou apenas Centro de Custos se receita) */}
@@ -858,17 +928,17 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								<div className="relative w-full">
 									<input
 										type="text"
-											className={`w-full p-2 border rounded-l cursor-pointer ${(movimento.resultadoList ?? []).length > 1 || rateiosPlanos.length > 1 ? 'bg-gray-100' : ''}`}
+											className={`w-full p-2 border rounded-l cursor-pointer ${bloqueioMultiplosPlanos ? 'bg-gray-100' : ''}`}
 										placeholder="Clique para selecionar plano de contas..."
 											onClick={() => {
-											if ((movimento.resultadoList ?? []).length > 1 || rateiosPlanos.length > 1) return;
+											if (bloqueioMultiplosPlanos) return;
 											const next = !showPlanoDropdown;
 											setShowPlanoDropdown(next);
 											if (next && isDespesa && tipoPlanoSelecionado === null) {
 												setTipoPlanoSelecionado('CUSTEIO');
 											}
 										}}
-											value={(movimento.resultadoList ?? []).length > 1 || rateiosPlanos.length > 1 ? 'Multiplos Planos' : searchPlano}
+											value={textoPlanoCampo}
 										readOnly
 									/>
 									<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
@@ -992,17 +1062,17 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								<div className="relative w-full">
 									<input
 										type="text"
-										className={`w-full p-2 border rounded-l cursor-pointer ${rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 ? 'bg-gray-100' : ''}`}
+										className={`w-full p-2 border rounded-l cursor-pointer ${bloqueioMultiplosCentros ? 'bg-gray-100' : ''}`}
 										placeholder="Clique para selecionar centro de custos..."
 										onClick={() => {
-											if (rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1) return;
+											if (bloqueioMultiplosCentros) return;
 											const next = !showCentroCustosDropdown;
 											setShowCentroCustosDropdown(next);
 											if (next && isDespesa && tipoCentroSelecionado === null) {
 												setTipoCentroSelecionado('CUSTEIO');
 											}
 										}}
-										value={rateiosCentros.length > 1 || (movimento.centroCustosList ?? []).length > 1 ? 'Múltiplos Centros' : searchCentroCustos}
+										value={textoCentroCampo}
 										readOnly
 									/>
 									<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />

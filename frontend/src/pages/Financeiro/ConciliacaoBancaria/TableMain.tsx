@@ -59,6 +59,15 @@ import { buscarPessoaById } from '../../../services/pessoaService';
 import { toast } from 'react-toastify';
 import { TotalizadoresOFX } from '../../../Utils/parseOfxFile';
 import ConciliacaoOFXModal from './ConciliacaoOFX';
+import {
+	idCentroCustosEfetivo,
+	idPlanoContasEfetivo,
+	isCentroRateioMultiplo,
+	isPlanoRateioMultiplo,
+	textoCentroPadrao,
+	textoPlanoDespesa,
+	textoPlanoTransferencia,
+} from './conciliacaoLabels';
 import { useLocation } from 'react-router-dom';
 import { listarHistoricoImportacoes, limparHistoricoImportacoes } from '../../../services/historicoImportacaoOFXService';
 
@@ -1153,9 +1162,9 @@ const MovimentoBancarioTable: React.FC = () => {
 													<td
 														colSpan={2}
 														className={`p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 ${
-															movBancario.resultadoList && movBancario.resultadoList.length > 1
+															isPlanoRateioMultiplo(movBancario)
 																? 'text-blue-600 font-semibold'
-																: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																: !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
 																	? 'text-orange-500 font-semibold'
 																	: 'text-gray-900'
 														}`}
@@ -1163,9 +1172,7 @@ const MovimentoBancarioTable: React.FC = () => {
 														onClick={() => openModalConcilia(movBancario)}
 														title="Movimentação interna — clique para editar a conciliação"
 													>
-														{movBancario.resultadoList && movBancario.resultadoList.length > 1
-															? 'Múltiplos Planos'
-															: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Transferência entre contas'}
+														{textoPlanoTransferencia(movBancario, planos)}
 													</td>
 												) : (
 													<>
@@ -1174,9 +1181,9 @@ const MovimentoBancarioTable: React.FC = () => {
 															className={`p-2 text-center min-w-[180px] max-w-[220px] truncate ${
 																movBancario.tipoMovimento === 'D'
 																	? 'cursor-pointer underline hover:text-gray-500' +
-																		(movBancario.resultadoList && movBancario.resultadoList.length > 1
+																		(isPlanoRateioMultiplo(movBancario)
 																			? ' text-blue-600 font-semibold'
-																			: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																			: !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
 																				? ' text-orange-500 font-semibold'
 																				: '')
 																	: 'text-gray-400'
@@ -1185,11 +1192,7 @@ const MovimentoBancarioTable: React.FC = () => {
 															onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
 															title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
 														>
-															{movBancario.tipoMovimento === 'D'
-																? movBancario.resultadoList && movBancario.resultadoList.length > 1
-																	? 'Múltiplos Planos'
-																	: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'
-																: '-'}
+															{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
 														</td>
 														{/* Coluna Centro de Custos */}
 														<td
@@ -1197,9 +1200,9 @@ const MovimentoBancarioTable: React.FC = () => {
 																movBancario.modalidadeMovimento === 'financiamento'
 																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
 																	: `cursor-pointer underline hover:text-gray-500 ${
-																			movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																			isCentroRateioMultiplo(movBancario)
 																				? 'text-blue-600 font-semibold'
-																				: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) &&
+																				: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(movBancario)) &&
 																					  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
 																					? 'text-orange-500 font-semibold'
 																					: ''
@@ -1211,14 +1214,7 @@ const MovimentoBancarioTable: React.FC = () => {
 														>
 															{movBancario.modalidadeMovimento === 'financiamento'
 																? 'Financiamento'
-																: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-																	? 'Múltiplos Centros'
-																	: ((movBancario.idCentroCustos != null
-																			? centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao
-																			: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
-																				? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)
-																						?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
-																				: null) ?? 'Selecione o Centro de Custos')}
+																: textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</td>
 													</>
 												)}
@@ -1333,18 +1329,16 @@ const MovimentoBancarioTable: React.FC = () => {
 													<div className="text-xs text-gray-500">Movimentação interna</div>
 													<div
 														className={`text-sm cursor-pointer underline hover:text-gray-500 ${
-															movBancario.resultadoList && movBancario.resultadoList.length > 1
+															isPlanoRateioMultiplo(movBancario)
 																? 'text-blue-600 font-semibold'
-																: !planos.find((p) => p.id === movBancario.idPlanoContas)
+																: !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
 																	? 'text-orange-500 font-semibold'
 																	: ''
 														}`}
 														onClick={() => openModalConcilia(movBancario)}
 														title="Movimentação interna — clique para editar a conciliação"
 													>
-														{movBancario.resultadoList && movBancario.resultadoList.length > 1
-															? 'Múltiplos Planos'
-															: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Transferência entre contas'}
+														{textoPlanoTransferencia(movBancario, planos)}
 													</div>
 												</div>
 											) : (
@@ -1354,20 +1348,16 @@ const MovimentoBancarioTable: React.FC = () => {
 														<div className="text-xs text-gray-500">Plano de Contas</div>
 														<div
 															className={`text-sm ${movBancario.tipoMovimento === 'D' ? 'cursor-pointer underline hover:text-gray-500' : 'text-gray-400'} ${
-																movBancario.tipoMovimento === 'D' && movBancario.resultadoList && movBancario.resultadoList.length > 1
+																movBancario.tipoMovimento === 'D' && isPlanoRateioMultiplo(movBancario)
 																	? 'text-blue-600 font-semibold'
-																	: movBancario.tipoMovimento === 'D' && !planos.find((p) => p.id === movBancario.idPlanoContas)
+																	: movBancario.tipoMovimento === 'D' && !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
 																		? 'text-orange-500 font-semibold'
 																		: ''
 															}`}
 															onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
 															title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
 														>
-															{movBancario.tipoMovimento === 'D'
-																? movBancario.resultadoList && movBancario.resultadoList.length > 1
-																	? 'Múltiplos Planos'
-																	: planos.find((p) => p.id === movBancario.idPlanoContas)?.descricao || 'Selecione um Plano de Contas'
-																: '-'}
+															{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
 														</div>
 													</div>
 													{/* Centro de Custos */}
@@ -1378,9 +1368,9 @@ const MovimentoBancarioTable: React.FC = () => {
 																movBancario.modalidadeMovimento === 'financiamento'
 																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
 																	: `cursor-pointer underline hover:text-gray-500 ${
-																			movBancario.centroCustosList && movBancario.centroCustosList.length > 1
+																			isCentroRateioMultiplo(movBancario)
 																				? 'text-blue-600 font-semibold'
-																				: !centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos) &&
+																				: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(movBancario)) &&
 																					  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
 																					? 'text-orange-500 font-semibold'
 																					: ''
@@ -1391,14 +1381,7 @@ const MovimentoBancarioTable: React.FC = () => {
 														>
 															{movBancario.modalidadeMovimento === 'financiamento'
 																? 'Financiamento'
-																: movBancario.centroCustosList && movBancario.centroCustosList.length > 1
-																	? 'Múltiplos Centros'
-																	: ((movBancario.idCentroCustos != null
-																			? centrosDisponiveis.find((c) => c.id === movBancario.idCentroCustos)?.descricao
-																			: movBancario.centroCustosList && movBancario.centroCustosList.length > 0
-																				? centrosDisponiveis.find((c) => c.id === movBancario.centroCustosList![0].idCentroCustos)
-																						?.descricao || `Centro ${movBancario.centroCustosList[0].idCentroCustos}`
-																				: null) ?? 'Selecione o Centro de Custos')}
+																: textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</div>
 													</div>
 												</div>
