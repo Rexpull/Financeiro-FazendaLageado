@@ -545,7 +545,10 @@ export class MovimentoBancarioController {
 					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
 
 					const movimentosFiltrados = todosMovimentos.filter((mov) => {
-						const planoContasIds = mov.resultadoList?.map((r) => r.idPlanoContas) || [];
+						if (mov.modalidadeMovimento === 'transferencia') return false;
+
+						const planoContasIds = [...(mov.resultadoList?.map((r) => r.idPlanoContas) || [])];
+						if (mov.idPlanoContas) planoContasIds.push(mov.idPlanoContas);
 
 						const contemPlanoIgnorado = planoContasIds.some((id) => planosComPai170.includes(id));
 						if (contemPlanoIgnorado) {
@@ -1045,7 +1048,10 @@ export class MovimentoBancarioController {
 					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
 
 					const movimentosFiltrados = todosMovimentos.filter((mov) => {
-						const planoContasIds = mov.resultadoList?.map((r) => r.idPlanoContas) || [];
+						if (mov.modalidadeMovimento === 'transferencia') return false;
+
+						const planoContasIds = [...(mov.resultadoList?.map((r) => r.idPlanoContas) || [])];
+						if (mov.idPlanoContas) planoContasIds.push(mov.idPlanoContas);
 						const contemPlanoIgnorado = planoContasIds.some((id) => planosComPai170.includes(id));
 						if (contemPlanoIgnorado) {
 							return false;

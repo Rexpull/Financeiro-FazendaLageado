@@ -47,13 +47,7 @@ type ConciliacaoOFXModalProps = {
 	idContaCorrenteExtrato?: number | null;
 };
 
-const ConciliacaoOFXModal = ({
-	isOpen,
-	onClose,
-	movimentos,
-	totalizadores,
-	idContaCorrenteExtrato,
-}: ConciliacaoOFXModalProps) => {
+const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idContaCorrenteExtrato }: ConciliacaoOFXModalProps) => {
 	const [contaSelecionada, setContaSelecionada] = useState<any | null>(null);
 	const [status, setStatus] = useState<string>('todos');
 	const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
@@ -101,7 +95,7 @@ const ConciliacaoOFXModal = ({
 	};
 
 	const removerPlano = (id: number) => {
-		setPlanosSelecionados(planosSelecionados.filter(p => p.id !== id));
+		setPlanosSelecionados(planosSelecionados.filter((p) => p.id !== id));
 	};
 
 	const adicionarCentro = (centro: CentroCustos) => {
@@ -109,7 +103,7 @@ const ConciliacaoOFXModal = ({
 	};
 
 	const removerCentro = (id: number) => {
-		setCentrosSelecionados(centrosSelecionados.filter(c => c.id !== id));
+		setCentrosSelecionados(centrosSelecionados.filter((c) => c.id !== id));
 	};
 
 	useEffect(() => {
@@ -169,13 +163,7 @@ const ConciliacaoOFXModal = ({
 		return () => {
 			cancelled = true;
 		};
-	}, [
-		isOpen,
-		idContaCorrenteExtrato,
-		movimentos,
-		totalizadores.dtInicialExtrato,
-		totalizadores.dtFinalExtrato,
-	]);
+	}, [isOpen, idContaCorrenteExtrato, movimentos, totalizadores.dtInicialExtrato, totalizadores.dtFinalExtrato]);
 
 	useEffect(() => {
 		const handleClickFora = (event) => {
@@ -196,7 +184,7 @@ const ConciliacaoOFXModal = ({
 	}, [dropdownAberto]);
 
 	const isMovimentoPendente = useCallback((mov: MovimentoBancario) => {
-		// Movimentação interna: não exige centro; pendente só sem plano (nem resultadoList com planos)
+		// Sem efeito financeiro (modalidade transferencia): no centro requirement; pendente only without plan (or resultadoList)
 		if (mov.modalidadeMovimento === 'transferencia') {
 			const temPlanoUnico = mov.idPlanoContas !== null && mov.idPlanoContas !== undefined;
 			const temResultadoList = mov.resultadoList && mov.resultadoList.length > 0;
@@ -389,9 +377,9 @@ const ConciliacaoOFXModal = ({
 			setTipoMovimentoSelecionado(movimento.tipoMovimento || null);
 			setMovimentosSelecionados([movimento]);
 		} else if (tipoMovimentoSelecionado === movimento.tipoMovimento) {
-			const jaSelecionado = movimentosSelecionados.some(m => m.id === movimento.id);
+			const jaSelecionado = movimentosSelecionados.some((m) => m.id === movimento.id);
 			if (jaSelecionado) {
-				const novosSelecionados = movimentosSelecionados.filter(m => m.id !== movimento.id);
+				const novosSelecionados = movimentosSelecionados.filter((m) => m.id !== movimento.id);
 				setMovimentosSelecionados(novosSelecionados);
 				if (novosSelecionados.length === 0) {
 					setTipoMovimentoSelecionado(null);
@@ -494,9 +482,7 @@ const ConciliacaoOFXModal = ({
 
 			// Atualiza a lista de movimentos apenas com os campos alterados
 			const movimentosAtualizadosList = movimentosSendoConciliados.map((mov) => {
-				const atualizado = movimentosAtualizados.find(
-					(m) => m.id === mov.id || m.identificadorOfx === mov.identificadorOfx,
-				);
+				const atualizado = movimentosAtualizados.find((m) => m.id === mov.id || m.identificadorOfx === mov.identificadorOfx);
 
 				if (atualizado) {
 					return {
@@ -516,9 +502,9 @@ const ConciliacaoOFXModal = ({
 				return mov;
 			});
 
-			setMovimentosSendoConciliados(movimentosAtualizadosList.sort((a, b) => 
-				new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime()
-			));
+			setMovimentosSendoConciliados(
+				movimentosAtualizadosList.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime()),
+			);
 
 			// Limpa a seleção
 			setMovimentosSelecionados([]);
@@ -871,7 +857,7 @@ const ConciliacaoOFXModal = ({
 												<td className="p-2 text-center">
 													<input
 														type="checkbox"
-														checked={movimentosSelecionados.some(m => m.id === mov.id)}
+														checked={movimentosSelecionados.some((m) => m.id === mov.id)}
 														onChange={() => handleSelecionarMovimento(mov)}
 														className="w-4 h-4"
 														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== mov.tipoMovimento}
@@ -893,7 +879,7 @@ const ConciliacaoOFXModal = ({
 														}`}
 														style={{ textUnderlineOffset: '2px' }}
 														onClick={() => openModalConcilia(mov)}
-														title="Movimentação interna — clique para editar a conciliação"
+														title="Movimentações sem efeito financeiro — clique para editar a conciliação"
 													>
 														{textoPlanoTransferencia(mov, planos)}
 													</td>
@@ -935,9 +921,7 @@ const ConciliacaoOFXModal = ({
 															onClick={() => openModalConcilia(mov)}
 															title={mov.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 														>
-															{mov.modalidadeMovimento === 'financiamento'
-																? 'Financiamento'
-																: textoCentroPadrao(mov, centrosDisponiveis)}
+															{mov.modalidadeMovimento === 'financiamento' ? 'Financiamento' : textoCentroPadrao(mov, centrosDisponiveis)}
 														</td>
 													</>
 												)}
@@ -956,11 +940,12 @@ const ConciliacaoOFXModal = ({
 
 				{/* Botão fixo de conciliação */}
 				{movimentosSelecionados.length > 0 && (
-					<div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50" style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}>
+					<div
+						className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50"
+						style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}
+					>
 						<div className="container mx-auto flex justify-between items-center">
-							<span className="text-gray-600 font-semibold text-lg">
-								{movimentosSelecionados.length} movimento(s) selecionado(s)
-							</span>
+							<span className="text-gray-600 font-semibold text-lg">{movimentosSelecionados.length} movimento(s) selecionado(s)</span>
 							<button
 								onClick={handleConciliarSelecionados}
 								className="bg-blue-600 text-white text-lg px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"

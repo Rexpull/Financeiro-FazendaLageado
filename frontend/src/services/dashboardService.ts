@@ -76,6 +76,13 @@ export interface DashboardData {
       tipoMovimento: 'C' | 'D';
       conciliado: boolean;
     }>;
+    /** Revenues by cost center — prefer this for comparative receitas chart */
+    receitasAgrupadoPorCentros?: Array<{
+      descricao: string;
+      valor: number;
+      tipoMovimento: 'C';
+      conciliado: boolean;
+    }>;
     totalConciliado?: number;
     totalSemConciliar?: number;
     totalReceitas?: number;
@@ -169,14 +176,42 @@ export const getDashboardData = async (ano: number, mes?: number, contas?: numbe
     if (tipoAgrupamento) {
       params.append('tipoAgrupamento', tipoAgrupamento);
     }
-    
+
+    const viteDebug =
+      typeof import.meta !== 'undefined' &&
+      (import.meta as any).env?.VITE_DASHBOARD_DEBUG === '1';
+    if (viteDebug) {
+      params.append('dashboardDebug', '1');
+    }
+
     const url = API_URL ? `${API_URL}/api/dashboard?${params.toString()}` : `/api/dashboard?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) {
       const errorData: any = await res.json().catch(() => ({}));
       throw new Error(errorData?.error || errorData?.details || 'Erro ao buscar dados do dashboard');
     }
-    return await res.json();
+    const data: DashboardData = await res.json();
+    if (viteDebug) {
+      const mesIdx = mes != null ? mes - 1 : -1;
+      const agr = data.receitasDespesas?.agrupadoPor ?? [];
+      console.log(
+        '[dashboard:debug] client /api/dashboard snapshot (see worker logs for SQL steps)',
+        JSON.stringify({
+          requestUrl: url,
+          xDashboardDebugHeader: res.headers.get('X-Dashboard-Debug'),
+          receitasDespesasPorMes_at_mes:
+            mesIdx >= 0 ? data.receitasDespesasPorMes?.receitas?.[mesIdx] : null,
+          despesasPorMes_at_mes:
+            mesIdx >= 0 ? data.receitasDespesasPorMes?.despesas?.[mesIdx] : null,
+          receitasDespesas_Resultado_month_at_mes:
+            mesIdx >= 0 ? data.receitasDespesas?.receitas?.[mesIdx] : null,
+          receitasAgrupadoPorCentros_len: data.receitasDespesas?.receitasAgrupadoPorCentros?.length ?? 0,
+          agrupadoPor_len: agr.length,
+          totaisMes: (data as any).totais ?? null,
+        })
+      );
+    }
+    return data;
   } catch (error) {
     console.error('Erro ao buscar dados do dashboard:', error);
     throw error;

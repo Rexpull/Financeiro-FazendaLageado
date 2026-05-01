@@ -1,7 +1,16 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTimes, faSave, faCheck, faMoneyBillTransfer, faPlus, faEdit, faMoneyBillWave, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+import {
+	faTimes,
+	faSave,
+	faCheck,
+	faMoneyBillTransfer,
+	faPlus,
+	faEdit,
+	faMoneyBillWave,
+	faChevronDown,
+} from '@fortawesome/free-solid-svg-icons';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { listarPlanoContas } from '../../../../services/planoContasService';
 import { listarBancos } from '../../../../services/bancoService';
@@ -26,8 +35,15 @@ import { ParcelaFinanciamento } from '../../../../../../backend/src/models/Parce
 import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinanciamentoService';
 import { salvarMovimentoBancario } from '../../../../services/movimentoBancarioService';
 import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
-  
+
 Modal.setAppElement('#root');
+
+type TransferenciaSubtipo = 'transferencia' | 'aplicacao' | 'estorno';
+
+/** Same plan as "Transferência entre contas" / movimentações sem efeito financeiro (Parâmetros). */
+function resolvePlanoMovSemEfeitoFinanceiro(p: Parametro): number {
+	return p.idPlanoTransferenciaEntreContas;
+}
 
 const cache: {
 	parametros: Parametro[] | null;
@@ -62,7 +78,15 @@ interface FormData {
 	idFinanciamento: number | null;
 }
 
-const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onConciliaMultiplos?: (data: any) => void }> = ({ isOpen, onClose, movimento, planos = [], handleConcilia, movimentosSelecionados = [], onConciliaMultiplos }) => {
+const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onConciliaMultiplos?: (data: any) => void }> = ({
+	isOpen,
+	onClose,
+	movimento,
+	planos = [],
+	handleConcilia,
+	movimentosSelecionados = [],
+	onConciliaMultiplos,
+}) => {
 	const [modalidadeMovimento, setModalidadeMovimento] = useState('padrao');
 	const [idCentroCustos, setIdCentroCustos] = useState<number | null>(null);
 	const [centroCustos, setCentroCustos] = useState<CentroCustos[]>([]);
@@ -93,7 +117,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const [buscaFinanciamento, setBuscaFinanciamento] = useState('');
 	const [financiamentoSelecionado, setFinanciamentoSelecionado] = useState<Financiamento | null>(null);
 	const [novoFinanciamentoData, setNovoFinanciamentoData] = useState<any>(null);
-	const [transferenciaPlanoMode, setTransferenciaPlanoMode] = useState('transferencia');
+	const [transferenciaPlanoMode, setTransferenciaPlanoMode] = useState<TransferenciaSubtipo>('transferencia');
 	const [modalParcelasOpen, setModalParcelasOpen] = useState(false);
 	const [liquidationModalOpen, setLiquidationModalOpen] = useState(false);
 	const [selectedParcela, setSelectedParcela] = useState<ParcelaFinanciamento | null>(null);
@@ -107,7 +131,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		idPessoa: null,
 		idBanco: null,
 		idFinanciamento: null,
-		idCentroCustos: null
+		idCentroCustos: null,
 	});
 
 	// useRef para controlar se o modal já foi inicializado
@@ -125,7 +149,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		if (isOpen && !modalInicializado.current) {
 			console.log('[DEBUG FIN] Entrando no bloco de inicialização (modalInicializado era false)');
 			modalInicializado.current = true;
-			
+
 			if (movimentosSelecionados.length > 1) {
 				// Limpa todos os campos para conciliação em lote
 				setModalidadeMovimento('padrao');
@@ -140,6 +164,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				setRateiosPlanosPorcentagem([]);
 				setRateiosCentros([]);
 				setRateiosCentrosPorcentagem([]);
+				setTransferenciaPlanoMode('transferencia');
 				setFormData({
 					idPlanoContas: null,
 					pessoaSelecionada: '',
@@ -154,19 +179,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				setModalidadeMovimento(movimento.modalidadeMovimento || 'padrao');
 				// Um único resultado = tratar como plano único (dados legados ou antes da normalização)
 				const idPlanoInicial =
-					movimento.resultadoList?.length === 1
-						? movimento.resultadoList[0].idPlanoContas
-						: movimento.idPlanoContas ?? null;
+					movimento.resultadoList?.length === 1 ? movimento.resultadoList[0].idPlanoContas : (movimento.idPlanoContas ?? null);
 				const idCentroInicial =
 					!movimento.idCentroCustos && movimento.centroCustosList?.length === 1
 						? movimento.centroCustosList[0].idCentroCustos
-						: movimento.idCentroCustos ?? null;
+						: (movimento.idCentroCustos ?? null);
 
 				setIdPlanoContas(idPlanoInicial);
 				setIdCentroCustos(idCentroInicial);
-				setSearchCentroCustos(
-					idCentroInicial ? centroCustos.find((c) => c.id === idCentroInicial)?.descricao || '' : '',
-				);
+				setSearchCentroCustos(idCentroInicial ? centroCustos.find((c) => c.id === idCentroInicial)?.descricao || '' : '');
 				if (movimento.idPlanoContas || movimento.resultadoList?.length === 1) {
 					const planoSelecionado = planos.find((p) => p.id === idPlanoInicial);
 					setSearchPlano(planoSelecionado ? planoSelecionado.descricao : '');
@@ -192,7 +213,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					setFinanciamentoSelecionado(null);
 					setBuscaFinanciamento('');
 				}
-				
+
 				setFormData({
 					idPlanoContas: idPlanoInicial,
 					pessoaSelecionada: movimento.idPessoa ? movimento.idPessoa.toString() : '',
@@ -203,16 +224,26 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					idFinanciamento: movimento.idFinanciamento || null,
 				});
 			}
-			
+
 			const inicializarModal = async () => {
 				try {
 					const financiamentosList = await listarFinanciamentos();
 					setFinanciamentos(financiamentosList);
-					console.log('[DEBUG FIN] inicializarModal: list length=', financiamentosList.length, 'movimento.idFinanciamento=', movimento.idFinanciamento, 'ids na lista=', financiamentosList.slice(0, 5).map((f: Financiamento) => ({ id: f.id, tipo: typeof f.id })));
+					console.log(
+						'[DEBUG FIN] inicializarModal: list length=',
+						financiamentosList.length,
+						'movimento.idFinanciamento=',
+						movimento.idFinanciamento,
+						'ids na lista=',
+						financiamentosList.slice(0, 5).map((f: Financiamento) => ({ id: f.id, tipo: typeof f.id })),
+					);
 					// Carregar financiamento sempre que o movimento tiver idFinanciamento (não depender de movimentosSelecionados.length === 1; ao abrir pelo clique na célula pode ser 0)
 					if (movimento.idFinanciamento) {
-						const financiamento = financiamentosList.find(f => f.id == movimento.idFinanciamento);
-						console.log('[DEBUG FIN] inicializarModal: find result=', financiamento ? { id: financiamento.id, responsavel: financiamento.responsavel } : 'undefined');
+						const financiamento = financiamentosList.find((f) => f.id == movimento.idFinanciamento);
+						console.log(
+							'[DEBUG FIN] inicializarModal: find result=',
+							financiamento ? { id: financiamento.id, responsavel: financiamento.responsavel } : 'undefined',
+						);
 						if (financiamento) {
 							setFinanciamentoSelecionado(financiamento);
 							setBuscaFinanciamento(`${financiamento.numeroContrato || ''} - ${financiamento.responsavel || ''}`);
@@ -223,7 +254,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					toast.error('Erro ao carregar dados do modal');
 				}
 			};
-			
+
 			inicializarModal();
 		}
 
@@ -234,10 +265,23 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				try {
 					const list = await listarFinanciamentos();
 					setFinanciamentos(list);
-					console.log('[DEBUG FIN] carregarFinanciamentoSelecionado: list length=', list.length, 'buscando id=', movimento.idFinanciamento, 'tipo=', typeof movimento.idFinanciamento);
-					console.log('[DEBUG FIN] primeiros ids da lista:', list.slice(0, 10).map((f: Financiamento) => ({ id: f.id, tipo: typeof f.id })));
+					console.log(
+						'[DEBUG FIN] carregarFinanciamentoSelecionado: list length=',
+						list.length,
+						'buscando id=',
+						movimento.idFinanciamento,
+						'tipo=',
+						typeof movimento.idFinanciamento,
+					);
+					console.log(
+						'[DEBUG FIN] primeiros ids da lista:',
+						list.slice(0, 10).map((f: Financiamento) => ({ id: f.id, tipo: typeof f.id })),
+					);
 					const fin = list.find((f: Financiamento) => f.id == movimento.idFinanciamento);
-					console.log('[DEBUG FIN] carregarFinanciamentoSelecionado: fin encontrado=', fin ? { id: fin.id, responsavel: fin.responsavel } : 'NÃO ENCONTRADO');
+					console.log(
+						'[DEBUG FIN] carregarFinanciamentoSelecionado: fin encontrado=',
+						fin ? { id: fin.id, responsavel: fin.responsavel } : 'NÃO ENCONTRADO',
+					);
 					if (fin) {
 						setFinanciamentoSelecionado(fin);
 						setBuscaFinanciamento(`${fin.numeroContrato || ''} - ${fin.responsavel || ''}`);
@@ -281,9 +325,9 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 	useEffect(() => {
 		if (centroCustos.length > 0 && movimento?.idCentroCustos && isOpen) {
-			const centro = centroCustos.find(c => c.id === movimento.idCentroCustos);
+			const centro = centroCustos.find((c) => c.id === movimento.idCentroCustos);
 			if (centro) {
-				setSearchCentroCustos(prev => {
+				setSearchCentroCustos((prev) => {
 					if (!prev || prev !== centro.descricao) {
 						return centro.descricao;
 					}
@@ -296,13 +340,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	useEffect(() => {
 		if (planos.length > 0 && movimento?.resultadoList && movimento.resultadoList.length > 1 && isOpen && modalInicializado.current) {
 			const convertidos = movimento.resultadoList.map((r) => {
-			const plano = planos.find((p) => p.id === r.idPlanoContas);
-			return {
-				idPlano: r.idPlanoContas,
-				descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
-				valor: r.valor,
-			};
-		});
+				const plano = planos.find((p) => p.id === r.idPlanoContas);
+				return {
+					idPlano: r.idPlanoContas,
+					descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
+					valor: r.valor,
+				};
+			});
 			setRateiosPlanos(convertidos);
 		}
 	}, [planos, movimento?.resultadoList, isOpen, modalInicializado.current]);
@@ -327,6 +371,27 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		}
 	}, [centroCustos, movimento?.centroCustosList, isOpen, modalInicializado.current]);
 
+	// Sync transferencia subtype when reopening a movement already reconciled (sem efeito tab)
+	useEffect(() => {
+		if (!isOpen || movimentosSelecionados.length > 1 || !parametros[0]) return;
+		if (movimento?.modalidadeMovimento !== 'transferencia' || movimento.idPlanoContas == null) return;
+		const id = movimento.idPlanoContas;
+		const p = parametros[0];
+		if (p.idPlanoEstornos != null && id === p.idPlanoEstornos) {
+			setTransferenciaPlanoMode('estorno');
+		} else if (
+			(p.idPlanoAplicacaoResgateInvestimentos != null && id === p.idPlanoAplicacaoResgateInvestimentos) ||
+			id === 233
+		) {
+			// 233 = legacy hardcoded aplic./resgate before parameter existed
+			setTransferenciaPlanoMode('aplicacao');
+		} else if (id === p.idPlanoTransferenciaEntreContas) {
+			setTransferenciaPlanoMode('transferencia');
+		} else {
+			setTransferenciaPlanoMode('transferencia');
+		}
+	}, [isOpen, movimentosSelecionados.length, movimento?.id, movimento?.modalidadeMovimento, movimento?.idPlanoContas, parametros]);
+
 	const aplicarRateioCentrosComoCentroCustosList = (centros: MovimentoCentroCustos[] | { idCentro: number; porcentagem: number }[]) => {
 		// Verificar se é rateio por porcentagem (múltiplos movimentos)
 		if (movimentosSelecionados.length > 1 && centros.length > 0 && 'porcentagem' in centros[0]) {
@@ -336,7 +401,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			setRateioCentrosModalAberto(false);
 			return;
 		}
-		
+
 		// Comportamento normal para movimento único
 		const centrosNormais = centros as MovimentoCentroCustos[];
 		movimento.centroCustosList = centrosNormais;
@@ -361,7 +426,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			setRateioPlanosModalAberto(false);
 			return;
 		}
-		
+
 		// Comportamento normal para movimento único
 		const resultadosNormais = resultados as Resultado[];
 		movimento.resultadoList = resultadosNormais;
@@ -402,29 +467,25 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 	const planosFiltered = planos
 		.filter((plano) => {
 			const matchSearch = plano.descricao.toLowerCase().includes(planosSearchValue.toLowerCase());
-			const matchHierarquia = movimento.tipoMovimento === 'D' 
-				? plano.hierarquia.startsWith('002') 
-				: plano.hierarquia.startsWith('001');
+			const matchHierarquia = movimento.tipoMovimento === 'D' ? plano.hierarquia.startsWith('002') : plano.hierarquia.startsWith('001');
 			const matchNivel = plano.nivel === 3;
 			// Para despesas, filtrar também por tipo (custeio/investimento) se um tipo foi selecionado
-			const matchTipo = !isDespesa || !tipoPlanoSelecionado || 
-				plano.tipo?.toLowerCase() === tipoPlanoSelecionado.toLowerCase();
+			const matchTipo = !isDespesa || !tipoPlanoSelecionado || plano.tipo?.toLowerCase() === tipoPlanoSelecionado.toLowerCase();
 			return matchSearch && matchHierarquia && matchNivel && matchTipo;
 		})
 		.slice(0, 50);
 
 	// Filtrar centro de custos com busca interna e por tipo de movimento
-	const centroCustosFiltered = centroCustos.filter(centro => {
+	const centroCustosFiltered = centroCustos.filter((centro) => {
 		const matchSearch = centro.descricao.toLowerCase().includes(centroCustosSearchValue.toLowerCase());
-		
+
 		// Filtrar por tipo de movimento: C (Crédito/Entrada) = Receita, D (Débito/Saída) = Despesa
-		const matchTipoMovimento = movimento.tipoMovimento === 'C' 
-			? centro.tipoReceitaDespesa === 'RECEITA'
-			: centro.tipoReceitaDespesa === 'DESPESA';
-		
+		const matchTipoMovimento =
+			movimento.tipoMovimento === 'C' ? centro.tipoReceitaDespesa === 'RECEITA' : centro.tipoReceitaDespesa === 'DESPESA';
+
 		// Para despesas, filtrar também por tipo (CUSTEIO/INVESTIMENTO) se um tipo foi selecionado
 		const matchTipo = !isDespesa || !tipoCentroSelecionado || centro.tipo === tipoCentroSelecionado;
-		
+
 		return matchSearch && matchTipoMovimento && matchTipo;
 	});
 
@@ -441,7 +502,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		if (modalidadeMovimento === 'padrao') {
 			// Para receitas, não validar plano de contas
 			const isReceita = movimento.tipoMovimento === 'C';
-			
+
 			if (!isReceita) {
 				// Validação: verificar se há plano único ou múltiplos planos (rateio)
 				const temPlanoUnico = formData.idPlanoContas !== null && formData.idPlanoContas !== undefined;
@@ -450,13 +511,20 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				const temRateiosPlanos = rateiosPlanos.length > 0;
 				const temRateiosPlanosPorcentagem = (rateiosPlanosPorcentagem ?? []).length > 0;
 				const movimentoJaConciliado = movimento.idPlanoContas !== null && movimento.idPlanoContas !== undefined;
-				
+
 				// Permitir null apenas se o movimento já estava conciliado (para permitir limpar)
-				if (!temPlanoUnico && !temMultiplosPlanosExistentes && !temUmPlanoEmResultadoList && !temRateiosPlanos && !temRateiosPlanosPorcentagem && !movimentoJaConciliado) {
-				newErrors.idPlanoContas = 'Selecione um plano de contas ou defina múltiplos!';
+				if (
+					!temPlanoUnico &&
+					!temMultiplosPlanosExistentes &&
+					!temUmPlanoEmResultadoList &&
+					!temRateiosPlanos &&
+					!temRateiosPlanosPorcentagem &&
+					!movimentoJaConciliado
+				) {
+					newErrors.idPlanoContas = 'Selecione um plano de contas ou defina múltiplos!';
 				}
 			}
-			
+
 			// Validar centro de custos obrigatório
 			// Permitir null apenas se o movimento já tinha centro de custos (para permitir limpar)
 			const temCentroUnico = formData.idCentroCustos !== null && formData.idCentroCustos !== undefined;
@@ -465,8 +533,15 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			const temRateiosCentros = rateiosCentros.length > 0;
 			const temRateiosCentrosPorcentagem = (rateiosCentrosPorcentagem ?? []).length > 0;
 			const movimentoJaTinhaCentro = movimento.idCentroCustos !== null && movimento.idCentroCustos !== undefined;
-			
-			if (!temCentroUnico && !temCentroCustosListMultiplo && !temUmCentroEmLista && !temRateiosCentros && !temRateiosCentrosPorcentagem && !movimentoJaTinhaCentro) {
+
+			if (
+				!temCentroUnico &&
+				!temCentroCustosListMultiplo &&
+				!temUmCentroEmLista &&
+				!temRateiosCentros &&
+				!temRateiosCentrosPorcentagem &&
+				!movimentoJaTinhaCentro
+			) {
 				newErrors.idCentroCustos = 'Selecione um centro de custos ou defina múltiplos!';
 			}
 		}
@@ -476,6 +551,22 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			}
 			// Para financiamentos bancários, não exigir plano de contas nem centro de custos
 			// A informação vai apenas para o item financiamento
+		}
+		if (modalidadeMovimento === 'transferencia') {
+			const p0 = parametros[0];
+			if (transferenciaPlanoMode === 'estorno') {
+				if (!p0?.idPlanoEstornos) {
+					newErrors.estornoPlano = 'Configure o Plano de Contas Estornos em Parâmetros.';
+				}
+			} else if (transferenciaPlanoMode === 'aplicacao') {
+				if (!p0?.idPlanoAplicacaoResgateInvestimentos) {
+					newErrors.transferenciaPlano =
+						'Configure o Plano de Contas — Aplicação/Resgate em investimentos em Parâmetros.';
+				}
+			} else if (transferenciaPlanoMode === 'transferencia' && !resolvePlanoMovSemEfeitoFinanceiro(p0)) {
+				newErrors.transferenciaPlano =
+					'Configure o Plano de Contas para Movimentações sem efeito financeiro / Transferência entre contas em Parâmetros.';
+			}
 		}
 		setErrors(newErrors);
 		return Object.keys(newErrors).length === 0;
@@ -491,7 +582,20 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 			return () => clearTimeout(timeoutId);
 		}
-	}, [isOpen, modalInicializado.current, formData.idPlanoContas, formData.idCentroCustos, modalidadeMovimento, financiamentoSelecionado?.id, rateiosCentros.length, rateiosCentrosPorcentagem.length]);
+	}, [
+		isOpen,
+		modalInicializado.current,
+		formData.idPlanoContas,
+		formData.idCentroCustos,
+		modalidadeMovimento,
+		transferenciaPlanoMode,
+		parametros[0]?.idPlanoEstornos,
+		parametros[0]?.idPlanoTransferenciaEntreContas,
+		parametros[0]?.idPlanoAplicacaoResgateInvestimentos,
+		financiamentoSelecionado?.id,
+		rateiosCentros.length,
+		rateiosCentrosPorcentagem.length,
+	]);
 
 	// useEffect para configurar planos de financiamento automaticamente
 	useEffect(() => {
@@ -522,14 +626,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			setSearchPlano('');
 			setFormData((prev: FormData) => ({ ...prev, idPlanoContas: null }));
 			setIdPlanoContas(null);
-		setShowPlanoDropdown(false);
-		setPlanosSearchValue('');
+			setShowPlanoDropdown(false);
+			setPlanosSearchValue('');
 		} else {
-		setSearchPlano(plano.descricao);
-		setFormData((prev: FormData) => ({ ...prev, idPlanoContas: plano.id }));
-		setIdPlanoContas(plano.id);
-		setShowPlanoDropdown(false);
-		setPlanosSearchValue('');
+			setSearchPlano(plano.descricao);
+			setFormData((prev: FormData) => ({ ...prev, idPlanoContas: plano.id }));
+			setIdPlanoContas(plano.id);
+			setShowPlanoDropdown(false);
+			setPlanosSearchValue('');
 		}
 	};
 
@@ -542,11 +646,11 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			setCentroCustosSearchValue('');
 			setFormData((prev: FormData) => ({ ...prev, idCentroCustos: null }));
 		} else {
-		setIdCentroCustos(centro.id);
-		setSearchCentroCustos(centro.descricao);
-		setShowCentroCustosDropdown(false);
-		setCentroCustosSearchValue('');
-		setFormData((prev: FormData) => ({ ...prev, idCentroCustos: centro.id }));
+			setIdCentroCustos(centro.id);
+			setSearchCentroCustos(centro.descricao);
+			setShowCentroCustosDropdown(false);
+			setCentroCustosSearchValue('');
+			setFormData((prev: FormData) => ({ ...prev, idCentroCustos: centro.id }));
 		}
 	};
 
@@ -588,12 +692,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		}
 	};
 
-	const financiamentosFiltrados = financiamentos.filter(f => {
-		const matchesSearch = buscaFinanciamento === '' ||
+	const financiamentosFiltrados = financiamentos.filter((f) => {
+		const matchesSearch =
+			buscaFinanciamento === '' ||
 			f.responsavel.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
 			f.numeroContrato.toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
-			(bancos.find(b => b.id === f.idBanco)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
-			(pessoas.find(p => p.id === f.idPessoa)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase());
+			(bancos.find((b) => b.id === f.idBanco)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase()) ||
+			(pessoas.find((p) => p.id === f.idPessoa)?.nome || '').toLowerCase().includes(buscaFinanciamento.toLowerCase());
 		return matchesSearch;
 	});
 
@@ -616,7 +721,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 				// Se há rateio de planos, usar resultadoList do rateio
 				if (rateiosPlanos.length > 0) {
-					dados.resultadoList = rateiosPlanos.map(rp => ({
+					dados.resultadoList = rateiosPlanos.map((rp) => ({
 						idPlanoContas: rp.idPlano,
 						valor: rp.valor,
 						tipo: movimento.tipoMovimento ?? 'C',
@@ -634,16 +739,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					// Plano único ou nenhum: resultadoList vazio (backend usa idPlanoContas)
 					dados.resultadoList = [];
 				}
-				
+
 				// Se idCentroCustos é null e não há rateios, limpar centroCustosList
 				if (dados.idCentroCustos === null && rateiosCentros.length === 0) {
 					dados.centroCustosList = undefined;
 				} else if (rateiosCentros.length > 0) {
-				// Adicionar centroCustosList se houver múltiplos centros
-				// Converter rateiosCentros para formato MovimentoCentroCustos[]
-					dados.centroCustosList = rateiosCentros.map(rc => ({
+					// Adicionar centroCustosList se houver múltiplos centros
+					// Converter rateiosCentros para formato MovimentoCentroCustos[]
+					dados.centroCustosList = rateiosCentros.map((rc) => ({
 						idCentroCustos: rc.idCentro,
-						valor: rc.valor
+						valor: rc.valor,
 					}));
 				} else if ((movimento.centroCustosList ?? []).length > 0) {
 					// Se não há rateios novos mas há centros existentes, manter os existentes
@@ -670,8 +775,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				dados.centroCustosList = undefined;
 				dados.resultadoList = [];
 			} else if (modalidadeMovimento === 'transferencia') {
-				const idPlano = transferenciaPlanoMode === 'transferencia' ? parametros[0]?.idPlanoTransferenciaEntreContas : 233; //Id plano de contas de aplicação de fundos (Tô com preguiça de parametrizar)
-				
+				const p0 = parametros[0];
+				let idPlano: number | undefined;
+				if (transferenciaPlanoMode === 'transferencia') {
+					idPlano = resolvePlanoMovSemEfeitoFinanceiro(p0);
+				} else if (transferenciaPlanoMode === 'aplicacao') {
+					idPlano = p0?.idPlanoAplicacaoResgateInvestimentos ?? undefined;
+				} else {
+					idPlano = p0?.idPlanoEstornos ?? undefined;
+				}
+
 				dados = {
 					idPlanoContas: idPlano,
 					modalidadeMovimento,
@@ -682,13 +795,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				// Verificar se há rateio por porcentagem (centros e/ou planos)
 				const temRateioCentrosPorcentagem = rateiosCentrosPorcentagem.length > 0;
 				const temRateioPlanosPorcentagem = rateiosPlanosPorcentagem.length > 0;
-				
+
 				if (temRateioCentrosPorcentagem || temRateioPlanosPorcentagem) {
 					// Calcular valores para cada movimento individualmente
 					const movimentosComRateio = movimentosSelecionados.map((mov) => {
 						const valorAbsoluto = Math.abs(mov.valor);
 						const tipoMov = mov.tipoMovimento ?? 'C';
-						
+
 						// Calcular planos (plano único ou rateio por porcentagem)
 						let resultadoList: Resultado[] = [];
 						if (temRateioPlanosPorcentagem) {
@@ -696,24 +809,26 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							resultadoList = rateiosPlanosPorcentagem.map((rp) => {
 								const valorCalculado = (rp.porcentagem / 100) * valorAbsoluto;
 								return {
-								idPlanoContas: rp.idPlano,
+									idPlanoContas: rp.idPlano,
 									valor: valorCalculado,
-								tipo: tipoMov,
-								idContaCorrente: mov.idContaCorrente,
-								dtMovimento: mov.dtMovimento,
+									tipo: tipoMov,
+									idContaCorrente: mov.idContaCorrente,
+									dtMovimento: mov.dtMovimento,
 								};
 							});
 						} else if (formData.idPlanoContas) {
 							// Plano único
-							resultadoList = [{
-								idPlanoContas: formData.idPlanoContas,
-								valor: valorAbsoluto,
-								tipo: tipoMov,
-								idContaCorrente: mov.idContaCorrente,
-								dtMovimento: mov.dtMovimento,
-							}];
+							resultadoList = [
+								{
+									idPlanoContas: formData.idPlanoContas,
+									valor: valorAbsoluto,
+									tipo: tipoMov,
+									idContaCorrente: mov.idContaCorrente,
+									dtMovimento: mov.dtMovimento,
+								},
+							];
 						}
-						
+
 						// Calcular centros
 						// O backend adiciona idMovimentoBancario, então não precisamos aqui
 						let centroCustosList: Omit<MovimentoCentroCustos, 'idMovimentoBancario'>[] = [];
@@ -728,47 +843,49 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							});
 						} else if (formData.idCentroCustos) {
 							// Centro único
-							centroCustosList = [{
-								idCentroCustos: formData.idCentroCustos,
-								valor: valorAbsoluto,
-							}];
+							centroCustosList = [
+								{
+									idCentroCustos: formData.idCentroCustos,
+									valor: valorAbsoluto,
+								},
+							];
 						}
-						
+
 						// Gerar todas as combinações (plano x centro) quando há rateio de ambos por porcentagem
 						// Quando há rateio de planos e centros, cada combinação recebe (porcentagem_plano * porcentagem_centro) do valor total
-						
+
 						if (temRateioPlanosPorcentagem && temRateioCentrosPorcentagem && resultadoList.length > 0 && centroCustosList.length > 0) {
 							// Calcular porcentagens dos planos e centros
-							const porcentagensPlanos = resultadoList.map(r => ({
+							const porcentagensPlanos = resultadoList.map((r) => ({
 								idPlano: r.idPlanoContas,
-								porcentagem: (r.valor / valorAbsoluto) * 100
+								porcentagem: (r.valor / valorAbsoluto) * 100,
 							}));
-							
-							const porcentagensCentros = centroCustosList.map(c => ({
+
+							const porcentagensCentros = centroCustosList.map((c) => ({
 								idCentro: c.idCentroCustos,
-								porcentagem: (c.valor / valorAbsoluto) * 100
+								porcentagem: (c.valor / valorAbsoluto) * 100,
 							}));
-							
+
 							// Gerar combinações e agrupar
 							const resultadosPorPlano = new Map<number, number>();
 							const centrosPorCentro = new Map<number, number>();
-							
+
 							for (const planoPorc of porcentagensPlanos) {
 								for (const centroPorc of porcentagensCentros) {
 									// Porcentagem da combinação = porcentagem_plano * porcentagem_centro / 100
 									const porcentagemCombinacao = (planoPorc.porcentagem * centroPorc.porcentagem) / 100;
 									const valorCombinacao = (porcentagemCombinacao / 100) * valorAbsoluto;
-									
+
 									// Acumular valores por plano
 									const valorAtualPlano = resultadosPorPlano.get(planoPorc.idPlano) || 0;
 									resultadosPorPlano.set(planoPorc.idPlano, valorAtualPlano + valorCombinacao);
-									
+
 									// Acumular valores por centro
 									const valorAtualCentro = centrosPorCentro.get(centroPorc.idCentro) || 0;
 									centrosPorCentro.set(centroPorc.idCentro, valorAtualCentro + valorCombinacao);
 								}
 							}
-							
+
 							// Converter Maps para arrays
 							resultadoList = Array.from(resultadosPorPlano.entries()).map(([planoId, valor]) => ({
 								idPlanoContas: planoId,
@@ -777,16 +894,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								idContaCorrente: mov.idContaCorrente,
 								dtMovimento: mov.dtMovimento,
 							}));
-							
+
 							centroCustosList = Array.from(centrosPorCentro.entries()).map(([centroId, valor]) => ({
 								idCentroCustos: centroId,
 								valor,
 							})) as Omit<MovimentoCentroCustos, 'idMovimentoBancario'>[];
 						}
-						
+
 						// Remover centroCustosList de dados se existir, pois já foi calculado acima
 						const { centroCustosList: _, ...dadosSemCentros } = dados as any;
-						
+
 						const movimentoComRateio: MovimentoBancario = {
 							...mov,
 							...dadosSemCentros,
@@ -805,7 +922,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 						return movimentoComRateio;
 					});
-					
+
 					// Chamar onConciliaMultiplos com os movimentos calculados
 					onConciliaMultiplos(movimentosComRateio);
 				} else {
@@ -831,9 +948,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 		try {
 			// Converter valor de string formatada para número
-			const valorLiquidacao = liquidationValor 
-				? parseFloat(liquidationValor.replace(/\./g, '').replace(',', '.'))
-				: selectedParcela.valor;
+			const valorLiquidacao = liquidationValor ? parseFloat(liquidationValor.replace(/\./g, '').replace(',', '.')) : selectedParcela.valor;
 
 			const parcelaAtualizada: ParcelaFinanciamento = {
 				...selectedParcela,
@@ -855,24 +970,21 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					ideagro: true,
 				});
 			}
-			
+
 			// Atualiza a lista de parcelas do financiamento selecionado
 			if (financiamentoSelecionado) {
-				const parcelasAtualizadas: ParcelaFinanciamento[] = financiamentoSelecionado.parcelasList?.map(p => 
-					p.id === selectedParcela.id ? parcelaAtualizada : p
-				) || [];
-				
+				const parcelasAtualizadas: ParcelaFinanciamento[] =
+					financiamentoSelecionado.parcelasList?.map((p) => (p.id === selectedParcela.id ? parcelaAtualizada : p)) || [];
+
 				const financiamentoAtualizado: Financiamento = {
 					...financiamentoSelecionado,
-					parcelasList: parcelasAtualizadas
+					parcelasList: parcelasAtualizadas,
 				};
-				
+
 				setFinanciamentoSelecionado(financiamentoAtualizado);
-				
+
 				// Atualiza a lista de financiamentos
-				const financiamentosAtualizados = financiamentos.map(f => 
-					f.id === financiamentoAtualizado.id ? financiamentoAtualizado : f
-				);
+				const financiamentosAtualizados = financiamentos.map((f) => (f.id === financiamentoAtualizado.id ? financiamentoAtualizado : f));
 				setFinanciamentos(financiamentosAtualizados);
 			}
 
@@ -881,7 +993,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			setLiquidationDate('');
 			setLiquidationValor('');
 			toast.success('Parcela liquidada com sucesso!');
-			
+
 			// Após liquidar a parcela, fechar o modal de conciliação também se for débito
 			if (movimento.tipoMovimento === 'D') {
 				setTimeout(() => {
@@ -920,140 +1032,137 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					{/* Linha 1: Plano de Contas e Centro de Custos lado a lado (ou apenas Centro de Custos se receita) */}
 					<div className={`grid ${isReceita ? 'grid-cols-1' : 'grid-cols-2'} gap-4 mb-4`}>
 						{!isReceita && (
-						<div ref={planoRef} className="relative">
-							<label className="block text-sm font-medium text-gray-700 mb-1">
-								Plano de Contas <span className="text-red-500">*</span>
-							</label>
-							<div className="flex w-full">
-								<div className="relative w-full">
-									<input
-										type="text"
-											className={`w-full p-2 border rounded-l cursor-pointer ${bloqueioMultiplosPlanos ? 'bg-gray-100' : ''}`}
-										placeholder="Clique para selecionar plano de contas..."
-											onClick={() => {
-											if (bloqueioMultiplosPlanos) return;
-											const next = !showPlanoDropdown;
-											setShowPlanoDropdown(next);
-											if (next && isDespesa && tipoPlanoSelecionado === null) {
-												setTipoPlanoSelecionado('CUSTEIO');
-											}
-										}}
-											value={textoPlanoCampo}
-										readOnly
-									/>
-									<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
-								</div>
-								<button
-									type="button"
-										className="px-3 rounded-r bg-blue-500 hover:bg-blue-600 text-white"
-										onClick={() => setRateioPlanosModalAberto(true)}
-									title="Adicionar múltiplos planos"
-								>
-									<FontAwesomeIcon icon={faPlus} className="font-bolder" />
-								</button>
-							</div>
-							{errors.idPlanoContas && <p className="text-red-500 text-xs mt-1">{errors.idPlanoContas}</p>}
-
-
-							{showPlanoDropdown && (
-								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[400px] overflow-y-auto">
-									{isDespesa && (
-										<div className="p-2 border-b bg-gray-50 sticky top-0 z-10">
-											<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
-											<div className="flex">
-												<button
-													type="button"
-													onClick={() => {
-														setTipoPlanoSelecionado('CUSTEIO');
-														setIdPlanoContas(null);
-														setSearchPlano('');
-														setPlanosSearchValue('');
-													}}
-													className={`flex-1 px-4 py-2 rounded-l-lg font-medium text-sm transition-all ${
-														tipoPlanoSelecionado === 'CUSTEIO'
-															? 'bg-yellow-500 text-white shadow-md'
-															: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-													}`}
-												>
-													Custeio
-												</button>
-												<button
-													type="button"
-													onClick={() => {
-														setTipoPlanoSelecionado('INVESTIMENTO');
-														setIdPlanoContas(null);
-														setSearchPlano('');
-														setPlanosSearchValue('');
-													}}
-													className={`flex-1 px-4 py-2 rounded-r-lg font-medium text-sm transition-all ${
-														tipoPlanoSelecionado === 'INVESTIMENTO'
-															? 'bg-blue-500 text-white shadow-md'
-															: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-													}`}
-												>
-													Investimento
-												</button>
-											</div>
-										</div>
-									)}
-									{(!isDespesa || tipoPlanoSelecionado !== null) && (
-										<>
-									<div className="p-2 border-b">
+							<div ref={planoRef} className="relative">
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Plano de Contas <span className="text-red-500">*</span>
+								</label>
+								<div className="flex w-full">
+									<div className="relative w-full">
 										<input
 											type="text"
-											className="w-full p-2 border rounded"
-											placeholder="Buscar plano de contas..."
-											value={planosSearchValue}
-											onChange={(e) => setPlanosSearchValue(e.target.value)}
-											autoFocus
+											className={`w-full p-2 border rounded-l cursor-pointer ${bloqueioMultiplosPlanos ? 'bg-gray-100' : ''}`}
+											placeholder="Clique para selecionar plano de contas..."
+											onClick={() => {
+												if (bloqueioMultiplosPlanos) return;
+												const next = !showPlanoDropdown;
+												setShowPlanoDropdown(next);
+												if (next && isDespesa && tipoPlanoSelecionado === null) {
+													setTipoPlanoSelecionado('CUSTEIO');
+												}
+											}}
+											value={textoPlanoCampo}
+											readOnly
 										/>
+										<FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
 									</div>
-									<ul className="max-h-60 overflow-y-auto overflow-x-hidden">
-											<li 
-												className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
-												onClick={() => selectPlanoNew(null)}
-											>
-												Selecione um plano
-											</li>
-										{planosFiltered.length > 0 ? (
-											planosFiltered.map((plano) => (
-												<li 
-													key={plano.id} 
-														className="p-2 hover:bg-orange-100 text-sm cursor-pointer border-b last:border-b-0 flex items-center justify-between"
-													onClick={() => selectPlanoNew(plano)}
-												>
-														<span>
-													<span className="font-semibold text-gray-600">{plano.hierarquia}</span> | {plano.descricao}
-														</span>
-														{plano.tipo && (
-															<span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
-																plano.tipo.toLowerCase() === 'investimento' 
-																	? 'bg-blue-100 text-blue-800' 
-																	: 'bg-yellow-100 text-yellow-800'
-															}`}>
-																{plano.tipo.toLowerCase() === 'investimento' ? 'Inv' : 'Cust'}
-															</span>
-														)}
-												</li>
-											))
-										) : (
-											<li className="p-2 text-sm text-gray-500 text-center">
-												Nenhum resultado encontrado
-											</li>
-										)}
-									</ul>
-										</>
-									)}
-									{isDespesa && !tipoPlanoSelecionado && (
-										<div className="p-4 text-center text-gray-500 text-sm">
-											Selecione primeiro o tipo de despesa
-										</div>
-									)}
+									<button
+										type="button"
+										className="px-3 rounded-r bg-blue-500 hover:bg-blue-600 text-white"
+										onClick={() => setRateioPlanosModalAberto(true)}
+										title="Adicionar múltiplos planos"
+									>
+										<FontAwesomeIcon icon={faPlus} className="font-bolder" />
+									</button>
 								</div>
-							)}
-						</div>
+								{errors.idPlanoContas && <p className="text-red-500 text-xs mt-1">{errors.idPlanoContas}</p>}
+
+								{showPlanoDropdown && (
+									<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[400px] overflow-y-auto">
+										{isDespesa && (
+											<div className="p-2 border-b bg-gray-50 sticky top-0 z-10">
+												<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
+												<div className="flex">
+													<button
+														type="button"
+														onClick={() => {
+															setTipoPlanoSelecionado('CUSTEIO');
+															setIdPlanoContas(null);
+															setSearchPlano('');
+															setPlanosSearchValue('');
+														}}
+														className={`flex-1 px-4 py-2 rounded-l-lg font-medium text-sm transition-all ${
+															tipoPlanoSelecionado === 'CUSTEIO'
+																? 'bg-yellow-500 text-white shadow-md'
+																: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+														}`}
+													>
+														Custeio
+													</button>
+													<button
+														type="button"
+														onClick={() => {
+															setTipoPlanoSelecionado('INVESTIMENTO');
+															setIdPlanoContas(null);
+															setSearchPlano('');
+															setPlanosSearchValue('');
+														}}
+														className={`flex-1 px-4 py-2 rounded-r-lg font-medium text-sm transition-all ${
+															tipoPlanoSelecionado === 'INVESTIMENTO'
+																? 'bg-blue-500 text-white shadow-md'
+																: 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+														}`}
+													>
+														Investimento
+													</button>
+												</div>
+											</div>
+										)}
+										{(!isDespesa || tipoPlanoSelecionado !== null) && (
+											<>
+												<div className="p-2 border-b">
+													<input
+														type="text"
+														className="w-full p-2 border rounded"
+														placeholder="Buscar plano de contas..."
+														value={planosSearchValue}
+														onChange={(e) => setPlanosSearchValue(e.target.value)}
+														autoFocus
+													/>
+												</div>
+												<ul className="max-h-60 overflow-y-auto overflow-x-hidden">
+													<li
+														className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
+														onClick={() => selectPlanoNew(null)}
+													>
+														Selecione um plano
+													</li>
+													{planosFiltered.length > 0 ? (
+														planosFiltered.map((plano) => (
+															<li
+																key={plano.id}
+																className="p-2 hover:bg-orange-100 text-sm cursor-pointer border-b last:border-b-0 flex items-center justify-between"
+																onClick={() => selectPlanoNew(plano)}
+															>
+																<span>
+																	<span className="font-semibold text-gray-600">{plano.hierarquia}</span> | {plano.descricao}
+																</span>
+																{plano.tipo && (
+																	<span
+																		className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
+																			plano.tipo.toLowerCase() === 'investimento'
+																				? 'bg-blue-100 text-blue-800'
+																				: 'bg-yellow-100 text-yellow-800'
+																		}`}
+																	>
+																		{plano.tipo.toLowerCase() === 'investimento' ? 'Inv' : 'Cust'}
+																	</span>
+																)}
+															</li>
+														))
+													) : (
+														<li className="p-2 text-sm text-gray-500 text-center">Nenhum resultado encontrado</li>
+													)}
+												</ul>
+											</>
+										)}
+										{isDespesa && !tipoPlanoSelecionado && (
+											<div className="p-4 text-center text-gray-500 text-sm">Selecione primeiro o tipo de despesa</div>
+										)}
+									</div>
+								)}
+							</div>
 						)}
-						
+
 						<div ref={centroCustosRef} className="relative">
 							<label className="block text-sm font-medium text-gray-700 mb-1">
 								Centro de Custos <span className="text-red-500">*</span>
@@ -1135,60 +1244,56 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									)}
 									{(!isDespesa || tipoCentroSelecionado !== null) && (
 										<>
-									<div className="p-2 border-b">
-										<input
-											type="text"
-											className="w-full p-2 border rounded"
-											placeholder="Buscar centro de custos..."
-											value={centroCustosSearchValue}
-											onChange={(e) => setCentroCustosSearchValue(e.target.value)}
-											autoFocus
-										/>
-									</div>
-									<ul className="max-h-60 overflow-y-auto">
-												<li 
+											<div className="p-2 border-b">
+												<input
+													type="text"
+													className="w-full p-2 border rounded"
+													placeholder="Buscar centro de custos..."
+													value={centroCustosSearchValue}
+													onChange={(e) => setCentroCustosSearchValue(e.target.value)}
+													autoFocus
+												/>
+											</div>
+											<ul className="max-h-60 overflow-y-auto">
+												<li
 													className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
 													onClick={() => selectCentroCustosNew(null)}
 												>
 													Selecione um centro
 												</li>
-										{centroCustosFiltered.length > 0 ? (
-											centroCustosFiltered.map((centro) => (
-												<li 
-													key={centro.id} 
+												{centroCustosFiltered.length > 0 ? (
+													centroCustosFiltered.map((centro) => (
+														<li
+															key={centro.id}
 															className="p-2 hover:bg-orange-100 text-sm cursor-pointer border-b last:border-b-0 flex items-center justify-between"
-													onClick={() => selectCentroCustosNew(centro)}
-												>
+															onClick={() => selectCentroCustosNew(centro)}
+														>
 															<span>{centro.descricao}</span>
 															{centro.tipo && centro.tipoReceitaDespesa === 'DESPESA' && (
-																<span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
-																	centro.tipo === 'INVESTIMENTO' 
-																		? 'bg-blue-100 text-blue-800' 
-																		: 'bg-yellow-100 text-yellow-800'
-																}`}>
+																<span
+																	className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
+																		centro.tipo === 'INVESTIMENTO' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
+																	}`}
+																>
 																	{centro.tipo === 'INVESTIMENTO' ? 'Inv' : 'Cust'}
 																</span>
 															)}
-												</li>
-											))
-										) : (
-											<li className="p-2 text-sm text-gray-500 text-center">
-												Nenhum resultado encontrado
-											</li>
-										)}
-									</ul>
+														</li>
+													))
+												) : (
+													<li className="p-2 text-sm text-gray-500 text-center">Nenhum resultado encontrado</li>
+												)}
+											</ul>
 										</>
 									)}
 									{isDespesa && !tipoCentroSelecionado && (
-										<div className="p-4 text-center text-gray-500 text-sm">
-											Selecione primeiro o tipo de despesa
-										</div>
+										<div className="p-4 text-center text-gray-500 text-sm">Selecione primeiro o tipo de despesa</div>
 									)}
 								</div>
 							)}
 						</div>
 					</div>
-					
+
 					{/* Linha 2: Pessoa ocupando a linha inteira */}
 					<div className="mb-4">
 						<label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1215,8 +1320,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		if (modalidadeMovimento === 'financiamento') {
 			return (
 				<div className="grid grid-cols-2 gap-4 mb-4">
-					<div className="col-span-2" style={{position: 'relative'}}>
-						<div >
+					<div className="col-span-2" style={{ position: 'relative' }}>
+						<div>
 							<label className="block text-sm font-medium text-gray-700 mb-1">
 								Associar Financiamento <span className="text-red-500">*</span>
 							</label>
@@ -1225,15 +1330,19 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									type="text"
 									className="w-full p-2 border rounded-l"
 									placeholder="Buscar por responsável, credor ou contrato"
-									value={financiamentoSelecionado ? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${(financiamentoSelecionado.modalidade || '').toUpperCase() === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===financiamentoSelecionado.idBanco)?.nome || pessoas.find(p=>p.id===financiamentoSelecionado.idPessoa)?.nome || 'Não identificado')})` : buscaFinanciamento}
-									onChange={e => setBuscaFinanciamento(e.target.value)}
+									value={
+										financiamentoSelecionado
+											? `${financiamentoSelecionado.numeroContrato} - ${financiamentoSelecionado.responsavel} (${(financiamentoSelecionado.modalidade || '').toUpperCase() === 'PARTICULAR' ? 'Particular' : bancos.find((b) => b.id === financiamentoSelecionado.idBanco)?.nome || pessoas.find((p) => p.id === financiamentoSelecionado.idPessoa)?.nome || 'Não identificado'})`
+											: buscaFinanciamento
+									}
+									onChange={(e) => setBuscaFinanciamento(e.target.value)}
 									disabled={!!financiamentoSelecionado}
 								/>
 								{movimento.tipoMovimento === 'C' && (
 									<button
 										type="button"
-										style={{height: 'auto'}}
-										className={`text-white text-lg px-4 ${financiamentoSelecionado ? 'bg-blue-500 hover:bg-blue-600' : 'bg-orange-500 hover:bg-orange-600'} rounded-r `} 
+										style={{ height: 'auto' }}
+										className={`text-white text-lg px-4 ${financiamentoSelecionado ? 'bg-blue-500 hover:bg-blue-600' : 'bg-orange-500 hover:bg-orange-600'} rounded-r `}
 										onClick={() => {
 											if (financiamentoSelecionado) {
 												setFinanciamentoSelecionado(null);
@@ -1242,33 +1351,33 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 												setNovoFinanciamentoData({
 													valor: movimento.valor?.toString().replace('.', ',') || '0,00',
 													dataContrato: movimento.dtMovimento?.slice(0, 10) || '',
-													observacao: "Conciliação Bancária: " + movimento.historico + " - No valor de: R$ " + movimento.valor || '',
+													observacao: 'Conciliação Bancária: ' + movimento.historico + ' - No valor de: R$ ' + movimento.valor || '',
 												});
 												setModalFinanciamentoOpen(true);
 											}
 										}}
-										title={financiamentoSelecionado ? "Desvincular Financiamento" : "Novo Financiamento"}
+										title={financiamentoSelecionado ? 'Desvincular Financiamento' : 'Novo Financiamento'}
 									>
 										<FontAwesomeIcon icon={financiamentoSelecionado ? faTimes : faPlus} />
 									</button>
 								)}
 							</div>
 							{errors.financiamento && <p className="text-red-500 text-xs">{errors.financiamento}</p>}
-							
+
 							{buscaFinanciamento && !financiamentoSelecionado && financiamentosFiltrados.length > 0 && (
 								<ul className="absolute z-10 border rounded mt-1 bg-white max-h-40 overflow-y-auto w-full shadow-lg">
 									{financiamentosFiltrados.map((f: Financiamento) => (
-										<li
-											key={f.id}
-											className="p-2 cursor-pointer hover:bg-orange-100"
-											onClick={() => setFinanciamentoSelecionado(f)}
-										>
-											<strong>{f.numeroContrato}</strong> - {f.responsavel} - {(f.modalidade || '').toUpperCase() === 'PARTICULAR' ? 'Particular' : (bancos.find(b=>b.id===f.idBanco)?.nome || pessoas.find(p=>p.id===f.idPessoa)?.nome || 'Não identificado')}
+										<li key={f.id} className="p-2 cursor-pointer hover:bg-orange-100" onClick={() => setFinanciamentoSelecionado(f)}>
+											<strong>{f.numeroContrato}</strong> - {f.responsavel} -{' '}
+											{(f.modalidade || '').toUpperCase() === 'PARTICULAR'
+												? 'Particular'
+												: bancos.find((b) => b.id === f.idBanco)?.nome ||
+													pessoas.find((p) => p.id === f.idPessoa)?.nome ||
+													'Não identificado'}
 										</li>
 									))}
 								</ul>
 							)}
-							
 						</div>
 					</div>
 
@@ -1309,8 +1418,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 															parcela.status === 'Liquidado'
 																? 'bg-green-100 text-green-800'
 																: parcela.status === 'Vencido'
-																? 'bg-red-100 text-red-800'
-																: 'bg-yellow-100 text-yellow-800'
+																	? 'bg-red-100 text-red-800'
+																	: 'bg-yellow-100 text-yellow-800'
 														}`}
 													>
 														{parcela.status}
@@ -1318,9 +1427,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 												</td>
 												<td className="p-2">
 													{parcela.status === 'Liquidado' ? (
-														<span className="text-sm text-gray-600">
-															{new Date(parcela.dt_liquidacao!).toLocaleDateString()}
-														</span>
+														<span className="text-sm text-gray-600">{new Date(parcela.dt_liquidacao!).toLocaleDateString()}</span>
 													) : (
 														<span className="text-sm text-gray-400">-</span>
 													)}
@@ -1334,7 +1441,6 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 																	setLiquidationDate(new Date().toISOString().split('T')[0]);
 																	setLiquidationModalOpen(true);
 																}}
-																
 																className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 text-sm rounded-md flex items-center gap-2 transition-colors"
 																title="Liquidar parcela"
 															>
@@ -1355,12 +1461,18 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		}
 
 		if (modalidadeMovimento === 'transferencia') {
+			const textoExplicativoTransferencia =
+				transferenciaPlanoMode === 'transferencia'
+					? 'Transferências entre contas próprias da Fazenda, sem impacto econômico para o período.'
+					: transferenciaPlanoMode === 'aplicacao'
+						? 'Aplicação ou resgate em investimentos, sem registrar entrada ou saída operacional efetiva.'
+						: 'Estornos (ex.: TEDs devolvidas) e demais operações neutras.';
+			const msgFluxo = `${textoExplicativoTransferencia} Esta classificação não entra no Fluxo de Caixa.`;
 			return (
 				<div className="flex flex-col items-center text-center text-yellow-600 mt-10 mb-10">
-					
 					<p className="text-lg font-semibold text-gray-800 mb-2">Tipo do Movimento</p>
-					<div className="flex items-center gap-5 pb-5 border-b border-gray-200 mb-6">
-					<label className={`flex items-center gap-2 cursor-pointer text-gray-600 transition-all`}>
+					<div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pb-5 border-b border-gray-200 mb-6 max-w-2xl mx-auto">
+						<label className="flex items-center gap-2 cursor-pointer text-gray-600 transition-all">
 							<input
 								type="radio"
 								name="filterMode"
@@ -1381,10 +1493,10 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									</span>
 								)}
 							</div>
-							<span>Mera Movimentação interna</span>
+							<span className="text-left max-w-[11rem] sm:max-w-none">Movimentações sem efeito financeiro</span>
 						</label>
 
-						<label className={`flex items-center gap-2 cursor-pointer transition-all text-gray-500`}>
+						<label className="flex items-center gap-2 cursor-pointer text-gray-600 transition-all">
 							<input
 								type="radio"
 								name="filterMode"
@@ -1405,14 +1517,40 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									</span>
 								)}
 							</div>
-							<span>Aplicação/Resgate em fundos</span>
+							<span className="text-left max-w-[11rem] sm:max-w-none">Aplicação/Resgate em investimentos</span>
+						</label>
+
+						<label className="flex items-center gap-2 cursor-pointer text-gray-600 transition-all">
+							<input
+								type="radio"
+								name="filterMode"
+								value="estorno"
+								checked={transferenciaPlanoMode === 'estorno'}
+								onChange={() => setTransferenciaPlanoMode('estorno')}
+								className="hidden"
+							/>
+							<div
+								className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
+									transferenciaPlanoMode === 'estorno' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+								}`}
+								style={{ padding: '0.60rem' }}
+							>
+								{transferenciaPlanoMode === 'estorno' && (
+									<span className="text-white text-md">
+										<FontAwesomeIcon icon={faCheck} />
+									</span>
+								)}
+							</div>
+							<span>Estornos</span>
 						</label>
 					</div>
 					<FontAwesomeIcon icon={faMoneyBillTransfer} size="3x" />
-					<p className="mt-2 font-medium">
-						{transferenciaPlanoMode === 'transferencia' ? 'Mera movimentação interna entre contas próprias da Fazenda' : 'Aplicação/Resgate em fundos'} <br />
-						na qual será ignorada no Fluxo de Caixa!
-					</p>
+					<p className="mt-2 font-medium max-w-xl mx-auto px-2">{msgFluxo}</p>
+					{(errors.estornoPlano || errors.transferenciaPlano) && (
+						<p className="mt-3 text-sm text-red-600 max-w-xl mx-auto px-2">
+							{errors.estornoPlano || errors.transferenciaPlano}
+						</p>
+					)}
 				</div>
 			);
 		}
@@ -1440,9 +1578,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 					{movimentosSelecionados.length > 1 ? (
 						<div className="mb-4">
 							<div className="flex items-center justify-between border-gray-200 border text-gray-800 p-3 rounded-lg mb-4 shadow-sm text-sm">
-								<span className="font-semibold">
-									{movimentosSelecionados.length} movimentos selecionados
-								</span>
+								<span className="font-semibold">{movimentosSelecionados.length} movimentos selecionados</span>
 								<strong className={`${movimentosSelecionados[0].tipoMovimento === 'C' ? 'text-green-600' : 'text-red-600'}`}>
 									{movimentosSelecionados[0].tipoMovimento === 'C' ? 'Créditos' : 'Débitos'}
 								</strong>
@@ -1457,15 +1593,14 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 												{mov.historico}
 											</span>
 										</span>
-										<strong className={`${mov.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-											{formatarMoeda(mov.valor)}
-										</strong>
+										<strong className={`${mov.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatarMoeda(mov.valor)}</strong>
 									</div>
 								))}
 							</div>
 						</div>
 					) : (
-						movimento && movimento.valor && (
+						movimento &&
+						movimento.valor && (
 							<div className="flex items-center justify-between border-gray-200 border text-gray-800 p-3 rounded-lg mb-4 shadow-sm text-sm">
 								<span className="flex items-center gap-2 overflow-hidden">
 									<span>{formatarData(movimento.dtMovimento)}</span>
@@ -1474,9 +1609,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 										{movimento.historico}
 									</span>
 								</span>
-								<strong className={`${movimento.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-									{formatarMoeda(movimento.valor)}
-								</strong>
+								<strong className={`${movimento.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatarMoeda(movimento.valor)}</strong>
 							</div>
 						)
 					)}
@@ -1586,7 +1719,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 				<div className="p-5">
 					<div className="flex justify-between items-center mb-4">
 						<h2 className="text-xl font-semibold text-gray-800">Liquidar Parcela</h2>
-						<button 
+						<button
 							onClick={() => {
 								setLiquidationModalOpen(false);
 								setSelectedParcela(null);
@@ -1598,7 +1731,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							<FontAwesomeIcon icon={faTimes} />
 						</button>
 					</div>
-					
+
 					{selectedParcela && (
 						<div className="space-y-4">
 							<div>
@@ -1612,7 +1745,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									className="w-full p-2 border border-gray-300 rounded bg-gray-100 text-gray-600"
 								/>
 							</div>
-							
+
 							<div>
 								<label className="block text-sm font-medium text-gray-700 mb-1">
 									Valor da Liquidação <span className="text-red-500">*</span>
@@ -1629,10 +1762,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									className="w-full p-2 border border-gray-300 rounded"
 								/>
 								<p className="text-xs text-gray-500 mt-1">
-									Valor do movimento: R$ {Math.abs(movimento.valor || 0).toFixed(2).replace('.', ',')}
+									Valor do movimento: R${' '}
+									{Math.abs(movimento.valor || 0)
+										.toFixed(2)
+										.replace('.', ',')}
 								</p>
 							</div>
-							
+
 							<div>
 								<label className="block text-sm font-medium text-gray-700 mb-1">
 									Data de Liquidação <span className="text-red-500">*</span>
@@ -1645,7 +1781,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									required
 								/>
 							</div>
-							
+
 							<div className="flex justify-end gap-3 mt-6">
 								<button
 									onClick={() => {

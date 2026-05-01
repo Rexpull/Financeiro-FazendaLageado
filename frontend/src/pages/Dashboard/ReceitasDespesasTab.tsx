@@ -23,8 +23,6 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import SavingsIcon from '@mui/icons-material/Savings';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
-import PieChartIcon from '@mui/icons-material/PieChart';
-import ListIcon from '@mui/icons-material/List';
 import * as XLSX from 'xlsx';
 
 const Chart = lazy(() => import("react-apexcharts"));
@@ -35,6 +33,126 @@ const formatCurrency = (value: number) => {
     currency: "BRL",
   }).format(value);
 };
+
+/** Short labels for horizontal bar value axis (bottom) — avoids overlap on large totals */
+function formatAxisCurrencyShort(n: number): string {
+  if (!Number.isFinite(n)) return "";
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1_000_000) {
+    return `${sign}${(abs / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} Mi`;
+  }
+  if (abs >= 100_000) {
+    return `${sign}${(abs / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil`;
+  }
+  return formatCurrency(n);
+}
+
+const truncateCat = (s: string, max = 42) =>
+  s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+
+const MAX_COMPOSITION_BARS = 10;
+const TOP_SLICES_BEFORE_OTHERS = 9;
+
+/**
+ * At most MAX_COMPOSITION_BARS rows. If there are more categories, keep the top TOP_SLICES_BEFORE_OTHERS by value
+ * and aggregate the rest into a single "Outros" row. Percentages use `totalBase` (full total, not truncated).
+ */
+function limitCompositionSlices<T extends { descricao: string; valorNum: number }>(
+  sortedDesc: T[],
+  totalBase: number
+): { categorias: string[]; valores: number[]; percentuais: number[] } {
+  let rows: T[] = sortedDesc;
+  if (sortedDesc.length > MAX_COMPOSITION_BARS) {
+    const top = sortedDesc.slice(0, TOP_SLICES_BEFORE_OTHERS);
+    const rest = sortedDesc.slice(TOP_SLICES_BEFORE_OTHERS);
+    const outrosValor = rest.reduce((s, r) => s + r.valorNum, 0);
+    rows = [...top, { descricao: 'Outros', valorNum: outrosValor } as T];
+  }
+  const valores = rows.map((r) => r.valorNum);
+  const percentuais = rows.map((r) => (totalBase > 0 ? (r.valorNum / totalBase) * 100 : 0));
+  const categorias = rows.map((r) => truncateCat(r.descricao));
+  return { categorias, valores, percentuais };
+}
+
+/** Horizontal bars (many categories readable vs pie). */
+function buildHorizontalCompositionOptions(opts: {
+  categories: string[];
+  hexColor: string;
+  distributed?: boolean;
+  colors?: string[];
+  valueSeries: number[];
+  percentSeries: number[];
+}) {
+  const { categories, hexColor, distributed, colors, valueSeries, percentSeries } = opts;
+  return {
+    chart: {
+      type: 'bar' as const,
+      toolbar: { show: false },
+      fontFamily: 'inherit',
+      animations: { enabled: true, speed: 380 },
+      zoom: { enabled: false },
+    },
+    plotOptions: {
+      bar: {
+        horizontal: true,
+        borderRadius: 4,
+        barHeight: '70%',
+        ...(distributed ? { distributed: true } : {}),
+      },
+    },
+    colors: distributed && colors?.length ? colors : [hexColor],
+    legend: { show: false },
+    stroke: { show: false },
+    dataLabels: {
+      enabled: true,
+      offsetX: 6,
+      textAnchor: 'start' as const,
+      formatter: (_v: number, ctx: any) =>
+        `${(percentSeries[ctx?.dataPointIndex] ?? 0).toFixed(1)}%`,
+      style: { fontSize: '10px', fontWeight: 600, colors: ['#424242'] },
+    },
+    tooltip: {
+      custom: ({
+        dataPointIndex,
+      }: {
+        series: number[][];
+        dataPointIndex: number;
+        w?: unknown;
+      }) => {
+        const i = typeof dataPointIndex === 'number' ? dataPointIndex : 0;
+        const v = Math.abs(valueSeries[i] ?? 0);
+        const pct = percentSeries[i] ?? 0;
+        const cat = categories[i] ?? '';
+        return `<div style="padding:10px;line-height:1.5"><div style="max-width:320px">${cat}</div><strong>${formatCurrency(v)}</strong> <span style="opacity:.8">(${pct.toFixed(1)}%)</span></div>`;
+      },
+    },
+    grid: {
+      padding: { left: 4, right: 52, top: 4, bottom: 12 },
+      xaxis: { lines: { show: true } },
+    },
+    // Horizontal bars: numerical scale along the horizontal (reading) axis
+    xaxis: {
+      categories,
+      labels: {
+        formatter: (val: string | number) => formatAxisCurrencyShort(Number(val)),
+        style: { fontSize: '11px' },
+        rotate: 0,
+        rotateAlways: false,
+        hideOverlappingLabels: true,
+      },
+      tickAmount: 5,
+      axisTicks: { show: true },
+      axisBorder: { show: true },
+    },
+    yaxis: {
+      labels: {
+        maxWidth: 240,
+        style: { fontSize: '11px' },
+      },
+    },
+  };
+}
 
 const NoData = ({ icon, message }: { icon?: React.ReactNode, message: string }) => (
   <Box sx={{ textAlign: 'center', py: 6, color: 'grey.500' }}>
@@ -49,22 +167,16 @@ interface ReceitasDespesasTabProps {
   dashboardData: DashboardData;
   anoSelecionado: number;
   mesSelecionado: string;
-  loadingDetalhamento: boolean;
-  tipoAgrupamentoDetalhamento: 'planos' | 'centros';
-  tipoVisualizacaoDetalhamento: 'lista' | 'pizza';
-  onTipoAgrupamentoChange: (value: 'planos' | 'centros') => void;
-  onTipoVisualizacaoChange: () => void;
+  tipoDetalhamento: 'receitas' | 'despesas';
+  onTipoDetalhamentoChange: (value: 'receitas' | 'despesas') => void;
 }
 
 const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
   dashboardData,
   anoSelecionado,
   mesSelecionado,
-  loadingDetalhamento,
-  tipoAgrupamentoDetalhamento,
-  tipoVisualizacaoDetalhamento,
-  onTipoAgrupamentoChange,
-  onTipoVisualizacaoChange,
+  tipoDetalhamento,
+  onTipoDetalhamentoChange,
 }) => {
   const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
 
@@ -155,8 +267,8 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
         
         {/* Layout lado a lado */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 3 }}>
-          {/* Lado Esquerdo: Receitas - destaque visual + pizza composição */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 2, mb: 3 }}>
+          {/* Lado Esquerdo: Receitas - destaque visual + barras */}
           <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
             <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'success.main', fontSize: '1.35rem' }}>
               Receitas
@@ -168,6 +280,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   {mesSelecionado ? `Total de ${mesSelecionado}/${anoSelecionado}` : `Total Anual de ${anoSelecionado}`}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                  Composição por centro de custos
                 </Typography>
               </Box>
               {totalReceitasMes > 0 && (
@@ -184,38 +299,67 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                 </Box>
               )}
             </Box>
-            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 280 }}>
-              {dashboardData?.receitasDespesas?.agrupadoPor && (() => {
-                const receitasAgrupado = dashboardData.receitasDespesas.agrupadoPor.filter((item: any) => item.tipoMovimento === 'C');
-                const totalR = receitasAgrupado.reduce((s: number, i: any) => s + i.valor, 0);
-                const dadosOrdenados = [...receitasAgrupado].map((item: any) => ({ ...item, percentual: totalR > 0 ? (item.valor / totalR) * 100 : 0 })).sort((a: any, b: any) => b.valor - a.valor);
-                if (dadosOrdenados.length === 0) return <NoData message="Nenhum dado de receitas disponível." />;
+            <Box
+              sx={{
+                flex: 1,
+                width: '100%',
+                minWidth: 0,
+                minHeight: 280,
+                display: 'flex',
+                alignItems: 'stretch',
+                justifyContent: 'center',
+              }}
+            >
+              {(() => {
+                const porCentros = dashboardData?.receitasDespesas?.receitasAgrupadoPorCentros;
+                /* Business rule: receitas breakdown uses cost centers only (not chart of accounts on this chart). */
+                const fromCentros = (Array.isArray(porCentros) ? porCentros : []).map((item: any) => ({
+                  descricao: item.descricao,
+                  valorNum: Math.abs(Number(item.valor) || 0),
+                }));
+
+                let dadosOrdenados = [...fromCentros].sort(
+                  (a: any, b: any) => b.valorNum - a.valorNum
+                );
+                const somaBuckets = dadosOrdenados.reduce((s, i) => s + i.valorNum, 0);
+                const residual = Math.max(0, (Number(totalReceitasMes) || 0) - somaBuckets);
+                if (residual > 0.02) {
+                  dadosOrdenados = [
+                    ...dadosOrdenados,
+                    { descricao: 'Demais receitas (sem centro alocado)', valorNum: residual },
+                  ].sort((a: any, b: any) => b.valorNum - a.valorNum);
+                }
+                const totalBasePct = Math.max(Number(totalReceitasMes) || 0, 1e-9);
+                if (dadosOrdenados.length === 0) return null;
+                const { categorias: cats, valores, percentuais } = limitCompositionSlices(
+                  dadosOrdenados,
+                  totalBasePct
+                );
+                const h = Math.min(480, Math.max(300, valores.length * 34));
                 return (
-                  <Suspense fallback={<CircularProgress />}>
-                    <Chart
-                      options={{
-                        chart: { type: 'pie' },
-                        labels: dadosOrdenados.map((item: any) => `${item.percentual.toFixed(1)}% - ${item.descricao}`),
-                        legend: { position: 'right', fontSize: '12px' },
-                        tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-                        dataLabels: { enabled: true, formatter: (val: number) => `${val.toFixed(1)}%` },
-                        plotOptions: { pie: { expandOnClick: false } },
-                        colors: dadosOrdenados.map(() => '#4caf50'),
-                      }}
-                      series={dadosOrdenados.map((item: any) => item.valor)}
-                      type="pie"
-                      height={280}
-                      width={380}
-                      style={{ maxWidth: '100%' }}
-                    />
-                  </Suspense>
+                  <Box sx={{ width: '100%', minWidth: 0, alignSelf: 'center' }}>
+                    <Suspense fallback={<CircularProgress />}>
+                      <Chart
+                        options={buildHorizontalCompositionOptions({
+                          categories: cats,
+                          hexColor: '#4caf50',
+                          valueSeries: valores,
+                          percentSeries: percentuais,
+                        })}
+                        series={[{ name: 'Receitas', data: valores }]}
+                        type="bar"
+                        height={h}
+                        width="100%"
+                      />
+                    </Suspense>
+                  </Box>
                 );
               })()}
-              {!dashboardData?.receitasDespesas?.agrupadoPor?.length && <NoData message="Nenhum dado de receitas disponível." />}
+              {totalReceitasMes <= 0 && <NoData message="Nenhum dado de receitas disponível." />}
             </Box>
           </Paper>
 
-          {/* Lado Direito: Despesas - destaque visual + pizza composição */}
+          {/* Lado Direito: Despesas - destaque visual + barras */}
           <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
             <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'error.main', fontSize: '1.35rem' }}>
               Despesas
@@ -255,31 +399,43 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
               </Typography>
             </Box>
 
-            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 280 }}>
+            <Box
+              sx={{
+                flex: 1,
+                width: '100%',
+                minWidth: 0,
+                minHeight: 280,
+                display: 'flex',
+                alignItems: 'stretch',
+                justifyContent: 'center',
+              }}
+            >
               {dashboardData?.receitasDespesas?.agrupadoPor && (() => {
                 const despesasAgrupado = dashboardData.receitasDespesas.agrupadoPor.filter((item: any) => item.tipoMovimento === 'D');
                 const totalD = despesasAgrupado.reduce((s: number, i: any) => s + Math.abs(i.valor), 0);
-                const dadosOrdenados = [...despesasAgrupado].map((item: any) => ({ ...item, valorAbs: Math.abs(item.valor), percentual: totalD > 0 ? (Math.abs(item.valor) / totalD) * 100 : 0 })).sort((a: any, b: any) => b.valorAbs - a.valorAbs);
+                const dadosOrdenados = [...despesasAgrupado]
+                  .map((item: any) => ({ descricao: item.descricao, valorNum: Math.abs(item.valor) }))
+                  .sort((a: any, b: any) => b.valorNum - a.valorNum);
                 if (dadosOrdenados.length === 0) return <NoData message="Nenhum dado de despesas disponível." />;
+                const { categorias: cats, valores: valoresAbs, percentuais } = limitCompositionSlices(dadosOrdenados, totalD);
+                const h = Math.min(480, Math.max(300, valoresAbs.length * 34));
                 return (
-                  <Suspense fallback={<CircularProgress />}>
-                    <Chart
-                      options={{
-                        chart: { type: 'pie' },
-                        labels: dadosOrdenados.map((item: any) => `${item.percentual.toFixed(1)}% - ${item.descricao}`),
-                        legend: { position: 'right', fontSize: '12px' },
-                        tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-                        dataLabels: { enabled: true, formatter: (val: number) => `${val.toFixed(1)}%` },
-                        plotOptions: { pie: { expandOnClick: false } },
-                        colors: dadosOrdenados.map(() => '#f44336'),
-                      }}
-                      series={dadosOrdenados.map((item: any) => item.valorAbs)}
-                      type="pie"
-                      height={280}
-                      width={380}
-                      style={{ maxWidth: '100%' }}
-                    />
-                  </Suspense>
+                  <Box sx={{ width: '100%', minWidth: 0, alignSelf: 'center' }}>
+                    <Suspense fallback={<CircularProgress />}>
+                      <Chart
+                        options={buildHorizontalCompositionOptions({
+                          categories: cats,
+                          hexColor: '#f44336',
+                          valueSeries: valoresAbs,
+                          percentSeries: percentuais,
+                        })}
+                        series={[{ name: 'Despesas', data: valoresAbs }]}
+                        type="bar"
+                        height={h}
+                        width="100%"
+                      />
+                    </Suspense>
+                  </Box>
                 );
               })()}
               {!dashboardData?.receitasDespesas?.agrupadoPor?.length && <NoData message="Nenhum dado de despesas disponível." />}
@@ -411,13 +567,19 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
               />
             </Suspense>
           </Paper>
-          <TableContainer component={Paper} sx={{ minHeight: 350, maxHeight:400, display: 'flex', flexDirection: 'column', justifyContent: 'start', position: 'relative' }}>
-            {loadingDetalhamento && (
-              <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
-                <CircularProgress />
-              </Box>
-            )}
-            <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}>
+          <TableContainer
+            component={Paper}
+            sx={{
+              minHeight: 380,
+              maxHeight: 560,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-start',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <Box sx={{ flexShrink: 0, px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                   {mesSelecionado
@@ -425,178 +587,239 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                     : `Detalhamento de ${anoSelecionado}`}
                 </Typography>
                 
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={onTipoVisualizacaoChange}
-                    sx={{ minWidth: 'auto', height: '40px', px: 1, mr: 1 }}
-                    title={tipoVisualizacaoDetalhamento === 'pizza' ? 'Ver como lista' : 'Ver como gráfico'}
-                  >
-                    {tipoVisualizacaoDetalhamento === 'pizza' ? <ListIcon /> : <PieChartIcon />}
-                  </Button>
-                  <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 150 } }}>
-                    <InputLabel>Agrupamento</InputLabel>
-                    <Select 
-                      value={tipoAgrupamentoDetalhamento} 
-                      label="Agrupamento"
-                      onChange={(e) => onTipoAgrupamentoChange(e.target.value as 'planos' | 'centros')}
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <FormControl size="small" sx={{ minWidth: { xs: 130, sm: 140 } }}>
+                    <InputLabel>Tipo</InputLabel>
+                    <Select
+                      label="Tipo"
+                      value={tipoDetalhamento}
+                      onChange={(e) => onTipoDetalhamentoChange(e.target.value as 'receitas' | 'despesas')}
                     >
-                      <MenuItem value="planos">Plano de Contas</MenuItem>
-                      <MenuItem value="centros">Centro de Custos</MenuItem>
+                      <MenuItem value="receitas">Receitas</MenuItem>
+                      <MenuItem value="despesas">Despesas</MenuItem>
                     </Select>
                   </FormControl>
                 </Box>
               </Box>
             </Box>
-            <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }} className="detalhamentoDashboard">
-              {tipoVisualizacaoDetalhamento === 'lista' ? (
-                dashboardData?.receitasDespesas?.agrupadoPor && dashboardData.receitasDespesas.agrupadoPor.length > 0 ? (
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Descrição</TableCell>
-                        <TableCell>Valor</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {[...(dashboardData?.receitasDespesas?.agrupadoPor || [])]
-                        .sort((a, b) => b.valor - a.valor)
-                        .map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{item.descricao}</TableCell>
-                          <TableCell>
-                            <Typography
-                              variant="body2"
+            <Box
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}
+              className="detalhamentoDashboard"
+            >
+              {tipoDetalhamento === 'receitas'
+                ? (() => {
+                    const porCentros = dashboardData?.receitasDespesas?.receitasAgrupadoPorCentros ?? [];
+                    const baseRows = [...porCentros].map((item) => ({
+                      descricao: item.descricao,
+                      valorAbs: Math.abs(Number(item.valor) || 0),
+                      conciliado: !!item.conciliado,
+                      isResidual: false,
+                      tipoMovimento: 'C' as const,
+                    }));
+                    const somaCentros = baseRows.reduce((s, r) => s + r.valorAbs, 0);
+                    const residual = Math.max(0, (Number(totalReceitasMes) || 0) - somaCentros);
+                    const ordenado = [...baseRows].sort((a, b) => b.valorAbs - a.valorAbs);
+                    if (residual > 0.02) {
+                      ordenado.push({
+                        descricao: 'Demais receitas (sem centro alocado)',
+                        valorAbs: residual,
+                        conciliado: false,
+                        isResidual: true,
+                        tipoMovimento: 'C',
+                      });
+                      ordenado.sort((a, b) => b.valorAbs - a.valorAbs);
+                    }
+                    const totalBasePct = Math.max(Number(totalReceitasMes) || 0, 1e-9);
+                    if ((Number(totalReceitasMes) || 0) <= 0 && ordenado.length === 0) {
+                      return (
+                        <NoData
+                          message={
+                            mesSelecionado
+                              ? `Nenhuma receita no período ${mesSelecionado}/${anoSelecionado}.`
+                              : `Nenhuma receita em ${anoSelecionado}.`
+                          }
+                        />
+                      );
+                    }
+                    const concFoot = ordenado.filter((r) => r.conciliado && !r.isResidual).reduce((s, r) => s + r.valorAbs, 0);
+                    const semFoot = ordenado.filter((r) => !r.conciliado || r.isResidual).reduce((s, r) => s + r.valorAbs, 0);
+                    return (
+                      <>
+                        <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                          <Table stickyHeader size="small" sx={{ minWidth: 320 }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell sx={{ fontWeight: 700, width: 56 }}>Ranking</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700, width: 88 }}>
+                                  %
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120 }}>
+                                  Valor
+                                </TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {ordenado.map((item, idx) => (
+                                <TableRow key={`rec-${tipoDetalhamento}-${idx}-${item.descricao}`} hover>
+                                  <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{idx + 1}</TableCell>
+                                  <TableCell
+                                    title={item.descricao}
+                                    sx={{
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      maxWidth: { xs: 140, sm: 200 },
+                                    }}
+                                  >
+                                    {item.descricao}
+                                  </TableCell>
+                                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                    {totalBasePct > 0 ? ((item.valorAbs / totalBasePct) * 100).toFixed(1) : '0.0'}%
+                                  </TableCell>
+                                  <TableCell align="right" sx={{ fontWeight: 600 }}>
+                                    <Typography
+                                      component="span"
+                                      variant="body2"
+                                      sx={{ color: 'success.main', fontVariantNumeric: 'tabular-nums' }}
+                                    >
+                                      {formatCurrency(item.valorAbs)}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </Box>
+                        {ordenado.length > 0 && (
+                          <Box
+                            sx={{
+                              flexShrink: 0,
+                              px: 2,
+                              py: 1.5,
+                              borderTop: 1,
+                              borderColor: 'divider',
+                              bgcolor: 'background.paper',
+                              boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
+                              textAlign: 'center',
+                            }}
+                          >
+                            <Typography variant="body2" color="text.secondary" fontSize={'13px'} className="flex items-center justify-between">
+                              <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
+                              <span className="text-gray-500">|</span>
+                              <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
+                            </Typography>
+                          </Box>
+                        )}
+                      </>
+                    );
+                  })()
+                : dashboardData?.receitasDespesas?.agrupadoPor &&
+                    dashboardData.receitasDespesas.agrupadoPor.some((it) => it.tipoMovimento === 'D')
+                  ? (() => {
+                      const raw = dashboardData.receitasDespesas.agrupadoPor!.filter((it) => it.tipoMovimento === 'D');
+                      const totalBasePct = Math.max(Number(totalDespesasMes) || 0, 1e-9);
+                      const ordenado = [...raw]
+                        .map((item) => ({
+                          descricao: item.descricao,
+                          valorAbs: Math.abs(Number(item.valor) || 0),
+                          pct: totalBasePct > 0 ? (Math.abs(Number(item.valor)) / totalBasePct) * 100 : 0,
+                          conciliado: !!item.conciliado,
+                          tipoMovimento: item.tipoMovimento,
+                        }))
+                        .sort((a, b) => b.valorAbs - a.valorAbs);
+                      const concFoot = ordenado.filter((r) => r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
+                      const semFoot = ordenado.filter((r) => !r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
+                      return (
+                        <>
+                          <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                            <Table stickyHeader size="small" sx={{ minWidth: 320 }}>
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell sx={{ fontWeight: 700, width: 56 }}>Ranking</TableCell>
+                                  <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
+                                  <TableCell align="right" sx={{ fontWeight: 700, width: 88 }}>
+                                    %
+                                  </TableCell>
+                                  <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120 }}>
+                                    Valor
+                                  </TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {ordenado.map((item, idx) => (
+                                  <TableRow key={`desp-${idx}-${item.descricao}`} hover>
+                                    <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{idx + 1}</TableCell>
+                                    <TableCell
+                                      title={item.descricao}
+                                      sx={{
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        maxWidth: { xs: 140, sm: 200 },
+                                      }}
+                                    >
+                                      {item.descricao}
+                                    </TableCell>
+                                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                      {item.pct.toFixed(1)}%
+                                    </TableCell>
+                                    <TableCell align="right" sx={{ fontWeight: 600 }}>
+                                      <Typography
+                                        component="span"
+                                        variant="body2"
+                                        sx={{
+                                          color: 'error.main',
+                                          fontVariantNumeric: 'tabular-nums',
+                                        }}
+                                      >
+                                        {formatCurrency(-item.valorAbs)}
+                                      </Typography>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </Box>
+                          {ordenado.length > 0 && (
+                            <Box
                               sx={{
-                                color: item.tipoMovimento === 'C' ? 'success.main' : 'error.main',
-                                fontWeight: 'bold'
+                                flexShrink: 0,
+                                px: 2,
+                                py: 1.5,
+                                borderTop: 1,
+                                borderColor: 'divider',
+                                bgcolor: 'background.paper',
+                                boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
+                                textAlign: 'center',
                               }}
                             >
-                              {formatCurrency(item.tipoMovimento === 'C' ? item.valor : -item.valor)}
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <NoData message={
-                    mesSelecionado
-                      ? `Nenhum dado agrupado encontrado para ${mesSelecionado}/${anoSelecionado}.`
-                      : `Nenhum dado agrupado encontrado para ${anoSelecionado}.`
-                  } />
-                )
-              ) : (
-                dashboardData?.receitasDespesas?.agrupadoPor && dashboardData.receitasDespesas.agrupadoPor.length > 0 ? (
-                  <Box sx={{ p: 2, display: 'flex', alignItems: 'stretch', justifyContent: 'center', flex: 1, minHeight: 0 }}>
-                    <Suspense fallback={<CircularProgress />}>
-                      {(() => {
-                        const dadosFiltrados = dashboardData.receitasDespesas.agrupadoPor;
-                        const total = dadosFiltrados.reduce((sum, item) => sum + item.valor, 0);
-                        
-                        // Ordenar por valor (maior primeiro) e calcular percentuais
-                        const dadosOrdenados = [...dadosFiltrados]
-                          .map(item => ({
-                            ...item,
-                            percentual: total > 0 ? ((item.valor / total) * 100) : 0
-                          }))
-                          .sort((a, b) => b.valor - a.valor);
-                        
-                        return (
-                          <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Chart
-                              key={`pie-chart-${tipoAgrupamentoDetalhamento}-${dadosOrdenados.length}-${total}`}
-                              options={{
-                                chart: { 
-                                  type: 'pie',
-                                  width: '100%',
-                                  height: '100%'
-                                },
-                                labels: dadosOrdenados.map(item => {
-                                  return `${item.percentual.toFixed(1)}% - ${item.descricao}`;
-                                }),
-                              
-                                legend: {
-                                  position: 'right',
-                                  fontSize: '12px',
-                                  fontFamily: 'inherit',
-                                  itemMargin: {
-                                    horizontal: 8,
-                                    vertical: 3
-                                  },
-
-                                  formatter: (seriesName: string) => {
-                                    return seriesName;
-                                  },
-                                  offsetY: 0,
-                                  offsetX: 0
-                                },
-                                
-                                tooltip: {
-                                  y: {
-                                    formatter: (val: number, { seriesIndex }: any) => {
-                                      return `${formatCurrency(val)}`;
-                                    }
-                                  }
-                                },
-                                dataLabels: {
-                                  enabled: true,
-                                  formatter: (val: number) => {
-                                    return `${val.toFixed(1)}%`;
-                                  },
-                                  style: {
-                                    fontSize: '11px',
-                                    fontWeight: 'bold',
-                                    colors: ['#fff']
-                                  },
-                                  dropShadow: {
-                                    enabled: true,
-                                    color: '#000',
-                                    blur: 3,
-                                    opacity: 0.3
-                                  }
-                                },
-                                plotOptions: {
-                                  pie: {
-                                    expandOnClick: false,
-                                    donut: {
-                                      size: '0%'
-                                    },
-                                    customScale: 1
-                                  }
-                                },
-                                colors: dadosOrdenados.map(item => item.tipoMovimento === 'C' ? '#4caf50' : '#f44336')
-                              }}
-                              series={dadosOrdenados.map(item => item.valor)}
-                              type="pie"
-                              height={450}
-                              width={450}
-                            />
-                          </Box>
-                        );
-                      })()}
-                    </Suspense>
-                  </Box>
-                ) : (
-                  <NoData message={
-                    mesSelecionado
-                      ? `Nenhum dado agrupado encontrado para ${mesSelecionado}/${anoSelecionado}.`
-                      : `Nenhum dado agrupado encontrado para ${anoSelecionado}.`
-                  } />
-                )
-              )}
+                              <Typography variant="body2" color="text.secondary" fontSize={'13px'} className="flex items-center justify-between">
+                                <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
+                                <span className="text-gray-500">|</span>
+                                <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
+                              </Typography>
+                            </Box>
+                          )}
+                        </>
+                      );
+                    })()
+                  : (
+                      <NoData
+                        message={
+                          mesSelecionado
+                            ? `Nenhuma despesa agrupada para ${mesSelecionado}/${anoSelecionado}.`
+                            : `Nenhuma despesa agrupada para ${anoSelecionado}.`
+                        }
+                      />
+                    )}
             </Box>
-            {/* Totalizadores no rodapé */}
-            {dashboardData?.receitasDespesas?.agrupadoPor && dashboardData.receitasDespesas.agrupadoPor.length > 0 && (
-              <Box sx={{ px: 2, py: 1.5, borderTop: 1, borderColor: 'divider', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', textAlign: 'center'}}>
-                <Typography variant="body2" color="text.secondary" fontSize={'13px'} className="flex items-center justify-between">
-                  <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(Math.abs(dashboardData?.receitasDespesas?.totalConciliado || 0))}</span>
-                  <span className="text-gray-500">|</span>
-                  <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(Math.abs(dashboardData?.receitasDespesas?.totalSemConciliar || 0))}</span>
-                </Typography>
-              </Box>
-            )}
           </TableContainer>
         </Box>
       </Box>

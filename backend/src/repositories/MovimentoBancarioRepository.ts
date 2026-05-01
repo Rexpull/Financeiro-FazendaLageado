@@ -2182,6 +2182,7 @@ export class MovimentoBancarioRepository {
 
 			// Apenas movimentos com plano de contas (classificados)
 			whereConditions.push('mb.idPlanoContas IS NOT NULL AND mb.idPlanoContas != 0');
+			whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')");
 
 			if (filters.contaId) {
 				whereConditions.push('mb.idContaCorrente = ?');

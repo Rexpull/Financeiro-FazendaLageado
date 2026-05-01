@@ -24,7 +24,7 @@ export const idCentroCustosEfetivo = (mov: MovimentoBancario): number | undefine
 	return mov.idCentroCustos ?? undefined;
 };
 
-/** Coluna plano — movimentação interna (transferência) */
+/** Plan column — no financial effect (transferencia mode: intra-company transfers, applications, reversals) */
 export function textoPlanoTransferencia(mov: MovimentoBancario, planos: PlanoConta[]): string {
 	const rl = mov.resultadoList ?? [];
 	if (rl.length > 1) return 'Múltiplos Planos';

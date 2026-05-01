@@ -13,7 +13,9 @@ import {
   Button,
   Tabs,
   Tab,
+  Tooltip,
 } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { alpha } from "@mui/material/styles";
 import BreadCrumb from "../../components/BreadCrumb";
 import { getDashboardData, DashboardData, getParcelasAVencer, getContratosLiquidados, getContratosNovos, ParcelasAVencer, ContratosLiquidados, ContratosNovos } from "../../services/dashboardService";
@@ -29,11 +31,9 @@ const Dashboard = () => {
   });
   const [bancoSelecionado, setBancoSelecionado] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [loadingDetalhamento, setLoadingDetalhamento] = useState(false);
   const [activeDashboardTab, setActiveDashboardTab] = useState<'receitas-despesas' | 'financiamentos' | 'resultado'>('receitas-despesas');
   const [activeTab, setActiveTab] = useState<'parcelas-vencer' | 'contratos-liquidados' | 'contratos-novos'>('parcelas-vencer');
-  const [tipoAgrupamentoDetalhamento, setTipoAgrupamentoDetalhamento] = useState<'planos' | 'centros'>('planos');
-  const [tipoVisualizacaoDetalhamento, setTipoVisualizacaoDetalhamento] = useState<'lista' | 'pizza'>('pizza');
+  const [tipoDetalhamento, setTipoDetalhamento] = useState<'receitas' | 'despesas'>('despesas');
   const [parcelasAVencer, setParcelasAVencer] = useState<ParcelasAVencer | null>(null);
   const [contratosLiquidados, setContratosLiquidados] = useState<ContratosLiquidados | null>(null);
   const [contratosNovos, setContratosNovos] = useState<ContratosNovos | null>(null);
@@ -85,7 +85,8 @@ const Dashboard = () => {
     receitasDespesas: {
       receitas: [],
       despesas: [],
-      detalhamento: []
+      detalhamento: [],
+      receitasAgrupadoPorCentros: [],
     }
   });
   const [contasSelecionadas, setContasSelecionadas] = useState<number[]>([]);
@@ -117,7 +118,8 @@ const Dashboard = () => {
         // Busca detalhamento filtrando mês se houver
         const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
         const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
-        const dashboardDataDetalhe = await getDashboardData(anoSelecionado, mesParam, contasSelecionadas, tipoAgrupamentoDetalhamento);
+        // Despesas no detalhamento: sempre plano de contas (agrupamento via API tipoAgrupamento=planos).
+        const dashboardDataDetalhe = await getDashboardData(anoSelecionado, mesParam, contasSelecionadas, 'planos');
 
         // Junta os dados: gráfico do ano, detalhamento do mês/ano
         setDashboardData({
@@ -134,34 +136,6 @@ const Dashboard = () => {
 
     fetchData();
   }, [anoSelecionado, mesSelecionado, contasSelecionadas]);
-
-  // useEffect separado para atualizar apenas o detalhamento quando mudar o agrupamento
-  useEffect(() => {
-    const fetchDetalhamento = async () => {
-      // Não executa no primeiro carregamento (já é feito no useEffect principal)
-      if (loading) {
-        return;
-      }
-
-      setLoadingDetalhamento(true);
-      try {
-        const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
-        const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
-        const dashboardDataDetalhe = await getDashboardData(anoSelecionado, mesParam, contasSelecionadas, tipoAgrupamentoDetalhamento);
-
-        setDashboardData(prev => ({
-          ...prev,
-          receitasDespesas: dashboardDataDetalhe.receitasDespesas
-        }));
-      } catch (err) {
-        console.error('Erro ao carregar detalhamento:', err);
-      } finally {
-        setLoadingDetalhamento(false);
-      }
-    };
-
-    fetchDetalhamento();
-  }, [tipoAgrupamentoDetalhamento]);
 
   // Carregar dados de financiamentos: quando aba Financiamentos está ativa, carregar as três fontes em paralelo para os cards terem dados
   useEffect(() => {
@@ -227,6 +201,10 @@ const Dashboard = () => {
     return null;
   }
 
+  const receitasAno = dashboardData.totaisAno.receitas;
+  const despesasMagnitudeAno = Math.abs(dashboardData.totaisAno.despesas);
+  const saldoOperacionalAno = receitasAno - despesasMagnitudeAno;
+
   return (
     <div style={{width: '100%'}}>
       <BreadCrumb pagina="Dashboard" />
@@ -291,11 +269,8 @@ const Dashboard = () => {
             dashboardData={dashboardData}
             anoSelecionado={anoSelecionado}
             mesSelecionado={mesSelecionado}
-            loadingDetalhamento={loadingDetalhamento}
-            tipoAgrupamentoDetalhamento={tipoAgrupamentoDetalhamento}
-            tipoVisualizacaoDetalhamento={tipoVisualizacaoDetalhamento}
-            onTipoAgrupamentoChange={setTipoAgrupamentoDetalhamento}
-            onTipoVisualizacaoChange={() => setTipoVisualizacaoDetalhamento(tipoVisualizacaoDetalhamento === 'pizza' ? 'lista' : 'pizza')}
+            tipoDetalhamento={tipoDetalhamento}
+            onTipoDetalhamentoChange={setTipoDetalhamento}
           />
         )}
 
@@ -357,7 +332,7 @@ const Dashboard = () => {
                   Despesas (ano)
                 </Typography>
                 <Typography variant="h5" fontWeight="bold" color="error.dark" sx={{ mt: 0.5 }}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(dashboardData.totaisAno.despesas))}
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(despesasMagnitudeAno)}
                 </Typography>
               </Paper>
               <Paper
@@ -368,8 +343,8 @@ const Dashboard = () => {
                   border: '1px solid',
                   borderColor: 'divider',
                   borderLeft: '4px solid',
-                  borderLeftColor: (dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.main' : 'error.main',
-                  bgcolor: (dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? alpha(theme.palette.success.main, 0.08) : alpha(theme.palette.error.main, 0.08),
+                  borderLeftColor: saldoOperacionalAno >= 0 ? 'success.main' : 'error.main',
+                  bgcolor: saldoOperacionalAno >= 0 ? alpha(theme.palette.success.main, 0.08) : alpha(theme.palette.error.main, 0.08),
                   transition: 'box-shadow 0.2s',
                   '&:hover': { boxShadow: 2 },
                 })}
@@ -377,8 +352,8 @@ const Dashboard = () => {
                 <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.8 }}>
                   Saldo operação (R − D)
                 </Typography>
-                <Typography variant="h5" fontWeight="bold" color={(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.dark' : 'error.dark'} sx={{ mt: 0.5 }}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas)}
+                <Typography variant="h5" fontWeight="bold" color={saldoOperacionalAno >= 0 ? 'success.dark' : 'error.dark'} sx={{ mt: 0.5 }}>
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoOperacionalAno)}
                 </Typography>
               </Paper>
               <Paper
@@ -395,9 +370,20 @@ const Dashboard = () => {
                   '&:hover': { boxShadow: 2 },
                 })}
               >
-                <Typography variant="overline" sx={{ color: 'info.dark', fontWeight: 600, letterSpacing: 0.8 }}>
-                  Financiamentos (ano)
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                  <Typography variant="overline" sx={{ color: 'info.dark', fontWeight: 600, letterSpacing: 0.8 }}>
+                    Financiamentos (ano)
+                  </Typography>
+                  <Tooltip
+                    title={
+                      'Contratos com data neste ano. "Contratado" é o valor cadastrado do financiamento. ' +
+                      '"Liquidado" e "Em aberto" somam parcelas; podem ultrapassar o contratado se o cronograma incluir juros.'
+                    }
+                    arrow
+                  >
+                    <InfoOutlinedIcon sx={{ fontSize: '1rem', color: 'text.secondary', cursor: 'help', verticalAlign: 'middle' }} />
+                  </Tooltip>
+                </Box>
                 <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5 }}>
                     <Typography variant="body2" color="text.secondary">Contratado</Typography>
@@ -406,7 +392,7 @@ const Dashboard = () => {
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5 }}>
-                    <Typography variant="body2" color="text.secondary">Quitado</Typography>
+                    <Typography variant="body2" color="text.secondary">Liquidado</Typography>
                     <Typography variant="subtitle1" fontWeight="600" color="success.dark">
                       {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalQuitado)}
                     </Typography>
@@ -436,8 +422,8 @@ const Dashboard = () => {
               </Typography>
               <Typography variant="body1" sx={{ lineHeight: 1.7, color: 'text.secondary' }}>
                 Resultado operacional (receitas menos despesas) no ano:{' '}
-                <Box component="span" fontWeight="bold" color={(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas) >= 0 ? 'success.dark' : 'error.dark'}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas + dashboardData.totaisAno.despesas)}
+                <Box component="span" fontWeight="bold" color={saldoOperacionalAno >= 0 ? 'success.dark' : 'error.dark'}>
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoOperacionalAno)}
                 </Box>
                 . Financiamentos:{' '}
                 <Box component="span" fontWeight="bold" color="text.primary">

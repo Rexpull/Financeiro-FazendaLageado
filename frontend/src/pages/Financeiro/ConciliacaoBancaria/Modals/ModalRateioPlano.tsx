@@ -2,11 +2,17 @@ import React, { useEffect, useState, useRef } from 'react';
 import Modal from 'react-modal';
 import { PlanoConta } from '../../../../../../backend/src/models/PlanoConta';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faTrash, faCheck, faTimes, faArrowLeft, faWarning, faSearch } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faTrash, faCheck, faTimes, faArrowLeft, faSearch } from '@fortawesome/free-solid-svg-icons';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { formatarMoeda } from '../../../../Utils/formataMoeda';
-import CurrencyInput from 'react-currency-input-field';
 import { Resultado } from '../../../../../../backend/src/models/Resultado';
+import { toast } from 'react-toastify';
+import {
+	parsePercentuaisLinha,
+	splitPercentEquallyWithRemainderOnLast,
+	aplicarPercentuaisEmValoresMonetarios,
+} from './rateioPercentuais';
+
 interface Rateio {
 	idPlano: number;
 	descricao: string;
@@ -37,47 +43,42 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	movimentosMultiplos,
 }) => {
 	const [planoSelecionado, setPlanoSelecionado] = useState<PlanoConta | null>(null);
-	const [valorParcial, setValorParcial] = useState<string>('0,00');
 	const [searchPlano, setSearchPlano] = useState('');
 	const [showSuggestions, setShowSuggestions] = useState(false);
+	const [linhaPercentuais, setLinhaPercentuais] = useState('');
 	const isModoMultiplos = movimentosMultiplos && movimentosMultiplos.length > 1;
-	const [tipoRateio, setTipoRateio] = useState<'valor' | 'porcentagem'>(isModoMultiplos ? 'porcentagem' : 'valor');
-	const [porcentagemParcial, setPorcentagemParcial] = useState<string>('0');
-
-	const valorNumericoParcial = Number(valorParcial.replace(/\./g, '').replace(',', '.')) || 0;
-	const porcentagemNumericaParcial = Number(porcentagemParcial) || 0;
 
 	const valorTotalAbsoluto = Math.abs(valorTotal);
-	const totalRateado = rateios.reduce((acc, r) => acc + r.valor, 0);
-	const valorRestante = valorTotalAbsoluto - totalRateado;
 
-	// Calcular valor baseado na porcentagem
-	const valorCalculadoPorcentagem = (porcentagemNumericaParcial / 100) * valorTotalAbsoluto;
-	const valorFinalParcial = tipoRateio === 'valor' ? valorNumericoParcial : valorCalculadoPorcentagem;
+	const totalRateado = isModoMultiplos ? 0 : rateios.reduce((acc, r) => acc + r.valor, 0);
 
-	// Calcular porcentagem total dos rateios existentes
-	const porcentagemTotalRateada = rateios.reduce((acc, r) => {
-		const porcentagemRateio = (r.valor / valorTotalAbsoluto) * 100;
-		return acc + porcentagemRateio;
-	}, 0);
-
-	// Calcular porcentagem restante
-	const porcentagemRestante = 100 - porcentagemTotalRateada;
+	const porcentagemTotalRateada = isModoMultiplos
+		? rateios.reduce((acc, r) => acc + r.valor, 0)
+		: valorTotalAbsoluto > 0
+			? rateios.reduce((acc, r) => acc + (r.valor / valorTotalAbsoluto) * 100, 0)
+			: 0;
 
 	const rateiosOriginais = useRef<Rateio[]>([]);
 
-	// Filtrar planos baseado na busca
+	const idsPlanosNoRateio = new Set(rateios.map((r) => r.idPlano));
+
 	const filteredPlanos = planosDisponiveis
 		.filter((plano) => {
 			const ehReceita = movimento.tipoMovimento === 'C';
 			const hierarquiaCorreta = ehReceita ? plano.hierarquia.startsWith('001') : plano.hierarquia.startsWith('002');
-			const buscaCorreta = plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()) || 
-								plano.hierarquia.toLowerCase().includes(searchPlano.toLowerCase());
+			const buscaCorreta =
+				plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()) ||
+				plano.hierarquia.toLowerCase().includes(searchPlano.toLowerCase());
 			return plano.nivel === 3 && hierarquiaCorreta && buscaCorreta;
 		})
 		.slice(0, 10);
 
-	// Funções de busca
+	const podeAdicionarPlano =
+		isModoMultiplos ||
+		rateios.length === 0 ||
+		porcentagemTotalRateada < 100 - 0.001 ||
+		totalRateado < valorTotalAbsoluto - 0.005;
+
 	const handleSearchPlano = (e: React.ChangeEvent<HTMLInputElement>) => {
 		setSearchPlano(e.target.value);
 		setShowSuggestions(true);
@@ -93,7 +94,6 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	useEffect(() => {
 		if (isOpen) {
 			if (isModoMultiplos) {
-				// Em modo múltiplos, não carregar do movimento
 				setRateios([]);
 				rateiosOriginais.current = [];
 			} else if (movimento && (movimento.resultadoList ?? []).length > 0) {
@@ -105,26 +105,23 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 						valor: r.valor,
 					};
 				});
-				rateiosOriginais.current = convertidos; // backup dos originais
-				setRateios(convertidos); // atualiza visual
+				rateiosOriginais.current = convertidos;
+				setRateios(convertidos);
 			}
 		}
-	}, [isOpen, isModoMultiplos]); // somente ao abrir
+	}, [isOpen, isModoMultiplos]); // intentionally not including movimento.details to mirror prior behavior on open-only
 
-	// Limpar busca quando modal fechar
 	useEffect(() => {
 		if (!isOpen) {
 			setSearchPlano('');
 			setPlanoSelecionado(null);
 			setShowSuggestions(false);
-			setValorParcial('0,00');
-			setPorcentagemParcial('0');
-			setTipoRateio(isModoMultiplos ? 'porcentagem' : 'valor');
+			setLinhaPercentuais('');
 		}
-	}, [isOpen, isModoMultiplos]);
+	}, [isOpen]);
 
 	const handleCancelar = () => {
-		setRateios(rateiosOriginais.current); // restaura valores
+		setRateios(rateiosOriginais.current);
 		onClose();
 	};
 
@@ -132,17 +129,12 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 		if (!podeConfirmar) return;
 
 		if (isModoMultiplos) {
-			// Retornar apenas porcentagens para múltiplos movimentos
-			const rateiosPorcentagem: { idPlano: number; porcentagem: number }[] = rateios.map((r) => {
-				const porcentagem = (r.valor / valorTotalAbsoluto) * 100;
-				return {
-					idPlano: r.idPlano,
-					porcentagem: porcentagem,
-				};
-			});
+			const rateiosPorcentagem: { idPlano: number; porcentagem: number }[] = rateios.map((r) => ({
+				idPlano: r.idPlano,
+				porcentagem: r.valor,
+			}));
 			onConfirmar(rateiosPorcentagem);
 		} else {
-			// Comportamento normal para movimento único
 			const novosResultados: Resultado[] = rateios.map((r) => ({
 				idPlanoContas: r.idPlano,
 				valor: r.valor,
@@ -155,41 +147,71 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	};
 
 	const adicionarRateio = () => {
-		if (planoSelecionado && valorFinalParcial > 0) {
-			let valorParaAdicionar = valorFinalParcial;
-			
-			// Auto-correção para porcentagem: se estiver muito próximo de 100%, ajustar para o valor restante exato
-			if (tipoRateio === 'porcentagem') {
-				const porcentagemComNovoRateio = porcentagemTotalRateada + porcentagemNumericaParcial;
-				if (porcentagemComNovoRateio >= 99.9) { // Próximo de 100%
-					valorParaAdicionar = valorRestante; // Usar o valor restante exato
-				}
-			}
-			
-			// Validação para valor: não pode exceder o restante
-			if (tipoRateio === 'valor' && valorParaAdicionar > valorRestante) {
-				return; // Não adicionar se exceder
-			}
-			
-			// Validação para porcentagem: não pode exceder 100%
-			if (tipoRateio === 'porcentagem' && porcentagemTotalRateada + porcentagemNumericaParcial > 100) {
-				return; // Não adicionar se exceder 100%
-			}
-
-			setRateios([
-				...rateios,
-				{
-					idPlano: planoSelecionado.id,
-					descricao: planoSelecionado.descricao,
-					valor: valorParaAdicionar,
-				},
-			]);
-			setPlanoSelecionado(null);
-			setValorParcial('0,00');
-			setPorcentagemParcial('0');
-			setSearchPlano(''); // Limpar campo de busca
-			setShowSuggestions(false); // Esconder sugestões
+		if (!planoSelecionado) return;
+		if (idsPlanosNoRateio.has(planoSelecionado.id)) {
+			toast.warning('Este plano de contas já está na lista.');
+			return;
 		}
+		if (!podeAdicionarPlano) {
+			toast.warning('Distribuição já completa. Remova um item para adicionar outro.');
+			return;
+		}
+
+		setRateios([
+			...rateios,
+			{
+				idPlano: planoSelecionado.id,
+				descricao: planoSelecionado.descricao,
+				valor: 0,
+			},
+		]);
+		setPlanoSelecionado(null);
+		setSearchPlano('');
+		setShowSuggestions(false);
+	};
+
+	const aplicarLinhaPercentuais = () => {
+		const nums = parsePercentuaisLinha(linhaPercentuais);
+		if (rateios.length === 0) {
+			toast.warning('Adicione os planos de contas antes de aplicar os percentuais.');
+			return;
+		}
+		if (nums.length !== rateios.length) {
+			toast.error(
+				`Informe ${rateios.length} percentuais (ex.: 40, 30, 30), separados por vírgula — você digitou ${nums.length}.`
+			);
+			return;
+		}
+		if (nums.some((n) => !Number.isFinite(n) || n < 0)) {
+			toast.error('Use apenas números válidos para percentuais.');
+			return;
+		}
+		const soma = nums.reduce((a, b) => a + b, 0);
+		if (Math.abs(soma - 100) > 0.02) {
+			toast.error(`A soma dos percentuais deve ser 100% (atual: ${soma.toFixed(2)}%).`);
+			return;
+		}
+
+		if (isModoMultiplos) {
+			setRateios(rateios.map((r, i) => ({ ...r, valor: nums[i] })));
+		} else {
+			setRateios(aplicarPercentuaisEmValoresMonetarios(rateios, nums, valorTotalAbsoluto));
+		}
+		toast.success('Percentuais aplicados.');
+	};
+
+	const dividirIgualmente = () => {
+		if (rateios.length === 0) {
+			toast.warning('Adicione os planos de contas antes de dividir.');
+			return;
+		}
+		const pcts = splitPercentEquallyWithRemainderOnLast(rateios.length);
+		if (isModoMultiplos) {
+			setRateios(rateios.map((r, i) => ({ ...r, valor: pcts[i] })));
+		} else {
+			setRateios(aplicarPercentuaisEmValoresMonetarios(rateios, pcts, valorTotalAbsoluto));
+		}
+		toast.success('Percentuais divididos igualmente; diferença de arredondamento no último plano.');
 	};
 
 	const removerRateio = (index: number) => {
@@ -198,20 +220,11 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 		setRateios(novosRateios);
 	};
 
-	const podeConfirmar = tipoRateio === 'valor' 
-		? totalRateado === valorTotalAbsoluto 
-		: Math.abs(porcentagemTotalRateada - 100) < 0.01; // Tolerância de 0.01% para problemas de centavos
-
-	const handlePorcentagemChange = (value: string) => {
-		// Permitir apenas números e ponto decimal
-		const cleanValue = value.replace(/[^0-9.]/g, '');
-		
-		// Validar se não excede 100%
-		const numValue = parseFloat(cleanValue) || 0;
-		if (numValue <= 100) {
-			setPorcentagemParcial(cleanValue);
-		}
-	};
+	const podeConfirmar = isModoMultiplos
+		? rateios.length > 0 && Math.abs(porcentagemTotalRateada - 100) < 0.02
+		: rateios.length > 0 &&
+			Math.abs(totalRateado - valorTotalAbsoluto) < 0.02 &&
+			Math.abs(porcentagemTotalRateada - 100) < 0.05;
 
 	return (
 		<Modal
@@ -231,36 +244,8 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 				</button>
 			</div>
 
-			{/* Switch para tipo de rateio - oculto em modo múltiplos */}
-			{!isModoMultiplos && (
-				<div className="px-5 py-3 bg-gray-50 border-b">
-					<div className="flex items-center justify-center gap-4">
-						<span className={`text-sm font-medium ${tipoRateio === 'valor' ? 'text-blue-600' : 'text-gray-500'}`}>
-							Rateio por Valor
-						</span>
-						<button
-							type="button"
-							className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-								tipoRateio === 'porcentagem' ? 'bg-blue-600' : 'bg-gray-200'
-							}`}
-							onClick={() => setTipoRateio(tipoRateio === 'valor' ? 'porcentagem' : 'valor')}
-						>
-							<span
-								className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-									tipoRateio === 'porcentagem' ? 'translate-x-6' : 'translate-x-1'
-								}`}
-							/>
-						</button>
-						<span className={`text-sm font-medium ${tipoRateio === 'porcentagem' ? 'text-blue-600' : 'text-gray-500'}`}>
-							Rateio por Porcentagem
-						</span>
-					</div>
-				</div>
-			)}
-
-
 			<div className="flex items-start gap-2 pt-3 p-5">
-				<div className="w-3/4 relative">
+				<div className="flex-1 relative">
 					<label className="block text-sm font-medium text-gray-700 mb-1">Plano de Contas</label>
 					<div className="relative">
 						<input
@@ -269,16 +254,16 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 							placeholder="Pesquisar plano de contas..."
 							value={searchPlano}
 							onChange={handleSearchPlano}
-						disabled={!valorRestante || valorRestante <= 0}
+							disabled={!podeAdicionarPlano}
 						/>
 						<FontAwesomeIcon icon={faSearch} className="absolute right-3 top-3 text-gray-400" />
 					</div>
 					{showSuggestions && searchPlano && (
 						<ul className="absolute bg-white w-full border shadow-lg rounded mt-1 z-10 max-h-60 overflow-y-auto">
 							{filteredPlanos.map((plano) => (
-								<li 
-									key={plano.id} 
-									className="p-2 hover:bg-gray-200 text-sm cursor-pointer border-b last:border-b-0" 
+								<li
+									key={plano.id}
+									className="p-2 hover:bg-gray-200 text-sm cursor-pointer border-b last:border-b-0"
 									onClick={() => selectPlano(plano)}
 								>
 									<div className="font-medium">{plano.hierarquia}</div>
@@ -286,74 +271,56 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 								</li>
 							))}
 							{filteredPlanos.length === 0 && (
-								<li className="p-2 text-sm text-gray-500 text-center">
-									Nenhum plano encontrado
-								</li>
+								<li className="p-2 text-sm text-gray-500 text-center">Nenhum plano encontrado</li>
 							)}
 						</ul>
 					)}
 				</div>
 
-				<div className="w-1/4">
-					<label className="block text-sm font-medium text-gray-700 mb-1">
-						{tipoRateio === 'valor' 
-							? `Valor ${movimento.tipoMovimento === 'C' ? 'Receita' : 'Despesa'} R$`
-							: 'Porcentagem %'
-						}
-					</label>
-					<div className="flex items-center">
-						{tipoRateio === 'valor' ? (
-						<CurrencyInput
-							name="valorParcial"
-							className="w-full p-2 border rounded-l"
-							placeholder="R$ 0,00"
-							decimalsLimit={2}
-							prefix="R$ "
-							decimalSeparator=","
-							groupSeparator="."
-							value={valorParcial}
-							onValueChange={(value) => setValorParcial(value || '0,00')}
-							disabled={!planoSelecionado || valorRestante <= 0}
-						/>
-						) : (
-							<input
-								type="text"
-								className="w-full p-2 border rounded-l"
-								placeholder="0"
-								value={porcentagemParcial}
-								onChange={(e) => handlePorcentagemChange(e.target.value)}
-								disabled={!planoSelecionado || porcentagemRestante <= 0}
-							/>
-						)}
-
-						<button
-							onClick={adicionarRateio}
-							className="bg-green-500 text-white font-semibold px-4 py-2 rounded-r hover:bg-green-600"
-							disabled={
-								!planoSelecionado || 
-								(tipoRateio === 'valor' && (valorFinalParcial <= 0 || valorFinalParcial > valorRestante)) ||
-								(tipoRateio === 'porcentagem' && (porcentagemNumericaParcial <= 0 || porcentagemTotalRateada + porcentagemNumericaParcial > 100))
-							}
-						>
-							<FontAwesomeIcon icon={faPlus} />
-						</button>
-					</div>
-					{tipoRateio === 'valor' && valorRestante > 0 && (
-						<div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-							<FontAwesomeIcon icon={faWarning} />
-							Restante: {formatarMoeda(valorRestante)}
-						</div>
-					)}
-					{tipoRateio === 'porcentagem' && porcentagemRestante > 0 && (
-						<div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-							<FontAwesomeIcon icon={faWarning} />
-							Restante: {porcentagemRestante.toFixed(2)}%
-						</div>
-					)}
+				<div className="flex flex-col justify-end">
+					<label className="block text-sm font-medium text-gray-700 mb-1 invisible">Adicionar</label>
+					<button
+						type="button"
+						onClick={adicionarRateio}
+						className="bg-green-500 text-white font-semibold px-4 py-2 rounded hover:bg-green-600 whitespace-nowrap flex items-center gap-2"
+						disabled={!planoSelecionado || !podeAdicionarPlano || idsPlanosNoRateio.has(planoSelecionado?.id ?? 0)}
+					>
+						<FontAwesomeIcon icon={faPlus} />
+						Adicionar
+					</button>
 				</div>
 			</div>
 
-			<div className="pt-3 p-5">
+			<div className="px-5 pb-3 flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
+				<div className="flex-1">
+					<label className="block text-sm font-medium text-gray-700 mb-1">
+						Percentuais em uma linha (ordem da tabela abaixo)
+					</label>
+					<input
+						type="text"
+						className="w-full p-2 border rounded"
+						placeholder="Ex.: 40, 30, 30"
+						value={linhaPercentuais}
+						onChange={(e) => setLinhaPercentuais(e.target.value)}
+					/>
+				</div>
+				<button
+					type="button"
+					onClick={aplicarLinhaPercentuais}
+					className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium text-sm whitespace-nowrap"
+				>
+					Aplicar linha
+				</button>
+				<button
+					type="button"
+					onClick={dividirIgualmente}
+					className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium text-sm whitespace-nowrap"
+				>
+					Dividir igualmente
+				</button>
+			</div>
+
+			<div className="pt-1 p-5">
 				<div className="border rounded">
 					<table className="w-full text-sm">
 						<thead className="bg-gray-100">
@@ -368,18 +335,28 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 						</thead>
 						<tbody>
 							{rateios.map((r, idx) => {
-								const porcentagemRateio = (r.valor / valorTotalAbsoluto) * 100;
+								const porcentagemRateio = isModoMultiplos
+									? r.valor
+									: valorTotalAbsoluto > 0
+										? (r.valor / valorTotalAbsoluto) * 100
+										: 0;
 								return (
-								<tr key={idx} className="border-t">
-									<td className="p-2">{r.descricao}</td>
-									<td className="p-2 text-center">{formatarMoeda(r.valor ? r.valor : 0)}</td>
+									<tr key={`${r.idPlano}-${idx}`} className="border-t">
+										<td className="p-2">{r.descricao}</td>
+										<td className="p-2 text-center">
+											{isModoMultiplos ? (
+												<span className="text-gray-400 italic">N/A (múltiplos movimentos)</span>
+											) : (
+												formatarMoeda(r.valor || 0)
+											)}
+										</td>
 										<td className="p-2 text-center">{porcentagemRateio.toFixed(2)}%</td>
-									<td className="p-2 text-right pr-4" style={{ width: '50px' }}>
-										<button onClick={() => removerRateio(idx)} className="text-red-500 hover:text-red-700">
-											<FontAwesomeIcon icon={faTrash} />
-										</button>
-									</td>
-								</tr>
+										<td className="p-2 text-right pr-4" style={{ width: '50px' }}>
+											<button onClick={() => removerRateio(idx)} className="text-red-500 hover:text-red-700">
+												<FontAwesomeIcon icon={faTrash} />
+											</button>
+										</td>
+									</tr>
 								);
 							})}
 							{rateios.length === 0 && (
@@ -393,14 +370,17 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 					</table>
 				</div>
 			</div>
+
 			<div className="flex justify-between items-center gap-4 mt-4 p-5 border-t">
 				<div className="flex justify-start gap-4 text-sm font-medium">
-					<div className="flex flex-col gap-1">
-					<span>Total Rateado:</span>
-					<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>
-						R$ {formatarMoeda(totalRateado ? totalRateado : 0)} / R$ {formatarMoeda(valorTotalAbsoluto ? valorTotalAbsoluto : 0)}
-					</span>
-					</div>
+					{!isModoMultiplos && (
+						<div className="flex flex-col gap-1">
+							<span>Total Rateado:</span>
+							<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>
+								R$ {formatarMoeda(totalRateado || 0)} / R$ {formatarMoeda(valorTotalAbsoluto || 0)}
+							</span>
+						</div>
+					)}
 					<div className="flex flex-col gap-1">
 						<span>Porcentagem Total:</span>
 						<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>

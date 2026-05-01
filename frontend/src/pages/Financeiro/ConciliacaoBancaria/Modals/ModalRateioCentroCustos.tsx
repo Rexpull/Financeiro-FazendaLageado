@@ -26,49 +26,6 @@ interface ModalRateioCentroCustosProps {
 	movimentosMultiplos?: MovimentoBancario[];
 }
 
-/** Ex.: "40, 30, 30" ou "40% 30% 30%" → lista de percentuais */
-function parsePercentuaisLinha(raw: string): number[] {
-	const s = raw.trim();
-	if (!s) return [];
-	const parts = s
-		.split(/[,;]+/)
-		.map((p) => p.trim().replace(/%/g, '').replace(/\s+/g, ''))
-		.filter(Boolean);
-	return parts.map((p) => {
-		const n = parseFloat(p.replace(',', '.'));
-		return Number.isFinite(n) ? n : NaN;
-	});
-}
-
-/** Partes iguais em base 100,00%; o resto (centésimos) fica no último centro. */
-function splitPercentEquallyWithRemainderOnLast(n: number): number[] {
-	if (n <= 0) return [];
-	const bp = 10000;
-	const each = Math.floor(bp / n);
-	const rem = bp - each * n;
-	const out: number[] = [];
-	for (let i = 0; i < n - 1; i++) out.push(each / 100);
-	out.push((each + rem) / 100);
-	return out;
-}
-
-/** Rateio em R$: primeiros n-1 arredondados; último absorve diferença para fechar o total. */
-function aplicarPercentuaisEmValoresMonetarios(
-	rateios: RateioCentro[],
-	percentuais: number[],
-	totalAbsoluto: number
-): RateioCentro[] {
-	const n = rateios.length;
-	const out = rateios.map((r) => ({ ...r }));
-	for (let i = 0; i < n - 1; i++) {
-		const v = (percentuais[i] / 100) * totalAbsoluto;
-		out[i].valor = Math.round(v * 100) / 100;
-	}
-	const sumPrev = out.slice(0, n - 1).reduce((a, r) => a + r.valor, 0);
-	out[n - 1].valor = Math.round((totalAbsoluto - sumPrev) * 100) / 100;
-	return out;
-}
-
 const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	isOpen,
 	onClose,
@@ -85,35 +42,31 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	const centroCustosRef = useRef(null);
 	const [centroCustosSearchValue, setCentroCustosSearchValue] = useState('');
 	const [showCentroCustosDropdown, setShowCentroCustosDropdown] = useState(false);
-	const isModoMultiplos = movimentosMultiplos && movimentosMultiplos.length > 1;
-	const isModoPorcentagemPura = isModoMultiplos;
-	const [linhaPercentuais, setLinhaPercentuais] = useState('');
+	const [porcentagemParcial, setPorcentagemParcial] = useState<string>('0');
 	const [tipoCentroSelecionado, setTipoCentroSelecionado] = useState<'CUSTEIO' | 'INVESTIMENTO' | null>(null);
-	const [editandoPorcentagem, setEditandoPorcentagem] = useState<number | null>(null);
-	const [valorPorcentagemEditando, setValorPorcentagemEditando] = useState<string>('');
 	const isDespesa = movimento.tipoMovimento === 'D';
+	const isModoMultiplos = movimentosMultiplos && movimentosMultiplos.length > 1;
 
 	const valorTotalAbsoluto = Math.abs(valorTotal);
 
-	let totalRateado = 0;
-	let porcentagemTotalRateada = 0;
+	const totalRateado = isModoMultiplos ? 0 : rateios.reduce((acc, r) => acc + r.valor, 0);
 
-	if (isModoPorcentagemPura) {
-		porcentagemTotalRateada = rateios.reduce((acc, r) => acc + r.valor, 0);
-		totalRateado = 0;
-	} else {
-		totalRateado = rateios.reduce((acc, r) => acc + r.valor, 0);
-		porcentagemTotalRateada =
-			valorTotalAbsoluto > 0
-				? rateios.reduce((acc, r) => acc + (r.valor / valorTotalAbsoluto) * 100, 0)
-				: 0;
-	}
+	const porcentagemTotalRateada = isModoMultiplos
+		? rateios.reduce((acc, r) => acc + r.valor, 0)
+		: valorTotalAbsoluto > 0
+			? rateios.reduce((acc, r) => acc + (r.valor / valorTotalAbsoluto) * 100, 0)
+			: 0;
 
 	const valorRestante = valorTotalAbsoluto - totalRateado;
 	const porcentagemRestante = 100 - porcentagemTotalRateada;
 
+	const porcentagemNumericaParcial = Number(porcentagemParcial.replace(',', '.')) || 0;
+
 	const podeAdicionarCentro =
-		rateios.length === 0 || porcentagemTotalRateada < 100 - 0.001 || totalRateado < valorTotalAbsoluto - 0.005;
+		isModoMultiplos ||
+		rateios.length === 0 ||
+		porcentagemTotalRateada < 100 - 0.001 ||
+		totalRateado < valorTotalAbsoluto - 0.005;
 
 	const idsCentrosJaNoRateio = new Set(rateios.map((r) => r.idCentro));
 
@@ -190,10 +143,8 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			setCentroSelecionado(null);
 			setShowCentroCustosDropdown(false);
 			setCentroCustosSearchValue('');
-			setLinhaPercentuais('');
+			setPorcentagemParcial('0');
 			setTipoCentroSelecionado(null);
-			setEditandoPorcentagem(null);
-			setValorPorcentagemEditando('');
 		} else if (isDespesa) {
 			setTipoCentroSelecionado('CUSTEIO');
 		}
@@ -223,48 +174,12 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		}
 	};
 
-	const aplicarLinhaPercentuais = () => {
-		const nums = parsePercentuaisLinha(linhaPercentuais);
-		if (rateios.length === 0) {
-			toast.warning('Adicione os centros de custo antes de aplicar os percentuais.');
-			return;
+	const handlePorcentagemChange = (value: string) => {
+		const cleanValue = value.replace(/[^0-9.,]/g, '');
+		const numValue = parseFloat(cleanValue.replace(',', '.')) || 0;
+		if (numValue <= 100) {
+			setPorcentagemParcial(cleanValue);
 		}
-		if (nums.length !== rateios.length) {
-			toast.error(
-				`Informe ${rateios.length} percentuais (ex.: 40, 30, 30), separados por vírgula — você digitou ${nums.length}.`
-			);
-			return;
-		}
-		if (nums.some((n) => !Number.isFinite(n) || n < 0)) {
-			toast.error('Use apenas números válidos para percentuais.');
-			return;
-		}
-		const soma = nums.reduce((a, b) => a + b, 0);
-		if (Math.abs(soma - 100) > 0.02) {
-			toast.error(`A soma dos percentuais deve ser 100% (atual: ${soma.toFixed(2)}%).`);
-			return;
-		}
-
-		if (isModoPorcentagemPura) {
-			setRateios(rateios.map((r, i) => ({ ...r, valor: nums[i] })));
-		} else {
-			setRateios(aplicarPercentuaisEmValoresMonetarios(rateios, nums, valorTotalAbsoluto));
-		}
-		toast.success('Percentuais aplicados.');
-	};
-
-	const dividirIgualmente = () => {
-		if (rateios.length === 0) {
-			toast.warning('Adicione os centros de custo antes de dividir.');
-			return;
-		}
-		const pcts = splitPercentEquallyWithRemainderOnLast(rateios.length);
-		if (isModoPorcentagemPura) {
-			setRateios(rateios.map((r, i) => ({ ...r, valor: pcts[i] })));
-		} else {
-			setRateios(aplicarPercentuaisEmValoresMonetarios(rateios, pcts, valorTotalAbsoluto));
-		}
-		toast.success('Percentuais divididos igualmente; diferença de arredondamento no último centro.');
 	};
 
 	const adicionarRateio = () => {
@@ -273,31 +188,41 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			toast.warning('Este centro de custos já está na lista.');
 			return;
 		}
+		if (!podeAdicionarCentro) {
+			toast.warning('Distribuição já completa. Remova um item para adicionar outro.');
+			return;
+		}
 
-		if (isModoPorcentagemPura) {
-			if (porcentagemTotalRateada >= 100 - 0.001) {
-				toast.warning('Já totaliza 100%. Remova um centro ou ajuste os percentuais antes de adicionar outro.');
-				return;
-			}
+		const pct = porcentagemNumericaParcial;
+		if (pct <= 0) {
+			toast.warning('Informe um percentual maior que zero.');
+			return;
+		}
+		if (porcentagemTotalRateada + pct > 100 + 0.01) {
+			toast.error('A soma dos percentuais não pode passar de 100%.');
+			return;
+		}
+
+		if (isModoMultiplos) {
 			setRateios([
 				...rateios,
 				{
 					idCentro: centroSelecionado.id,
 					descricao: centroSelecionado.descricao,
-					valor: 0,
+					valor: pct,
 				},
 			]);
 		} else {
-			if (totalRateado >= valorTotalAbsoluto - 0.005 && rateios.length > 0) {
-				toast.warning('Valor total já distribuído. Remova ou ajuste um centro para adicionar outro.');
-				return;
+			let valorParaAdicionar = (pct / 100) * valorTotalAbsoluto;
+			if (porcentagemTotalRateada + pct >= 99.9) {
+				valorParaAdicionar = valorRestante;
 			}
 			setRateios([
 				...rateios,
 				{
 					idCentro: centroSelecionado.id,
 					descricao: centroSelecionado.descricao,
-					valor: 0,
+					valor: valorParaAdicionar,
 				},
 			]);
 		}
@@ -306,6 +231,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		setSearchCentro('');
 		setShowCentroCustosDropdown(false);
 		setCentroCustosSearchValue('');
+		setPorcentagemParcial('0');
 	};
 
 	const removerRateio = (index: number) => {
@@ -314,75 +240,17 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		setRateios(novosRateios);
 	};
 
-	const iniciarEdicaoPorcentagem = (index: number) => {
-		const porcentagemAtual = isModoPorcentagemPura
-			? rateios[index].valor
-			: valorTotalAbsoluto > 0
-				? (rateios[index].valor / valorTotalAbsoluto) * 100
-				: 0;
-		setEditandoPorcentagem(index);
-		setValorPorcentagemEditando(porcentagemAtual.toFixed(2));
-	};
-
-	const salvarEdicaoPorcentagem = (index: number) => {
-		const novaPorcentagem = parseFloat(valorPorcentagemEditando.replace(',', '.')) || 0;
-
-		const porcentagemOutros = rateios.reduce((acc, r, i) => {
-			if (i === index) return acc;
-			const porcentagemOutro = isModoPorcentagemPura
-				? r.valor
-				: valorTotalAbsoluto > 0
-					? (r.valor / valorTotalAbsoluto) * 100
-					: 0;
-			return acc + porcentagemOutro;
-		}, 0);
-
-		if (novaPorcentagem < 0 || porcentagemOutros + novaPorcentagem > 100 + 0.01) {
-			setEditandoPorcentagem(null);
-			setValorPorcentagemEditando('');
-			toast.error('Percentual inválido ou soma acima de 100%.');
-			return;
-		}
-
-		const novosRateios = [...rateios];
-		if (isModoPorcentagemPura) {
-			novosRateios[index] = { ...novosRateios[index], valor: novaPorcentagem };
-		} else {
-			const novoValor = Math.round(((novaPorcentagem / 100) * valorTotalAbsoluto) * 100) / 100;
-			novosRateios[index] = { ...novosRateios[index], valor: novoValor };
-			const ult = novosRateios.length - 1;
-			if (ult >= 0) {
-				const sumExcUlt = novosRateios.slice(0, ult).reduce((a, r) => a + r.valor, 0);
-				novosRateios[ult] = {
-					...novosRateios[ult],
-					valor: Math.round((valorTotalAbsoluto - sumExcUlt) * 100) / 100,
-				};
-			}
-		}
-
-		setRateios(novosRateios);
-		setEditandoPorcentagem(null);
-		setValorPorcentagemEditando('');
-	};
-
-	const cancelarEdicaoPorcentagem = () => {
-		setEditandoPorcentagem(null);
-		setValorPorcentagemEditando('');
-	};
-
-	const handlePorcentagemEditChange = (value: string) => {
-		const cleanValue = value.replace(/[^0-9.,]/g, '');
-		const numValue = parseFloat(cleanValue.replace(',', '.')) || 0;
-		if (numValue <= 100) {
-			setValorPorcentagemEditando(cleanValue);
-		}
-	};
-
-	const podeConfirmar = isModoPorcentagemPura
+	const podeConfirmar = isModoMultiplos
 		? rateios.length > 0 && Math.abs(porcentagemTotalRateada - 100) < 0.02
 		: rateios.length > 0 &&
 			Math.abs(totalRateado - valorTotalAbsoluto) < 0.02 &&
 			Math.abs(porcentagemTotalRateada - 100) < 0.05;
+
+	const addDisabled =
+		!centroSelecionado ||
+		!podeAdicionarCentro ||
+		porcentagemNumericaParcial <= 0 ||
+		porcentagemTotalRateada + porcentagemNumericaParcial > 100 + 0.01;
 
 	return (
 		<Modal
@@ -402,8 +270,8 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 				</button>
 			</div>
 
-			<div className="flex items-start gap-2 pt-3 p-5">
-				<div className="w-3/4 relative" ref={centroCustosRef}>
+			<div className="flex flex-col sm:flex-row items-start gap-2 pt-3 p-5">
+				<div className="flex-1 w-full relative" ref={centroCustosRef}>
 					<label className="block text-sm font-medium text-gray-700 mb-1">Centro de Custos</label>
 					<div className="relative w-full">
 						<input
@@ -516,52 +384,36 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 					)}
 				</div>
 
-				<div className="w-1/4 flex flex-col justify-end">
+				<div className="w-full sm:w-28 flex-shrink-0">
+					<label className="block text-sm font-medium text-gray-700 mb-1">Porcentagem %</label>
+					<input
+						type="text"
+						className="w-full p-2 border rounded"
+						placeholder="0"
+						value={porcentagemParcial}
+						onChange={(e) => handlePorcentagemChange(e.target.value)}
+						disabled={!centroSelecionado || !podeAdicionarCentro || porcentagemRestante <= 0}
+					/>
+					{porcentagemRestante > 0 && rateios.length > 0 && (
+						<div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+							<FontAwesomeIcon icon={faWarning} />
+							Restante: {porcentagemRestante.toFixed(2)}%
+						</div>
+					)}
+				</div>
+
+				<div className="w-full sm:w-auto flex flex-col justify-end">
 					<label className="block text-sm font-medium text-gray-700 mb-1 invisible">Adicionar</label>
 					<button
 						type="button"
 						onClick={adicionarRateio}
-						className="bg-green-500 text-white font-semibold px-4 py-2 rounded w-full hover:bg-green-600 flex items-center justify-center gap-2"
-						disabled={!centroSelecionado || !podeAdicionarCentro}
-						title="Adiciona o centro à lista (percentuais pela linha ou dividir igualmente)"
+						className="bg-green-500 text-white font-semibold px-4 py-2 rounded w-full sm:w-auto hover:bg-green-600 flex items-center justify-center gap-2"
+						disabled={addDisabled}
 					>
 						<FontAwesomeIcon icon={faPlus} />
 						Adicionar
 					</button>
-					{!isModoPorcentagemPura && valorRestante > 0 && rateios.length > 0 && (
-						<div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-							<FontAwesomeIcon icon={faWarning} />
-							Restante: {formatarMoeda(valorRestante)} - {porcentagemRestante.toFixed(2)}%
-						</div>
-					)}
 				</div>
-			</div>
-
-			<div className="px-5 pb-3 flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
-				<div className="flex-1">
-					<label className="block text-sm font-medium text-gray-700 mb-1">Percentuais em uma linha (ordem da tabela abaixo)</label>
-					<input
-						type="text"
-						className="w-full p-2 border rounded"
-						placeholder="Ex.: 40, 30, 30"
-						value={linhaPercentuais}
-						onChange={(e) => setLinhaPercentuais(e.target.value)}
-					/>
-				</div>
-				<button
-					type="button"
-					onClick={aplicarLinhaPercentuais}
-					className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium text-sm whitespace-nowrap"
-				>
-					Aplicar linha
-				</button>
-				<button
-					type="button"
-					onClick={dividirIgualmente}
-					className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium text-sm whitespace-nowrap"
-				>
-					Dividir igualmente
-				</button>
 			</div>
 
 			<div className="pt-1 p-5">
@@ -579,52 +431,22 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 						</thead>
 						<tbody>
 							{rateios.map((r, idx) => {
-								const porcentagemRateio = isModoPorcentagemPura
+								const porcentagemRateio = isModoMultiplos
 									? r.valor
 									: valorTotalAbsoluto > 0
 										? (r.valor / valorTotalAbsoluto) * 100
 										: 0;
-								const valorExibido = isModoPorcentagemPura ? null : r.valor;
 								return (
-									<tr key={idx} className="border-t">
+									<tr key={`${r.idCentro}-${idx}`} className="border-t">
 										<td className="p-2">{r.descricao}</td>
 										<td className="p-2 text-center">
-											{isModoPorcentagemPura ? (
+											{isModoMultiplos ? (
 												<span className="text-gray-400 italic">N/A (múltiplos movimentos)</span>
 											) : (
-												formatarMoeda(valorExibido ? valorExibido : 0)
+												formatarMoeda(r.valor || 0)
 											)}
 										</td>
-										<td className="p-2 text-center">
-											{editandoPorcentagem === idx ? (
-												<div className="flex items-center justify-center gap-1">
-													<input
-														type="text"
-														className="w-20 p-1 border rounded text-center text-sm"
-														value={valorPorcentagemEditando}
-														onChange={(e) => handlePorcentagemEditChange(e.target.value)}
-														onBlur={() => salvarEdicaoPorcentagem(idx)}
-														onKeyDown={(e) => {
-															if (e.key === 'Enter') {
-																salvarEdicaoPorcentagem(idx);
-															} else if (e.key === 'Escape') {
-																cancelarEdicaoPorcentagem();
-															}
-														}}
-														autoFocus
-													/>
-													<span>%</span>
-												</div>
-											) : (
-												<span
-													className="cursor-pointer hover:text-blue-600 hover:underline"
-													onClick={() => iniciarEdicaoPorcentagem(idx)}
-													title="Clique para editar"
-												>
-													{porcentagemRateio.toFixed(2)}%
-												</span>
-											)}
-										</td>
+										<td className="p-2 text-center">{porcentagemRateio.toFixed(2)}%</td>
 										<td className="p-2 text-right pr-4" style={{ width: '50px' }}>
 											<button onClick={() => removerRateio(idx)} className="text-red-500 hover:text-red-700">
 												<FontAwesomeIcon icon={faTrash} />
@@ -646,11 +468,11 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			</div>
 			<div className="flex justify-between items-center gap-4 mt-4 p-5 border-t">
 				<div className="flex justify-start gap-4 text-sm font-medium">
-					{!isModoPorcentagemPura && (
+					{!isModoMultiplos && (
 						<div className="flex flex-col gap-1">
 							<span>Total Rateado:</span>
 							<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>
-								R$ {formatarMoeda(totalRateado ? totalRateado : 0)} / R$ {formatarMoeda(valorTotalAbsoluto ? valorTotalAbsoluto : 0)}
+								R$ {formatarMoeda(totalRateado || 0)} / R$ {formatarMoeda(valorTotalAbsoluto || 0)}
 							</span>
 						</div>
 					)}

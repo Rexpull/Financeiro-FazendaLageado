@@ -872,9 +872,7 @@ const MovimentoBancarioTable: React.FC = () => {
 		const linhas: string[] = [];
 
 		if (contaSelecionada) {
-			linhas.push(
-				`Conta: ${contaSelecionada.numConta} — ${contaSelecionada.bancoNome} — ${contaSelecionada.responsavel}`,
-			);
+			linhas.push(`Conta: ${contaSelecionada.numConta} — ${contaSelecionada.bancoNome} — ${contaSelecionada.responsavel}`);
 		}
 
 		if (dataInicio && dataFim) {
@@ -888,34 +886,21 @@ const MovimentoBancarioTable: React.FC = () => {
 		linhas.push(statusFiltro === 'pendentes' ? 'Status: apenas pendentes' : 'Status: mostrar todos');
 
 		if (planosFiltroIds?.length) {
-			const nomes = planosFiltroIds
-				.map((id) => planos.find((p) => p.id === id)?.descricao)
-				.filter(Boolean) as string[];
+			const nomes = planosFiltroIds.map((id) => planos.find((p) => p.id === id)?.descricao).filter(Boolean) as string[];
 			if (nomes.length) {
 				linhas.push(`Planos de contas: ${nomes.join(', ')}`);
 			}
 		}
 
 		if (centrosFiltroIds?.length) {
-			const nomes = centrosFiltroIds
-				.map((id) => centrosDisponiveis.find((c) => c.id === id)?.descricao)
-				.filter(Boolean) as string[];
+			const nomes = centrosFiltroIds.map((id) => centrosDisponiveis.find((c) => c.id === id)?.descricao).filter(Boolean) as string[];
 			if (nomes.length) {
 				linhas.push(`Centros de custos: ${nomes.join(', ')}`);
 			}
 		}
 
 		return linhas;
-	}, [
-		contaSelecionada,
-		dataInicio,
-		dataFim,
-		statusFiltro,
-		planosFiltroIds,
-		centrosFiltroIds,
-		planos,
-		centrosDisponiveis,
-	]);
+	}, [contaSelecionada, dataInicio, dataFim, statusFiltro, planosFiltroIds, centrosFiltroIds, planos, centrosDisponiveis]);
 
 	return (
 		<div>
@@ -1170,7 +1155,7 @@ const MovimentoBancarioTable: React.FC = () => {
 														}`}
 														style={{ textUnderlineOffset: '2px' }}
 														onClick={() => openModalConcilia(movBancario)}
-														title="Movimentação interna — clique para editar a conciliação"
+														title="Movimentações sem efeito financeiro — clique para editar a conciliação"
 													>
 														{textoPlanoTransferencia(movBancario, planos)}
 													</td>
@@ -1326,7 +1311,7 @@ const MovimentoBancarioTable: React.FC = () => {
 											{/* Conteúdo do card */}
 											{movBancario.modalidadeMovimento === 'transferencia' ? (
 												<div className="mb-3">
-													<div className="text-xs text-gray-500">Movimentação interna</div>
+													<div className="text-xs text-gray-500">Sem efeito financeiro</div>
 													<div
 														className={`text-sm cursor-pointer underline hover:text-gray-500 ${
 															isPlanoRateioMultiplo(movBancario)
@@ -1336,7 +1321,7 @@ const MovimentoBancarioTable: React.FC = () => {
 																	: ''
 														}`}
 														onClick={() => openModalConcilia(movBancario)}
-														title="Movimentação interna — clique para editar a conciliação"
+														title="Movimentações sem efeito financeiro — clique para editar a conciliação"
 													>
 														{textoPlanoTransferencia(movBancario, planos)}
 													</div>
@@ -1408,18 +1393,19 @@ const MovimentoBancarioTable: React.FC = () => {
 															<FontAwesomeIcon icon={faInfoCircle} />
 															Informação
 														</button>
-														{movBancario.idPlanoContas || movBancario.resultadoList && movBancario.resultadoList.length > 0 && (
-															<button
-																className="flex-1 px-3 py-2 text-sm bg-orange-50 text-orange-600 rounded hover:bg-orange-100 flex items-center justify-center gap-2"
-																onClick={() => {
-																	handleLimparConciliacao(movBancario.id);
-																	setMenuAtivoId(null);
-																}}
-															>
-																<FontAwesomeIcon icon={faUndo} />
-																Limpar
-															</button>
-														)}
+														{movBancario.idPlanoContas ||
+															(movBancario.resultadoList && movBancario.resultadoList.length > 0 && (
+																<button
+																	className="flex-1 px-3 py-2 text-sm bg-orange-50 text-orange-600 rounded hover:bg-orange-100 flex items-center justify-center gap-2"
+																	onClick={() => {
+																		handleLimparConciliacao(movBancario.id);
+																		setMenuAtivoId(null);
+																	}}
+																>
+																	<FontAwesomeIcon icon={faUndo} />
+																	Limpar
+																</button>
+															))}
 														<button
 															className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
 															onClick={() => {

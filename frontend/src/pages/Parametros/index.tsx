@@ -8,12 +8,20 @@ import BreadCrumb from "../../components/BreadCrumb";
 const ParametroPage = () => {
     const [parametros, setParametros] = useState<Parametro | null>(null);
     const [planos, setPlanos] = useState<PlanoConta[]>([]);
-    const [search, setSearch] = useState({ transferencia: "", entrada: "", pagamento: "" });
-    const [showSuggestions, setShowSuggestions] = useState({ transferencia: false, entrada: false, pagamento: false });
+    const [search, setSearch] = useState({ transferencia: "", aplicacaoInvestimentos: "", estorno: "", entrada: "", pagamento: "" });
+    const [showSuggestions, setShowSuggestions] = useState({
+        transferencia: false,
+        aplicacaoInvestimentos: false,
+        estorno: false,
+        entrada: false,
+        pagamento: false,
+    });
 
-     const transfContasRef = useRef<HTMLDivElement>(null);
-     const entradaFinanRef = useRef<HTMLDivElement>(null);
-     const pagamentoFinanRef = useRef<HTMLDivElement>(null);
+    const transfContasRef = useRef<HTMLDivElement>(null);
+    const aplicacaoInvRef = useRef<HTMLDivElement>(null);
+    const estornosRef = useRef<HTMLDivElement>(null);
+    const entradaFinanRef = useRef<HTMLDivElement>(null);
+    const pagamentoFinanRef = useRef<HTMLDivElement>(null);
     
     useEffect(() => {
       // 🔹 Primeiro, carrega os planos de contas
@@ -31,6 +39,8 @@ const ParametroPage = () => {
         if (parametros && planos.length > 0) {
             setSearch({
                 transferencia: getPlanoDescricao(parametros.idPlanoTransferenciaEntreContas),
+                aplicacaoInvestimentos: getPlanoDescricao(parametros.idPlanoAplicacaoResgateInvestimentos ?? undefined),
+                estorno: getPlanoDescricao(parametros.idPlanoEstornos ?? undefined),
                 entrada: getPlanoDescricao(parametros.idPlanoEntradaFinanciamentos),
                 pagamento: getPlanoDescricao(parametros.idPlanoPagamentoFinanciamentos),
             });
@@ -80,6 +90,12 @@ const ParametroPage = () => {
           if (transfContasRef.current && !transfContasRef.current.contains(event.target as Node)) {
             setShowSuggestions((prev) => ({ ...prev, transferencia: false }));
           }
+          if (aplicacaoInvRef.current && !aplicacaoInvRef.current.contains(event.target as Node)) {
+            setShowSuggestions((prev) => ({ ...prev, aplicacaoInvestimentos: false }));
+          }
+          if (estornosRef.current && !estornosRef.current.contains(event.target as Node)) {
+            setShowSuggestions((prev) => ({ ...prev, estorno: false }));
+          }
           if (pagamentoFinanRef.current && !pagamentoFinanRef.current.contains(event.target as Node)) {
             setShowSuggestions((prev) => ({ ...prev, pagamento: false }));
           }
@@ -100,7 +116,8 @@ const ParametroPage = () => {
                 <div className="flex flex-col gap-5 w-full">
                     <div ref={transfContasRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Plano de Contas Transferência entre Contas <span className="text-red-500">*</span>
+                            Plano de Contas — Movimentações sem efeito financeiro / Transferência entre contas{" "}
+                            <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
                             <input
@@ -124,6 +141,81 @@ const ParametroPage = () => {
                                                 updateParametro("idPlanoTransferenciaEntreContas", plano.id);
                                                 setSearch({ ...search, transferencia: `${plano.hierarquia} | ${plano.descricao}` });
                                                 setShowSuggestions({ ...showSuggestions, transferencia: false });
+                                            }}
+                                        >
+                                            {plano.hierarquia} | {plano.descricao}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    </div>
+
+                    <div ref={aplicacaoInvRef} className="relative">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Plano de Contas — Aplicação/Resgate em investimentos
+                        </label>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                className="w-full max-w-md p-2 border border-gray-300 rounded"
+                                placeholder="Pesquisar plano..."
+                                value={search.aplicacaoInvestimentos}
+                                onChange={(e) => {
+                                    setSearch({ ...search, aplicacaoInvestimentos: e.target.value });
+                                    setShowSuggestions({ ...showSuggestions, aplicacaoInvestimentos: true });
+                                }}
+                                onFocus={() => setShowSuggestions({ ...showSuggestions, aplicacaoInvestimentos: true })}
+                            />
+                            {showSuggestions.aplicacaoInvestimentos && (
+                                <ul className="absolute bg-white rounded w-full shadow-lg max-w-md mt-1 z-10">
+                                    {filterPlanos("custeio", "T").map((plano) => (
+                                        <li
+                                            key={plano.id}
+                                            className="p-2 hover:bg-gray-100 cursor-pointer"
+                                            onClick={() => {
+                                                updateParametro("idPlanoAplicacaoResgateInvestimentos", plano.id);
+                                                setSearch({
+                                                    ...search,
+                                                    aplicacaoInvestimentos: `${plano.hierarquia} | ${plano.descricao}`,
+                                                });
+                                                setShowSuggestions({ ...showSuggestions, aplicacaoInvestimentos: false });
+                                            }}
+                                        >
+                                            {plano.hierarquia} | {plano.descricao}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    </div>
+
+                    <div ref={estornosRef} className="relative">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Plano de Contas Estornos (ex.: TED devolvida)
+                        </label>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                className="w-full max-w-md p-2 border border-gray-300 rounded"
+                                placeholder="Pesquisar plano..."
+                                value={search.estorno}
+                                onChange={(e) => {
+                                    setSearch({ ...search, estorno: e.target.value });
+                                    setShowSuggestions({ ...showSuggestions, estorno: true });
+                                }}
+                                onFocus={() => setShowSuggestions({ ...showSuggestions, estorno: true })}
+                            />
+                            {showSuggestions.estorno && (
+                                <ul className="absolute bg-white rounded w-full shadow-lg max-w-md mt-1 z-10">
+                                    {filterPlanos("custeio", "T").map((plano) => (
+                                        <li
+                                            key={plano.id}
+                                            className="p-2 hover:bg-gray-100 cursor-pointer"
+                                            onClick={() => {
+                                                updateParametro("idPlanoEstornos", plano.id);
+                                                setSearch({ ...search, estorno: `${plano.hierarquia} | ${plano.descricao}` });
+                                                setShowSuggestions({ ...showSuggestions, estorno: false });
                                             }}
                                         >
                                             {plano.hierarquia} | {plano.descricao}
