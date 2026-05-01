@@ -1359,37 +1359,42 @@ export class MovimentoBancarioRepository {
 
 			console.log(`🔍 Repository: Query executada, ${results.length} resultados encontrados`);
 
-			const movimentos = await Promise.all(
-				results.map(async (result) => {
-					const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
-					return {
-						id: result.id as number,
-						dtMovimento: result.dtMovimento as string,
-						historico: result.historico as string,
-						idPlanoContas: result.idPlanoContas as number,
-						idContaCorrente: result.idContaCorrente as number,
-						valor: result.valor as number,
-						saldo: result.saldo as number,
-						ideagro: result.ideagro as boolean,
-						numeroDocumento: result.numero_documento as string,
-						descricao: result.descricao as string,
-						transfOrigem: result.transf_origem as number | null,
-						transfDestino: result.transf_destino as number | null,
-						identificadorOfx: result.identificador_ofx as string,
-						criadoEm: result.criado_em as string,
-						atualizadoEm: result.atualizado_em as string,
-						idUsuario: result.idUsuario as number,
-						tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
-						modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
-						idBanco: result.idBanco as number,
-						idPessoa: result.idPessoa as number,
-						parcelado: result.parcelado === 1,
-						idFinanciamento: result.idFinanciamento as number | undefined,
-						idCentroCustos: result.idCentroCustos as number | undefined,
-						resultadoList: resultadoList,
-					};
-				}),
-			);
+			const idsMovimento = (results as Record<string, unknown>[]).map((r) => r.id as number);
+			const [resultadosMap, centrosCustosMap] = await Promise.all([
+				this.resultadoRepo.getByMovimentos(idsMovimento),
+				this.movimentoCentroCustosRepo.buscarPorMovimentos(idsMovimento),
+			]);
+
+			const movimentos = (results as Record<string, unknown>[]).map((result) => {
+				const id = result.id as number;
+				return {
+					id,
+					dtMovimento: result.dtMovimento as string,
+					historico: result.historico as string,
+					idPlanoContas: result.idPlanoContas as number,
+					idContaCorrente: result.idContaCorrente as number,
+					valor: result.valor as number,
+					saldo: result.saldo as number,
+					ideagro: result.ideagro as boolean,
+					numeroDocumento: result.numero_documento as string,
+					descricao: result.descricao as string,
+					transfOrigem: result.transf_origem as number | null,
+					transfDestino: result.transf_destino as number | null,
+					identificadorOfx: result.identificador_ofx as string,
+					criadoEm: result.criado_em as string,
+					atualizadoEm: result.atualizado_em as string,
+					idUsuario: result.idUsuario as number,
+					tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+					modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
+					idBanco: result.idBanco as number,
+					idPessoa: result.idPessoa as number,
+					parcelado: result.parcelado === 1,
+					idFinanciamento: result.idFinanciamento as number | undefined,
+					idCentroCustos: result.idCentroCustos as number | undefined,
+					resultadoList: resultadosMap.get(id) || [],
+					centroCustosList: centrosCustosMap.get(id) || [],
+				};
+			});
 
 			console.log(`✅ Repository: Processamento concluído, retornando ${movimentos.length} movimentos`);
 			return movimentos;

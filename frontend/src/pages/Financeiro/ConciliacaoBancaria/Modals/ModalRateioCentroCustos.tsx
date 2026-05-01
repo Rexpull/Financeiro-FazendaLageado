@@ -63,10 +63,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	const porcentagemNumericaParcial = Number(porcentagemParcial.replace(',', '.')) || 0;
 
 	const podeAdicionarCentro =
-		isModoMultiplos ||
-		rateios.length === 0 ||
-		porcentagemTotalRateada < 100 - 0.001 ||
-		totalRateado < valorTotalAbsoluto - 0.005;
+		isModoMultiplos || rateios.length === 0 || porcentagemTotalRateada < 100 - 0.001 || totalRateado < valorTotalAbsoluto - 0.005;
 
 	const idsCentrosJaNoRateio = new Set(rateios.map((r) => r.idCentro));
 
@@ -75,9 +72,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 			if (idsCentrosJaNoRateio.has(centro.id)) return false;
 			const buscaCorreta = centro.descricao.toLowerCase().includes(centroCustosSearchValue.toLowerCase());
 			const matchTipoMovimento =
-				movimento.tipoMovimento === 'C'
-					? centro.tipoReceitaDespesa === 'RECEITA'
-					: centro.tipoReceitaDespesa === 'DESPESA';
+				movimento.tipoMovimento === 'C' ? centro.tipoReceitaDespesa === 'RECEITA' : centro.tipoReceitaDespesa === 'DESPESA';
 			const matchTipo = !isDespesa || !tipoCentroSelecionado || centro.tipo === tipoCentroSelecionado;
 			return buscaCorreta && matchTipoMovimento && matchTipo;
 		})
@@ -125,10 +120,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 					}
 					return {
 						idCentro: c.idCentroCustos,
-						descricao:
-							centro?.descricao && centro.descricao.trim() !== ''
-								? centro.descricao
-								: `Centro ${c.idCentroCustos}`,
+						descricao: centro?.descricao && centro.descricao.trim() !== '' ? centro.descricao : `Centro ${c.idCentroCustos}`,
 						valor: c.valor,
 					};
 				});
@@ -242,9 +234,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 
 	const podeConfirmar = isModoMultiplos
 		? rateios.length > 0 && Math.abs(porcentagemTotalRateada - 100) < 0.02
-		: rateios.length > 0 &&
-			Math.abs(totalRateado - valorTotalAbsoluto) < 0.02 &&
-			Math.abs(porcentagemTotalRateada - 100) < 0.05;
+		: rateios.length > 0 && Math.abs(totalRateado - valorTotalAbsoluto) < 0.02 && Math.abs(porcentagemTotalRateada - 100) < 0.05;
 
 	const addDisabled =
 		!centroSelecionado ||
@@ -431,11 +421,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 						</thead>
 						<tbody>
 							{rateios.map((r, idx) => {
-								const porcentagemRateio = isModoMultiplos
-									? r.valor
-									: valorTotalAbsoluto > 0
-										? (r.valor / valorTotalAbsoluto) * 100
-										: 0;
+								const porcentagemRateio = isModoMultiplos ? r.valor : valorTotalAbsoluto > 0 ? (r.valor / valorTotalAbsoluto) * 100 : 0;
 								return (
 									<tr key={`${r.idCentro}-${idx}`} className="border-t">
 										<td className="p-2">{r.descricao}</td>
