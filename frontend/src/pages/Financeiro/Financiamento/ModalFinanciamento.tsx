@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import CurrencyInput from 'react-currency-input-field';
 import { Financiamento, ParcelaFinanciamento } from '../../../../../backend/src/models';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGear, faGripLinesVertical, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { faGear, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
 import Modal from 'react-modal';
 import { toast } from 'react-toastify';
 import { salvarFinanciamento } from '../../../services/financiamentoService';
-import { salvarParcelaFinanciamento } from '../../../services/financiamentoParcelasService';
+import {
+	excluirParcelaFinanciamento,
+	salvarParcelaFinanciamento,
+} from '../../../services/financiamentoParcelasService';
 
 import { Banco } from '../../../../../backend/src/models/Banco';
 import { Pessoa } from '../../../../../backend/src/models/Pessoa';
@@ -23,31 +26,52 @@ interface Props {
 const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, pessoas, financiamentoData }) => {
 	const [tipoParcelamento, setTipoParcelamento] = useState<'mensal' | 'anual'>('mensal');
 	const [dataVencimentoInicial, setDataVencimentoInicial] = useState('');
-	const [form, setForm] = useState<Partial<Financiamento & { valor?: string; taxaJurosAnual?: string }>>({
+	const [form, setForm] = useState<
+		Partial<Financiamento & { valor?: string; taxaJurosAnual?: string; totalJuros?: string }>
+	>({
 		parcelasList: [],
 	});
 
 	const [numParcelas, setNumParcelas] = useState(1);
 	const [isLoading, setIsLoading] = useState(false);
 	const [errors, setErrors] = useState<{ [key: string]: string }>({});
+	const originalParcelIdsRef = useRef<number[]>([]);
 
 	useEffect(() => {
 		if (isOpen) {
 			if (financiamentoData) {
+				originalParcelIdsRef.current = (financiamentoData.parcelasList ?? [])
+					.map((p) => p.id)
+					.filter((id) => id > 0);
+				const tj = financiamentoData.totalJuros ?? null;
+				const tja = financiamentoData.taxaJurosAnual ?? null;
+				let totalJurosStr =
+					tj != null && tj > 0 ? String(tj).replace('.', ',') : '0,00';
+				let taxaPctStr =
+					tja != null && tja > 0 ? String(tja).replace('.', ',') : '';
+				// Legacy rows: contract interest (BRL) was stored in taxaJurosAnual before totalJuros existed in UI
+				if ((tj == null || tj === 0) && tja != null && tja > 100) {
+					totalJurosStr = String(tja).replace('.', ',');
+					taxaPctStr = '';
+				}
 				setForm({
 					...financiamentoData,
 					valor: financiamentoData.valor?.toString().replace('.', ',') || '0,00',
-					taxaJurosAnual: financiamentoData.taxaJurosAnual?.toString().replace('.', ',') || '0,00',
+					taxaJurosAnual: taxaPctStr,
+					totalJuros: totalJurosStr,
 				});
 				if (financiamentoData.parcelasList && financiamentoData.parcelasList.length > 0) {
 					setNumParcelas(financiamentoData.parcelasList.length);
 					setDataVencimentoInicial(financiamentoData.parcelasList[0].dt_vencimento);
 				}
 			} else {
+				originalParcelIdsRef.current = [];
 				const hoje = new Date();
 				setDataVencimentoInicial(hoje.toISOString().split('T')[0]);
 				setForm({
 					parcelasList: [],
+					taxaJurosAnual: '',
+					totalJuros: '0,00',
 				});
 				setNumParcelas(1);
 			}
@@ -118,7 +142,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 
 		const parcelas: ParcelaFinanciamento[] = [];
 		const valorContrato = parseFloat((form.valor || '0,00').replace(/\./g, '').replace(',', '.'));
-		const totalJuros = parseFloat((form.taxaJurosAnual || '0,00').replace(/\./g, '').replace(',', '.'));
+		const totalJurosValor = parseFloat((form.totalJuros || '0,00').replace(/\./g, '').replace(',', '.'));
 		
 		if (valorContrato <= 0) {
 			toast.error('Valor total do financiamento inválido.');
@@ -127,8 +151,8 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 
 		// Se for parcela única, soma valor do contrato + juros
 		let valorTotal = valorContrato;
-		if (numParcelas === 1 && totalJuros > 0) {
-			valorTotal = valorContrato + totalJuros;
+		if (numParcelas === 1 && totalJurosValor > 0) {
+			valorTotal = valorContrato + totalJurosValor;
 		} else if (numParcelas > 1) {
 			// Para múltiplas parcelas, usar apenas o valor do contrato
 			// Os juros serão distribuídos nas parcelas
@@ -165,9 +189,28 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 			});
 		}
 
-		handleInputChange('parcelasList', parcelas);
-		handleInputChange('dataVencimentoPrimeiraParcela', parcelas[0].dt_vencimento);
-		handleInputChange('dataVencimentoUltimaParcela', parcelas[parcelas.length - 1].dt_vencimento);
+		const prev = form.parcelasList || [];
+		const merged = parcelas.map((p) => {
+			const match = prev.find((o) => o.numParcela === p.numParcela && o.id > 0);
+			if (match?.status === 'Liquidado') {
+				return { ...match };
+			}
+			if (match) {
+				return {
+					...p,
+					id: match.id,
+					idFinanciamento: match.idFinanciamento,
+					status: match.status,
+					dt_lancamento: match.dt_lancamento,
+					dt_liquidacao: match.dt_liquidacao,
+				};
+			}
+			return p;
+		});
+
+		handleInputChange('parcelasList', merged);
+		handleInputChange('dataVencimentoPrimeiraParcela', merged[0].dt_vencimento);
+		handleInputChange('dataVencimentoUltimaParcela', merged[merged.length - 1].dt_vencimento);
 	};
 
 	const handleSave = async () => {
@@ -178,26 +221,47 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 		try {
 			setIsLoading(true);
 
+			const parsePct = (s: string | undefined) => {
+				if (s == null || String(s).trim() === '') return null;
+				const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.'));
+				return Number.isFinite(n) ? n : null;
+			};
+			const parseMoney = (s: string | undefined) => {
+				const n = parseFloat((s || '0,00').replace(/\./g, '').replace(',', '.'));
+				return Number.isFinite(n) && n > 0 ? n : null;
+			};
+
 			const financiamentoData: Financiamento = {
 				...form,
 				valor: parseFloat((form.valor || '0,00').replace(/\./g, '').replace(',', '.')),
-				taxaJurosAnual: form.taxaJurosAnual ? parseFloat((form.taxaJurosAnual || '0,00').replace(/\./g, '').replace(',', '.')) : null,
+				taxaJurosAnual: parsePct(form.taxaJurosAnual as string | undefined),
+				totalJuros: parseMoney(form.totalJuros as string | undefined),
 			} as Financiamento;
 
 			// Se estiver editando, mantém o ID original
 			if (financiamentoData.id) {
 				await salvarFinanciamento(financiamentoData);
-				
-				// Atualiza as parcelas existentes
+
+				const savedParcelIds = new Set<number>();
 				if (form.parcelasList) {
 					for (const parcela of form.parcelasList) {
-						await salvarParcelaFinanciamento({
+						const saved = await salvarParcelaFinanciamento({
 							...parcela,
-							idFinanciamento: financiamentoData.id
+							idFinanciamento: financiamentoData.id,
 						});
+						if (saved.id > 0) {
+							savedParcelIds.add(saved.id);
+						}
 					}
 				}
-				
+
+				for (const oldId of originalParcelIdsRef.current) {
+					if (!savedParcelIds.has(oldId)) {
+						await excluirParcelaFinanciamento(oldId);
+					}
+				}
+				originalParcelIdsRef.current = [...savedParcelIds];
+
 				toast.success('Financiamento atualizado com sucesso!');
 			} else {
 				// Criação de novo financiamento
@@ -361,16 +425,28 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					{errors.bancoPessoa && <p className="text-red-500 text-xs col-span-2">{errors.bancoPessoa}</p>}
 
 					<div>
-						<label className="text-sm sm:text-base">Total de Juros do Contrato</label>
+						<label className="text-sm sm:text-base">Taxa de juros (% a.a.)</label>
+						<input
+							type="text"
+							inputMode="decimal"
+							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
+							placeholder="Ex.: 12,5"
+							value={form.taxaJurosAnual ?? ''}
+							onChange={(e) => handleInputChange('taxaJurosAnual', e.target.value)}
+						/>
+					</div>
+
+					<div>
+						<label className="text-sm sm:text-base">Total de juros do contrato (R$)</label>
 						<CurrencyInput
 							className="w-full p-2 bg-white border border-gray-300 rounded text-sm"
-							value={form.taxaJurosAnual || '0,00'}
+							value={form.totalJuros || '0,00'}
 							decimalsLimit={2}
 							prefix="R$ "
 							decimalSeparator=","
 							groupSeparator="."
 							fixedDecimalLength={2}
-							onValueChange={(value) => handleInputChange('taxaJurosAnual', value || '0,00')}
+							onValueChange={(value) => handleInputChange('totalJuros', value || '0,00')}
 						/>
 					</div>
 

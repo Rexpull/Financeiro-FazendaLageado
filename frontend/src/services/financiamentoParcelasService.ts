@@ -9,8 +9,9 @@ export const listarParcelaFinanciamentos = async (): Promise<ParcelaFinanciament
 };
 
 export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento): Promise<ParcelaFinanciamento> => {
-	const method = parcela.id ? "PUT" : "POST";
-	const url = parcela.id ? `${API_URL}/api/parcelaFinanciamento/${parcela.id}` : `${API_URL}/api/parcelaFinanciamento`;
+	const existingId = parcela.id != null && parcela.id > 0 ? parcela.id : null;
+	const method = existingId ? "PUT" : "POST";
+	const url = existingId ? `${API_URL}/api/parcelaFinanciamento/${existingId}` : `${API_URL}/api/parcelaFinanciamento`;
 
 	// Converter valor para número, tratando strings com vírgula
 	let valorConvertido: number;
@@ -52,7 +53,8 @@ export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento):
 	}
 
 	const data = await res.json();
-	return { ...parcelaAtualizada, id: data.id };
+	const id = (data as { id?: number }).id ?? existingId ?? parcelaAtualizada.id;
+	return { ...parcelaAtualizada, id: id as number };
 };
 
 export const verificarParcelasAssociadas = async (idMovimentoBancario: number) => {

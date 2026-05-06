@@ -21,6 +21,8 @@ import defaultIcon from '../../../assets/img/icon-Bancos/default.png';
 import noData from '/frontend/src/assets/img/noData.svg';
 import ModalFinanciamento from './ModalFinanciamento';
 import { Financiamento } from '../../../../../backend/src/models/Financiamento';
+import type { ParcelaFinanciamento } from '../../../../../backend/src/models/ParcelaFinanciamento';
+import { financiamentoTemParcelasVencidas } from '../../../utils/financiamentoParcelaStatus';
 import { salvarFinanciamento, listarFinanciamentos, excluirFinanciamento } from '../../../services/financiamentoService';
 import { salvarParcelaFinanciamento } from '../../../services/financiamentoParcelasService';
 import { toast } from 'react-toastify';
@@ -211,12 +213,6 @@ const ListFinanciamentos: React.FC = () => {
 		return valorJuros / totalMeses;
 	};
 
-	const temParcelasVencidas = (parcelasList: ParcelaFinanciamento[]) => {
-		return parcelasList?.some(
-			(p) => p.status === 'Vencido' || (p.status === 'Aberto' && new Date(p.dt_vencimento) < new Date())
-		);
-	};
-
 	const filtered = financiamentos.filter((f) => {
 		const searchLower = searchTerm.toLowerCase();
 		const bancoNome = f.idBanco ? getBancoNome(f.idBanco).toLowerCase() : '';
@@ -232,9 +228,7 @@ const ListFinanciamentos: React.FC = () => {
 		const isCompleto = f.parcelasList?.every(p => p.status === 'Liquidado');
 
 		if (filterMode === 'vencidas') {
-			const hasVencidas = f.parcelasList?.some(
-				(p) => p.status === 'Vencido' || (p.status === 'Aberto' && new Date(p.dt_vencimento) < new Date())
-			);
+			const hasVencidas = financiamentoTemParcelasVencidas(f.parcelasList);
 			return matchesSearch && hasVencidas && !isCompleto;
 		}
 
@@ -375,11 +369,12 @@ const ListFinanciamentos: React.FC = () => {
 							<div className="flex items-center gap-4">
 								<div className="text-right">
 									<div className="flex items-center justify-end gap-2">
-										{temParcelasVencidas(fin.parcelasList) && (
+										{financiamentoTemParcelasVencidas(fin.parcelasList) && (
 											<FontAwesomeIcon
 												icon={faTriangleExclamation}
 												className="text-red-500 cursor-help"
 												title="Contrato com parcelas vencidas"
+												data-testid="financiamento-overdue-icon"
 											/>
 										)}
 										<p className="font-semibold text-primary">{formatarMoeda(fin.valor)}</p>
@@ -750,18 +745,14 @@ const ListFinanciamentos: React.FC = () => {
 								<span className="text-lg font-semibold text-red-600">
 									(
 									{
-										financiamentos.filter((f) =>
-											f.parcelasList?.some(
-												(p) => p.status === 'Vencido' || (p.status === 'Aberto' && new Date(p.dt_vencimento) < new Date())
-											)
-										).length
+										financiamentos.filter((f) => financiamentoTemParcelasVencidas(f.parcelasList)).length
 									}
 									)
 								</span>
 							</span>
 						</label>
 					</div>
-          |
+
 					<button
 						className="bg-primary text-white font-bold py-2 px-4 flex items-center rounded hover:bg-orange-400"
 						onClick={() => setModalFinanciamento(true)}
@@ -853,7 +844,17 @@ const ListFinanciamentos: React.FC = () => {
 									<div className="space-y-2 text-sm">
 										<div className="flex justify-between items-center">
 											<span className="text-gray-600">Valor:</span>
-											<span className="font-semibold text-primary">{formatarMoeda(fin.valor)}</span>
+											<span className="font-semibold text-primary flex items-center gap-2">
+												{financiamentoTemParcelasVencidas(fin.parcelasList) && (
+													<FontAwesomeIcon
+														icon={faTriangleExclamation}
+														className="text-red-500 shrink-0"
+														title="Contrato com parcelas vencidas"
+														data-testid="financiamento-overdue-icon"
+													/>
+												)}
+												{formatarMoeda(fin.valor)}
+											</span>
 										</div>
 
 										<div className="flex justify-between items-center">

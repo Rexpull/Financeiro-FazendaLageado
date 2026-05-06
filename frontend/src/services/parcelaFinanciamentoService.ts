@@ -36,8 +36,9 @@ export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento):
 		// Valida o status da parcela antes de salvar
 		const parcelaValidada = validarStatusParcela(parcela);
 
-		const response = await fetch(`${API_URL}/api/parcelaFinanciamento${parcela.id ? `/${parcela.id}` : ''}`, {
-			method: parcela.id ? 'PUT' : 'POST',
+		const existingId = parcela.id != null && parcela.id > 0 ? parcela.id : null;
+		const response = await fetch(`${API_URL}/api/parcelaFinanciamento${existingId ? `/${existingId}` : ''}`, {
+			method: existingId ? 'PUT' : 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 			},
