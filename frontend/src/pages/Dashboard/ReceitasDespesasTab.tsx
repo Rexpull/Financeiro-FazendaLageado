@@ -17,7 +17,7 @@ import {
   Select,
   MenuItem,
 } from "@mui/material";
-import { DashboardData } from "../../services/dashboardService";
+import { ContratosLiquidados, ContratosNovos, DashboardData } from "../../services/dashboardService";
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import SavingsIcon from '@mui/icons-material/Savings';
@@ -60,14 +60,16 @@ const TOP_SLICES_BEFORE_OTHERS = 9;
  */
 function limitCompositionSlices<T extends { descricao: string; valorNum: number }>(
   sortedDesc: T[],
-  totalBase: number
+  totalBase: number,
+  aggregateOthers: boolean = true,
+  othersLabel: string = 'Outros'
 ): { categorias: string[]; valores: number[]; percentuais: number[] } {
   let rows: T[] = sortedDesc;
-  if (sortedDesc.length > MAX_COMPOSITION_BARS) {
+  if (aggregateOthers && sortedDesc.length > MAX_COMPOSITION_BARS) {
     const top = sortedDesc.slice(0, TOP_SLICES_BEFORE_OTHERS);
     const rest = sortedDesc.slice(TOP_SLICES_BEFORE_OTHERS);
     const outrosValor = rest.reduce((s, r) => s + r.valorNum, 0);
-    rows = [...top, { descricao: 'Outros', valorNum: outrosValor } as T];
+    rows = [...top, { descricao: othersLabel, valorNum: outrosValor } as T];
   }
   const valores = rows.map((r) => r.valorNum);
   const percentuais = rows.map((r) => (totalBase > 0 ? (r.valorNum / totalBase) * 100 : 0));
@@ -169,6 +171,8 @@ interface ReceitasDespesasTabProps {
   mesSelecionado: string;
   tipoDetalhamento: 'receitas' | 'despesas';
   onTipoDetalhamentoChange: (value: 'receitas' | 'despesas') => void;
+  contratosLiquidados: ContratosLiquidados | null;
+  contratosNovos: ContratosNovos | null;
 }
 
 const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
@@ -177,6 +181,8 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
   mesSelecionado,
   tipoDetalhamento,
   onTipoDetalhamentoChange,
+  contratosLiquidados,
+  contratosNovos,
 }) => {
   const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
 
@@ -189,30 +195,13 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
   const totalDespesasMes = mesIdx >= 0 ? Math.abs(dashboardData?.receitasDespesasPorMes.despesas[mesIdx] || 0) : Math.abs(totalDespesasAno);
   // Garantir que investimentos sejam sempre positivos
   const totalInvestimentosMes = mesIdx >= 0 ? Math.abs(dashboardData?.investimentosPorMes.values[mesIdx] || 0) : totalInvestimentosAno;
+  const totalDespesasConsolidadasMes = totalDespesasMes + totalInvestimentosMes;
+  const totalDespesasConsolidadasAno = Math.abs(totalDespesasAno) + totalInvestimentosAno;
   
   // Calcular despesas operacionais (despesas totais - investimentos)
   // Garantir que ambos sejam positivos para o cálculo
   const despesasOperacionaisMes = Math.max(0, totalDespesasMes - totalInvestimentosMes);
   const despesasOperacionaisAno = Math.max(0, Math.abs(totalDespesasAno) - totalInvestimentosAno);
-
-  const receitasDespesasOptions = {
-    chart: { type: "bar", height: 350, stacked: true, toolbar: { show: false } },
-    plotOptions: { bar: { horizontal: false, columnWidth: "55%", endingShape: "rounded" } },
-    dataLabels: { enabled: false },
-    stroke: { show: true, width: 2, colors: ["transparent"] },
-    xaxis: { categories: dashboardData?.receitasDespesasPorMes?.labels || [] },
-    yaxis: {
-      title: { text: "Valor (R$)" },
-      labels: {
-        formatter: (val: number) => formatCurrency(val),
-        style: { fontSize: '13px' }
-      }
-    },
-    fill: { opacity: 1 },
-    tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-    colors: ["#4caf50", "#f44336"],
-    legend: { position: 'top' }
-  };
 
   const exportToExcel = (data: any[], fileName: string) => {
     const ws = XLSX.utils.json_to_sheet(data);
@@ -318,22 +307,15 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                   valorNum: Math.abs(Number(item.valor) || 0),
                 }));
 
-                let dadosOrdenados = [...fromCentros].sort(
+                const dadosOrdenados = [...fromCentros].sort(
                   (a: any, b: any) => b.valorNum - a.valorNum
                 );
-                const somaBuckets = dadosOrdenados.reduce((s, i) => s + i.valorNum, 0);
-                const residual = Math.max(0, (Number(totalReceitasMes) || 0) - somaBuckets);
-                if (residual > 0.02) {
-                  dadosOrdenados = [
-                    ...dadosOrdenados,
-                    { descricao: 'Demais receitas (sem centro alocado)', valorNum: residual },
-                  ].sort((a: any, b: any) => b.valorNum - a.valorNum);
-                }
                 const totalBasePct = Math.max(Number(totalReceitasMes) || 0, 1e-9);
                 if (dadosOrdenados.length === 0) return null;
                 const { categorias: cats, valores, percentuais } = limitCompositionSlices(
                   dadosOrdenados,
-                  totalBasePct
+                  totalBasePct,
+                  false
                 );
                 const h = Math.min(480, Math.max(300, valores.length * 34));
                 return (
@@ -359,7 +341,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
             </Box>
           </Paper>
 
-          {/* Lado Direito: Despesas - destaque visual + barras */}
+          {/* Lado Direito: Despesas - custeio e investimento separados */}
           <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
             <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'error.main', fontSize: '1.35rem' }}>
               Despesas
@@ -373,7 +355,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
               </Typography>
             </Box>
 
-            {/* Seção secundária: Custeio e Investimento (menor prioridade visual) */}
+            {/* Seção secundária: Custeio e Investimento */}
             <Box sx={{ 
               mb: 2, 
               py: 1, 
@@ -399,49 +381,125 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
               </Typography>
             </Box>
 
-            <Box
-              sx={{
-                flex: 1,
-                width: '100%',
-                minWidth: 0,
-                minHeight: 280,
-                display: 'flex',
-                alignItems: 'stretch',
-                justifyContent: 'center',
-              }}
-            >
-              {dashboardData?.receitasDespesas?.agrupadoPor && (() => {
-                const despesasAgrupado = dashboardData.receitasDespesas.agrupadoPor.filter((item: any) => item.tipoMovimento === 'D');
-                const totalD = despesasAgrupado.reduce((s: number, i: any) => s + Math.abs(i.valor), 0);
-                const dadosOrdenados = [...despesasAgrupado]
-                  .map((item: any) => ({ descricao: item.descricao, valorNum: Math.abs(item.valor) }))
-                  .sort((a: any, b: any) => b.valorNum - a.valorNum);
-                if (dadosOrdenados.length === 0) return <NoData message="Nenhum dado de despesas disponível." />;
-                const { categorias: cats, valores: valoresAbs, percentuais } = limitCompositionSlices(dadosOrdenados, totalD);
-                const h = Math.min(480, Math.max(300, valoresAbs.length * 34));
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2, flex: 1 }}>
+              {(() => {
+                const despesasAgrupado = (dashboardData?.receitasDespesas?.agrupadoPor ?? []).filter(
+                  (item: any) => item.tipoMovimento === 'D'
+                );
+                const custeio = despesasAgrupado.filter((item: any) => (item.subtipoDespesa ?? 'custeio') !== 'investimento');
+                const investimento = despesasAgrupado.filter((item: any) => item.subtipoDespesa === 'investimento');
+
+                const renderDespesasSubChart = (
+                  titulo: string,
+                  cor: string,
+                  items: any[],
+                  emptyMsg: string,
+                  aggregateOthers: boolean = false,
+                  othersLabel: string = 'Outros'
+                ) => {
+                  const total = items.reduce((s: number, i: any) => s + Math.abs(i.valor), 0);
+                  const dadosOrdenados = [...items]
+                    .map((item: any) => ({ descricao: item.descricao, valorNum: Math.abs(item.valor) }))
+                    .sort((a: any, b: any) => b.valorNum - a.valorNum);
+                  const { categorias, valores, percentuais } = limitCompositionSlices(
+                    dadosOrdenados,
+                    total,
+                    aggregateOthers,
+                    othersLabel
+                  );
+                  return (
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                        {titulo}
+                      </Typography>
+                      {dadosOrdenados.length === 0 ? (
+                        <NoData message={emptyMsg} />
+                      ) : (
+                        <Suspense fallback={<CircularProgress />}>
+                          <Chart
+                            options={buildHorizontalCompositionOptions({
+                              categories: categorias,
+                              hexColor: cor,
+                              valueSeries: valores,
+                              percentSeries: percentuais,
+                            })}
+                            series={[{ name: titulo, data: valores }]}
+                            type="bar"
+                            height={Math.min(340, Math.max(220, valores.length * 30))}
+                            width="100%"
+                          />
+                        </Suspense>
+                      )}
+                    </Box>
+                  );
+                };
+
                 return (
-                  <Box sx={{ width: '100%', minWidth: 0, alignSelf: 'center' }}>
-                    <Suspense fallback={<CircularProgress />}>
-                      <Chart
-                        options={buildHorizontalCompositionOptions({
-                          categories: cats,
-                          hexColor: '#f44336',
-                          valueSeries: valoresAbs,
-                          percentSeries: percentuais,
-                        })}
-                        series={[{ name: 'Despesas', data: valoresAbs }]}
-                        type="bar"
-                        height={h}
-                        width="100%"
-                      />
-                    </Suspense>
-                  </Box>
+                  <>
+                    {renderDespesasSubChart(
+                      'Despesas de Custeio',
+                      '#ef5350',
+                      custeio,
+                      'Sem despesas de custeio no período.',
+                      true,
+                      'Outros planos'
+                    )}
+                    {renderDespesasSubChart('Despesas de Investimento', '#fb8c00', investimento, 'Sem despesas de investimento no período.')}
+                  </>
                 );
               })()}
-              {!dashboardData?.receitasDespesas?.agrupadoPor?.length && <NoData message="Nenhum dado de despesas disponível." />}
             </Box>
           </Paper>
         </Box>
+
+        {/* Terceiro gráfico comparativo: Financiamentos */}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'info.main', fontSize: '1.35rem' }}>
+            Financiamentos — Contratados x Liquidados
+          </Typography>
+          {(() => {
+            const labelsNovos = contratosNovos?.labels ?? [];
+            const labelsLiquidados = contratosLiquidados?.labels ?? [];
+            const labels = Array.from(new Set([...labelsNovos, ...labelsLiquidados])).sort();
+            if (labels.length === 0) {
+              return <NoData message="Nenhum dado de financiamentos para o período selecionado." />;
+            }
+            const contratados = labels.map((m) => {
+              const idx = labelsNovos.indexOf(m);
+              return idx >= 0 ? -(contratosNovos?.valores?.[idx] || 0) : 0;
+            });
+            const liquidados = labels.map((m) => {
+              const idx = labelsLiquidados.indexOf(m);
+              return idx >= 0 ? contratosLiquidados?.valores?.[idx] || 0 : 0;
+            });
+            return (
+              <Suspense fallback={<CircularProgress />}>
+                <Chart
+                  options={{
+                    chart: { type: 'bar', stacked: false, toolbar: { show: false } },
+                    plotOptions: { bar: { horizontal: false, columnWidth: '50%', borderRadius: 4 } },
+                    xaxis: { categories: labels },
+                    yaxis: {
+                      labels: { formatter: (val: number) => formatCurrency(Math.abs(val)) },
+                      title: { text: 'Valor (R$)' },
+                    },
+                    tooltip: { y: { formatter: (val: number) => formatCurrency(Math.abs(val)) } },
+                    colors: ['#1e88e5', '#43a047'],
+                    dataLabels: { enabled: false },
+                    legend: { position: 'top' },
+                  }}
+                  series={[
+                    { name: 'Empréstimos contratados', data: contratados },
+                    { name: 'Empréstimos liquidados', data: liquidados },
+                  ]}
+                  type="bar"
+                  height={320}
+                  width="100%"
+                />
+              </Suspense>
+            );
+          })()}
+        </Paper>
 
         {/* Card único: Saldo Líquido */}
         <Paper elevation={3} sx={{ p: 3, border: '1px solid #e0e0e0', borderRadius: 3 }}>
@@ -553,19 +611,53 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         </Box>
         <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 2 }}>
-          <Paper sx={{ p: 2, minHeight: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Suspense fallback={<CircularProgress />}>
-              <Chart
-                options={receitasDespesasOptions}
-                series={[
-                  { name: "Receitas", data: dashboardData?.receitasDespesasPorMes?.receitas || [] },
-                  { name: "Despesas", data: (dashboardData?.receitasDespesasPorMes?.despesas || []).map(v => Math.abs(v)) },
-                ]}
-                type="bar"
-                height={350}
-                style={{width: '100%'}}
-              />
-            </Suspense>
+          <Paper sx={{ p: 2, minHeight: 350 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, height: '100%' }}>
+              {[
+                {
+                  title: mesSelecionado ? `Comparativo Mensal (${mesSelecionado}/${anoSelecionado})` : `Comparativo do mês atual`,
+                  categoria: mesSelecionado || 'Mês',
+                  receitas: totalReceitasMes,
+                  despesas: totalDespesasConsolidadasMes,
+                },
+                {
+                  title: `Comparativo Acumulado (${anoSelecionado})`,
+                  categoria: `Ano ${anoSelecionado}`,
+                  receitas: totalReceitasAno,
+                  despesas: totalDespesasConsolidadasAno,
+                },
+              ].map((bloco) => (
+                <Box key={bloco.title} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.5 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+                    {bloco.title}
+                  </Typography>
+                  <Suspense fallback={<CircularProgress />}>
+                    <Chart
+                      options={{
+                        chart: { type: 'bar', toolbar: { show: false } },
+                        plotOptions: { bar: { horizontal: false, columnWidth: '48%', borderRadius: 4 } },
+                        xaxis: { categories: [bloco.categoria] },
+                        yaxis: {
+                          title: { text: 'Valor (R$)' },
+                          labels: { formatter: (val: number) => formatCurrency(val) },
+                        },
+                        dataLabels: { enabled: false },
+                        tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+                        colors: ['#4caf50', '#f44336'],
+                        legend: { position: 'top' },
+                      }}
+                      series={[
+                        { name: 'Receitas', data: [bloco.receitas] },
+                        { name: 'Despesas (custeio + investimento)', data: [bloco.despesas] },
+                      ]}
+                      type="bar"
+                      height={300}
+                      width="100%"
+                    />
+                  </Suspense>
+                </Box>
+              ))}
+            </Box>
           </Paper>
           <TableContainer
             component={Paper}
@@ -619,22 +711,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       descricao: item.descricao,
                       valorAbs: Math.abs(Number(item.valor) || 0),
                       conciliado: !!item.conciliado,
-                      isResidual: false,
                       tipoMovimento: 'C' as const,
                     }));
-                    const somaCentros = baseRows.reduce((s, r) => s + r.valorAbs, 0);
-                    const residual = Math.max(0, (Number(totalReceitasMes) || 0) - somaCentros);
                     const ordenado = [...baseRows].sort((a, b) => b.valorAbs - a.valorAbs);
-                    if (residual > 0.02) {
-                      ordenado.push({
-                        descricao: 'Demais receitas (sem centro alocado)',
-                        valorAbs: residual,
-                        conciliado: false,
-                        isResidual: true,
-                        tipoMovimento: 'C',
-                      });
-                      ordenado.sort((a, b) => b.valorAbs - a.valorAbs);
-                    }
                     const totalBasePct = Math.max(Number(totalReceitasMes) || 0, 1e-9);
                     if ((Number(totalReceitasMes) || 0) <= 0 && ordenado.length === 0) {
                       return (
@@ -647,8 +726,8 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                         />
                       );
                     }
-                    const concFoot = ordenado.filter((r) => r.conciliado && !r.isResidual).reduce((s, r) => s + r.valorAbs, 0);
-                    const semFoot = ordenado.filter((r) => !r.conciliado || r.isResidual).reduce((s, r) => s + r.valorAbs, 0);
+                    const concFoot = ordenado.filter((r) => r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
+                    const semFoot = ordenado.filter((r) => !r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
                     return (
                       <>
                         <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>

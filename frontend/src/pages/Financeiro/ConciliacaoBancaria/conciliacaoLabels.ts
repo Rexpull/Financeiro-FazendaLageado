@@ -2,6 +2,15 @@ import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBa
 import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
 import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
 
+/** Movimento já classificado no módulo de financiamento (sem plano no MB) */
+export const isFinanciamentoVinculadoContrato = (mov: MovimentoBancario): boolean =>
+	mov.modalidadeMovimento === 'financiamento' &&
+	mov.idFinanciamento != null &&
+	mov.idFinanciamento > 0;
+
+/** Single-column label for crédito (contratação) e débito (parcela) vinculados ao contrato */
+export const TEXTO_COLUNA_UNICA_FINANCIAMENTO = 'Financiamento';
+
 /** Mais de um plano no rateio */
 export const isPlanoRateioMultiplo = (mov: MovimentoBancario): boolean =>
 	(mov.resultadoList?.length ?? 0) > 1;
@@ -36,6 +45,9 @@ export function textoPlanoTransferencia(mov: MovimentoBancario, planos: PlanoCon
 
 /** Coluna plano — despesa (modo padrão) */
 export function textoPlanoDespesa(mov: MovimentoBancario, planos: PlanoConta[]): string {
+	if (isFinanciamentoVinculadoContrato(mov)) {
+		return TEXTO_COLUNA_UNICA_FINANCIAMENTO;
+	}
 	const rl = mov.resultadoList ?? [];
 	if (rl.length > 1) return 'Múltiplos Planos';
 	if (rl.length === 1) {
@@ -63,6 +75,9 @@ export function textoPlanoOrdenacaoOFX(mov: MovimentoBancario, planos: PlanoCont
 	if (mov.modalidadeMovimento === 'transferencia') {
 		return textoPlanoTransferencia(mov, planos);
 	}
+	if (isFinanciamentoVinculadoContrato(mov)) {
+		return TEXTO_COLUNA_UNICA_FINANCIAMENTO;
+	}
 	if (mov.tipoMovimento !== 'D') {
 		return '\u0000';
 	}
@@ -73,6 +88,9 @@ export function textoPlanoOrdenacaoOFX(mov: MovimentoBancario, planos: PlanoCont
 export function textoCentroOrdenacaoOFX(mov: MovimentoBancario, centros: CentroCustos[]): string {
 	if (mov.modalidadeMovimento === 'transferencia') {
 		return '\u0000';
+	}
+	if (isFinanciamentoVinculadoContrato(mov)) {
+		return TEXTO_COLUNA_UNICA_FINANCIAMENTO;
 	}
 	return textoCentroPadrao(mov, centros);
 }

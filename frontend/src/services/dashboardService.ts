@@ -75,6 +75,7 @@ export interface DashboardData {
       valor: number;
       tipoMovimento: 'C' | 'D';
       conciliado: boolean;
+      subtipoDespesa?: 'custeio' | 'investimento';
     }>;
     /** Revenues by cost center — prefer this for comparative receitas chart */
     receitasAgrupadoPorCentros?: Array<{

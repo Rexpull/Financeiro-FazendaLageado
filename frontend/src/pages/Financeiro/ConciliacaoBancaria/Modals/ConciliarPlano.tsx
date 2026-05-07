@@ -33,7 +33,6 @@ import DialogModal from '../../../../components/DialogModal';
 import { toast } from 'react-toastify';
 import { ParcelaFinanciamento } from '../../../../../../backend/src/models/ParcelaFinanciamento';
 import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinanciamentoService';
-import { salvarMovimentoBancario } from '../../../../services/movimentoBancarioService';
 import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
 
 Modal.setAppElement('#root');
@@ -43,6 +42,31 @@ type TransferenciaSubtipo = 'transferencia' | 'aplicacao' | 'estorno';
 /** Same plan as "Transferência entre contas" / movimentações sem efeito financeiro (Parâmetros). */
 function resolvePlanoMovSemEfeitoFinanceiro(p: Parametro): number {
 	return p.idPlanoTransferenciaEntreContas;
+}
+
+function parseDateOnlyAsLocal(value: string): Date {
+	if (!value) return new Date(NaN);
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+	if (!m) return new Date(value);
+	const year = Number(m[1]);
+	const month = Number(m[2]) - 1;
+	const day = Number(m[3]);
+	return new Date(year, month, day, 12, 0, 0, 0);
+}
+
+function formatDateOnlyPtBr(value: string | null | undefined): string {
+	if (!value) return '-';
+	const d = parseDateOnlyAsLocal(value);
+	if (Number.isNaN(d.getTime())) return '-';
+	return d.toLocaleDateString('pt-BR');
+}
+
+function todayLocalIsoDate(): string {
+	const now = new Date();
+	const year = now.getFullYear();
+	const month = `${now.getMonth() + 1}`.padStart(2, '0');
+	const day = `${now.getDate()}`.padStart(2, '0');
+	return `${year}-${month}-${day}`;
 }
 
 const cache: {
@@ -960,14 +984,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 
 			await salvarParcelaFinanciamento(parcelaAtualizada);
 
-			// Atualizar o movimento bancário para vínculo com o financiamento (sai de pendente, conciliado)
+			// Atualizar o movimento bancário na mesma rotina da tela de conciliação
+			// (evita exigir uma segunda etapa de "Associar" depois da liquidação da parcela).
 			if (financiamentoSelecionado?.id != null) {
-				await salvarMovimentoBancario({
-					...movimento,
+				handleConcilia({
 					modalidadeMovimento: 'financiamento',
 					idFinanciamento: financiamentoSelecionado.id,
-					parcelado: true,
-					ideagro: true,
+					idPlanoContas: null,
+					idCentroCustos: null,
+					centroCustosList: undefined,
+					resultadoList: [],
 				});
 			}
 
@@ -1410,7 +1436,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 										{financiamentoSelecionado.parcelasList?.map((parcela) => (
 											<tr key={parcela.id} className="border-t">
 												<td className="p-2">{parcela.numParcela}</td>
-												<td className="p-2">{new Date(parcela.dt_vencimento).toLocaleDateString()}</td>
+												<td className="p-2">{formatDateOnlyPtBr(parcela.dt_vencimento)}</td>
 												<td className="p-2">{formatarMoeda(parcela.valor)}</td>
 												<td className="p-2">
 													<span
@@ -1427,7 +1453,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 												</td>
 												<td className="p-2">
 													{parcela.status === 'Liquidado' ? (
-														<span className="text-sm text-gray-600">{new Date(parcela.dt_liquidacao!).toLocaleDateString()}</span>
+														<span className="text-sm text-gray-600">{formatDateOnlyPtBr(parcela.dt_liquidacao)}</span>
 													) : (
 														<span className="text-sm text-gray-400">-</span>
 													)}
@@ -1438,7 +1464,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 															<button
 																onClick={() => {
 																	setSelectedParcela(parcela);
-																	setLiquidationDate(new Date().toISOString().split('T')[0]);
+																	setLiquidationDate(todayLocalIsoDate());
 																	setLiquidationModalOpen(true);
 																}}
 																className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 text-sm rounded-md flex items-center gap-2 transition-colors"

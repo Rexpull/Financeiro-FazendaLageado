@@ -19,7 +19,9 @@ import {
 	idCentroCustosEfetivo,
 	idPlanoContasEfetivo,
 	isCentroRateioMultiplo,
+	isFinanciamentoVinculadoContrato,
 	isPlanoRateioMultiplo,
+	TEXTO_COLUNA_UNICA_FINANCIAMENTO,
 	textoCentroOrdenacaoOFX,
 	textoCentroPadrao,
 	textoPlanoDespesa,
@@ -189,6 +191,11 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 			const temPlanoUnico = mov.idPlanoContas !== null && mov.idPlanoContas !== undefined;
 			const temResultadoList = mov.resultadoList && mov.resultadoList.length > 0;
 			return !temPlanoUnico && !temResultadoList;
+		}
+
+		// Financiamento already linked to a contract is classified in the financing module (no plan/centro on MB)
+		if (mov.modalidadeMovimento === 'financiamento' && mov.idFinanciamento != null && mov.idFinanciamento > 0) {
+			return false;
 		}
 
 		if (mov.tipoMovimento === 'C') {
@@ -883,6 +890,16 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 													>
 														{textoPlanoTransferencia(mov, planos)}
 													</td>
+												) : isFinanciamentoVinculadoContrato(mov) ? (
+													<td
+														colSpan={2}
+														className="p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 text-blue-600 font-medium"
+														style={{ textUnderlineOffset: '2px' }}
+														onClick={() => openModalConcilia(mov)}
+														title="Financiamento vinculado ao contrato — clique para editar a conciliação"
+													>
+														{TEXTO_COLUNA_UNICA_FINANCIAMENTO}
+													</td>
 												) : (
 													<>
 														{/* Coluna Plano de Contas */}
@@ -921,7 +938,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 															onClick={() => openModalConcilia(mov)}
 															title={mov.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 														>
-															{mov.modalidadeMovimento === 'financiamento' ? 'Financiamento' : textoCentroPadrao(mov, centrosDisponiveis)}
+															{mov.modalidadeMovimento === 'financiamento'
+																? TEXTO_COLUNA_UNICA_FINANCIAMENTO
+																: textoCentroPadrao(mov, centrosDisponiveis)}
 														</td>
 													</>
 												)}

@@ -137,10 +137,8 @@ const Dashboard = () => {
     fetchData();
   }, [anoSelecionado, mesSelecionado, contasSelecionadas]);
 
-  // Carregar dados de financiamentos: quando aba Financiamentos está ativa, carregar as três fontes em paralelo para os cards terem dados
+  // Carregar dados de financiamentos para comparativos (inclusive na aba Receitas/Despesas)
   useEffect(() => {
-    if (activeDashboardTab !== 'financiamentos') return;
-
     const fetchFiltrosRapidos = async () => {
       try {
         const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
@@ -160,7 +158,7 @@ const Dashboard = () => {
     };
 
     fetchFiltrosRapidos();
-  }, [activeDashboardTab, anoSelecionado, mesSelecionado]);
+  }, [anoSelecionado, mesSelecionado]);
 
   // Filtros inteligentes
   const bancosDisponiveis: any[] = [];
@@ -271,6 +269,8 @@ const Dashboard = () => {
             mesSelecionado={mesSelecionado}
             tipoDetalhamento={tipoDetalhamento}
             onTipoDetalhamentoChange={setTipoDetalhamento}
+            contratosLiquidados={contratosLiquidados}
+            contratosNovos={contratosNovos}
           />
         )}
 

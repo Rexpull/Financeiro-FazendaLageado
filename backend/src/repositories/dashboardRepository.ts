@@ -149,6 +149,29 @@ export class DashboardRepository {
     addRows(rMcc.results as any[]);
     addRows(rMb.results as any[]);
 
+    const descFinanciamentoCreditoSemCentro = 'Financiamentos (entrada de crédito)';
+    const qFinanciamentoCreditoSemCentro = `
+      SELECT SUM(ABS(mb.valor)) as valor
+      FROM MovimentoBancario mb
+      ${whereBase}${creditOnly}
+        AND mb.modalidadeMovimento = 'financiamento'
+        AND mb.idFinanciamento IS NOT NULL AND mb.idFinanciamento > 0
+        AND mb.idCentroCustos IS NULL
+        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc_f WHERE mcc_f.idMovimentoBancario = mb.id)
+    `;
+    const rFinCred = await this.db.prepare(qFinanciamentoCreditoSemCentro).bind(...paramsBase).first();
+    const vFinCred = Math.abs(Number((rFinCred as any)?.valor) || 0);
+    if (vFinCred > 1e-9) {
+      const prev = merged.get(descFinanciamentoCreditoSemCentro);
+      const block = { valor: vFinCred, valorConciliado: vFinCred };
+      if (prev) {
+        prev.valor += block.valor;
+        prev.valorConciliado += block.valorConciliado;
+      } else {
+        merged.set(descFinanciamentoCreditoSemCentro, block);
+      }
+    }
+
     const out: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
     for (const [descricao, agg] of merged) {
       const conciliado = agg.valorConciliado > 0 && agg.valorConciliado >= agg.valor * 0.99;
@@ -689,7 +712,7 @@ export class DashboardRepository {
     receitas: number[], 
     despesas: number[], 
     detalhamento: Array<{ descricao: string, valor: number, data: string, classificacao: string }>,
-    agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean }>,
+    agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean, subtipoDespesa?: 'custeio' | 'investimento' }>,
     receitasAgrupadoPorCentros: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }>,
     totalConciliado: number,
     totalSemConciliar: number,
@@ -806,7 +829,7 @@ export class DashboardRepository {
     const detalhamento = await this.db.prepare(queryDetalhamento).bind(...detalhamentoParams).all();
 
     // Buscar dados agrupados por planos ou centros
-    let agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean }> = [];
+    let agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean, subtipoDespesa?: 'custeio' | 'investimento' }> = [];
     let totalConciliado = 0;
     let totalSemConciliar = 0;
     let totalReceitas = 0;
@@ -839,6 +862,7 @@ export class DashboardRepository {
           pc.descricao,
           SUM(r.valor) as valor,
           mb.tipoMovimento,
+          pc.tipo as planoTipo,
           SUM(CASE 
             WHEN mb.tipoMovimento = 'C' THEN
               CASE 
@@ -893,6 +917,12 @@ export class DashboardRepository {
         " AND NOT EXISTS (SELECT 1 FROM Resultado r2 WHERE r2.idMovimentoBancario = mb.id)";
       orphanReceitasWhere +=
         " AND (pc.id IS NULL OR (pc.hierarquia NOT LIKE '003%'))";
+      orphanReceitasWhere += ` AND NOT (
+        mb.modalidadeMovimento = 'financiamento'
+        AND mb.idFinanciamento IS NOT NULL AND mb.idFinanciamento > 0
+        AND mb.idCentroCustos IS NULL
+        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc_orf WHERE mcc_orf.idMovimentoBancario = mb.id)
+      )`;
 
       const queryOrphanReceitasPlano = `
         SELECT 
@@ -932,6 +962,7 @@ export class DashboardRepository {
         valor: number;
         tipoMovimento: 'C' | 'D';
         valorConciliado: number;
+        subtipoDespesa?: 'custeio' | 'investimento';
       };
       const mergeKey = (t: string, d: string) => `${t}|${d}`;
       const byKey = new Map<string, AggAcc>();
@@ -945,12 +976,25 @@ export class DashboardRepository {
         if (prev) {
           prev.valor += valorTotal;
           prev.valorConciliado += valorConciliado;
+          const novoSubtipo =
+            row.planoTipo === 'investimento'
+              ? 'investimento'
+              : row.planoTipo === 'custeio'
+                ? 'custeio'
+                : undefined;
+          if (prev.subtipoDespesa !== novoSubtipo) prev.subtipoDespesa = undefined;
         } else {
           byKey.set(key, {
             descricao: row.descricao,
             valor: valorTotal,
             tipoMovimento: t,
             valorConciliado,
+            subtipoDespesa:
+              row.planoTipo === 'investimento'
+                ? 'investimento'
+                : row.planoTipo === 'custeio'
+                  ? 'custeio'
+                  : undefined,
           });
         }
       }
@@ -998,6 +1042,7 @@ export class DashboardRepository {
           valor: r.valor,
           tipoMovimento: r.tipoMovimento,
           conciliado,
+          subtipoDespesa: r.tipoMovimento === 'D' ? r.subtipoDespesa : undefined,
         };
       });
       this.dashDebug(debug, "getReceitasDespesas:planos_final_agrupadoPor_totals", {

@@ -603,7 +603,11 @@ export class MovimentoBancarioController {
 						for (const movimento of movimentosFiltrados) {
 							const mes = new Date(movimento.dtMovimento).getMonth();
 
-							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
+							if (
+								movimento.modalidadeMovimento === 'financiamento' &&
+								(movimento.parcelado ||
+									(movimento.idFinanciamento != null && movimento.idFinanciamento > 0))
+							) {
 								continue;
 							}
 
@@ -690,17 +694,30 @@ export class MovimentoBancarioController {
 								continue;
 							}
 
+							const classificarPlanosComoPadrao =
+								movimento.modalidadeMovimento === 'padrao' ||
+								(movimento.modalidadeMovimento === 'financiamento' &&
+									movimento.idFinanciamento != null &&
+									movimento.idFinanciamento > 0);
+
 							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
+								if (
+									movimento.modalidadeMovimento === 'financiamento' &&
+									movimento.idFinanciamento != null &&
+									movimento.idFinanciamento > 0
+								) {
+									continue;
+								}
 								console.warn('⚠️ Movimento sem resultadoList. Enviando como pendente!');
-								const mes = new Date(movimento.dtMovimento).getMonth();
+								const mesPend = new Date(movimento.dtMovimento).getMonth();
 								const conta = movimento.idContaCorrente;
 								pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
 
 								// Corrigindo para usar apenas o valor numérico conforme o modelo
-								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
+								if (!dadosMensais[mesPend].pendentesSelecao[movimento.idContaCorrente]) {
+									dadosMensais[mesPend].pendentesSelecao[movimento.idContaCorrente] = 0;
 								}
-								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+								dadosMensais[mesPend].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
 							}
 
 							if (movimento.resultadoList) {
@@ -745,7 +762,7 @@ export class MovimentoBancarioController {
 											', Parcelado?: ' +
 											movimento.parcelado,
 									);
-									if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+									if (tipoMov === 'investimento' && classificarPlanosComoPadrao && !movimento.parcelado) {
 										console.log('➕ Adicionando investimento:', resultado.valor);
 
 										// Corrigindo para usar apenas o valor numérico conforme o modelo
@@ -755,7 +772,7 @@ export class MovimentoBancarioController {
 										dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
 
 										continue;
-									} else if (tipoMov === 'custeio' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+									} else if (tipoMov === 'custeio' && classificarPlanosComoPadrao && !movimento.parcelado) {
 										const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
 
 										if (!grupo) {
@@ -845,7 +862,7 @@ export class MovimentoBancarioController {
 							}
 						}
 
-						// Depois, processar parcelas para "pagos" (mesma lógica do modo planos: data efetiva = liquidação ou vencimento)
+						// Depois, processar parcelas para "pagos" (somente quando efetivamente liquidadas)
 						for (const parcela of parcelas) {
 							const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
 							if (!financiamento) continue;
@@ -865,10 +882,9 @@ export class MovimentoBancarioController {
 
 							if (!credorKey) continue;
 
-							// Data efetiva: liquidação se existir, senão vencimento (igual ao modo planos)
-							const dataEfetivaStr = parcela.dt_liquidacao || parcela.dt_vencimento;
-							if (!dataEfetivaStr) continue;
-							const dataEfetiva = new Date(dataEfetivaStr);
+							// Fluxo de caixa deve considerar apenas parcelas realmente pagas
+							if (!parcela.dt_liquidacao) continue;
+							const dataEfetiva = new Date(parcela.dt_liquidacao);
 							const mesEfetivo = dataEfetiva.getMonth();
 							const anoEfetivo = dataEfetiva.getFullYear();
 
@@ -900,7 +916,9 @@ export class MovimentoBancarioController {
 
 							if (!credorKey) continue;
 
-							const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
+							// Fluxo de caixa deve considerar apenas parcelas realmente pagas
+							if (!parcela.dt_liquidacao) continue;
+							const dataEfetiva = new Date(parcela.dt_liquidacao);
 							const mes = dataEfetiva.getMonth();
 							if (!dadosMensais[mes].financiamentos[credorKey]) {
 								dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
@@ -1094,7 +1112,11 @@ export class MovimentoBancarioController {
 						for (const movimento of movimentosFiltrados) {
 							const mes = new Date(movimento.dtMovimento).getMonth();
 
-							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
+							if (
+								movimento.modalidadeMovimento === 'financiamento' &&
+								(movimento.parcelado ||
+									(movimento.idFinanciamento != null && movimento.idFinanciamento > 0))
+							) {
 								continue;
 							}
 
@@ -1170,7 +1192,21 @@ export class MovimentoBancarioController {
 							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
 								continue;
 							}
+
+							const classificarPlanosComoPadrao =
+								movimento.modalidadeMovimento === 'padrao' ||
+								(movimento.modalidadeMovimento === 'financiamento' &&
+									movimento.idFinanciamento != null &&
+									movimento.idFinanciamento > 0);
+
 							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
+								if (
+									movimento.modalidadeMovimento === 'financiamento' &&
+									movimento.idFinanciamento != null &&
+									movimento.idFinanciamento > 0
+								) {
+									continue;
+								}
 								const conta = movimento.idContaCorrente;
 								pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
 								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
@@ -1191,13 +1227,13 @@ export class MovimentoBancarioController {
 									}
 									const tipoMov = plano.tipo;
 									const hierarquia = plano.hierarquia;
-									if (tipoMov === 'investimento' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+									if (tipoMov === 'investimento' && classificarPlanosComoPadrao && !movimento.parcelado) {
 										if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
 											dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
 										}
 										dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
 										continue;
-									} else if (tipoMov === 'custeio' && movimento.modalidadeMovimento === 'padrao' && !movimento.parcelado) {
+									} else if (tipoMov === 'custeio' && classificarPlanosComoPadrao && !movimento.parcelado) {
 										const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
 										if (!grupo) {
 											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
@@ -1254,8 +1290,7 @@ export class MovimentoBancarioController {
 
 						if (tipoAgrupamento === 'centros') {
 							// Separar em pagos e contratados
-							// Pagos: parcelas com dt_liquidacao no mês
-							// Contratados: parcelas com dt_vencimento no mês e sem dt_liquidacao
+							// Fluxo de caixa deve considerar somente parcelas efetivamente pagas (dt_liquidacao)
 							if (parcela.dt_liquidacao) {
 								// Parcela paga
 								const mesLiquidacao = new Date(parcela.dt_liquidacao).getMonth();
@@ -1264,16 +1299,11 @@ export class MovimentoBancarioController {
 								}
 								dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey].valor += parcela.valor;
 							}
-
-							// Contratados: sempre considerar pelo vencimento (mesmo que já tenha sido pago)
-							const mesVencimento = new Date(parcela.dt_vencimento).getMonth();
-							if (!dadosMensais[mesVencimento].financiamentos.contratados[credorKey]) {
-								dadosMensais[mesVencimento].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
-							}
-							dadosMensais[mesVencimento].financiamentos.contratados[credorKey].valor += parcela.valor;
 						} else {
 							// Estrutura original para planos de contas
-							const dataEfetiva = new Date(parcela.dt_liquidacao || parcela.dt_vencimento);
+							// Fluxo de caixa deve considerar apenas parcelas realmente pagas
+							if (!parcela.dt_liquidacao) continue;
+							const dataEfetiva = new Date(parcela.dt_liquidacao);
 							const mes = dataEfetiva.getMonth();
 							if (!dadosMensais[mes].financiamentos[credorKey]) {
 								dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };

@@ -63,7 +63,9 @@ import {
 	idCentroCustosEfetivo,
 	idPlanoContasEfetivo,
 	isCentroRateioMultiplo,
+	isFinanciamentoVinculadoContrato,
 	isPlanoRateioMultiplo,
+	TEXTO_COLUNA_UNICA_FINANCIAMENTO,
 	textoCentroPadrao,
 	textoPlanoDespesa,
 	textoPlanoTransferencia,
@@ -1159,6 +1161,16 @@ const MovimentoBancarioTable: React.FC = () => {
 													>
 														{textoPlanoTransferencia(movBancario, planos)}
 													</td>
+												) : isFinanciamentoVinculadoContrato(movBancario) ? (
+													<td
+														colSpan={2}
+														className="p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 text-blue-600 font-medium"
+														style={{ textUnderlineOffset: '2px' }}
+														onClick={() => openModalConcilia(movBancario)}
+														title="Financiamento vinculado ao contrato — clique para editar a conciliação"
+													>
+														{TEXTO_COLUNA_UNICA_FINANCIAMENTO}
+													</td>
 												) : (
 													<>
 														{/* Coluna Plano de Contas */}
@@ -1168,7 +1180,8 @@ const MovimentoBancarioTable: React.FC = () => {
 																	? 'cursor-pointer underline hover:text-gray-500' +
 																		(isPlanoRateioMultiplo(movBancario)
 																			? ' text-blue-600 font-semibold'
-																			: !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
+																			: !isFinanciamentoVinculadoContrato(movBancario) &&
+																				  !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
 																				? ' text-orange-500 font-semibold'
 																				: '')
 																	: 'text-gray-400'
@@ -1198,7 +1211,7 @@ const MovimentoBancarioTable: React.FC = () => {
 															title={movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 														>
 															{movBancario.modalidadeMovimento === 'financiamento'
-																? 'Financiamento'
+																? TEXTO_COLUNA_UNICA_FINANCIAMENTO
 																: textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</td>
 													</>
@@ -1326,6 +1339,17 @@ const MovimentoBancarioTable: React.FC = () => {
 														{textoPlanoTransferencia(movBancario, planos)}
 													</div>
 												</div>
+											) : isFinanciamentoVinculadoContrato(movBancario) ? (
+												<div className="mb-3">
+													<div className="text-xs text-gray-500">Classificação</div>
+													<div
+														className="text-sm cursor-pointer underline hover:text-gray-500 text-blue-600"
+														onClick={() => openModalConcilia(movBancario)}
+														title="Financiamento vinculado ao contrato — clique para editar a conciliação"
+													>
+														{TEXTO_COLUNA_UNICA_FINANCIAMENTO}
+													</div>
+												</div>
 											) : (
 												<div className="grid grid-cols-2 gap-3 mb-3">
 													{/* Plano de Contas */}
@@ -1335,7 +1359,9 @@ const MovimentoBancarioTable: React.FC = () => {
 															className={`text-sm ${movBancario.tipoMovimento === 'D' ? 'cursor-pointer underline hover:text-gray-500' : 'text-gray-400'} ${
 																movBancario.tipoMovimento === 'D' && isPlanoRateioMultiplo(movBancario)
 																	? 'text-blue-600 font-semibold'
-																	: movBancario.tipoMovimento === 'D' && !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
+																	: movBancario.tipoMovimento === 'D' &&
+																		  !isFinanciamentoVinculadoContrato(movBancario) &&
+																		  !planos.find((p) => p.id === idPlanoContasEfetivo(movBancario))
 																		? 'text-orange-500 font-semibold'
 																		: ''
 															}`}
@@ -1365,7 +1391,7 @@ const MovimentoBancarioTable: React.FC = () => {
 															title={movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 														>
 															{movBancario.modalidadeMovimento === 'financiamento'
-																? 'Financiamento'
+																? TEXTO_COLUNA_UNICA_FINANCIAMENTO
 																: textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</div>
 													</div>
