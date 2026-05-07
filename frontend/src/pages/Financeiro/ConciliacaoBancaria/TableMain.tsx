@@ -569,6 +569,11 @@ const MovimentoBancarioTable: React.FC = () => {
 				idPlanoContas: null,
 				idCentroCustos: null,
 				idPessoa: null,
+				idBanco: null,
+				idFinanciamento: null,
+				parcelado: false,
+				ideagro: false,
+				numeroDocumento: null,
 				resultadoList: [],
 				centroCustosList: undefined,
 				modalidadeMovimento: 'padrao',
@@ -1243,7 +1248,10 @@ const MovimentoBancarioTable: React.FC = () => {
 															>
 																<FontAwesomeIcon icon={faInfoCircle} className="mr-1" /> Informação
 															</button>
-															{movBancario.idPlanoContas && (
+															{(movBancario.idPlanoContas ||
+																(movBancario.resultadoList && movBancario.resultadoList.length > 0) ||
+																movBancario.idFinanciamento ||
+																movBancario.modalidadeMovimento === 'financiamento') && (
 																<button
 																	className="w-full px-4 py-2 hover:bg-orange-100 text-left text-orange-600"
 																	onClick={() => {
@@ -1419,8 +1427,10 @@ const MovimentoBancarioTable: React.FC = () => {
 															<FontAwesomeIcon icon={faInfoCircle} />
 															Informação
 														</button>
-														{movBancario.idPlanoContas ||
-															(movBancario.resultadoList && movBancario.resultadoList.length > 0 && (
+														{(movBancario.idPlanoContas ||
+															(movBancario.resultadoList && movBancario.resultadoList.length > 0) ||
+															movBancario.idFinanciamento ||
+															movBancario.modalidadeMovimento === 'financiamento') && (
 																<button
 																	className="flex-1 px-3 py-2 text-sm bg-orange-50 text-orange-600 rounded hover:bg-orange-100 flex items-center justify-center gap-2"
 																	onClick={() => {
@@ -1431,7 +1441,7 @@ const MovimentoBancarioTable: React.FC = () => {
 																	<FontAwesomeIcon icon={faUndo} />
 																	Limpar
 																</button>
-															))}
+															)}
 														<button
 															className="flex-1 px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2"
 															onClick={() => {
