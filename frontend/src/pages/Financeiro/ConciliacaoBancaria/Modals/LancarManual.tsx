@@ -10,7 +10,9 @@ import { listarBancos } from "../../../../services/bancoService";
 import { listarPessoas } from "../../../../services/pessoaService";
 import { listarParametros } from "../../../../services/parametroService";
 import { listarFinanciamentos } from "../../../../services/financiamentoService";
+import { listarCentroCustos } from "../../../../services/centroCustosService";
 import { Financiamento } from "../../../../../../backend/src/models/Financiamento";
+import { CentroCustos } from "../../../../../../backend/src/models/CentroCustos";
 import { toast } from "react-toastify";
 
 Modal.setAppElement("#root"); 
@@ -18,7 +20,8 @@ Modal.setAppElement("#root");
 const cache = {
   parametros: null,
   bancos: null,
-  pessoas: null
+  pessoas: null,
+  centros: null as CentroCustos[] | null,
 };
 
 interface LancamentoManualProps {
@@ -37,6 +40,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   const [tipoMovimento, setTipoMovimento] = useState<"credito" | "debito">("credito");
   const [modalidadeMovimento, setModalidadeMovimento] = useState<"padrao" | "financiamento" >("padrao");
   const [planos, setPlanos] = useState<PlanoConta[]>([]);
+  const [centros, setCentros] = useState<CentroCustos[]>([]);
   const [bancos, setBancos] = useState<{id: number; nome: string}[]>([]);
   const [pessoas, setPessoas] = useState<{id: number; nome: string}[]>([]);
   const [parametros, setParametros] = useState<{ idPlanoEntradaFinanciamentos: number; idPlanoPagamentoFinanciamentos: number }>({
@@ -63,8 +67,10 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     idPessoa: number | null;
     parcelado: boolean;
     idFinanciamento: number | null;
+    idCentroCustos: string;
   }>({
     idPlanoContas: "",
+    idCentroCustos: "",
     valor: "0,00",
     saldo: 0,
     dtMovimento: new Date().toISOString().slice(0, 16),
@@ -102,9 +108,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         if (!cache.planos) cache.planos = await listarPlanoContas();
         if (!cache.bancos) cache.bancos = await listarBancos();
         if (!cache.pessoas) cache.pessoas = await listarPessoas();
+        if (!cache.centros) cache.centros = await listarCentroCustos();
 
         setParametros(cache.parametros);
         setPlanos(cache.planos);
+        setCentros(cache.centros);
         setBancos(cache.bancos);
         setPessoas(cache.pessoas);
       } catch (error) {
@@ -206,6 +214,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     if (modalidadeMovimento === "financiamento") {
       if (!formData.idFinanciamento) newErrors.idFinanciamento = "Selecione um financiamento!";
     }
+    if (modalidadeMovimento === "padrao") {
+      if (!formData.idCentroCustos || formData.idCentroCustos === "") {
+        newErrors.idCentroCustos = "Selecione um centro de custos!";
+      }
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -220,7 +233,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
         parcelado,
         parcelas,
-        idFinanciamento: formData.idFinanciamento
+        idFinanciamento: formData.idFinanciamento,
+        idCentroCustos:
+          modalidadeMovimento === "padrao" && formData.idCentroCustos
+            ? parseInt(formData.idCentroCustos, 10)
+            : null,
       };
       handleSave(dataToSend);
     }
@@ -260,15 +277,20 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-	const alterarModalidadeMovimento = (modalidadeMovimento: string) => {
-    if (modalidadeMovimento === "padrao" || modalidadeMovimento === "financiamento") {
-      setModalidadeMovimento(modalidadeMovimento);
+	const alterarModalidadeMovimento = (nova: string) => {
+    if (nova === "padrao" || nova === "financiamento") {
+      setModalidadeMovimento(nova);
     }
-		if(modalidadeMovimento == "padrao"){
+		if(nova == "padrao"){
 			setParcelado(false);
 		}
     setFinanciamentoSelecionado(null);
     setBuscaFinanciamento('');
+    setFormData((prev) => ({
+      ...prev,
+      idFinanciamento: null,
+      ...(nova === "financiamento" ? { idCentroCustos: "" } : {}),
+    }));
 	}
 
   const handleChangeTipoMovimento = (tipoMovimento: string) => {
@@ -457,6 +479,33 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
             {errors.idPlanoContas && <p className="text-red-500 text-xs">{errors.idPlanoContas}</p>}
           </div>
         </div>
+
+        {modalidadeMovimento === "padrao" && (
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Centro de custos <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="idCentroCustos"
+                className={`w-full p-2 bg-white border rounded ${errors.idCentroCustos ? "border-red-500" : "border-gray-300"}`}
+                value={formData.idCentroCustos}
+                onChange={handleInputChange}
+                disabled={isSaving}
+              >
+                <option value="">Selecione um centro de custos</option>
+                {[...centros]
+                  .sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "", "pt-BR"))
+                  .map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.descricao}
+                    </option>
+                  ))}
+              </select>
+              {errors.idCentroCustos && <p className="text-red-500 text-xs mt-1">{errors.idCentroCustos}</p>}
+            </div>
+          </div>
+        )}
 
         {/* Valor e Data */}
         <div className="grid grid-cols-2 gap-4">

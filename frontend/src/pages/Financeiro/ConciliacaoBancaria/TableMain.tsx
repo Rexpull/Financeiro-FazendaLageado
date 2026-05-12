@@ -63,9 +63,11 @@ import {
 	idCentroCustosEfetivo,
 	idPlanoContasEfetivo,
 	isCentroRateioMultiplo,
+	isFinanciamentoSemContratoVinculado,
 	isFinanciamentoVinculadoContrato,
 	isPlanoRateioMultiplo,
 	TEXTO_COLUNA_UNICA_FINANCIAMENTO,
+	TEXTO_FINANCIAMENTO_SEM_CONTRATO,
 	textoCentroPadrao,
 	textoPlanoDespesa,
 	textoPlanoTransferencia,
@@ -482,7 +484,10 @@ const MovimentoBancarioTable: React.FC = () => {
 				atualizadoEm: new Date().toISOString(),
 				idUsuario: usuario?.id,
 				identificadorOfx: formData.identificadorOfx || crypto.randomUUID(),
-				idCentroCustos: parseInt(formData.idCentroCustos),
+				idCentroCustos:
+					formData.idCentroCustos != null && formData.idCentroCustos !== ''
+						? parseInt(String(formData.idCentroCustos), 10)
+						: null,
 			};
 			console.log('Movimento a ser salvo:', movimentoCompleto);
 
@@ -1176,6 +1181,16 @@ const MovimentoBancarioTable: React.FC = () => {
 													>
 														{TEXTO_COLUNA_UNICA_FINANCIAMENTO}
 													</td>
+												) : isFinanciamentoSemContratoVinculado(movBancario) ? (
+													<td
+														colSpan={2}
+														className="p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 text-orange-500 font-semibold"
+														style={{ textUnderlineOffset: '2px' }}
+														onClick={() => openModalConcilia(movBancario)}
+														title="Abra a conciliação e selecione ou crie o contrato no modo Financiamento"
+													>
+														{TEXTO_FINANCIAMENTO_SEM_CONTRATO}
+													</td>
 												) : (
 													<>
 														{/* Coluna Plano de Contas */}
@@ -1199,25 +1214,18 @@ const MovimentoBancarioTable: React.FC = () => {
 														</td>
 														{/* Coluna Centro de Custos */}
 														<td
-															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
-																movBancario.modalidadeMovimento === 'financiamento'
-																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
-																	: `cursor-pointer underline hover:text-gray-500 ${
-																			isCentroRateioMultiplo(movBancario)
-																				? 'text-blue-600 font-semibold'
-																				: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(movBancario)) &&
-																					  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
-																					? 'text-orange-500 font-semibold'
-																					: ''
-																		}`
+															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] cursor-pointer underline hover:text-gray-500 ${
+																isCentroRateioMultiplo(movBancario)
+																	? 'text-blue-600 font-semibold'
+																	: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(movBancario)) &&
+																		  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
+																		? 'text-orange-500 font-semibold'
+																		: ''
 															}`}
 															style={{ textUnderlineOffset: '2px' }}
 															onClick={() => openModalConcilia(movBancario)}
-															title={movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 														>
-															{movBancario.modalidadeMovimento === 'financiamento'
-																? TEXTO_COLUNA_UNICA_FINANCIAMENTO
-																: textoCentroPadrao(movBancario, centrosDisponiveis)}
+															{textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</td>
 													</>
 												)}
@@ -1358,6 +1366,17 @@ const MovimentoBancarioTable: React.FC = () => {
 														{TEXTO_COLUNA_UNICA_FINANCIAMENTO}
 													</div>
 												</div>
+											) : isFinanciamentoSemContratoVinculado(movBancario) ? (
+												<div className="mb-3">
+													<div className="text-xs text-gray-500">Classificação</div>
+													<div
+														className="text-sm cursor-pointer underline hover:text-gray-500 text-orange-500 font-semibold"
+														onClick={() => openModalConcilia(movBancario)}
+														title="Abra a conciliação e selecione ou crie o contrato no modo Financiamento"
+													>
+														{TEXTO_FINANCIAMENTO_SEM_CONTRATO}
+													</div>
+												</div>
 											) : (
 												<div className="grid grid-cols-2 gap-3 mb-3">
 													{/* Plano de Contas */}
@@ -1383,24 +1402,17 @@ const MovimentoBancarioTable: React.FC = () => {
 													<div>
 														<div className="text-xs text-gray-500">Centro de Custos</div>
 														<div
-															className={`text-sm ${
-																movBancario.modalidadeMovimento === 'financiamento'
-																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
-																	: `cursor-pointer underline hover:text-gray-500 ${
-																			isCentroRateioMultiplo(movBancario)
-																				? 'text-blue-600 font-semibold'
-																				: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(movBancario)) &&
-																					  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
-																					? 'text-orange-500 font-semibold'
-																					: ''
-																		}`
+															className={`text-sm cursor-pointer underline hover:text-gray-500 ${
+																isCentroRateioMultiplo(movBancario)
+																	? 'text-blue-600 font-semibold'
+																	: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(movBancario)) &&
+																		  !(movBancario.centroCustosList && movBancario.centroCustosList.length > 0)
+																		? 'text-orange-500 font-semibold'
+																		: ''
 															}`}
 															onClick={() => openModalConcilia(movBancario)}
-															title={movBancario.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
 														>
-															{movBancario.modalidadeMovimento === 'financiamento'
-																? TEXTO_COLUNA_UNICA_FINANCIAMENTO
-																: textoCentroPadrao(movBancario, centrosDisponiveis)}
+															{textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</div>
 													</div>
 												</div>

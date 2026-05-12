@@ -673,6 +673,18 @@ export class MovimentoBancarioRepository {
 			});
 			await this.resultadoRepo.createMany(resultadoList.map((r) => ({ ...r, idMovimentoBancario: id })));
 			console.log('✅ Resultados criados com sucesso');
+
+			// Sync mb.idPlanoContas with the Resultado to keep them consistent.
+			// Single Resultado: set mb.idPlanoContas to that plan. Multiple (rateio): clear mb.idPlanoContas.
+			const syncedPlanoContas = resultadoList.length === 1 ? resultadoList[0].idPlanoContas : null;
+			const syncedPlanoChanged = syncedPlanoContas !== (movimentoAtual.idPlanoContas ?? null);
+			if (syncedPlanoChanged) {
+				console.log(`🔄 Sincronizando mb.idPlanoContas: ${movimentoAtual.idPlanoContas} → ${syncedPlanoContas}`);
+				await this.db
+					.prepare(`UPDATE MovimentoBancario SET idPlanoContas = ?, atualizado_em = datetime('now') WHERE id = ?`)
+					.bind(syncedPlanoContas, id)
+					.run();
+			}
 		} else {
 			console.log('⚠️ Nenhum resultado para processar');
 		}
@@ -2053,13 +2065,32 @@ export class MovimentoBancarioRepository {
 
 			console.log(`📊 Repository: ${results.length} movimentos encontrados`);
 
-			// Buscar também movimentos com rateio (centroCustosList)
-			const movimentosComRateio = await Promise.all(
-				results.map(async (mov: any) => {
-					const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(mov.id);
-					return { ...mov, centroCustosList };
-				}),
-			);
+			// Batch-load all cost center rateios to avoid N+1 queries
+			const idsMovimentosCC = (results as any[]).map((r: any) => r.id as number);
+			const centroCustosMapBatchCC = await this.movimentoCentroCustosRepo.buscarPorMovimentos(idsMovimentosCC);
+
+			// Collect all unique CentroCustos IDs (from rateios + direct assignments)
+			const todosCCIdsCC = new Set<number>();
+			centroCustosMapBatchCC.forEach((lista) => lista.forEach((cc) => todosCCIdsCC.add(cc.idCentroCustos)));
+			(results as any[]).forEach((mov: any) => { if (mov.idCentroCustos) todosCCIdsCC.add(mov.idCentroCustos as number); });
+
+			let centrosCustosInfoMapCC = new Map<number, { id: number; descricao: string; tipo: string | null; tipoReceitaDespesa: string | null }>();
+			if (todosCCIdsCC.size > 0) {
+				const ids = Array.from(todosCCIdsCC);
+				const placeholders = ids.map(() => '?').join(',');
+				const { results: ccResults } = await this.db
+					.prepare(`SELECT id, descricao, tipo, tipoReceitaDespesa FROM CentroCustos WHERE id IN (${placeholders})`)
+					.bind(...ids)
+					.all();
+				(ccResults as any[]).forEach((cc: any) => {
+					centrosCustosInfoMapCC.set(cc.id as number, {
+						id: cc.id as number,
+						descricao: cc.descricao as string,
+						tipo: cc.tipo as string | null,
+						tipoReceitaDespesa: cc.tipoReceitaDespesa as string | null,
+					});
+				});
+			}
 
 			// Agrupar por centro de custos
 			const agrupados: Map<
@@ -2071,35 +2102,32 @@ export class MovimentoBancarioRepository {
 				}
 			> = new Map();
 
-			for (const mov of movimentosComRateio as any[]) {
+			for (const mov of results as any[]) {
+				const centroCustosList = centroCustosMapBatchCC.get(mov.id) || [];
 				const centrosDoMovimento: Array<{ id: number; descricao: string; tipo?: string; tipoReceitaDespesa?: string; valor: number }> = [];
 
-				// Se tem rateio (centroCustosList), usar ele
-				if (mov.centroCustosList && mov.centroCustosList.length > 0) {
-					for (const cc of mov.centroCustosList) {
-						// Buscar informações do centro de custos
-						const centroInfo = await this.db
-							.prepare('SELECT id, descricao, tipo, tipoReceitaDespesa FROM CentroCustos WHERE id = ?')
-							.bind(cc.idCentroCustos)
-							.first();
-
+				// Use rateio if available, otherwise use direct assignment
+				if (centroCustosList.length > 0) {
+					for (const cc of centroCustosList) {
+						const centroInfo = centrosCustosInfoMapCC.get(cc.idCentroCustos);
 						if (centroInfo) {
 							centrosDoMovimento.push({
-								id: centroInfo.id as number,
-								descricao: centroInfo.descricao as string,
-								tipo: centroInfo.tipo as string,
-								tipoReceitaDespesa: centroInfo.tipoReceitaDespesa as string,
+								id: centroInfo.id,
+								descricao: centroInfo.descricao,
+								tipo: centroInfo.tipo || undefined,
+								tipoReceitaDespesa: centroInfo.tipoReceitaDespesa || undefined,
 								valor: Math.abs(cc.valor),
 							});
 						}
 					}
 				} else if (mov.idCentroCustos) {
-					// Centro único
+					// Single direct assignment
+					const centroInfo = centrosCustosInfoMapCC.get(mov.idCentroCustos as number);
 					centrosDoMovimento.push({
 						id: mov.centroCustosId || mov.idCentroCustos,
-						descricao: mov.centroCustosDescricao || 'Não definido',
-						tipo: mov.centroCustosTipo,
-						tipoReceitaDespesa: mov.centroCustosTipoReceitaDespesa,
+						descricao: centroInfo?.descricao || mov.centroCustosDescricao || 'Não definido',
+						tipo: centroInfo?.tipo || mov.centroCustosTipo,
+						tipoReceitaDespesa: centroInfo?.tipoReceitaDespesa || mov.centroCustosTipoReceitaDespesa,
 						valor: Math.abs(mov.valor),
 					});
 				}
@@ -2246,20 +2274,37 @@ export class MovimentoBancarioRepository {
 
 			console.log(`📊 Repository: ${results.length} movimentos classificados encontrados`);
 
-			// Processar resultados incluindo rateios
+			// Batch-load all cost center rateios to avoid N+1 queries
+			const idsMovimentos = (results as any[]).map((r: any) => r.id as number);
+			const centroCustosMapBatch = await this.movimentoCentroCustosRepo.buscarPorMovimentos(idsMovimentos);
+
+			// Collect all unique CentroCustos IDs from rateios for a single batch lookup
+			const todosCCIds = new Set<number>();
+			centroCustosMapBatch.forEach((lista) => lista.forEach((cc) => todosCCIds.add(cc.idCentroCustos)));
+
+			let centrosCustosInfoMap = new Map<number, { descricao: string; tipo: string | null }>();
+			if (todosCCIds.size > 0) {
+				const ids = Array.from(todosCCIds);
+				const placeholders = ids.map(() => '?').join(',');
+				const { results: ccResults } = await this.db
+					.prepare(`SELECT id, descricao, tipo FROM CentroCustos WHERE id IN (${placeholders})`)
+					.bind(...ids)
+					.all();
+				(ccResults as any[]).forEach((cc: any) => {
+					centrosCustosInfoMap.set(cc.id as number, { descricao: cc.descricao as string, tipo: cc.tipo as string | null });
+				});
+			}
+
+			// Process results using pre-loaded batch data
 			const movimentosProcessados: any[] = [];
 
 			for (const mov of results as any[]) {
-				// Verificar se tem rateio de centros de custos
-				const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(mov.id);
+				const centroCustosList = centroCustosMapBatch.get(mov.id) || [];
 
-				if (centroCustosList && centroCustosList.length > 0) {
-					// Múltiplos centros (rateio) - criar uma linha para cada
+				if (centroCustosList.length > 0) {
+					// Multiple cost centers (rateio) - create one row per center
 					for (const cc of centroCustosList) {
-						const centroInfo = await this.db
-							.prepare('SELECT descricao, tipo FROM CentroCustos WHERE id = ?')
-							.bind(cc.idCentroCustos)
-							.first();
+						const centroInfo = centrosCustosInfoMap.get(cc.idCentroCustos);
 
 						movimentosProcessados.push({
 							id: mov.id,
@@ -2270,8 +2315,8 @@ export class MovimentoBancarioRepository {
 							modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
 							idPlanoContas: mov.idPlanoContas,
 							planoDescricao: mov.planoDescricao,
-							centroCustosDescricao: (centroInfo?.descricao as string) || 'Não definido',
-							centroCustosTipo: (centroInfo?.tipo as string) || null,
+							centroCustosDescricao: centroInfo?.descricao || 'Não definido',
+							centroCustosTipo: centroInfo?.tipo || null,
 							pessoaNome: mov.pessoaNome,
 							bancoNome: mov.bancoNome,
 							bancoCodigo: mov.bancoCodigo,
@@ -2283,7 +2328,7 @@ export class MovimentoBancarioRepository {
 						});
 					}
 				} else {
-					// Centro único ou sem centro
+					// Single or no cost center
 					movimentosProcessados.push({
 						id: mov.id,
 						dtMovimento: mov.dtMovimento,

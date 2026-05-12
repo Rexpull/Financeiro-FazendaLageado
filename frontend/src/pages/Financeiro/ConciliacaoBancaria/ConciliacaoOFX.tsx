@@ -19,9 +19,11 @@ import {
 	idCentroCustosEfetivo,
 	idPlanoContasEfetivo,
 	isCentroRateioMultiplo,
+	isFinanciamentoSemContratoVinculado,
 	isFinanciamentoVinculadoContrato,
 	isPlanoRateioMultiplo,
 	TEXTO_COLUNA_UNICA_FINANCIAMENTO,
+	TEXTO_FINANCIAMENTO_SEM_CONTRATO,
 	textoCentroOrdenacaoOFX,
 	textoCentroPadrao,
 	textoPlanoDespesa,
@@ -193,9 +195,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 			return !temPlanoUnico && !temResultadoList;
 		}
 
-		// Financiamento already linked to a contract is classified in the financing module (no plan/centro on MB)
-		if (mov.modalidadeMovimento === 'financiamento' && mov.idFinanciamento != null && mov.idFinanciamento > 0) {
-			return false;
+		// Financing: conciliated only when a contract is linked (crédito e débito)
+		if (mov.modalidadeMovimento === 'financiamento') {
+			return mov.idFinanciamento == null || mov.idFinanciamento <= 0;
 		}
 
 		if (mov.tipoMovimento === 'C') {
@@ -900,6 +902,16 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 													>
 														{TEXTO_COLUNA_UNICA_FINANCIAMENTO}
 													</td>
+												) : isFinanciamentoSemContratoVinculado(mov) ? (
+													<td
+														colSpan={2}
+														className="p-2 text-center truncate min-w-[180px] max-w-[440px] cursor-pointer underline hover:text-gray-500 text-orange-500 font-semibold"
+														style={{ textUnderlineOffset: '2px' }}
+														onClick={() => openModalConcilia(mov)}
+														title="Abra a conciliação e selecione ou crie o contrato no modo Financiamento"
+													>
+														{TEXTO_FINANCIAMENTO_SEM_CONTRATO}
+													</td>
 												) : (
 													<>
 														{/* Coluna Plano de Contas */}
@@ -922,25 +934,19 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 														</td>
 														{/* Coluna Centro de Custos */}
 														<td
-															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] ${
-																mov.modalidadeMovimento === 'financiamento'
-																	? 'cursor-pointer underline hover:text-gray-500 text-blue-600'
-																	: `cursor-pointer underline hover:text-gray-500 ${
-																			isCentroRateioMultiplo(mov)
-																				? 'text-blue-600 font-semibold'
-																				: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(mov)) &&
-																					  !(mov.centroCustosList && mov.centroCustosList.length > 0)
-																					? 'text-orange-500 font-semibold'
-																					: ''
-																		}`
+															className={`p-2 text-center truncate min-w-[180px] max-w-[220px] cursor-pointer underline hover:text-gray-500 ${
+																isCentroRateioMultiplo(mov)
+																	? 'text-blue-600 font-semibold'
+																	: !centrosDisponiveis.find((c) => c.id === idCentroCustosEfetivo(mov)) &&
+																		  !(mov.centroCustosList && mov.centroCustosList.length > 0)
+																		? 'text-orange-500 font-semibold'
+																		: ''
 															}`}
 															style={{ textUnderlineOffset: '2px' }}
 															onClick={() => openModalConcilia(mov)}
-															title={mov.modalidadeMovimento === 'financiamento' ? 'Clique para editar conciliação' : ''}
+															title=""
 														>
-															{mov.modalidadeMovimento === 'financiamento'
-																? TEXTO_COLUNA_UNICA_FINANCIAMENTO
-																: textoCentroPadrao(mov, centrosDisponiveis)}
+															{textoCentroPadrao(mov, centrosDisponiveis)}
 														</td>
 													</>
 												)}

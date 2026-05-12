@@ -8,8 +8,13 @@ export const isFinanciamentoVinculadoContrato = (mov: MovimentoBancario): boolea
 	mov.idFinanciamento != null &&
 	mov.idFinanciamento > 0;
 
-/** Single-column label for crédito (contratação) e débito (parcela) vinculados ao contrato */
+/** Modality = financiamento but contract not linked yet (must not show as fully conciliated) */
+export const isFinanciamentoSemContratoVinculado = (mov: MovimentoBancario): boolean =>
+	mov.modalidadeMovimento === 'financiamento' && !isFinanciamentoVinculadoContrato(mov);
+
 export const TEXTO_COLUNA_UNICA_FINANCIAMENTO = 'Financiamento';
+
+export const TEXTO_FINANCIAMENTO_SEM_CONTRATO = 'Financiamento — associe ou crie o contrato';
 
 /** Mais de um plano no rateio */
 export const isPlanoRateioMultiplo = (mov: MovimentoBancario): boolean =>
