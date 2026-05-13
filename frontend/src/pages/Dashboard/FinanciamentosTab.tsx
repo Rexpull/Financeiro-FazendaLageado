@@ -58,6 +58,39 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({
 
   return (
     <>
+      {/* Resumo: Novos x Pagos + Estoque dos ativos */}
+      {dashboardData?.totaisAno?.financiamentos && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
+          <Paper elevation={3} sx={{ p: 2.5, borderRadius: 3, border: '1px solid', borderColor: 'info.light', textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.5 }}>
+              Novos (contratados no ano)
+            </Typography>
+            <Typography variant="h5" fontWeight="bold" color="info.main">
+              {formatCurrency(dashboardData.totaisAno.financiamentos.totalFinanciado)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {dashboardData.totaisAno.financiamentos.contratosAtivos} contrato(s)
+            </Typography>
+          </Paper>
+          <Paper elevation={3} sx={{ p: 2.5, borderRadius: 3, border: '1px solid', borderColor: 'success.light', textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.5 }}>
+              Pagos (parcelas liquidadas)
+            </Typography>
+            <Typography variant="h5" fontWeight="bold" color="success.main">
+              {formatCurrency(dashboardData.totaisAno.financiamentos.totalQuitado)}
+            </Typography>
+          </Paper>
+          <Paper elevation={3} sx={{ p: 2.5, borderRadius: 3, border: '2px solid', borderColor: 'warning.main', textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.5 }}>
+              Estoque dos ativos (em aberto)
+            </Typography>
+            <Typography variant="h5" fontWeight="bold" color="warning.dark">
+              {formatCurrency(dashboardData.totaisAno.financiamentos.totalEmAberto)}
+            </Typography>
+          </Paper>
+        </Box>
+      )}
+
       {/* Indicadores-Chave de Financiamentos */}
       <Box sx={{ mb: 4 }}>
 

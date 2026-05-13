@@ -17,7 +17,7 @@ import {
   Select,
   MenuItem,
 } from "@mui/material";
-import { ContratosLiquidados, ContratosNovos, DashboardData } from "../../services/dashboardService";
+import { DashboardData } from "../../services/dashboardService";
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import SavingsIcon from '@mui/icons-material/Savings';
@@ -51,8 +51,8 @@ function formatAxisCurrencyShort(n: number): string {
 const truncateCat = (s: string, max = 42) =>
   s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 
-const MAX_COMPOSITION_BARS = 10;
-const TOP_SLICES_BEFORE_OTHERS = 9;
+const MAX_COMPOSITION_BARS = 30;
+const TOP_SLICES_BEFORE_OTHERS = 29;
 
 /**
  * At most MAX_COMPOSITION_BARS rows. If there are more categories, keep the top TOP_SLICES_BEFORE_OTHERS by value
@@ -171,8 +171,6 @@ interface ReceitasDespesasTabProps {
   mesSelecionado: string;
   tipoDetalhamento: 'receitas' | 'despesas';
   onTipoDetalhamentoChange: (value: 'receitas' | 'despesas') => void;
-  contratosLiquidados: ContratosLiquidados | null;
-  contratosNovos: ContratosNovos | null;
 }
 
 const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
@@ -181,8 +179,6 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
   mesSelecionado,
   tipoDetalhamento,
   onTipoDetalhamentoChange,
-  contratosLiquidados,
-  contratosNovos,
 }) => {
   const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
 
@@ -441,8 +437,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       '#ef5350',
                       custeio,
                       'Sem despesas de custeio no período.',
-                      true,
-                      'Outros planos'
+                      false
                     )}
                     {renderDespesasSubChart('Despesas de Investimento', '#fb8c00', investimento, 'Sem despesas de investimento no período.')}
                   </>
@@ -451,55 +446,6 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
             </Box>
           </Paper>
         </Box>
-
-        {/* Terceiro gráfico comparativo: Financiamentos */}
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'info.main', fontSize: '1.35rem' }}>
-            Financiamentos — Contratados x Liquidados
-          </Typography>
-          {(() => {
-            const labelsNovos = contratosNovos?.labels ?? [];
-            const labelsLiquidados = contratosLiquidados?.labels ?? [];
-            const labels = Array.from(new Set([...labelsNovos, ...labelsLiquidados])).sort();
-            if (labels.length === 0) {
-              return <NoData message="Nenhum dado de financiamentos para o período selecionado." />;
-            }
-            const contratados = labels.map((m) => {
-              const idx = labelsNovos.indexOf(m);
-              return idx >= 0 ? -(contratosNovos?.valores?.[idx] || 0) : 0;
-            });
-            const liquidados = labels.map((m) => {
-              const idx = labelsLiquidados.indexOf(m);
-              return idx >= 0 ? contratosLiquidados?.valores?.[idx] || 0 : 0;
-            });
-            return (
-              <Suspense fallback={<CircularProgress />}>
-                <Chart
-                  options={{
-                    chart: { type: 'bar', stacked: false, toolbar: { show: false } },
-                    plotOptions: { bar: { horizontal: false, columnWidth: '50%', borderRadius: 4 } },
-                    xaxis: { categories: labels },
-                    yaxis: {
-                      labels: { formatter: (val: number) => formatCurrency(Math.abs(val)) },
-                      title: { text: 'Valor (R$)' },
-                    },
-                    tooltip: { y: { formatter: (val: number) => formatCurrency(Math.abs(val)) } },
-                    colors: ['#1e88e5', '#43a047'],
-                    dataLabels: { enabled: false },
-                    legend: { position: 'top' },
-                  }}
-                  series={[
-                    { name: 'Empréstimos contratados', data: contratados },
-                    { name: 'Empréstimos liquidados', data: liquidados },
-                  ]}
-                  type="bar"
-                  height={320}
-                  width="100%"
-                />
-              </Suspense>
-            );
-          })()}
-        </Paper>
 
         {/* Card único: Saldo Líquido */}
         <Paper elevation={3} sx={{ p: 3, border: '1px solid #e0e0e0', borderRadius: 3 }}>

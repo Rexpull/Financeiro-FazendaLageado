@@ -269,8 +269,6 @@ const Dashboard = () => {
             mesSelecionado={mesSelecionado}
             tipoDetalhamento={tipoDetalhamento}
             onTipoDetalhamentoChange={setTipoDetalhamento}
-            contratosLiquidados={contratosLiquidados}
-            contratosNovos={contratosNovos}
           />
         )}
 

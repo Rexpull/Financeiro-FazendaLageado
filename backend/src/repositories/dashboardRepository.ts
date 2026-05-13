@@ -81,7 +81,7 @@ export class DashboardRepository {
     const { ano, mes, contas, mbExcl, debug } = args;
 
     let whereBase =
-      'WHERE (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != \'transferencia\')';
+      'WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN (\'transferencia\', \'financiamento\'))';
     let paramsBase: unknown[] = [];
     if (contas && contas.length > 0) {
       whereBase += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
@@ -149,29 +149,6 @@ export class DashboardRepository {
     addRows(rMcc.results as any[]);
     addRows(rMb.results as any[]);
 
-    const descFinanciamentoCreditoSemCentro = 'Financiamentos (entrada de crédito)';
-    const qFinanciamentoCreditoSemCentro = `
-      SELECT SUM(ABS(mb.valor)) as valor
-      FROM MovimentoBancario mb
-      ${whereBase}${creditOnly}
-        AND mb.modalidadeMovimento = 'financiamento'
-        AND mb.idFinanciamento IS NOT NULL AND mb.idFinanciamento > 0
-        AND mb.idCentroCustos IS NULL
-        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc_f WHERE mcc_f.idMovimentoBancario = mb.id)
-    `;
-    const rFinCred = await this.db.prepare(qFinanciamentoCreditoSemCentro).bind(...paramsBase).first();
-    const vFinCred = Math.abs(Number((rFinCred as any)?.valor) || 0);
-    if (vFinCred > 1e-9) {
-      const prev = merged.get(descFinanciamentoCreditoSemCentro);
-      const block = { valor: vFinCred, valorConciliado: vFinCred };
-      if (prev) {
-        prev.valor += block.valor;
-        prev.valorConciliado += block.valorConciliado;
-      } else {
-        merged.set(descFinanciamentoCreditoSemCentro, block);
-      }
-    }
-
     const out: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
     for (const [descricao, agg] of merged) {
       const conciliado = agg.valorConciliado > 0 && agg.valorConciliado >= agg.valor * 0.99;
@@ -237,7 +214,8 @@ export class DashboardRepository {
       FROM MovimentoBancario mb
       LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
-        AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')
+        AND mb.idFinanciamento IS NULL
+        AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
         ${mbPlanoSql.sql}
         ${contasFilter}
     `;
@@ -347,7 +325,8 @@ export class DashboardRepository {
       LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
         AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?
-        AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')
+        AND mb.idFinanciamento IS NULL
+        AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
         ${mbPlanoSql.sql}
         ${contasFilter}
     `;
@@ -420,7 +399,8 @@ export class DashboardRepository {
       FROM MovimentoBancario mb
       LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
-        AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')
+        AND mb.idFinanciamento IS NULL
+        AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
         ${mbPlanoSql.sql}
         ${contasFilter}
       GROUP BY mes
@@ -470,7 +450,8 @@ export class DashboardRepository {
       JOIN planoContas pc ON m.idPlanoContas = pc.id
       WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
       AND pc.tipo = 'investimento'
-      AND (m.modalidadeMovimento IS NULL OR m.modalidadeMovimento != 'transferencia')
+      AND m.idFinanciamento IS NULL
+      AND (m.modalidadeMovimento IS NULL OR m.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
       ${mbPlanoSql.sql}
       ${contasFilter}
       GROUP BY mes
@@ -739,7 +720,7 @@ export class DashboardRepository {
     let contasFilter = 'JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id';
     let contasParams: any[] = [];
     let whereClause =
-      "WHERE (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')";
+      "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
     if (contas && contas.length > 0) {
       whereClause += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       contasParams = contas;
@@ -797,7 +778,7 @@ export class DashboardRepository {
       'JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id';
     let detalhamentoContasParams: any[] = [];
     let detalhamentoWhereClause =
-      "WHERE (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')";
+      "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
     if (contas && contas.length > 0) {
       detalhamentoWhereClause += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       detalhamentoContasParams = contas;
@@ -838,7 +819,7 @@ export class DashboardRepository {
     if (tipoAgrupamento === 'planos') {
       // Agrupamento por Planos de Contas usando Resultado (rateio)
       let agrupamentoWhereClause =
-        "WHERE (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')";
+        "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
       let agrupamentoParams: any[] = [];
 
       if (contas && contas.length > 0) {
@@ -898,7 +879,7 @@ export class DashboardRepository {
       // Receitas totais vêm de MovimentoBancario; o rateio (Resultado) muitas vezes não é criado para créditos
       // classificados só com centro de custos. Inclui esses movimentos no agrupamento por plano do MB.
       let orphanReceitasWhere =
-        "WHERE (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')";
+        "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
       let orphanReceitasParams: any[] = [];
       if (contas && contas.length > 0) {
         orphanReceitasWhere += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
@@ -917,12 +898,6 @@ export class DashboardRepository {
         " AND NOT EXISTS (SELECT 1 FROM Resultado r2 WHERE r2.idMovimentoBancario = mb.id)";
       orphanReceitasWhere +=
         " AND (pc.id IS NULL OR (pc.hierarquia NOT LIKE '003%'))";
-      orphanReceitasWhere += ` AND NOT (
-        mb.modalidadeMovimento = 'financiamento'
-        AND mb.idFinanciamento IS NOT NULL AND mb.idFinanciamento > 0
-        AND mb.idCentroCustos IS NULL
-        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc_orf WHERE mcc_orf.idMovimentoBancario = mb.id)
-      )`;
 
       const queryOrphanReceitasPlano = `
         SELECT 
@@ -1055,7 +1030,7 @@ export class DashboardRepository {
     } else {
       // Agrupamento por Centros de Custos usando MovimentoCentroCustos (rateio)
       let agrupamentoWhereClause =
-        "WHERE (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')";
+        "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
       let agrupamentoParams: any[] = [];
 
       if (contas && contas.length > 0) {
