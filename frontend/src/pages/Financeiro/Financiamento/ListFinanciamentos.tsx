@@ -22,7 +22,7 @@ import noData from '/frontend/src/assets/img/noData.svg';
 import ModalFinanciamento from './ModalFinanciamento';
 import { Financiamento } from '../../../../../backend/src/models/Financiamento';
 import type { ParcelaFinanciamento } from '../../../../../backend/src/models/ParcelaFinanciamento';
-import { financiamentoTemParcelasVencidas } from '../../../utils/financiamentoParcelaStatus';
+import { financiamentoTemParcelasVencidas } from '../../../Utils/financiamentoParcelaStatus';
 import { salvarFinanciamento, listarFinanciamentos, excluirFinanciamento } from '../../../services/financiamentoService';
 import { salvarParcelaFinanciamento } from '../../../services/financiamentoParcelasService';
 import { toast } from 'react-toastify';
