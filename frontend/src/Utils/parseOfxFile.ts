@@ -49,6 +49,57 @@ function buildIdentificadorImportacao(
   return extra ? `${base}|${extra}` : base;
 }
 
+/**
+ * Parses OFX TRNAMT/BALAMT strings.
+ * - Standard (most banks): "-114.35" → -114.35
+ * - Brazilian thousands (e.g. Caixa): "-1.061.52" → -1061.52
+ * - Comma decimal: "-1061,52" or "1.061,52"
+ */
+export function parseOfxAmount(amountStr: string): number {
+  const raw = amountStr.trim();
+  if (!raw) return NaN;
+
+  const isNegative = raw.startsWith("-");
+  let unsigned = isNegative ? raw.slice(1) : raw;
+
+  if (unsigned.includes(",") && !unsigned.includes(".")) {
+    unsigned = unsigned.replace(/\./g, "").replace(",", ".");
+    const v = parseFloat(unsigned);
+    return isNegative ? -Math.abs(v) : v;
+  }
+
+  if (unsigned.includes(",") && unsigned.includes(".")) {
+    const lastComma = unsigned.lastIndexOf(",");
+    const lastDot = unsigned.lastIndexOf(".");
+    if (lastComma > lastDot) {
+      unsigned = unsigned.replace(/\./g, "").replace(",", ".");
+    } else {
+      unsigned = unsigned.replace(/,/g, "");
+    }
+    const v = parseFloat(unsigned);
+    return isNegative ? -Math.abs(v) : v;
+  }
+
+  const parts = unsigned.split(".");
+  if (parts.length <= 2) {
+    const v = parseFloat(unsigned);
+    return isNegative ? -Math.abs(v) : v;
+  }
+
+  // Multiple dots: Caixa-style grouping (e.g. "1.061.52" → 1061.52).
+  // Only when the last segment looks like centavos (2 digits), so standard
+  // single-decimal amounts (e.g. "-114.35") are unaffected above.
+  const cents = parts[parts.length - 1];
+  if (!/^\d{2}$/.test(cents) || parts.some((p) => !/^\d+$/.test(p))) {
+    const v = parseFloat(unsigned);
+    return Number.isNaN(v) ? NaN : isNegative ? -Math.abs(v) : v;
+  }
+
+  const integerPart = parts.slice(0, -1).join("");
+  const v = parseFloat(`${integerPart}.${cents}`);
+  return isNegative ? -Math.abs(v) : v;
+}
+
 function agruparMovimentosBB(movimentos: MovimentoTemporario[]): MovimentoTemporario[] {
   const movimentosAgrupados: MovimentoTemporario[] = [];
   const porRef: Record<string, MovimentoTemporario[]> = {};
@@ -135,6 +186,146 @@ function agruparDuplicadosPorFITIDMesmoDia(
   return saida;
 }
 
+export function parseOFXContent(
+  ofxContent: string
+): { movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX } {
+  const normalized = normalizarOfx(ofxContent);
+
+  // Banco
+  const bankIdMatch = normalized.match(/<BANKID>(\d+)<\/BANKID>/);
+  const isBancoBrasil = !!bankIdMatch && bankIdMatch[1] === "1";
+
+  const transactions = normalized.match(/<STMTTRN>(.*?)<\/STMTTRN>/gs) || [];
+  let movimentosTemporarios: MovimentoTemporario[] = [];
+
+  transactions.forEach((transaction) => {
+    const dateMatch = transaction.match(/<DTPOSTED>(\d+)/);
+    const memoMatch = transaction.match(/<MEMO>(.*?)<\/MEMO>/);
+    const nameMatch = transaction.match(/<NAME>(.*?)<\/NAME>/);
+    const amountMatch = transaction.match(/<TRNAMT>([^<]+)<\/TRNAMT>/);
+    const idOfxMatch = transaction.match(/<FITID>(.*?)<\/FITID>/);
+    const refNumMatch = transaction.match(/<REFNUM>(.*?)<\/REFNUM>/);
+    const checkNumMatch = transaction.match(/<CHECKNUM>(.*?)<\/CHECKNUM>/);
+    const trnTypeMatch = transaction.match(/<TRNTYPE>(.*?)<\/TRNTYPE>/);
+
+    const fitid = idOfxMatch?.[1]?.trim();
+    if (!fitid) return;
+
+    const name = nameMatch?.[1]?.trim() ?? "";
+    const memo = memoMatch?.[1]?.trim() ?? "";
+    const isDepositoBloqueado =
+      /dep[oó]sito bloquead/i.test(name) || /dep[oó]sito bloquead/i.test(memo);
+    const isMovimentoDoDia =
+      /movimento do dia/i.test(name) || /movimento do dia/i.test(memo);
+    if (isDepositoBloqueado || isMovimentoDoDia) return;
+
+    const amountStr = amountMatch?.[1];
+    const dateStr = dateMatch?.[1];
+    if (!amountStr || !dateStr) return;
+
+    const yyyy = dateStr.substring(0, 4);
+    const mm = dateStr.substring(4, 6);
+    const dd = dateStr.substring(6, 8);
+    const dtMovimento = new Date(`${yyyy}-${mm}-${dd}T00:00:00.000Z`).toISOString();
+
+    let historico = "Sem descrição";
+    if (memo) historico = memo;
+    else if (name) historico = name;
+
+    const valor = parseOfxAmount(amountStr);
+    if (Number.isNaN(valor)) return;
+
+    const tipoMovimento: "C" | "D" = valor >= 0 ? "C" : "D";
+    const refNum = refNumMatch?.[1]?.trim() || undefined;
+    const checkNum = checkNumMatch?.[1]?.trim() || undefined;
+    const trnType = trnTypeMatch?.[1]?.trim() || undefined;
+    const isBBCons = /^BB\s+CONS/i.test(historico);
+
+    movimentosTemporarios.push({
+      dtMovimento,
+      historico,
+      valor,
+      tipoMovimento,
+      identificadorOfx: fitid,
+      refNum,
+      checkNum,
+      trnType,
+      isBBCons,
+    });
+  });
+
+  let movimentosProcessados = movimentosTemporarios;
+  if (isBancoBrasil) {
+    movimentosProcessados = agruparMovimentosBB(movimentosTemporarios);
+  }
+  movimentosProcessados = agruparDuplicadosPorFITIDMesmoDia(movimentosProcessados);
+
+  const movimentos: MovimentoBancario[] = movimentosProcessados.map((mov) => {
+    const identificadorImportacao = buildIdentificadorImportacao(
+      mov.identificadorOfx,
+      mov.dtMovimento,
+      mov.valor,
+      mov.refNum,
+      mov.checkNum
+    );
+
+    return {
+      dtMovimento: mov.dtMovimento,
+      historico: mov.historico,
+      valor: mov.valor,
+      tipoMovimento: mov.tipoMovimento,
+      identificadorOfx: identificadorImportacao,
+      id: 0,
+      idContaCorrente: 0,
+      saldo: 0,
+      ideagro: false,
+      parcelado: false,
+      modalidadeMovimento: "padrao",
+      criadoEm: "",
+      atualizadoEm: "",
+      numeroDocumento: identificadorImportacao,
+      idPlanoContas: undefined,
+      idPessoa: undefined,
+      idBanco: undefined,
+      descricao: undefined,
+      transfOrigem: undefined,
+      transfDestino: undefined,
+      idUsuario: undefined,
+      idFinanciamento: undefined,
+      resultadoList: undefined,
+    };
+  });
+
+  let totalReceitasFinal = 0;
+  let totalDespesasFinal = 0;
+  movimentos.forEach((m) => {
+    if (m.valor > 0) totalReceitasFinal += m.valor;
+    else totalDespesasFinal += m.valor;
+  });
+
+  const liquido = totalReceitasFinal + totalDespesasFinal;
+
+  movimentos.sort(
+    (a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime()
+  );
+
+  const dtInicialExtrato = movimentos.length ? movimentos[0].dtMovimento : "";
+  const dtFinalExtrato =
+    movimentos.length ? movimentos[movimentos.length - 1].dtMovimento : "";
+
+  return {
+    movimentos,
+    totalizadores: {
+      receitas: totalReceitasFinal,
+      despesas: totalDespesasFinal,
+      liquido,
+      saldoFinal: liquido,
+      dtInicialExtrato,
+      dtFinalExtrato,
+    },
+  };
+}
+
 export const parseOFXFile = (
   file: File
 ): Promise<{ movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX }> => {
@@ -145,204 +336,8 @@ export const parseOFXFile = (
         reject("Erro ao ler o arquivo.");
         return;
       }
-      let ofxContent = event.target.result as string;
-      ofxContent = normalizarOfx(ofxContent);
-
-      // Banco
-      const bankIdMatch = ofxContent.match(/<BANKID>(\d+)<\/BANKID>/);
-      const isBancoBrasil = !!bankIdMatch && bankIdMatch[1] === "1";
-
-      console.log("🏦 Identificação do banco:", {
-        bankId: bankIdMatch ? bankIdMatch[1] : "Não encontrado",
-        isBancoBrasil,
-      });
-
-      const transactions = ofxContent.match(/<STMTTRN>(.*?)<\/STMTTRN>/gs) || [];
-      let movimentosTemporarios: MovimentoTemporario[] = [];
-      let ignorados = 0;
-
-      transactions.forEach((transaction) => {
-        const dateMatch = transaction.match(/<DTPOSTED>(\d+)/);
-        const memoMatch = transaction.match(/<MEMO>(.*?)<\/MEMO>/);
-        const nameMatch = transaction.match(/<NAME>(.*?)<\/NAME>/);
-        const amountMatch = transaction.match(/<TRNAMT>(-?\d+\.\d+)/);
-        const idOfxMatch = transaction.match(/<FITID>(.*?)<\/FITID>/);
-        const refNumMatch = transaction.match(/<REFNUM>(.*?)<\/REFNUM>/);
-        const checkNumMatch = transaction.match(/<CHECKNUM>(.*?)<\/CHECKNUM>/);
-        const trnTypeMatch = transaction.match(/<TRNTYPE>(.*?)<\/TRNTYPE>/);
-
-        // 1) Ignorar sem FITID (linhas descritivas do banco)
-        const fitid = idOfxMatch?.[1]?.trim();
-        if (!fitid) {
-          ignorados++;
-          console.log("Ignorado: sem FITID válido", transaction.slice(0, 200) + "...");
-          return;
-        }
-
-        // 2) Ignorar “Depósito bloqueado” (NAME ou MEMO contendo “Depósito bloquead”) ou "Movimento do dia"
-        const name = nameMatch?.[1]?.trim() ?? "";
-        const memo = memoMatch?.[1]?.trim() ?? "";
-        const isDepositoBloqueado =
-          /dep[oó]sito bloquead/i.test(name) || /dep[oó]sito bloquead/i.test(memo);
-        const isMovimentoDoDia = /movimento do dia/i.test(name) || /movimento do dia/i.test(memo);
-        if (isDepositoBloqueado || isMovimentoDoDia) {
-          ignorados++;
-          console.log("Ignorado: Depósito bloqueado ou Movimento do dia", { fitid, name, memo });
-          return;
-        }
-
-        // 3) Ignorar se faltar data ou valor
-        const amountStr = amountMatch?.[1];
-        const dateStr = dateMatch?.[1];
-        if (!amountStr || !dateStr) {
-          ignorados++;
-          console.log("Ignorado: faltando data ou valor", { fitid, dateStr, amountStr });
-          return;
-        }
-
-        // Data ISO (YYYY-MM-DD)
-        const yyyy = dateStr.substring(0, 4);
-        const mm = dateStr.substring(4, 6);
-        const dd = dateStr.substring(6, 8);
-        const dtMovimento = new Date(`${yyyy}-${mm}-${dd}T00:00:00.000Z`).toISOString();
-
-        // Descrição
-        let historico = "Sem descrição";
-        if (memo) historico = memo;
-        else if (name) historico = name;
-
-        const valor = parseFloat(amountStr);
-        const tipoMovimento: "C" | "D" = valor >= 0 ? "C" : "D";
-
-        const refNum = refNumMatch?.[1]?.trim() || undefined;
-        const checkNum = checkNumMatch?.[1]?.trim() || undefined;
-        const trnType = trnTypeMatch?.[1]?.trim() || undefined;
-
-        const isBBCons = /^BB\s+CONS/i.test(historico);
-
-        movimentosTemporarios.push({
-          dtMovimento, 
-          historico, 
-          valor, 
-          tipoMovimento, 
-          identificadorOfx: fitid, // mantém o FITID original aqui
-          refNum,
-          checkNum,
-          trnType,
-          isBBCons,
-        });
-      });
-
-      // 4) Agrupar "BB Cons" por REFNUM (somente BB)
-      let movimentosProcessados = movimentosTemporarios;
-      if (isBancoBrasil) {
-        console.log("🔄 Aplicando agrupamento para Banco do Brasil (BB Cons por REFNUM)...");
-        movimentosProcessados = agruparMovimentosBB(movimentosTemporarios);
-      }
-
-      // 4.1) Agrupar duplicados por FITID + dia + tipo (independe de banco)
-      //     Isso resolve casos como o FITID 14.033 no mesmo dia sendo lançado várias vezes
-      const antes = movimentosProcessados.length;
-      movimentosProcessados = agruparDuplicadosPorFITIDMesmoDia(movimentosProcessados);
-      const depois = movimentosProcessados.length;
-      if (depois !== antes) {
-        console.log(`✅ Agrupamento por FITID+dia+tipo reduziu de ${antes} para ${depois} movimentos.`);
-      }
-
-      // 5) Aviso de FITID duplicado (no arquivo atual) – NÃO somar por FITID
-      const fitidCount: Record<string, number> = {};
-      movimentosProcessados.forEach((m) => {
-        fitidCount[m.identificadorOfx] = (fitidCount[m.identificadorOfx] || 0) + 1;
-      });
-      Object.entries(fitidCount)
-        .filter(([_, qtd]) => qtd > 1)
-        .forEach(([fitid, qtd]) => {
-          console.log(`⚠️ FITID duplicado dentro do arquivo: ${fitid} (qtd: ${qtd})`);
-        });
-
-      // 6) Converter para MovimentoBancario + atribuir a chave robusta em numeroDocumento
-      const movimentos: MovimentoBancario[] = movimentosProcessados.map((mov) => {
-        const identificadorImportacao = buildIdentificadorImportacao(
-          mov.identificadorOfx,
-          mov.dtMovimento,
-          mov.valor,
-          mov.refNum,
-          mov.checkNum
-        );
-
-        return {
-          dtMovimento: mov.dtMovimento,
-          historico: mov.historico,
-          valor: mov.valor,
-          tipoMovimento: mov.tipoMovimento,
-          identificadorOfx: identificadorImportacao,
-          id: 0,
-          idContaCorrente: 0,
-          saldo: 0,
-          ideagro: false,
-          parcelado: false,
-          modalidadeMovimento: "padrao",
-          criadoEm: "",
-          atualizadoEm: "",
-          numeroDocumento: identificadorImportacao,
-
-          idPlanoContas: undefined,
-          idPessoa: undefined,
-          idBanco: undefined,
-          descricao: undefined,
-          transfOrigem: undefined,
-          transfDestino: undefined,
-          idUsuario: undefined,
-          idFinanciamento: undefined,
-          resultadoList: undefined,
-        };
-      });
-
-      // 7) Totais após todos os filtros/agrupamentos
-      let totalReceitasFinal = 0;
-      let totalDespesasFinal = 0;
-      movimentos.forEach((m) => {
-        if (m.valor > 0) totalReceitasFinal += m.valor;
-        else totalDespesasFinal += m.valor;
-      });
-
-      const liquido = totalReceitasFinal + totalDespesasFinal;
-      const saldoFinal = liquido; // ajuste se você preferir incorporar saldo inicial
-
-      // 8) Ordenar por data ISO corretamente
-      movimentos.sort(
-        (a, b) =>
-          new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime()
-      );
-
-      const dtInicialExtrato = movimentos.length ? movimentos[0].dtMovimento : "";
-      const dtFinalExtrato =
-        movimentos.length ? movimentos[movimentos.length - 1].dtMovimento : "";
-
-      console.log("📊 Resumo do processamento OFX:", {
-        totalTransacoes: transactions.length,
-        movimentosProcessados: movimentos.length,
-        movimentosIgnorados: ignorados,
-        totalReceitas: formatCurrency(totalReceitasFinal),
-        totalDespesas: formatCurrency(totalDespesasFinal),
-        liquido: formatCurrency(liquido),
-        isBancoBrasil,
-        aplicouAgrupamento: isBancoBrasil,
-      });
-
-      resolve({
-        movimentos,
-        totalizadores: {
-          receitas: totalReceitasFinal,
-          despesas: totalDespesasFinal,
-          liquido,
-          saldoFinal,
-          dtInicialExtrato,
-          dtFinalExtrato,
-        },
-      });
+      resolve(parseOFXContent(event.target.result as string));
     };
-
     reader.onerror = () => reject("Erro ao processar o arquivo OFX.");
     reader.readAsText(file);
   });
