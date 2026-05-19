@@ -1,5 +1,12 @@
 import { MovimentoBancario } from '../../../backend/src/models/MovimentoBancario';
+import { parseOfxAmount } from '../Utils/parseOfxFile';
 import { toast } from 'react-toastify';
+
+function ensureNumericValor(valor: unknown): number {
+	if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
+	if (typeof valor === 'string') return parseOfxAmount(valor);
+	return 0;
+}
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -196,7 +203,7 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 			// Garantir valores padrão para campos obrigatórios
 			movimentoLimpo.dtMovimento = movimentoLimpo.dtMovimento || new Date().toISOString();
 			movimentoLimpo.historico = movimentoLimpo.historico || 'Movimento sem descrição';
-			movimentoLimpo.valor = movimentoLimpo.valor || 0;
+			movimentoLimpo.valor = ensureNumericValor(movimentoLimpo.valor);
 			movimentoLimpo.saldo = movimentoLimpo.saldo || 0;
 			movimentoLimpo.ideagro = movimentoLimpo.ideagro || false;
 			movimentoLimpo.parcelado = movimentoLimpo.parcelado || false;
@@ -274,7 +281,7 @@ export const salvarMovimentosOFX = async (
 				// Garantir que campos obrigatórios tenham valores válidos
 				movLimpo.dtMovimento = movLimpo.dtMovimento || new Date().toISOString();
 				movLimpo.historico = movLimpo.historico || 'Movimento sem descrição';
-				movLimpo.valor = movLimpo.valor || 0;
+				movLimpo.valor = ensureNumericValor(movLimpo.valor);
 				movLimpo.saldo = movLimpo.saldo || 0;
 				movLimpo.ideagro = movLimpo.ideagro || false;
 				movLimpo.parcelado = movLimpo.parcelado || false;
@@ -296,6 +303,11 @@ export const salvarMovimentosOFX = async (
 
 			const batchResult = await response.json();
 			console.log(`✅ Lote processado:`, batchResult);
+
+			if (batchResult.erros > 0 && batchResult.detalhesErros?.length) {
+				console.error('❌ Falhas no lote OFX:', batchResult.detalhesErros);
+				toast.error(`${batchResult.erros} movimento(s) não salvos. Verifique o console.`);
+			}
 
 			// Processar resultados do lote
 			if (batchResult.movimentos) {

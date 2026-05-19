@@ -29,11 +29,17 @@ const formatCurrency = (value: number): string => {
 };
 
 function normalizarOfx(ofx: string): string {
-  return ofx
-    .replace(/<(\w+?)>([^<\r\n]+)/g, "<$1>$2</$1>") // fecha tags soltas
+  const compact = ofx
     .replace(/&nbsp;/g, " ")
     .replace(/\r?\n/g, "")
     .replace(/>\s+</g, "><");
+
+  // Caixa / XML-style OFX already has </TAG> closers — auto-closing corrupts TRNAMT/MEMO
+  if (/<\/\w+>/i.test(compact)) {
+    return compact;
+  }
+
+  return compact.replace(/<(\w+?)>([^<\r\n]+)/g, "<$1>$2</$1>");
 }
 
 // Chave robusta para deduplicação na importação
@@ -100,6 +106,105 @@ export function parseOfxAmount(amountStr: string): number {
   return isNegative ? -Math.abs(v) : v;
 }
 
+const SANTANDER_BANK_ID = "0033";
+
+/** FITID placeholder used by Santander (and others) — must not drive generic grouping. */
+function isFitidGenerico(fitid: string): boolean {
+  return /^0+$/.test(fitid.trim());
+}
+
+function isSantanderBank(bankId: string | undefined, normalizedOfx: string): boolean {
+  if (bankId === SANTANDER_BANK_ID || bankId?.replace(/^0+/, "") === "33") {
+    return true;
+  }
+  return /<ORG>\s*SANTANDER/i.test(normalizedOfx);
+}
+
+/** IOF lines from Santander OFX (same classification when grouped). */
+export function isSantanderIof(historico: string): boolean {
+  return /^IOF\b/i.test(historico.trim());
+}
+
+/**
+ * Payee name after "PAGAMENTO DE BOLETO" / "OUTROS BANCOS" in Santander MEMO.
+ * Returns null when there is no identifiable payee (kept as individual movement).
+ */
+export function extractSantanderBoletoPayee(historico: string): string | null {
+  const text = historico.trim();
+  if (!/PAGAMENTO\s+DE\s+BOLETO/i.test(text)) return null;
+
+  const withPayee = text.match(
+    /PAGAMENTO\s+DE\s+BOLETO(?:\s+OUTROS\s+BANCOS)?\s{2,}(.+)$/i
+  );
+  if (withPayee?.[1]?.trim()) return withPayee[1].trim();
+
+  if (/^PAGAMENTO\s+DE\s+BOLETO\s*$/i.test(text)) return null;
+  return null;
+}
+
+function agruparLista(
+  lista: MovimentoTemporario[],
+  historicoAgrupado: string
+): MovimentoTemporario {
+  const total = lista.reduce((acc, g) => acc + g.valor, 0);
+  const base = { ...lista[0] };
+  base.valor = total;
+  base.tipoMovimento = total >= 0 ? "C" : "D";
+  base.historico = historicoAgrupado;
+  base.refNum = undefined;
+  base.checkNum = undefined;
+  return base;
+}
+
+/** Santander: group IOF by day; group boleto payments by day + payee; keep PIX and others individual. */
+function agruparMovimentosSantander(movimentos: MovimentoTemporario[]): MovimentoTemporario[] {
+  const porChave: Record<string, MovimentoTemporario[]> = {};
+  const individuais: MovimentoTemporario[] = [];
+
+  for (const m of movimentos) {
+    const dia = m.dtMovimento.substring(0, 10);
+    let chave: string | null = null;
+
+    if (isSantanderIof(m.historico)) {
+      chave = `${dia}|IOF`;
+    } else {
+      const payee = extractSantanderBoletoPayee(m.historico);
+      if (payee) chave = `${dia}|BOLETO|${payee}`;
+    }
+
+    if (!chave) {
+      individuais.push(m);
+      continue;
+    }
+    if (!porChave[chave]) porChave[chave] = [];
+    porChave[chave].push(m);
+  }
+
+  const saida: MovimentoTemporario[] = [...individuais];
+
+  Object.entries(porChave).forEach(([chave, lista]) => {
+    if (lista.length === 1) {
+      saida.push(lista[0]);
+      return;
+    }
+    if (chave.endsWith("|IOF")) {
+      saida.push(
+        agruparLista(lista, `IOF - Agrupado (${lista.length} movimentos)`)
+      );
+    } else {
+      const payee = chave.split("|BOLETO|")[1] ?? "";
+      saida.push(
+        agruparLista(
+          lista,
+          `Pagamento de Boleto - Agrupado (${lista.length}) - ${payee}`
+        )
+      );
+    }
+  });
+
+  return saida;
+}
+
 function agruparMovimentosBB(movimentos: MovimentoTemporario[]): MovimentoTemporario[] {
   const movimentosAgrupados: MovimentoTemporario[] = [];
   const porRef: Record<string, MovimentoTemporario[]> = {};
@@ -152,10 +257,21 @@ function agruparDuplicadosPorFITIDMesmoDia(
     `${m.identificadorOfx}|${m.dtMovimento.substring(0, 10)}|${m.tipoMovimento}`;
 
   for (const m of movimentos) {
+    if (isFitidGenerico(m.identificadorOfx)) {
+      continue;
+    }
     const k = chave(m);
     if (!grupos[k]) grupos[k] = [];
     grupos[k].push(m);
   }
+
+  // FITID genérico (ex.: 000000): mantém cada lançamento individual
+  movimentos
+    .filter((m) => isFitidGenerico(m.identificadorOfx))
+    .forEach((m) => {
+      const k = `__solo__${m.identificadorOfx}|${m.dtMovimento}|${m.valor}|${m.historico}`;
+      grupos[k] = [m];
+    });
 
   const saida: MovimentoTemporario[] = [];
   Object.entries(grupos).forEach(([k, lista]) => {
@@ -193,7 +309,9 @@ export function parseOFXContent(
 
   // Banco
   const bankIdMatch = normalized.match(/<BANKID>(\d+)<\/BANKID>/);
-  const isBancoBrasil = !!bankIdMatch && bankIdMatch[1] === "1";
+  const bankId = bankIdMatch?.[1];
+  const isBancoBrasil = bankId === "1";
+  const isSantander = isSantanderBank(bankId, normalized);
 
   const transactions = normalized.match(/<STMTTRN>(.*?)<\/STMTTRN>/gs) || [];
   let movimentosTemporarios: MovimentoTemporario[] = [];
@@ -257,8 +375,12 @@ export function parseOFXContent(
   let movimentosProcessados = movimentosTemporarios;
   if (isBancoBrasil) {
     movimentosProcessados = agruparMovimentosBB(movimentosTemporarios);
+    movimentosProcessados = agruparDuplicadosPorFITIDMesmoDia(movimentosProcessados);
+  } else if (isSantander) {
+    movimentosProcessados = agruparMovimentosSantander(movimentosTemporarios);
+  } else {
+    movimentosProcessados = agruparDuplicadosPorFITIDMesmoDia(movimentosTemporarios);
   }
-  movimentosProcessados = agruparDuplicadosPorFITIDMesmoDia(movimentosProcessados);
 
   const movimentos: MovimentoBancario[] = movimentosProcessados.map((mov) => {
     const identificadorImportacao = buildIdentificadorImportacao(

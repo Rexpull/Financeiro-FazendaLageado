@@ -4,6 +4,10 @@ import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 import { FinanciamentoDetalhadoDTO } from '../models/FinanciamentoDetalhadoDTO';
 import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository';
 import { MovimentoCentroCustosRepository } from './MovimentoCentroCustosRepository';
+import {
+	coerceMonetaryValue,
+	parseOfxIdentificadorParts,
+} from '../utils/coerceMonetaryValue';
 import * as XLSX from 'xlsx';
 
 export class MovimentoBancarioRepository {
@@ -17,6 +21,96 @@ export class MovimentoBancarioRepository {
 		this.resultadoRepo = new ResultadoRepository(db);
 		this.parcelaRepo = new ParcelaFinanciamentoRepository(db);
 		this.movimentoCentroCustosRepo = new MovimentoCentroCustosRepository(db);
+	}
+
+	private normalizeIncomingMovimento(movimento: MovimentoBancario): MovimentoBancario {
+		const valor = coerceMonetaryValue(movimento.valor);
+		return {
+			...movimento,
+			valor,
+			saldo: movimento.saldo ?? 0,
+			tipoMovimento: movimento.tipoMovimento ?? (valor >= 0 ? 'C' : 'D'),
+		};
+	}
+
+	private mapRowToMovimento(result: Record<string, unknown>, extras?: Partial<MovimentoBancario>): MovimentoBancario {
+		return {
+			id: result.id as number,
+			dtMovimento: result.dtMovimento as string,
+			historico: result.historico as string,
+			idPlanoContas: result.idPlanoContas as number,
+			idContaCorrente: result.idContaCorrente as number,
+			valor: Number(result.valor),
+			saldo: Number(result.saldo ?? 0),
+			ideagro: Boolean(result.ideagro),
+			numeroDocumento: (result.numero_documento ?? result.numeroDocumento) as string,
+			descricao: result.descricao as string,
+			transfOrigem: result.transf_origem as number | null,
+			transfDestino: result.transf_destino as number | null,
+			identificadorOfx: (result.identificador_ofx ?? result.identificadorOfx) as string,
+			criadoEm: (result.criado_em ?? result.criadoEm) as string,
+			atualizadoEm: (result.atualizado_em ?? result.atualizadoEm) as string,
+			idUsuario: result.idUsuario as number,
+			tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
+			modalidadeMovimento: result.modalidadeMovimento as
+				| 'padrao'
+				| 'financiamento'
+				| 'transferencia'
+				| undefined,
+			idBanco: result.idBanco as number,
+			idPessoa: result.idPessoa as number,
+			parcelado: result.parcelado === 1 || result.parcelado === true,
+			idFinanciamento: result.idFinanciamento as number | undefined,
+			idCentroCustos: result.idCentroCustos as number | undefined,
+			...extras,
+		};
+	}
+
+	/**
+	 * Re-import OFX: same FITID + day + account, but valor/identificador corrected after parser fix.
+	 */
+	async findByOfxFitidDayConta(
+		identificadorOfx: string,
+		idContaCorrente: number
+	): Promise<MovimentoBancario | null> {
+		const parsed = parseOfxIdentificadorParts(identificadorOfx);
+		if (!parsed) return null;
+
+		const day = parsed.dtIso.substring(0, 10);
+		const { results } = await this.db
+			.prepare(
+				`
+				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
+					numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
+					criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
+					idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
+				FROM MovimentoBancario
+				WHERE idContaCorrente = ?
+				AND identificador_ofx LIKE ?
+				ORDER BY id ASC
+				LIMIT 2
+			`,
+			)
+			.bind(idContaCorrente, `${parsed.fitid}|${day}%`)
+			.all();
+
+		if (results.length === 0) return null;
+		if (results.length === 1) {
+			return this.mapRowToMovimento(results[0] as Record<string, unknown>);
+		}
+
+		if (parsed.checkNum) {
+			const match = results.find((row) =>
+				String((row as Record<string, unknown>).identificador_ofx ?? '').includes(
+					`|${parsed.checkNum}`
+				)
+			);
+			if (match) {
+				return this.mapRowToMovimento(match as Record<string, unknown>);
+			}
+		}
+
+		return this.mapRowToMovimento(results[0] as Record<string, unknown>);
 	}
 
 	/**
@@ -304,27 +398,68 @@ export class MovimentoBancarioRepository {
 		return movimentos;
 	}
 
-	async createBatch(movimentos: MovimentoBancario[]): Promise<{ movimentos: MovimentoBancario[]; novos: number; existentes: number }> {
+	async createBatch(movimentos: MovimentoBancario[]): Promise<{
+		movimentos: MovimentoBancario[];
+		novos: number;
+		existentes: number;
+		erros: number;
+		detalhesErros: string[];
+	}> {
 		const movimentosProcessados: MovimentoBancario[] = [];
 		let novos = 0;
 		let existentes = 0;
+		let erros = 0;
+		const detalhesErros: string[] = [];
 
 		console.log(`🔄 Processando lote de ${movimentos.length} movimentos`);
 
 		for (const movimento of movimentos) {
 			try {
-				// Verificar se o movimento já existe pelo identificador OFX
-				const movimentoExistente = await this.getByIdentificadorOfx(movimento.identificadorOfx);
+				const mov = this.normalizeIncomingMovimento(movimento);
+
+				let movimentoExistente =
+					mov.identificadorOfx ?
+						await this.getByIdentificadorOfx(mov.identificadorOfx)
+					:	null;
+
+				if (!movimentoExistente && mov.identificadorOfx && mov.idContaCorrente) {
+					movimentoExistente = await this.findByOfxFitidDayConta(
+						mov.identificadorOfx,
+						mov.idContaCorrente
+					);
+				}
 
 				if (movimentoExistente) {
-					console.log(`📋 Movimento existente encontrado: ${movimento.identificadorOfx}`);
+					const valorDiverge =
+						Math.abs(Number(movimentoExistente.valor) - mov.valor) > 0.001;
+					const identificadorDiverge =
+						mov.identificadorOfx &&
+						movimentoExistente.identificadorOfx !== mov.identificadorOfx;
+
+					if (valorDiverge || identificadorDiverge) {
+						console.log(
+							`🔧 Corrigindo movimento OFX existente ID ${movimentoExistente.id}:`,
+							{ de: movimentoExistente.valor, para: mov.valor }
+						);
+						await this.update(movimentoExistente.id!, {
+							...movimentoExistente,
+							valor: mov.valor,
+							identificadorOfx: mov.identificadorOfx,
+							numeroDocumento: mov.numeroDocumento ?? mov.identificadorOfx,
+							tipoMovimento: mov.tipoMovimento,
+						});
+						movimentoExistente =
+							(await this.getById(movimentoExistente.id!)) ?? movimentoExistente;
+					}
+
+					console.log(`📋 Movimento existente: ${mov.identificadorOfx}`);
 					movimentosProcessados.push(movimentoExistente);
 					existentes++;
 					continue;
 				}
 
 				// Criar novo movimento
-				const idMov = await this.create(movimento);
+				const idMov = await this.create(mov);
 				console.log(`✅ Novo movimento criado: ID ${idMov}`);
 
 				// Buscar o movimento completo criado
@@ -334,17 +469,71 @@ export class MovimentoBancarioRepository {
 					novos++;
 				}
 			} catch (error) {
+				erros++;
+				const msg = `${movimento.historico ?? '?'} (${movimento.identificadorOfx}): ${
+					error instanceof Error ? error.message : String(error)
+				}`;
+				detalhesErros.push(msg);
 				console.error(`❌ Erro ao processar movimento ${movimento.identificadorOfx}:`, error);
-				// Continuar processando outros movimentos mesmo se houver erro
 				continue;
 			}
 		}
 
-		console.log(`🎉 Lote processado: ${novos} novos, ${existentes} existentes`);
-		return { movimentos: movimentosProcessados, novos, existentes };
+		console.log(`🎉 Lote processado: ${novos} novos, ${existentes} existentes, ${erros} erros`);
+		return { movimentos: movimentosProcessados, novos, existentes, erros, detalhesErros };
+	}
+
+	private resolveIdCentroCustosForInsert(movimento: MovimentoBancario): number | null {
+		const list = movimento.centroCustosList;
+		if (list && list.length > 1) {
+			return null;
+		}
+		if (list && list.length === 1) {
+			return list[0].idCentroCustos ?? null;
+		}
+		return movimento.idCentroCustos ?? null;
+	}
+
+	private async persistCentroCustosOnCreate(idMov: number, movimento: MovimentoBancario, valorAbs: number): Promise<void> {
+		let centroCustosList = movimento.centroCustosList;
+
+		if ((!centroCustosList || centroCustosList.length === 0) && movimento.idCentroCustos) {
+			centroCustosList = [
+				{
+					idMovimentoBancario: idMov,
+					idCentroCustos: movimento.idCentroCustos,
+					valor: valorAbs,
+				},
+			];
+		}
+
+		if (!centroCustosList?.length) {
+			return;
+		}
+
+		if (centroCustosList.length > 1) {
+			await this.db
+				.prepare(`UPDATE MovimentoBancario SET idCentroCustos = NULL, atualizado_em = datetime('now') WHERE id = ?`)
+				.bind(idMov)
+				.run();
+		} else {
+			await this.db
+				.prepare(`UPDATE MovimentoBancario SET idCentroCustos = ?, atualizado_em = datetime('now') WHERE id = ?`)
+				.bind(centroCustosList[0].idCentroCustos, idMov)
+				.run();
+		}
+
+		for (const centro of centroCustosList) {
+			await this.movimentoCentroCustosRepo.criar({
+				...centro,
+				idMovimentoBancario: idMov,
+				valor: centro.valor ?? valorAbs,
+			});
+		}
 	}
 
 	async create(movimento: MovimentoBancario): Promise<number> {
+		const normalized = this.normalizeIncomingMovimento(movimento);
 		const {
 			dtMovimento,
 			historico,
@@ -365,7 +554,9 @@ export class MovimentoBancarioRepository {
 			idPessoa,
 			parcelado,
 			idFinanciamento,
-		} = movimento;
+		} = normalized;
+
+		const idCentroCustosInsert = this.resolveIdCentroCustosForInsert(normalized);
 
 		// Tratar valores undefined antes de fazer o bind
 		const bindValues = [
@@ -373,8 +564,8 @@ export class MovimentoBancarioRepository {
 			historico || null,
 			idPlanoContas || null,
 			idContaCorrente || null,
-			valor || 0,
-			saldo || 0,
+			valor,
+			saldo ?? 0,
 			ideagro ? 1 : 0,
 			numeroDocumento || null,
 			descricao || null,
@@ -390,6 +581,7 @@ export class MovimentoBancarioRepository {
 			idPessoa || null,
 			parcelado ? 1 : 0,
 			idFinanciamento || null,
+			idCentroCustosInsert,
 		];
 
 		// Verificar se há valores undefined no array
@@ -406,9 +598,9 @@ export class MovimentoBancarioRepository {
 				dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
 				ideagro, numero_documento, descricao, transf_origem, transf_destino,
 				identificador_ofx, idUsuario, tipoMovimento, modalidadeMovimento,
-				criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento
+				criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			)
 			.bind(...bindValues)
@@ -435,6 +627,8 @@ export class MovimentoBancarioRepository {
 		if (resultadoList?.length) {
 			await this.resultadoRepo.createMany(resultadoList.map((r) => ({ ...r, idMovimentoBancario: idMov })));
 		}
+
+		await this.persistCentroCustosOnCreate(idMov, normalized, Math.abs(valor));
 
 		return idMov;
 	}
@@ -1125,31 +1319,9 @@ export class MovimentoBancarioRepository {
 		const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
 
 		return {
-			id: result.id,
-			dtMovimento: result.dtMovimento,
-			historico: result.historico,
-			idPlanoContas: result.idPlanoContas,
-			idContaCorrente: result.idContaCorrente,
-			valor: result.valor,
-			saldo: result.saldo,
-			ideagro: result.ideagro,
-			numeroDocumento: result.numero_documento,
-			descricao: result.descricao,
-			transfOrigem: result.transf_origem,
-			transfDestino: result.transf_destino,
-			identificadorOfx: result.identificador_ofx,
-			criadoEm: result.criado_em,
-			atualizadoEm: result.atualizado_em,
-			idUsuario: result.idUsuario,
-			tipoMovimento: result.tipoMovimento,
-			modalidadeMovimento: result.modalidadeMovimento,
-			idBanco: result.idBanco,
-			idPessoa: result.idPessoa,
-			parcelado: result.parcelado === 1,
-			idFinanciamento: result.idFinanciamento as number | undefined,
-			idCentroCustos: result.idCentroCustos as number | undefined,
-			resultadoList: resultadoList,
-		} as MovimentoBancario;
+			...this.mapRowToMovimento(result as Record<string, unknown>),
+			resultadoList,
+		};
 	}
 
 	async getSaldoContaCorrente(idContaCorrente: number, dataLimite: string): Promise<number> {
@@ -1184,31 +1356,9 @@ export class MovimentoBancarioRepository {
 		const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(id);
 
 		return {
-			id: result.id as number,
-			dtMovimento: result.dtMovimento as string,
-			historico: result.historico as string,
-			idPlanoContas: result.idPlanoContas as number,
-			idContaCorrente: result.idContaCorrente as number,
-			valor: result.valor as number,
-			saldo: result.saldo as number,
-			ideagro: result.ideagro as boolean,
-			numeroDocumento: result.numero_documento as string,
-			descricao: result.descricao as string,
-			transfOrigem: result.transf_origem as number | null,
-			transfDestino: result.transf_destino as number | null,
-			identificadorOfx: result.identificador_ofx as string,
-			criadoEm: result.criado_em as string,
-			atualizadoEm: result.atualizado_em as string,
-			idUsuario: result.idUsuario as number,
-			tipoMovimento: result.tipoMovimento as 'C' | 'D' | undefined,
-			modalidadeMovimento: result.modalidadeMovimento as 'padrao' | 'financiamento' | 'transferencia' | undefined,
-			idBanco: result.idBanco as number,
-			idPessoa: result.idPessoa as number,
-			parcelado: result.parcelado === 1,
-			idFinanciamento: result.idFinanciamento as number | undefined,
-			idCentroCustos: result.idCentroCustos as number | undefined,
-			resultadoList: resultadoList,
-			centroCustosList: centroCustosList,
+			...this.mapRowToMovimento(result as Record<string, unknown>),
+			resultadoList,
+			centroCustosList,
 		};
 	}
 

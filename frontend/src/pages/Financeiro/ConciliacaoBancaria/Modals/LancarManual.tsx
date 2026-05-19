@@ -13,15 +13,46 @@ import { listarFinanciamentos } from "../../../../services/financiamentoService"
 import { listarCentroCustos } from "../../../../services/centroCustosService";
 import { Financiamento } from "../../../../../../backend/src/models/Financiamento";
 import { CentroCustos } from "../../../../../../backend/src/models/CentroCustos";
-import { toast } from "react-toastify";
+import { MovimentoCentroCustos } from "../../../../../../backend/src/models/MovimentoCentroCustos";
+import ModalRateioCentroCustos from "./ModalRateioCentroCustos";
 
-Modal.setAppElement("#root"); 
+Modal.setAppElement("#root");
 
-const cache = {
+const getContaFromStorage = () => JSON.parse(localStorage.getItem("contaSelecionada") || "{}");
+
+const getInitialFormState = () => ({
+  idPlanoContas: "",
+  idCentroCustos: "",
+  valor: "0,00",
+  saldo: 0,
+  dtMovimento: new Date().toISOString().slice(0, 16),
+  numeroDocumento: "",
+  descricao: "",
+  transfOrigem: null as null,
+  transfDestino: null as null,
+  pessoaSelecionada: null as null,
+  bancoSelecionado: null as null,
+  idContaCorrente: getContaFromStorage()?.id || 0,
+  historico: "",
+  ideagro: false,
+  idBanco: null as number | null,
+  idPessoa: null as number | null,
+  parcelado: false,
+  idFinanciamento: null as number | null,
+});
+
+const cache: {
+  parametros: { idPlanoEntradaFinanciamentos: number; idPlanoPagamentoFinanciamentos: number } | null;
+  planos: PlanoConta[] | null;
+  bancos: { id: number; nome: string }[] | null;
+  pessoas: { id: number; nome: string }[] | null;
+  centros: CentroCustos[] | null;
+} = {
   parametros: null,
+  planos: null,
   bancos: null,
   pessoas: null,
-  centros: null as CentroCustos[] | null,
+  centros: null,
 };
 
 interface LancamentoManualProps {
@@ -48,46 +79,8 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     idPlanoPagamentoFinanciamentos: 0,
   });
 
-  const conta = JSON.parse(localStorage.getItem("contaSelecionada") || "{}");
-  const [formData, setFormData] = useState<{
-    idPlanoContas: string;
-    valor: string;
-    saldo: number;
-    dtMovimento: string;
-    numeroDocumento: string;
-    descricao: string;
-    transfOrigem: null;
-    transfDestino: null;
-    pessoaSelecionada: null;
-    bancoSelecionado: null;
-    idContaCorrente: number;
-    historico: string;
-    ideagro: boolean;
-    idBanco: number | null;
-    idPessoa: number | null;
-    parcelado: boolean;
-    idFinanciamento: number | null;
-    idCentroCustos: string;
-  }>({
-    idPlanoContas: "",
-    idCentroCustos: "",
-    valor: "0,00",
-    saldo: 0,
-    dtMovimento: new Date().toISOString().slice(0, 16),
-    numeroDocumento: "",
-    descricao: "",
-    transfOrigem: null,
-    transfDestino: null,
-    pessoaSelecionada: null,
-    bancoSelecionado: null,
-    idContaCorrente: conta?.id || 0,
-    historico: "",
-    ideagro: false,
-    idBanco: null,
-    idPessoa: null,
-    parcelado: false,
-    idFinanciamento: null,
-  });
+  const conta = getContaFromStorage();
+  const [formData, setFormData] = useState(getInitialFormState);
   const [parcelado, setParcelado] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
   const [parcelas, setParcelas] = useState<{ numParcela: number; dt_vencimento: string; valor: string }[]>([]);
@@ -100,6 +93,31 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
   const [buscaFinanciamento, setBuscaFinanciamento] = useState('');
   const [financiamentoSelecionado, setFinanciamentoSelecionado] = useState<Financiamento | null>(null);
+
+  const [rateiosCentros, setRateiosCentros] = useState<{ idCentro: number; descricao: string; valor: number }[]>([]);
+  const [rateioCentrosModalAberto, setRateioCentrosModalAberto] = useState(false);
+
+  const resetForm = () => {
+    setTipoMovimento("credito");
+    setModalidadeMovimento("padrao");
+    setFormData(getInitialFormState());
+    setErrors({});
+    setSearchPlano("");
+    setShowSuggestions(false);
+    setParcelado(false);
+    setNumParcelas(1);
+    setParcelas([]);
+    setFinanciamentoSelecionado(null);
+    setBuscaFinanciamento("");
+    setRateiosCentros([]);
+    setRateioCentrosModalAberto(false);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      resetForm();
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -188,6 +206,12 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         idPessoa: value ? parseInt(value) : null,
         idBanco: null,
       }));
+    } else if (name === "idCentroCustos") {
+      setRateiosCentros([]);
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
     } else {
       setFormData((prev) => ({
         ...prev,
@@ -215,7 +239,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       if (!formData.idFinanciamento) newErrors.idFinanciamento = "Selecione um financiamento!";
     }
     if (modalidadeMovimento === "padrao") {
-      if (!formData.idCentroCustos || formData.idCentroCustos === "") {
+      const valorNum = parseFloat(formData.valor.replace(",", ".")) || 0;
+      if (rateiosCentros.length > 0) {
+        const somaCentros = rateiosCentros.reduce((s, r) => s + r.valor, 0);
+        if (Math.abs(somaCentros - Math.abs(valorNum)) > 0.01) {
+          newErrors.idCentroCustos = "A soma dos centros deve ser igual ao valor do lançamento!";
+        }
+      } else if (!formData.idCentroCustos || formData.idCentroCustos === "") {
         newErrors.idCentroCustos = "Selecione um centro de custos!";
       }
     }
@@ -223,21 +253,67 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
+  const parseValorNumerico = () => parseFloat((formData.valor || "0").replace(",", ".")) || 0;
+
+  const movimentoSintetico: MovimentoBancario = {
+    tipoMovimento: tipoMovimento === "credito" ? "C" : "D",
+    valor: parseValorNumerico(),
+    idContaCorrente: formData.idContaCorrente,
+    dtMovimento: formData.dtMovimento,
+    historico: formData.historico,
+  } as MovimentoBancario;
+
+  const aplicarRateioCentros = (
+    centrosRateio: MovimentoCentroCustos[] | { idCentro: number; porcentagem: number }[]
+  ) => {
+    const centrosNormais = centrosRateio as MovimentoCentroCustos[];
+    const convertidos = centrosNormais.map((c) => {
+      const centro = centros.find((ct) => ct.id === c.idCentroCustos);
+      return {
+        idCentro: c.idCentroCustos,
+        descricao: centro?.descricao || `Centro ${c.idCentroCustos}`,
+        valor: c.valor,
+      };
+    });
+    setRateiosCentros(convertidos);
+    if (convertidos.length === 1) {
+      setFormData((prev) => ({ ...prev, idCentroCustos: String(convertidos[0].idCentro) }));
+    } else {
+      setFormData((prev) => ({ ...prev, idCentroCustos: "" }));
+    }
+    setRateioCentrosModalAberto(false);
+  };
+
   const handleSubmit = () => {
     if (validarFormulario()) {
+      let idCentroCustos: number | null = null;
+      let centroCustosList: { idCentroCustos: number; valor: number }[] | undefined;
+
+      if (modalidadeMovimento === "padrao") {
+        if (rateiosCentros.length > 1) {
+          centroCustosList = rateiosCentros.map((rc) => ({
+            idCentroCustos: rc.idCentro,
+            valor: rc.valor,
+          }));
+          idCentroCustos = null;
+        } else if (rateiosCentros.length === 1) {
+          idCentroCustos = rateiosCentros[0].idCentro;
+        } else if (formData.idCentroCustos) {
+          idCentroCustos = parseInt(formData.idCentroCustos, 10);
+        }
+      }
+
       const dataToSend = {
         ...formData,
         tipoMovimento: tipoMovimento === "credito" ? "C" : "D",
         modalidadeMovimento,
-        idBanco: formData.idBanco ? parseInt(formData.idBanco) : null,
-        idPessoa: formData.idPessoa ? parseInt(formData.idPessoa) : null,
+        idBanco: formData.idBanco ? parseInt(String(formData.idBanco), 10) : null,
+        idPessoa: formData.idPessoa ? parseInt(String(formData.idPessoa), 10) : null,
         parcelado,
         parcelas,
         idFinanciamento: formData.idFinanciamento,
-        idCentroCustos:
-          modalidadeMovimento === "padrao" && formData.idCentroCustos
-            ? parseInt(formData.idCentroCustos, 10)
-            : null,
+        idCentroCustos,
+        centroCustosList,
       };
       handleSave(dataToSend);
     }
@@ -291,6 +367,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       idFinanciamento: null,
       ...(nova === "financiamento" ? { idCentroCustos: "" } : {}),
     }));
+    setRateiosCentros([]);
 	}
 
   const handleChangeTipoMovimento = (tipoMovimento: string) => {
@@ -316,6 +393,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   );
 
   return (
+    <>
     <Modal
     isOpen={isOpen}
     onRequestClose={() => {}}
@@ -486,22 +564,39 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Centro de custos <span className="text-red-500">*</span>
               </label>
-              <select
-                name="idCentroCustos"
-                className={`w-full p-2 bg-white border rounded ${errors.idCentroCustos ? "border-red-500" : "border-gray-300"}`}
-                value={formData.idCentroCustos}
-                onChange={handleInputChange}
-                disabled={isSaving}
-              >
-                <option value="">Selecione um centro de custos</option>
-                {[...centros]
-                  .sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "", "pt-BR"))
-                  .map((c) => (
-                    <option key={c.id} value={String(c.id)}>
-                      {c.descricao}
-                    </option>
-                  ))}
-              </select>
+              <div className="flex w-full">
+                <select
+                  name="idCentroCustos"
+                  className={`flex-1 p-2 bg-white border rounded-l ${errors.idCentroCustos ? "border-red-500" : "border-gray-300"} ${rateiosCentros.length > 1 ? "bg-gray-100" : ""}`}
+                  value={rateiosCentros.length > 1 ? "" : formData.idCentroCustos}
+                  onChange={handleInputChange}
+                  disabled={isSaving || rateiosCentros.length > 1}
+                >
+                  {rateiosCentros.length > 1 ? (
+                    <option value="">Múltiplos Centros ({rateiosCentros.length})</option>
+                  ) : (
+                    <>
+                      <option value="">Selecione um centro de custos</option>
+                      {[...centros]
+                        .sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "", "pt-BR"))
+                        .map((c) => (
+                          <option key={c.id} value={String(c.id)}>
+                            {c.descricao}
+                          </option>
+                        ))}
+                    </>
+                  )}
+                </select>
+                <button
+                  type="button"
+                  className="px-3 rounded-r bg-green-500 hover:bg-green-600 text-white"
+                  onClick={() => setRateioCentrosModalAberto(true)}
+                  title="Adicionar múltiplos centros de custos"
+                  disabled={isSaving}
+                >
+                  <FontAwesomeIcon icon={faPlus} className="font-bolder" />
+                </button>
+              </div>
               {errors.idCentroCustos && <p className="text-red-500 text-xs mt-1">{errors.idCentroCustos}</p>}
             </div>
           </div>
@@ -583,6 +678,17 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       </button>
     </div>
   </Modal>
+  <ModalRateioCentroCustos
+    isOpen={rateioCentrosModalAberto}
+    onClose={() => setRateioCentrosModalAberto(false)}
+    onConfirmar={aplicarRateioCentros}
+    centrosDisponiveis={centros}
+    movimento={movimentoSintetico}
+    valorTotal={parseValorNumerico()}
+    rateios={rateiosCentros}
+    setRateios={setRateiosCentros}
+  />
+  </>
   );
 };
 

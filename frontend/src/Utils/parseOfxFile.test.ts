@@ -1,14 +1,20 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { readFileSync, existsSync } from "fs";
+import path from "path";
 import {
   parseOfxAmount,
   parseOFXContent,
   parseOFXFile,
+  extractSantanderBoletoPayee,
+  isSantanderIof,
 } from "./parseOfxFile";
 import {
   OFX_CAIXA_MARCO,
   OFX_STANDARD_BANK,
   OFX_WITH_IGNORED,
   OFX_BB_CONS_GROUP,
+  OFX_SANTANDER_MARCO,
+  OFX_FITID_GENERIC_OTHER_BANK,
 } from "./parseOfxFile.fixtures";
 
 describe("parseOfxAmount", () => {
@@ -93,6 +99,21 @@ describe("parseOfxAmount", () => {
 });
 
 describe("parseOFXContent", () => {
+  describe("real Caixa OFX file from disk", () => {
+    const realFile = path.join(
+      process.cwd(),
+      "e2e/fixtures/extrato-caixa-marco.ofx"
+    );
+
+    it.skipIf(!existsSync(realFile))("parses both lines from production Caixa export", () => {
+      const content = readFileSync(realFile, "utf8");
+      const { movimentos } = parseOFXContent(content);
+      expect(movimentos).toHaveLength(2);
+      const consorcio = movimentos.find((m) => m.historico === "CONSORCIO");
+      expect(consorcio?.valor).toBe(-1061.52);
+    });
+  });
+
   describe("Caixa extract (March)", () => {
     it("imports both transactions with correct amounts", () => {
       const { movimentos, totalizadores } = parseOFXContent(OFX_CAIXA_MARCO);
@@ -174,6 +195,112 @@ describe("parseOFXContent", () => {
       const { movimentos, totalizadores } = parseOFXContent("<OFX></OFX>");
       expect(movimentos).toHaveLength(0);
       expect(totalizadores.liquido).toBe(0);
+    });
+  });
+
+  describe("Santander (BANKID 0033)", () => {
+    it("does not use generic FITID grouping", () => {
+      const { movimentos } = parseOFXContent(OFX_SANTANDER_MARCO);
+      expect(movimentos.some((m) => m.historico.includes("Agrupado por FITID"))).toBe(
+        false
+      );
+    });
+
+    it("groups IOF by day", () => {
+      const { movimentos } = parseOFXContent(OFX_SANTANDER_MARCO);
+      const iof = movimentos.find((m) => m.historico.startsWith("IOF - Agrupado"));
+      expect(iof?.valor).toBeCloseTo(-767.55, 2);
+    });
+
+    it("groups boleto payments by payee on the same day", () => {
+      const { movimentos } = parseOFXContent(OFX_SANTANDER_MARCO);
+      const lafor = movimentos.find((m) =>
+        m.historico.includes("LAFOR COMERCIO DE COMBUST")
+      );
+      expect(lafor?.valor).toBeCloseTo(-53575, 2);
+      expect(lafor?.historico).toContain("Agrupado (3)");
+    });
+
+    it("groups CARAMURU boletos (2) into one line", () => {
+      const { movimentos } = parseOFXContent(OFX_SANTANDER_MARCO);
+      const caramuru = movimentos.find((m) =>
+        m.historico.includes("CARAMURU ALIMENTOS")
+      );
+      expect(caramuru?.valor).toBeCloseTo(-37662.48, 2);
+    });
+
+    it("keeps PIX and remuneracao as individual movements", () => {
+      const { movimentos } = parseOFXContent(OFX_SANTANDER_MARCO);
+      const pixRecebido = movimentos.filter((m) => m.historico.includes("PIX RECEBIDO"));
+      const pixEnviado = movimentos.filter((m) => m.historico.includes("PIX ENVIADO"));
+      const remuneracao = movimentos.filter((m) =>
+        m.historico.includes("REMUNERACAO APLICACAO")
+      );
+      expect(pixRecebido).toHaveLength(1);
+      expect(pixRecebido[0].valor).toBe(200000);
+      expect(pixEnviado).toHaveLength(2);
+      expect(remuneracao).toHaveLength(2);
+    });
+
+    it("keeps boleto without payee name as individual", () => {
+      const { movimentos } = parseOFXContent(OFX_SANTANDER_MARCO);
+      const semDest = movimentos.filter(
+        (m) =>
+          m.historico.trim() === "PAGAMENTO DE BOLETO" ||
+          (m.historico.includes("PAGAMENTO DE BOLETO") && !m.historico.includes("Agrupado"))
+      );
+      expect(semDest.some((m) => m.valor === -3588.91)).toBe(true);
+    });
+
+    it("produces 14 movements from 17 raw lines (grouped IOF + boletos)", () => {
+      const { movimentos } = parseOFXContent(OFX_SANTANDER_MARCO);
+      expect(movimentos).toHaveLength(14);
+    });
+
+    it("preserves statement net total", () => {
+      const { totalizadores } = parseOFXContent(OFX_SANTANDER_MARCO);
+      expect(totalizadores.liquido).toBeCloseTo(2974.58, 2);
+    });
+  });
+
+  describe("generic FITID on other banks", () => {
+    it("does not merge different memos with FITID 000000", () => {
+      const { movimentos } = parseOFXContent(OFX_FITID_GENERIC_OTHER_BANK);
+      expect(movimentos).toHaveLength(2);
+      expect(movimentos.some((m) => m.historico.includes("Agrupado por FITID"))).toBe(
+        false
+      );
+    });
+  });
+});
+
+describe("Santander helpers", () => {
+  describe("extractSantanderBoletoPayee", () => {
+    it("extracts payee after OUTROS BANCOS", () => {
+      expect(
+        extractSantanderBoletoPayee(
+          "PAGAMENTO DE BOLETO OUTROS BANCOS  LAFOR COMERCIO DE COMBUST"
+        )
+      ).toBe("LAFOR COMERCIO DE COMBUST");
+    });
+
+    it("returns null for boleto without payee", () => {
+      expect(extractSantanderBoletoPayee("PAGAMENTO DE BOLETO")).toBeNull();
+    });
+
+    it("returns null for non-boleto memo", () => {
+      expect(extractSantanderBoletoPayee("PIX ENVIADO")).toBeNull();
+    });
+  });
+
+  describe("isSantanderIof", () => {
+    it("detects IOF lines", () => {
+      expect(isSantanderIof("IOF ADICIONAL - AUTOMATICO")).toBe(true);
+      expect(isSantanderIof("IOF IMPOSTO OPERACOES FINANCEIRAS")).toBe(true);
+    });
+
+    it("does not match IOF substring in other words", () => {
+      expect(isSantanderIof("PIX ENVIADO")).toBe(false);
     });
   });
 });

@@ -1,0 +1,36 @@
+{
+  "movimentos": [
+    {
+      "dtMovimento": "2026-03-02T00:00:00.000Z",
+      "historico": "DEBITO CAPITALIZACAO",
+      "valor": -114.35,
+      "tipoMovimento": "D",
+      "identificadorOfx": "369639|2026-03-02T00:00:00.000Z|-114.35|369639",
+      "id": 0,
+      "idContaCorrente": 38,
+      "saldo": 0,
+      "ideagro": false,
+      "parcelado": false,
+      "modalidadeMovimento": "padrao",
+      "criadoEm": "",
+      "atualizadoEm": "",
+      "numeroDocumento": "369639|2026-03-02T00:00:00.000Z|-114.35|369639"
+    },
+    {
+      "dtMovimento": "2026-03-10T00:00:00.000Z",
+      "historico": "CONSORCIO",
+      "valor": -1061.52,
+      "tipoMovimento": "D",
+      "identificadorOfx": "374751|2026-03-10T00:00:00.000Z|-1061.52|374751",
+      "id": 0,
+      "idContaCorrente": 38,
+      "saldo": 0,
+      "ideagro": false,
+      "parcelado": false,
+      "modalidadeMovimento": "padrao",
+      "criadoEm": "",
+      "atualizadoEm": "",
+      "numeroDocumento": "374751|2026-03-10T00:00:00.000Z|-1061.52|374751"
+    }
+  ]
+}

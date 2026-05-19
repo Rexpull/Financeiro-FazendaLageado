@@ -484,10 +484,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				atualizadoEm: new Date().toISOString(),
 				idUsuario: usuario?.id,
 				identificadorOfx: formData.identificadorOfx || crypto.randomUUID(),
-				idCentroCustos:
-					formData.idCentroCustos != null && formData.idCentroCustos !== ''
-						? parseInt(String(formData.idCentroCustos), 10)
-						: null,
+				idCentroCustos: formData.idCentroCustos ?? null,
+				centroCustosList: formData.centroCustosList,
 			};
 			console.log('Movimento a ser salvo:', movimentoCompleto);
 
@@ -501,6 +499,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
 			setModalIsOpen(false);
 			fetchMovimentos(currentPage);
+			toast.info('Lançamento salvo. Para excluir, use o menu ⋮ na linha da conciliação.');
 		} catch (error) {
 			console.error('Erro ao salvar movimento bancário:', error);
 		} finally {
@@ -1545,7 +1544,13 @@ const MovimentoBancarioTable: React.FC = () => {
 				</div>
 			)}
 
-			<LancamentoManual isOpen={modalIsOpen} onClose={() => setModalIsOpen(false)} handleSave={handleSave} isSaving={isSaving} />
+			<LancamentoManual
+				key={modalIsOpen ? 'lancamento-manual-open' : 'lancamento-manual-closed'}
+				isOpen={modalIsOpen}
+				onClose={() => setModalIsOpen(false)}
+				handleSave={handleSave}
+				isSaving={isSaving}
+			/>
 
 			<ImportOFXModal isOpen={modalImportOFXIsOpen} onClose={() => setModalImportOFXIsOpen(false)} handleImport={handleImportFile} />
 
