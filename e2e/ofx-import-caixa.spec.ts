@@ -31,14 +31,12 @@ test.describe('Caixa OFX import', () => {
 
 		await page.getByRole('button', { name: /^Importar$/i }).click();
 
-		// Select conta (modal opens after parse)
-		await expect(page.getByRole('heading', { name: /Selecione a Conta Corrente/i })).toBeVisible({
-			timeout: 15000,
+		// contaSelecionada is pre-set in localStorage — import should start without a second conta modal
+		await expect(page.getByRole('button', { name: /Continuar para Conciliação/i })).toBeVisible({
+			timeout: 20000,
 		});
-		await page.locator('.grid').getByText('5848812752').click();
 
-		await expect(page.getByText(/Importando movimento/i)).toBeVisible({ timeout: 10000 });
-		await expect(page.getByText(/Movimentos novos importados:\s*2/i)).toBeVisible({ timeout: 15000 });
+		await expect.poll(() => captured?.movimentos?.length ?? 0).toBe(2);
 
 		expect(captured).not.toBeNull();
 		expect(captured!.movimentos).toHaveLength(2);

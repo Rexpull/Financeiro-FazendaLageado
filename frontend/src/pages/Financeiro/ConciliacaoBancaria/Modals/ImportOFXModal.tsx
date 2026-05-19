@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes, faSave } from '@fortawesome/free-solid-svg-icons';
@@ -39,6 +39,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 	const [loading, setLoading] = useState(false);
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [totalMovimentos, setTotalMovimentos] = useState(0);
+	const autoImportStarted = useRef(false);
 
 	useEffect(() => {
 		if (isOpen) {
@@ -84,9 +85,28 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 		if (selectedFile) {
 			try {
 				const { movimentos, totalizadores } = await parseOFXFile(selectedFile);
-				console.log('Movimentos OFX:', movimentos);
+				console.log(
+					`OFX parse: ${movimentos.length} movimento(s)`,
+					movimentos.map((m) => ({ historico: m.historico, valor: m.valor }))
+				);
+
+				if (movimentos.length === 0) {
+					setError('Nenhum movimento válido encontrado no arquivo OFX.');
+					return;
+				}
+
 				setMovimentosOFX(movimentos);
 				setTotalizadores(totalizadores);
+
+				const stored = localStorage.getItem('contaSelecionada');
+				const conta = stored ? JSON.parse(stored) : null;
+				if (conta?.id) {
+					setModalContaIsOpen(false);
+					autoImportStarted.current = true;
+					void runImportWithConta(conta.id, movimentos, totalizadores);
+					return;
+				}
+
 				setModalContaIsOpen(true);
 			} catch (error) {
 				setError('Erro ao processar o arquivo OFX.');
@@ -94,65 +114,104 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 		}
 	};
 
-	const handleSelectConta = async () => {
-		setModalContaIsOpen(false);
+	const runImportWithConta = async (
+		idContaCorrente: number,
+		movimentosParaSalvar?: MovimentoBancario[],
+		totalizadoresImport?: TotalizadoresOFX
+	) => {
+		const lista = movimentosParaSalvar ?? movimentosOFX;
+		const totals = totalizadoresImport ?? totalizadores;
+
 		setLoading(true);
 		setCurrentIndex(0);
-		setTotalMovimentos(movimentosOFX.length);
+		setTotalMovimentos(lista.length);
 
 		try {
-			const conta = JSON.parse(localStorage.getItem('contaSelecionada') || '{}');
-			const idContaCorrente = conta?.id;
+			const resultado = await salvarMovimentosOFX(
+				lista,
+				idContaCorrente,
+				setCurrentIndex,
+				(novos, existentes) => {
+					setNovosMovimentos(novos);
+					setExistentesMovimentos(existentes);
+				}
+			);
 
-			if (!idContaCorrente) {
-				toast.error('Conta corrente não selecionada.');
-				return;
-			}
-
-			const resultado = await salvarMovimentosOFX(movimentosOFX, idContaCorrente, setCurrentIndex, (novos, existentes) => {
-				setNovosMovimentos(novos);
-				setExistentesMovimentos(existentes);
-			});
-
-			// Atualizar movimentos com os dados retornados do batch
 			setMovimentosOFX(resultado.movimentos);
-			
-			// Salvar histórico no banco de dados
+
 			try {
 				const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
 				const idUsuario = usuarioLogado.id;
 
-				if (!idUsuario) {
-					console.warn('⚠️ Usuário não logado, não será possível salvar histórico');
-					toast.warning('Usuário não identificado. Histórico não será salvo.');
-				} else {
-					const historicoData = {
+				if (idUsuario) {
+					await criarHistoricoImportacao({
 						idUsuario,
 						nomeArquivo: selectedFile?.name || 'Desconhecido',
 						dataImportacao: new Date().toISOString(),
 						idMovimentos: resultado.movimentos.map((m) => m.id),
-						totalizadores,
+						totalizadores: totals,
 						novosMovimentos: resultado.novos,
 						existentesMovimentos: resultado.existentes,
-						idContaCorrente: idContaCorrente,
-					};
-
-					await criarHistoricoImportacao(historicoData);
-					console.log('✅ Histórico de importação salvo no banco de dados');
+						idContaCorrente,
+					});
 				}
 			} catch (historicoError) {
 				console.error('❌ Erro ao salvar histórico:', historicoError);
 				toast.warning('Importação concluída, mas histórico não foi salvo.');
 			}
 
-			toast.success(`Importação concluída! ${resultado.novos} novos, ${resultado.existentes} existentes.`);
-
+			const salvos = resultado.movimentos.length;
+			const esperados = lista.length;
+			if (salvos < esperados) {
+				toast.warning(
+					`Importação parcial: ${salvos} de ${esperados} movimentos salvos. Verifique o console.`
+				);
+			} else {
+				toast.success(
+					`Importação concluída! ${resultado.novos} novos, ${resultado.existentes} existentes.`
+				);
+			}
 		} catch (error) {
 			toast.error('Erro ao salvar movimentos!');
 			console.error('Erro ao salvar movimentos:', error);
 		} finally {
 			setLoading(false);
 		}
+	};
+
+	useEffect(() => {
+		if (!modalContaIsOpen) {
+			autoImportStarted.current = false;
+			return;
+		}
+		if (autoImportStarted.current || movimentosOFX.length === 0) return;
+
+		const stored = localStorage.getItem('contaSelecionada');
+		if (!stored) return;
+
+		try {
+			const conta = JSON.parse(stored);
+			if (conta?.id) {
+				autoImportStarted.current = true;
+				setModalContaIsOpen(false);
+				void runImportWithConta(conta.id);
+			}
+		} catch {
+			/* ignore invalid JSON */
+		}
+	}, [modalContaIsOpen, movimentosOFX.length]);
+
+	const handleSelectConta = async () => {
+		const conta = JSON.parse(localStorage.getItem('contaSelecionada') || '{}');
+		const idContaCorrente = conta?.id;
+
+		if (!idContaCorrente) {
+			toast.error('Conta corrente não selecionada.');
+			return;
+		}
+
+		setModalContaIsOpen(false);
+		await runImportWithConta(idContaCorrente);
 	};
 
 	const handleContinuarConciliacao = () => {
