@@ -53,21 +53,25 @@ const truncateCat = (s: string, max = 42) =>
 
 const MAX_COMPOSITION_BARS = 30;
 const TOP_SLICES_BEFORE_OTHERS = 29;
+const MAX_CUSTEIO_CHART_BARS = 10;
+const TOP_CUSTEIO_BEFORE_OTHERS = 9;
 
 /**
- * At most MAX_COMPOSITION_BARS rows. If there are more categories, keep the top TOP_SLICES_BEFORE_OTHERS by value
+ * At most `maxBars` rows. If there are more categories, keep the top `topBeforeOthers` by value
  * and aggregate the rest into a single "Outros" row. Percentages use `totalBase` (full total, not truncated).
  */
 function limitCompositionSlices<T extends { descricao: string; valorNum: number }>(
   sortedDesc: T[],
   totalBase: number,
   aggregateOthers: boolean = true,
-  othersLabel: string = 'Outros'
+  othersLabel: string = 'Outros',
+  maxBars: number = MAX_COMPOSITION_BARS,
+  topBeforeOthers: number = TOP_SLICES_BEFORE_OTHERS
 ): { categorias: string[]; valores: number[]; percentuais: number[] } {
   let rows: T[] = sortedDesc;
-  if (aggregateOthers && sortedDesc.length > MAX_COMPOSITION_BARS) {
-    const top = sortedDesc.slice(0, TOP_SLICES_BEFORE_OTHERS);
-    const rest = sortedDesc.slice(TOP_SLICES_BEFORE_OTHERS);
+  if (aggregateOthers && sortedDesc.length > maxBars) {
+    const top = sortedDesc.slice(0, topBeforeOthers);
+    const rest = sortedDesc.slice(topBeforeOthers);
     const outrosValor = rest.reduce((s, r) => s + r.valorNum, 0);
     rows = [...top, { descricao: othersLabel, valorNum: outrosValor } as T];
   }
@@ -191,13 +195,11 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
   const totalDespesasMes = mesIdx >= 0 ? Math.abs(dashboardData?.receitasDespesasPorMes.despesas[mesIdx] || 0) : Math.abs(totalDespesasAno);
   // Garantir que investimentos sejam sempre positivos
   const totalInvestimentosMes = mesIdx >= 0 ? Math.abs(dashboardData?.investimentosPorMes.values[mesIdx] || 0) : totalInvestimentosAno;
+  // receitasDespesasPorMes.despesas = custeio only (MB excludes plano tipo investimento)
   const totalDespesasConsolidadasMes = totalDespesasMes + totalInvestimentosMes;
   const totalDespesasConsolidadasAno = Math.abs(totalDespesasAno) + totalInvestimentosAno;
-  
-  // Calcular despesas operacionais (despesas totais - investimentos)
-  // Garantir que ambos sejam positivos para o cálculo
-  const despesasOperacionaisMes = Math.max(0, totalDespesasMes - totalInvestimentosMes);
-  const despesasOperacionaisAno = Math.max(0, Math.abs(totalDespesasAno) - totalInvestimentosAno);
+  const despesasOperacionaisMes = totalDespesasMes;
+  const despesasOperacionaisAno = Math.abs(totalDespesasAno);
 
   const exportToExcel = (data: any[], fileName: string) => {
     const ws = XLSX.utils.json_to_sheet(data);
@@ -223,7 +225,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
           <Box>
             <Typography variant="subtitle2">Despesas</Typography>
             <Typography variant="h5" fontWeight="bold" color="error.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalDespesasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalDespesasAno)})</span></Typography>
+              {formatCurrency(totalDespesasConsolidadasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalDespesasConsolidadasAno)})</span></Typography>
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block', mt: 0.25 }}>
               Custeio: {formatCurrency(despesasOperacionaisMes)} | Invest.: {formatCurrency(totalInvestimentosMes)}
@@ -234,11 +236,11 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
           <Box>
             <Typography variant="subtitle2">Saldo</Typography>
-            <Typography variant="h5" fontWeight="bold" color={(totalReceitasMes - totalDespesasMes) >= 0 ? 'success.main' : 'error.main'} sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalReceitasMes - totalDespesasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno - Math.abs(totalDespesasAno))})</span></Typography>
+            <Typography variant="h5" fontWeight="bold" color={(totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? 'success.main' : 'error.main'} sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
+              {formatCurrency(totalReceitasMes - totalDespesasConsolidadasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno - totalDespesasConsolidadasAno)})</span></Typography>
             </Typography>
           </Box>
-          <SavingsIcon sx={{ fontSize: 48, color: (totalReceitasMes - totalDespesasMes) >= 0 ? '#4caf50' : '#f44336' }} />
+          <SavingsIcon sx={{ fontSize: 48, color: (totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? '#4caf50' : '#f44336' }} />
         </Paper>
       </Box>
 
@@ -344,7 +346,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
             </Typography>
             <Box sx={{ mb: 1 }}>
               <Typography variant="h4" fontWeight="bold" color="error.main">
-                {formatCurrency(totalDespesasMes)}
+                {formatCurrency(totalDespesasConsolidadasMes)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 {mesSelecionado ? `Total de ${mesSelecionado}/${anoSelecionado}` : `Total Anual de ${anoSelecionado}`}
@@ -373,7 +375,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>=</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                Total: <strong>{formatCurrency(despesasOperacionaisMes + totalInvestimentosMes)}</strong>
+                Total: <strong>{formatCurrency(totalDespesasConsolidadasMes)}</strong>
               </Typography>
             </Box>
 
@@ -391,7 +393,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                   items: any[],
                   emptyMsg: string,
                   aggregateOthers: boolean = false,
-                  othersLabel: string = 'Outros'
+                  othersLabel: string = 'Outros',
+                  maxBars: number = MAX_COMPOSITION_BARS,
+                  topBeforeOthers: number = TOP_SLICES_BEFORE_OTHERS
                 ) => {
                   const total = items.reduce((s: number, i: any) => s + Math.abs(i.valor), 0);
                   const dadosOrdenados = [...items]
@@ -401,7 +405,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                     dadosOrdenados,
                     total,
                     aggregateOthers,
-                    othersLabel
+                    othersLabel,
+                    maxBars,
+                    topBeforeOthers
                   );
                   return (
                     <Box>
@@ -437,7 +443,10 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       '#ef5350',
                       custeio,
                       'Sem despesas de custeio no período.',
-                      false
+                      true,
+                      'Outros',
+                      MAX_CUSTEIO_CHART_BARS,
+                      TOP_CUSTEIO_BEFORE_OTHERS
                     )}
                     {renderDespesasSubChart('Despesas de Investimento', '#fb8c00', investimento, 'Sem despesas de investimento no período.')}
                   </>
@@ -481,11 +490,11 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                 Despesas
               </Typography>
               <Typography variant="h6" fontWeight="bold" color="error.main">
-                {formatCurrency(totalDespesasMes)}
+                {formatCurrency(totalDespesasConsolidadasMes)}
               </Typography>
               {totalReceitasMes > 0 && (
                 <Typography variant="caption" fontWeight="bold" color="error.main" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
-                  {(totalDespesasMes / totalReceitasMes * 100).toFixed(1)}% sobre receita
+                  {(totalDespesasConsolidadasMes / totalReceitasMes * 100).toFixed(1)}% sobre receita
                 </Typography>
               )}
             </Box>
@@ -512,25 +521,25 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
               <Typography 
                 variant="h6" 
                 fontWeight="bold" 
-                color={(totalReceitasMes - totalDespesasMes) >= 0 ? 'success.main' : 'error.main'}
+                color={(totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? 'success.main' : 'error.main'}
                 sx={{
                   textDecoration: 'underline',
                   textDecorationThickness: '3px',
-                  textDecorationColor: (totalReceitasMes - totalDespesasMes) >= 0 ? '#4caf50' : '#f44336',
+                  textDecorationColor: (totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? '#4caf50' : '#f44336',
                   textUnderlineOffset: '4px',
                 }}
               >
-                {formatCurrency(totalReceitasMes - totalDespesasMes)}
+                {formatCurrency(totalReceitasMes - totalDespesasConsolidadasMes)}
               </Typography>
               {/* Percentual de Aproveitamento (o que sobrou) */}
               {totalReceitasMes > 0 && (
                 <Typography 
                   variant="caption" 
                   fontWeight="bold" 
-                  color={(totalReceitasMes - totalDespesasMes) >= 0 ? 'success.main' : 'error.main'}
+                  color={(totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? 'success.main' : 'error.main'}
                   sx={{ fontSize: '0.75rem', mt: 0.5 }}
                 >
-                  {((totalReceitasMes - totalDespesasMes) / totalReceitasMes * 100).toFixed(1)}% de aproveitamento
+                  {((totalReceitasMes - totalDespesasConsolidadasMes) / totalReceitasMes * 100).toFixed(1)}% de aproveitamento
                 </Typography>
               )}
             </Box>
@@ -749,7 +758,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                     dashboardData.receitasDespesas.agrupadoPor.some((it) => it.tipoMovimento === 'D')
                   ? (() => {
                       const raw = dashboardData.receitasDespesas.agrupadoPor!.filter((it) => it.tipoMovimento === 'D');
-                      const totalBasePct = Math.max(Number(totalDespesasMes) || 0, 1e-9);
+                      const totalBasePct = Math.max(Number(totalDespesasConsolidadasMes) || 0, 1e-9);
                       const ordenado = [...raw]
                         .map((item) => ({
                           descricao: item.descricao,

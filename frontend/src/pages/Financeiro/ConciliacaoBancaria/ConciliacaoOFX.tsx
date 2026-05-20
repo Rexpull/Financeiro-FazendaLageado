@@ -30,6 +30,9 @@ import {
 	textoPlanoOrdenacaoOFX,
 	textoPlanoTransferencia,
 } from './conciliacaoLabels';
+import { listarParametros } from '../../../services/parametroService';
+import { Parametro } from '../../../../../backend/src/models/Parametro';
+import { calcularTotalizadoresExtrato, PlanosSemEfeitoFinanceiro } from '../../../Utils/extratoTotalizadores';
 
 Modal.setAppElement('#root');
 
@@ -71,6 +74,35 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 	const [centrosSelecionados, setCentrosSelecionados] = useState<CentroCustos[]>([]);
 	const [colunaOrdenacao, setColunaOrdenacao] = useState<ColunaOrdenacaoOFX>('data');
 	const [direcaoOrdenacao, setDirecaoOrdenacao] = useState<'asc' | 'desc'>('asc');
+	const [parametros, setParametros] = useState<Parametro[]>([]);
+
+	const planosSemEfeito: PlanosSemEfeitoFinanceiro | undefined = useMemo(() => {
+		const p = parametros[0];
+		if (!p) {
+			return undefined;
+		}
+		return {
+			idPlanoTransferenciaEntreContas: p.idPlanoTransferenciaEntreContas,
+			idPlanoAplicacaoResgateInvestimentos: p.idPlanoAplicacaoResgateInvestimentos,
+			idPlanoEstornos: p.idPlanoEstornos,
+		};
+	}, [parametros]);
+
+	const totalizadoresExibidos = useMemo(
+		() =>
+			calcularTotalizadoresExtrato(
+				movimentosSendoConciliados,
+				planosSemEfeito,
+				totalizadores.dtInicialExtrato,
+				totalizadores.dtFinalExtrato
+			),
+		[
+			movimentosSendoConciliados,
+			planosSemEfeito,
+			totalizadores.dtInicialExtrato,
+			totalizadores.dtFinalExtrato,
+		]
+	);
 	const formatarISOParaInput = (iso: string): string => {
 		if (!iso || isNaN(new Date(iso).getTime())) {
 			return '';
@@ -118,6 +150,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 		listarCentroCustos().then((centros) => {
 			setCentrosDisponiveis(centros);
 		});
+		listarParametros().then(setParametros).catch(() => setParametros([]));
 	}, []);
 
 	useEffect(() => {
@@ -727,7 +760,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 									Período do Arquivo
 								</span>
 								<span className="text-sm font-medium text-gray-600">
-									{formatarDataSemHora(totalizadores.dtInicialExtrato)} à {formatarDataSemHora(totalizadores.dtFinalExtrato)}
+									{formatarDataSemHora(totalizadoresExibidos.dtInicialExtrato)} à{' '}
+								{formatarDataSemHora(totalizadoresExibidos.dtFinalExtrato)}
 								</span>
 							</div>
 						</div>
@@ -736,7 +770,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 								<span className="text-gray-600" style={{ fontSize: '0.950rem' }}>
 									Valor das Receitas do Extrato
 								</span>
-								<span className="text-2xl font-bold text-blue-600">R$ {formatarMoeda(totalizadores.receitas, 2)}</span>
+								<span className="text-2xl font-bold text-blue-600">
+									R$ {formatarMoeda(totalizadoresExibidos.receitas, 2)}
+								</span>
 							</div>
 							<div className="totalMinus">
 								<FontAwesomeIcon icon={faMinus} />
@@ -745,7 +781,9 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 								<span className="text-gray-600" style={{ fontSize: '0.950rem' }}>
 									Valor das Despesas do Extrato
 								</span>
-								<span className="text-2xl font-bold text-orange-600">R$ {formatarMoeda(totalizadores.despesas, 2)}</span>
+								<span className="text-2xl font-bold text-orange-600">
+									R$ {formatarMoeda(totalizadoresExibidos.despesas, 2)}
+								</span>
 							</div>
 							<div className="totalEquals">
 								<FontAwesomeIcon icon={faEquals} />
@@ -763,7 +801,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 										textUnderlineOffset: '4px',
 									}}
 								>
-									R$ {formatarMoeda(totalizadores.liquido, 2)}
+									R$ {formatarMoeda(totalizadoresExibidos.liquido, 2)}
 								</span>
 							</div>
 						</div>

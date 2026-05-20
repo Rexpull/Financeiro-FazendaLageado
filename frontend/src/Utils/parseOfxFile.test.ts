@@ -257,9 +257,9 @@ describe("parseOFXContent", () => {
       expect(movimentos).toHaveLength(14);
     });
 
-    it("preserves statement net total", () => {
+    it("computes operational net (excludes transfers and application/redemption)", () => {
       const { totalizadores } = parseOFXContent(OFX_SANTANDER_MARCO);
-      expect(totalizadores.liquido).toBeCloseTo(2974.58, 2);
+      expect(totalizadores.liquido).toBeCloseTo(2974.48, 2);
     });
   });
 

@@ -7,7 +7,12 @@ import { FinanciamentoRepository } from '../repositories/FinanciamentoRepository
 import { PessoaRepository } from '../repositories/PessoaRepository';
 import { BancoRepository } from '../repositories/BancoRepository';
 import { CentroCustosRepository } from '../repositories/CentroCustosRepository';
+import { ParametroRepository } from '../repositories/ParametroRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
+import {
+	excluirMovimentoReceitasDespesasFluxo,
+	PlanosFinanciamentoParametros,
+} from '../utils/isMovimentoFinanciamento';
 
 export class MovimentoBancarioController {
 	private movBancarioRepository: MovimentoBancarioRepository;
@@ -18,6 +23,7 @@ export class MovimentoBancarioController {
 	private pessoaRepo: PessoaRepository;
 	private bancoRepo: BancoRepository;
 	private centroCustosRepository: CentroCustosRepository;
+	private parametroRepository: ParametroRepository;
 
 	constructor(
 		movBancarioRepository: MovimentoBancarioRepository,
@@ -28,6 +34,7 @@ export class MovimentoBancarioController {
 		pessoaRepo: PessoaRepository,
 		bancoRepo: BancoRepository,
 		centroCustosRepository: CentroCustosRepository,
+		parametroRepository: ParametroRepository,
 	) {
 		this.movBancarioRepository = movBancarioRepository;
 		this.planoContaRepository = planoContaRepository;
@@ -37,6 +44,16 @@ export class MovimentoBancarioController {
 		this.pessoaRepo = pessoaRepo;
 		this.bancoRepo = bancoRepo;
 		this.centroCustosRepository = centroCustosRepository;
+		this.parametroRepository = parametroRepository;
+	}
+
+	private async planosFinanciamentoFromParametros(): Promise<PlanosFinanciamentoParametros> {
+		const parametros = await this.parametroRepository.getAll();
+		const p0 = parametros[0];
+		return {
+			entrada: p0?.idPlanoEntradaFinanciamentos,
+			pagamento: p0?.idPlanoPagamentoFinanciamentos,
+		};
 	}
 
 	async handleRequest(req: Request): Promise<Response> {
@@ -543,9 +560,11 @@ export class MovimentoBancarioController {
 					const pendentesPorConta: { [idConta: number]: number } = {};
 
 					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
+					const planosFin = await this.planosFinanciamentoFromParametros();
 
 					const movimentosFiltrados = todosMovimentos.filter((mov) => {
 						if (mov.modalidadeMovimento === 'transferencia') return false;
+						if (excluirMovimentoReceitasDespesasFluxo(mov, planosFin)) return false;
 
 						const planoContasIds = [...(mov.resultadoList?.map((r) => r.idPlanoContas) || [])];
 						if (mov.idPlanoContas) planoContasIds.push(mov.idPlanoContas);
@@ -602,14 +621,6 @@ export class MovimentoBancarioController {
 						// Agrupamento por Centro de Custos
 						for (const movimento of movimentosFiltrados) {
 							const mes = new Date(movimento.dtMovimento).getMonth();
-
-							if (
-								movimento.modalidadeMovimento === 'financiamento' &&
-								(movimento.parcelado ||
-									(movimento.idFinanciamento != null && movimento.idFinanciamento > 0))
-							) {
-								continue;
-							}
 
 							// Obter centros de custos do movimento (pode ser lista ou único)
 							const centrosDoMovimento: { id: number; valor: number }[] = [];
@@ -1064,9 +1075,11 @@ export class MovimentoBancarioController {
 					const pendentesPorConta: { [idConta: number]: number } = {};
 
 					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
+					const planosFin = await this.planosFinanciamentoFromParametros();
 
 					const movimentosFiltrados = todosMovimentos.filter((mov) => {
 						if (mov.modalidadeMovimento === 'transferencia') return false;
+						if (excluirMovimentoReceitasDespesasFluxo(mov, planosFin)) return false;
 
 						const planoContasIds = [...(mov.resultadoList?.map((r) => r.idPlanoContas) || [])];
 						if (mov.idPlanoContas) planoContasIds.push(mov.idPlanoContas);
@@ -1111,14 +1124,6 @@ export class MovimentoBancarioController {
 						// Agrupamento por Centro de Custos
 						for (const movimento of movimentosFiltrados) {
 							const mes = new Date(movimento.dtMovimento).getMonth();
-
-							if (
-								movimento.modalidadeMovimento === 'financiamento' &&
-								(movimento.parcelado ||
-									(movimento.idFinanciamento != null && movimento.idFinanciamento > 0))
-							) {
-								continue;
-							}
 
 							// Obter centros de custos do movimento (pode ser lista ou único)
 							const centrosDoMovimento: { id: number; valor: number }[] = [];

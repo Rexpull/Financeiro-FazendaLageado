@@ -1,4 +1,5 @@
 import { MovimentoBancario } from "../../../backend/src/models/MovimentoBancario";
+import { calcularTotalizadoresExtrato } from "./extratoTotalizadores";
 
 export interface TotalizadoresOFX {
   receitas: number;
@@ -382,6 +383,8 @@ export function parseOFXContent(
     movimentosProcessados = agruparDuplicadosPorFITIDMesmoDia(movimentosTemporarios);
   }
 
+  const trnTypeByIdentificadorOfx = new Map<string, string | undefined>();
+
   const movimentos: MovimentoBancario[] = movimentosProcessados.map((mov) => {
     const identificadorImportacao = buildIdentificadorImportacao(
       mov.identificadorOfx,
@@ -390,6 +393,7 @@ export function parseOFXContent(
       mov.refNum,
       mov.checkNum
     );
+    trnTypeByIdentificadorOfx.set(identificadorImportacao, mov.trnType);
 
     return {
       dtMovimento: mov.dtMovimento,
@@ -418,15 +422,6 @@ export function parseOFXContent(
     };
   });
 
-  let totalReceitasFinal = 0;
-  let totalDespesasFinal = 0;
-  movimentos.forEach((m) => {
-    if (m.valor > 0) totalReceitasFinal += m.valor;
-    else totalDespesasFinal += m.valor;
-  });
-
-  const liquido = totalReceitasFinal + totalDespesasFinal;
-
   movimentos.sort(
     (a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime()
   );
@@ -435,17 +430,15 @@ export function parseOFXContent(
   const dtFinalExtrato =
     movimentos.length ? movimentos[movimentos.length - 1].dtMovimento : "";
 
-  return {
+  const totalizadores = calcularTotalizadoresExtrato(
     movimentos,
-    totalizadores: {
-      receitas: totalReceitasFinal,
-      despesas: totalDespesasFinal,
-      liquido,
-      saldoFinal: liquido,
-      dtInicialExtrato,
-      dtFinalExtrato,
-    },
-  };
+    undefined,
+    dtInicialExtrato,
+    dtFinalExtrato,
+    trnTypeByIdentificadorOfx
+  );
+
+  return { movimentos, totalizadores };
 }
 
 export const parseOFXFile = (

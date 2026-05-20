@@ -5,7 +5,7 @@ export interface RelatorioCentroCustosItem {
 		id: number;
 		descricao: string;
 		tipo?: string;
-		tipoReceitaDespesa?: string;
+		tipoReceitaDespesa?: 'RECEITA' | 'DESPESA' | 'FINANCIAMENTO';
 	};
 	total: number;
 	movimentos: Array<{

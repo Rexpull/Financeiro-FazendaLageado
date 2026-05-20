@@ -5,6 +5,8 @@ import { faTimes, faSave } from '@fortawesome/free-solid-svg-icons';
 import SelectContaCorrente from '../Modals/SelectContaCorrente';
 import ConciliacaoOFXModal from '../ConciliacaoOFX';
 import { parseOFXFile, TotalizadoresOFX } from '../../../../Utils/parseOfxFile';
+import { calcularTotalizadoresExtrato } from '../../../../Utils/extratoTotalizadores';
+import { listarParametros } from '../../../../services/parametroService';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { toast } from 'react-toastify';
 import { salvarMovimentosOFX } from '../../../../services/movimentoBancarioService';
@@ -139,6 +141,27 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 
 			setMovimentosOFX(resultado.movimentos);
 
+			let totalsParaHistorico = totals;
+			try {
+				const parametros = await listarParametros();
+				const p0 = parametros[0];
+				if (p0) {
+					totalsParaHistorico = calcularTotalizadoresExtrato(resultado.movimentos, {
+						idPlanoTransferenciaEntreContas: p0.idPlanoTransferenciaEntreContas,
+						idPlanoAplicacaoResgateInvestimentos: p0.idPlanoAplicacaoResgateInvestimentos,
+						idPlanoEstornos: p0.idPlanoEstornos,
+					}, totals.dtInicialExtrato, totals.dtFinalExtrato);
+				}
+			} catch {
+				totalsParaHistorico = calcularTotalizadoresExtrato(
+					resultado.movimentos,
+					undefined,
+					totals.dtInicialExtrato,
+					totals.dtFinalExtrato
+				);
+			}
+			setTotalizadores(totalsParaHistorico);
+
 			try {
 				const usuarioLogado = JSON.parse(localStorage.getItem('user') || '{}');
 				const idUsuario = usuarioLogado.id;
@@ -149,7 +172,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 						nomeArquivo: selectedFile?.name || 'Desconhecido',
 						dataImportacao: new Date().toISOString(),
 						idMovimentos: resultado.movimentos.map((m) => m.id),
-						totalizadores: totals,
+						totalizadores: totalsParaHistorico,
 						novosMovimentos: resultado.novos,
 						existentesMovimentos: resultado.existentes,
 						idContaCorrente,
