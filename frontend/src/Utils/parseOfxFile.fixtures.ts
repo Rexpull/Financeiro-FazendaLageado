@@ -242,3 +242,49 @@ export const OFX_BB_CONS_GROUP = `
   </STMTTRNRS>
  </BANKMSGSRSV1>
 </OFX>`;
+
+/** Bradesco GJN — mixed SGML: </STMTTRN> present but TRNAMT/FITID/MEMO without closers (real export). */
+export const OFX_BRADESCO_GJN = `
+<OFX>
+	<BANKMSGSRSV1>
+		<STMTTRNRS>
+			<STATUS>
+				<CODE>0
+				<SEVERITY>INFO
+			</STATUS>
+			<STMTRS>
+				<BANKACCTFROM>
+					<BANKID>0237
+					<ACCTID>1501/43505
+					<ACCTTYPE>CHECKING
+				</BANKACCTFROM>
+				<BANKTRANLIST>
+					<STMTTRN>
+						<TRNTYPE>CREDIT
+						<DTPOSTED>20260413000000[-03:EST]
+						<TRNAMT>5000.00
+						<FITID>N2037D:13/04/26:5000.0:1416302: Transfe Pix: Rem: Geraldo Jose Nogueira 13/04
+						<CHECKNUM>1416302
+						<MEMO>Transfe Pix Rem: Geraldo Jose Nogueira 13/04
+					</STMTTRN>
+					<STMTTRN>
+						<TRNTYPE>DEBIT
+						<DTPOSTED>20260413000000[-03:EST]
+						<TRNAMT>-5000.00
+						<FITID>N2039A:13/04/26:-5000.0:4397354: Apl.invest Fac:
+						<CHECKNUM>4397354
+						<MEMO>Apl.invest Fac 
+					</STMTTRN>
+					<STMTTRN>
+						<TRNTYPE>DEBIT
+						<DTPOSTED>20260427000000[-03:EST]
+						<TRNAMT>-847.87
+						<FITID>N20427:27/04/26:-847.87:0000042: Pagto Cobranca: Mardula Engenharia
+						<CHECKNUM>0000042
+						<MEMO>Pagto Cobranca Mardula Engenharia
+					</STMTTRN>
+				</BANKTRANLIST>
+			</STMTRS>
+		</STMTTRNRS>
+	</BANKMSGSRSV1>
+</OFX>`;

@@ -15,7 +15,14 @@ import {
   OFX_BB_CONS_GROUP,
   OFX_SANTANDER_MARCO,
   OFX_FITID_GENERIC_OTHER_BANK,
+  OFX_BRADESCO_GJN,
 } from "./parseOfxFile.fixtures";
+
+const BRADESCO_FULL_FIXTURE = path.join(
+  __dirname,
+  "__fixtures__",
+  "extrato-bradesco-gjn-abril.ofx"
+);
 
 describe("parseOfxAmount", () => {
   describe("standard US decimal (most banks)", () => {
@@ -151,6 +158,44 @@ describe("parseOFXContent", () => {
       const consorcio = movimentos.find((m) => m.historico === "CONSORCIO");
       expect(consorcio?.identificadorOfx).toContain("374751");
       expect(consorcio?.identificadorOfx).toMatch(/\|-1061\.52\|/);
+    });
+  });
+
+  describe("Bradesco (BANKID 0237, mixed SGML closers)", () => {
+    it("parses movements when only STMTTRN is closed (not TRNAMT/FITID)", () => {
+      const { movimentos } = parseOFXContent(OFX_BRADESCO_GJN);
+
+      expect(movimentos).toHaveLength(3);
+      expect(movimentos.map((m) => m.valor)).toEqual([5000, -5000, -847.87]);
+      expect(movimentos[0].historico).toContain("Transfe Pix");
+      expect(movimentos[2].historico).toContain("Mardula Engenharia");
+    });
+
+    it("parses DTPOSTED with timezone suffix [-03:EST]", () => {
+      const { movimentos } = parseOFXContent(OFX_BRADESCO_GJN);
+      expect(movimentos[0].dtMovimento).toMatch(/2026-04-13/);
+    });
+
+    it("keeps each FITID as a separate movement (no erroneous grouping)", () => {
+      const { movimentos } = parseOFXContent(OFX_BRADESCO_GJN);
+      expect(movimentos.every((m) => !m.historico.includes("Agrupado por FITID"))).toBe(
+        true
+      );
+    });
+
+    it("parses the full April export fixture (22 movements)", () => {
+      if (!existsSync(BRADESCO_FULL_FIXTURE)) return;
+
+      const content = readFileSync(BRADESCO_FULL_FIXTURE, "utf8");
+      const { movimentos } = parseOFXContent(content);
+
+      expect(movimentos.length).toBe(22);
+      const creditoRural = movimentos.find((m) =>
+        m.historico.includes("Operacao Credito Rural")
+      );
+      expect(creditoRural?.valor).toBe(1300000);
+      const aplicacaoCdb = movimentos.find((m) => m.historico.includes("Aplicacao Cdb"));
+      expect(aplicacaoCdb?.valor).toBe(-1300000);
     });
   });
 
