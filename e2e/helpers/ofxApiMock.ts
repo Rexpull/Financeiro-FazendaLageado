@@ -35,7 +35,7 @@ export async function installOfxImportMocks(
 				})
 			);
 		}
-		if (url.includes('/api/contaCorrente') && method === 'GET') {
+		if ((url.includes('/api/contaCorrente') || url.includes('/api/contas')) && method === 'GET') {
 			return route.fulfill(
 				json([
 					{

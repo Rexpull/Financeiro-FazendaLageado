@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes, faSave } from '@fortawesome/free-solid-svg-icons';
@@ -41,7 +41,6 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 	const [loading, setLoading] = useState(false);
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [totalMovimentos, setTotalMovimentos] = useState(0);
-	const autoImportStarted = useRef(false);
 
 	useEffect(() => {
 		if (isOpen) {
@@ -99,15 +98,6 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 
 				setMovimentosOFX(movimentos);
 				setTotalizadores(totalizadores);
-
-				const stored = localStorage.getItem('contaSelecionada');
-				const conta = stored ? JSON.parse(stored) : null;
-				if (conta?.id) {
-					setModalContaIsOpen(false);
-					autoImportStarted.current = true;
-					void runImportWithConta(conta.id, movimentos, totalizadores);
-					return;
-				}
 
 				setModalContaIsOpen(true);
 			} catch (error) {
@@ -201,28 +191,6 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 			setLoading(false);
 		}
 	};
-
-	useEffect(() => {
-		if (!modalContaIsOpen) {
-			autoImportStarted.current = false;
-			return;
-		}
-		if (autoImportStarted.current || movimentosOFX.length === 0) return;
-
-		const stored = localStorage.getItem('contaSelecionada');
-		if (!stored) return;
-
-		try {
-			const conta = JSON.parse(stored);
-			if (conta?.id) {
-				autoImportStarted.current = true;
-				setModalContaIsOpen(false);
-				void runImportWithConta(conta.id);
-			}
-		} catch {
-			/* ignore invalid JSON */
-		}
-	}, [modalContaIsOpen, movimentosOFX.length]);
 
 	const handleSelectConta = async () => {
 		const conta = JSON.parse(localStorage.getItem('contaSelecionada') || '{}');

@@ -87,12 +87,13 @@ export class MovimentoBancarioRepository {
 					idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 				FROM MovimentoBancario
 				WHERE idContaCorrente = ?
-				AND identificador_ofx LIKE ?
+				AND substr(identificador_ofx, 1, instr(identificador_ofx, '|') - 1) = ?
+				AND substr(identificador_ofx, instr(identificador_ofx, '|') + 1, 10) = ?
 				ORDER BY id ASC
 				LIMIT 2
 			`,
 			)
-			.bind(idContaCorrente, `${parsed.fitid}|${day}%`)
+			.bind(idContaCorrente, parsed.fitid, day)
 			.all();
 
 		if (results.length === 0) return null;

@@ -31,7 +31,17 @@ test.describe('Caixa OFX import', () => {
 
 		await page.getByRole('button', { name: /^Importar$/i }).click();
 
-		// contaSelecionada is pre-set in localStorage — import should start without a second conta modal
+		// Select conta after parse (import starts only after explicit selection)
+		await expect(page.getByRole('heading', { name: /Selecione a Conta Corrente/i })).toBeVisible({
+			timeout: 15000,
+		});
+		const contaCards = page.locator('.ReactModal__Content .grid > div');
+		const targetConta = page.getByText('5848812752');
+		if (await targetConta.isVisible().catch(() => false)) {
+			await targetConta.click();
+		} else {
+			await contaCards.first().click();
+		}
 		await expect(page.getByRole('button', { name: /Continuar para Conciliação/i })).toBeVisible({
 			timeout: 20000,
 		});
