@@ -89,6 +89,8 @@ export interface DashboardData {
     totalReceitas?: number;
     totalDespesas?: number;
   };
+  /** Full-year breakdown kept when a month filter is active (for annual captions). */
+  receitasDespesasAno?: DashboardData['receitasDespesas'];
 }
 
 // Novas interfaces para os filtros rápidos de financiamentos
@@ -195,6 +197,11 @@ export const getDashboardData = async (ano: number, mes?: number, contas?: numbe
     if (viteDebug) {
       const mesIdx = mes != null ? mes - 1 : -1;
       const agr = data.receitasDespesas?.agrupadoPor ?? [];
+      const centros = data.receitasDespesas?.receitasAgrupadoPorCentros ?? [];
+      const sumCentros = centros.reduce((s, r) => s + Math.abs(Number(r.valor) || 0), 0);
+      const sumDesp = agr
+        .filter((r) => r.tipoMovimento === 'D')
+        .reduce((s, r) => s + Math.abs(Number(r.valor) || 0), 0);
       console.log(
         '[dashboard:debug] client /api/dashboard snapshot (see worker logs for SQL steps)',
         JSON.stringify({
@@ -204,9 +211,11 @@ export const getDashboardData = async (ano: number, mes?: number, contas?: numbe
             mesIdx >= 0 ? data.receitasDespesasPorMes?.receitas?.[mesIdx] : null,
           despesasPorMes_at_mes:
             mesIdx >= 0 ? data.receitasDespesasPorMes?.despesas?.[mesIdx] : null,
-          receitasDespesas_Resultado_month_at_mes:
-            mesIdx >= 0 ? data.receitasDespesas?.receitas?.[mesIdx] : null,
-          receitasAgrupadoPorCentros_len: data.receitasDespesas?.receitasAgrupadoPorCentros?.length ?? 0,
+          sumReceitasCentros: sumCentros,
+          sumDespesasAgrupado: sumDesp,
+          apiTotalReceitas: data.receitasDespesas?.totalReceitas ?? null,
+          apiTotalDespesas: data.receitasDespesas?.totalDespesas ?? null,
+          receitasAgrupadoPorCentros_len: centros.length,
           agrupadoPor_len: agr.length,
           totaisMes: (data as any).totais ?? null,
         })

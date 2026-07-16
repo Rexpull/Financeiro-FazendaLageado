@@ -114,17 +114,19 @@ const Dashboard = () => {
       setError(null);
       try {
         // Busca dados do ano para o gráfico
-        const dashboardDataAno = await getDashboardData(anoSelecionado, undefined, contasSelecionadas);
+        const dashboardDataAno = await getDashboardData(anoSelecionado, undefined, contasSelecionadas, 'planos');
         // Busca detalhamento filtrando mês se houver
         const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
         const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
         // Despesas no detalhamento: sempre plano de contas (agrupamento via API tipoAgrupamento=planos).
         const dashboardDataDetalhe = await getDashboardData(anoSelecionado, mesParam, contasSelecionadas, 'planos');
 
-        // Junta os dados: gráfico do ano, detalhamento do mês/ano
+        // Junta os dados: gráfico do ano, detalhamento do mês/ano; keep year breakdown for annual captions
         setDashboardData({
           ...dashboardDataAno,
-          receitasDespesas: dashboardDataDetalhe.receitasDespesas
+          receitasDespesas: dashboardDataDetalhe.receitasDespesas,
+          receitasDespesasAno:
+            mesParam != null ? dashboardDataAno.receitasDespesas : dashboardDataDetalhe.receitasDespesas,
         });
       } catch (err) {
         setError('Erro ao carregar dados do dashboard');

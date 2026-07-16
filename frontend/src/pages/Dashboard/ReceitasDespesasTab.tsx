@@ -51,33 +51,17 @@ function formatAxisCurrencyShort(n: number): string {
 const truncateCat = (s: string, max = 42) =>
   s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 
-const MAX_COMPOSITION_BARS = 30;
-const TOP_SLICES_BEFORE_OTHERS = 29;
-const MAX_CUSTEIO_CHART_BARS = 10;
-const TOP_CUSTEIO_BEFORE_OTHERS = 9;
-
 /**
- * At most `maxBars` rows. If there are more categories, keep the top `topBeforeOthers` by value
- * and aggregate the rest into a single "Outros" row. Percentages use `totalBase` (full total, not truncated).
+ * Build chart series from sorted categories. Percentages use `totalBase` (full total).
+ * Does not aggregate residual categories into "Outros" — show every slice.
  */
 function limitCompositionSlices<T extends { descricao: string; valorNum: number }>(
   sortedDesc: T[],
-  totalBase: number,
-  aggregateOthers: boolean = true,
-  othersLabel: string = 'Outros',
-  maxBars: number = MAX_COMPOSITION_BARS,
-  topBeforeOthers: number = TOP_SLICES_BEFORE_OTHERS
+  totalBase: number
 ): { categorias: string[]; valores: number[]; percentuais: number[] } {
-  let rows: T[] = sortedDesc;
-  if (aggregateOthers && sortedDesc.length > maxBars) {
-    const top = sortedDesc.slice(0, topBeforeOthers);
-    const rest = sortedDesc.slice(topBeforeOthers);
-    const outrosValor = rest.reduce((s, r) => s + r.valorNum, 0);
-    rows = [...top, { descricao: othersLabel, valorNum: outrosValor } as T];
-  }
-  const valores = rows.map((r) => r.valorNum);
-  const percentuais = rows.map((r) => (totalBase > 0 ? (r.valorNum / totalBase) * 100 : 0));
-  const categorias = rows.map((r) => truncateCat(r.descricao));
+  const valores = sortedDesc.map((r) => r.valorNum);
+  const percentuais = sortedDesc.map((r) => (totalBase > 0 ? (r.valorNum / totalBase) * 100 : 0));
+  const categorias = sortedDesc.map((r) => truncateCat(r.descricao));
   return { categorias, valores, percentuais };
 }
 
@@ -116,7 +100,7 @@ function buildHorizontalCompositionOptions(opts: {
       textAnchor: 'start' as const,
       formatter: (_v: number, ctx: any) =>
         `${(percentSeries[ctx?.dataPointIndex] ?? 0).toFixed(1)}%`,
-      style: { fontSize: '10px', fontWeight: 600, colors: ['#424242'] },
+      style: { fontSize: '13px', fontWeight: 600, colors: ['#424242'] },
     },
     tooltip: {
       custom: ({
@@ -142,7 +126,7 @@ function buildHorizontalCompositionOptions(opts: {
       categories,
       labels: {
         formatter: (val: string | number) => formatAxisCurrencyShort(Number(val)),
-        style: { fontSize: '11px' },
+        style: { fontSize: '13px' },
         rotate: 0,
         rotateAlways: false,
         hideOverlappingLabels: true,
@@ -153,8 +137,8 @@ function buildHorizontalCompositionOptions(opts: {
     },
     yaxis: {
       labels: {
-        maxWidth: 240,
-        style: { fontSize: '11px' },
+        maxWidth: 260,
+        style: { fontSize: '13px' },
       },
     },
   };
@@ -184,29 +168,95 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
   tipoDetalhamento,
   onTipoDetalhamentoChange,
 }) => {
-  const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
+  // Period breakdown (month when selected, else year) — single source for cards, charts, and Detalhamento
+  const receitasPorCentros = dashboardData?.receitasDespesas?.receitasAgrupadoPorCentros ?? [];
+  const despesasAgrupado = (dashboardData?.receitasDespesas?.agrupadoPor ?? []).filter(
+    (item) => item.tipoMovimento === 'D'
+  );
+  const despesasCusteioBreakdown = despesasAgrupado.filter(
+    (item) => item.subtipoDespesa === 'custeio'
+  );
+  const despesasInvestimentoBreakdown = despesasAgrupado.filter(
+    (item) => item.subtipoDespesa === 'investimento'
+  );
 
-  const totalReceitasAno = dashboardData?.receitasDespesasPorMes.receitas.reduce((a: number, b: number) => a + (b || 0), 0) || 0;
-  const totalDespesasAno = dashboardData?.receitasDespesasPorMes.despesas.reduce((a: number, b: number) => a + (b || 0), 0) || 0;
-  // Garantir que investimentos sejam sempre positivos
-  const totalInvestimentosAno = Math.abs(dashboardData?.investimentosPorMes.values.reduce((a: number, b: number) => a + (Math.abs(b) || 0), 0) || 0);
+  const yearRd = dashboardData?.receitasDespesasAno ?? dashboardData?.receitasDespesas;
+  const receitasAnoCentros = yearRd?.receitasAgrupadoPorCentros ?? [];
+  const despesasAnoAgrupado = (yearRd?.agrupadoPor ?? []).filter((item) => item.tipoMovimento === 'D');
+  const despesasAnoCusteio = despesasAnoAgrupado.filter(
+    (item) => item.subtipoDespesa === 'custeio'
+  );
+  const despesasAnoInvest = despesasAnoAgrupado.filter(
+    (item) => item.subtipoDespesa === 'investimento'
+  );
 
-  const totalReceitasMes = mesIdx >= 0 ? (dashboardData?.receitasDespesasPorMes.receitas[mesIdx] || 0) : totalReceitasAno;
-  const totalDespesasMes = mesIdx >= 0 ? Math.abs(dashboardData?.receitasDespesasPorMes.despesas[mesIdx] || 0) : Math.abs(totalDespesasAno);
-  // Garantir que investimentos sejam sempre positivos
-  const totalInvestimentosMes = mesIdx >= 0 ? Math.abs(dashboardData?.investimentosPorMes.values[mesIdx] || 0) : totalInvestimentosAno;
-  // receitasDespesasPorMes.despesas = custeio only (MB excludes plano tipo investimento)
-  const totalDespesasConsolidadasMes = totalDespesasMes + totalInvestimentosMes;
-  const totalDespesasConsolidadasAno = Math.abs(totalDespesasAno) + totalInvestimentosAno;
-  const despesasOperacionaisMes = totalDespesasMes;
-  const despesasOperacionaisAno = Math.abs(totalDespesasAno);
+  const totalReceitasPeriodo = receitasPorCentros.reduce(
+    (s, r) => s + Math.abs(Number(r.valor) || 0),
+    0
+  );
+  const despesasOperacionaisPeriodo = despesasCusteioBreakdown.reduce(
+    (s, r) => s + Math.abs(Number(r.valor) || 0),
+    0
+  );
+  const totalInvestimentosPeriodo = despesasInvestimentoBreakdown.reduce(
+    (s, r) => s + Math.abs(Number(r.valor) || 0),
+    0
+  );
+  const totalDespesasConsolidadasPeriodo = despesasOperacionaisPeriodo + totalInvestimentosPeriodo;
 
-  const exportToExcel = (data: any[], fileName: string) => {
-    const ws = XLSX.utils.json_to_sheet(data);
+  const totalReceitasAno = receitasAnoCentros.reduce(
+    (s, r) => s + Math.abs(Number(r.valor) || 0),
+    0
+  );
+  const totalDespesasConsolidadasAno =
+    despesasAnoCusteio.reduce((s, r) => s + Math.abs(Number(r.valor) || 0), 0) +
+    despesasAnoInvest.reduce((s, r) => s + Math.abs(Number(r.valor) || 0), 0);
+
+  const totalReceitasMes = totalReceitasPeriodo;
+  const despesasOperacionaisMes = despesasOperacionaisPeriodo;
+  const totalInvestimentosMes = totalInvestimentosPeriodo;
+  const totalDespesasConsolidadasMes = totalDespesasConsolidadasPeriodo;
+
+  const exportReceitasDespesasExcel = () => {
+    const totalRec = Math.max(totalReceitasMes, 1e-9);
+    const totalDesp = Math.max(totalDespesasConsolidadasMes, 1e-9);
+
+    const receitasRows = [...receitasPorCentros]
+      .map((item) => {
+        const valor = Math.abs(Number(item.valor) || 0);
+        return {
+          Nome: item.descricao,
+          Valor: valor,
+          '%': Number(((valor / totalRec) * 100).toFixed(2)),
+          Conciliado: item.conciliado ? 'Sim' : 'Não',
+        };
+      })
+      .sort((a, b) => b.Valor - a.Valor);
+
+    const despesasRows = [...despesasAgrupado]
+      .map((item) => {
+        const valor = Math.abs(Number(item.valor) || 0);
+        return {
+          Nome: item.descricao,
+          Subtipo: item.subtipoDespesa === 'investimento' ? 'Investimento' : item.subtipoDespesa === 'custeio' ? 'Custeio' : '',
+          Valor: valor,
+          '%': Number(((valor / totalDesp) * 100).toFixed(2)),
+          Conciliado: item.conciliado ? 'Sim' : 'Não',
+        };
+      })
+      .sort((a, b) => b.Valor - a.Valor);
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-    XLSX.writeFile(wb, `${fileName}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(receitasRows), 'Receitas');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(despesasRows), 'Despesas');
+    const periodo = mesSelecionado
+      ? `${mesSelecionado}_${anoSelecionado}`
+      : `${anoSelecionado}`;
+    XLSX.writeFile(wb, `receitas_despesas_${periodo}.xlsx`);
   };
+
+  const canExport =
+    receitasPorCentros.length > 0 || despesasAgrupado.length > 0;
 
   return (
     <>
@@ -214,20 +264,20 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" }, gap: 2, mb: 4 }}>
         <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
           <Box>
-            <Typography variant="subtitle2">Receitas</Typography>
-            <Typography variant="h5" fontWeight="bold" color="success.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalReceitasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno)})</span></Typography>
+            <Typography variant="subtitle2" sx={{ fontSize: '0.95rem' }}>Receitas</Typography>
+            <Typography variant="h5" fontWeight="bold" color="success.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', fontSize: { xs: '1.35rem', md: '1.5rem' }}}>
+              {formatCurrency(totalReceitasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '13px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno)})</span></Typography>
             </Typography>
           </Box>
           <TrendingUpIcon color="success" sx={{ fontSize: 48 }} />
         </Paper>
         <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
           <Box>
-            <Typography variant="subtitle2">Despesas</Typography>
-            <Typography variant="h5" fontWeight="bold" color="error.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalDespesasConsolidadasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalDespesasConsolidadasAno)})</span></Typography>
+            <Typography variant="subtitle2" sx={{ fontSize: '0.95rem' }}>Despesas</Typography>
+            <Typography variant="h5" fontWeight="bold" color="error.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', fontSize: { xs: '1.35rem', md: '1.5rem' }}}>
+              {formatCurrency(totalDespesasConsolidadasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '13px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalDespesasConsolidadasAno)})</span></Typography>
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block', mt: 0.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem', display: 'block', mt: 0.25 }}>
               Custeio: {formatCurrency(despesasOperacionaisMes)} | Invest.: {formatCurrency(totalInvestimentosMes)}
             </Typography>
           </Box>
@@ -235,9 +285,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         </Paper>
         <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
           <Box>
-            <Typography variant="subtitle2">Saldo</Typography>
-            <Typography variant="h5" fontWeight="bold" color={(totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? 'success.main' : 'error.main'} sx={{display: 'flex', flexDirection: 'column', alignItems: 'start'}}>
-              {formatCurrency(totalReceitasMes - totalDespesasConsolidadasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '12px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno - totalDespesasConsolidadasAno)})</span></Typography>
+            <Typography variant="subtitle2" sx={{ fontSize: '0.95rem' }}>Saldo</Typography>
+            <Typography variant="h5" fontWeight="bold" color={(totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? 'success.main' : 'error.main'} sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', fontSize: { xs: '1.35rem', md: '1.5rem' }}}>
+              {formatCurrency(totalReceitasMes - totalDespesasConsolidadasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '13px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno - totalDespesasConsolidadasAno)})</span></Typography>
             </Typography>
           </Box>
           <SavingsIcon sx={{ fontSize: 48, color: (totalReceitasMes - totalDespesasConsolidadasMes) >= 0 ? '#4caf50' : '#f44336' }} />
@@ -248,7 +298,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
 
       {/* Nova Seção: Análise Comparativa Receitas vs Despesas */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, fontSize: '1.25rem' }}>
           Análise Comparativa - Receitas e Despesas
         </Typography>
         <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
@@ -257,30 +307,30 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 2, mb: 3 }}>
           {/* Lado Esquerdo: Receitas - destaque visual + barras */}
           <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-            <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'success.main', fontSize: '1.35rem' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'success.main', fontSize: '1.5rem' }}>
               Receitas
             </Typography>
             <Box sx={{ mb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="h4" fontWeight="bold" color="success.main">
+                <Typography variant="h4" fontWeight="bold" color="success.main" sx={{ fontSize: { xs: '1.75rem', md: '2rem' } }}>
                   {formatCurrency(totalReceitasMes)}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
                   {mesSelecionado ? `Total de ${mesSelecionado}/${anoSelecionado}` : `Total Anual de ${anoSelecionado}`}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                  Composição por centro de custos
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, fontSize: '0.8rem' }}>
+                  Composição por plano de contas (mesmo critério do Fluxo)
                 </Typography>
               </Box>
               {totalReceitasMes > 0 && (
                 <Box sx={{ textAlign: 'right', borderLeft: '2px solid', borderColor: 'divider', pl: 2, minWidth: '140px' }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', mb: 0.5 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem', mb: 0.5 }}>
                     Investimentos sobre Receita
                   </Typography>
                   <Typography variant="h5" fontWeight="bold" color="info.main">
                     {(totalInvestimentosMes / totalReceitasMes * 100).toFixed(1)}%
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem', display: 'block' }}>
                     {formatCurrency(totalInvestimentosMes)}
                   </Typography>
                 </Box>
@@ -292,14 +342,16 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                 width: '100%',
                 minWidth: 0,
                 minHeight: 280,
+                maxHeight: 560,
+                overflowY: 'auto',
                 display: 'flex',
                 alignItems: 'stretch',
                 justifyContent: 'center',
               }}
             >
               {(() => {
-                const porCentros = dashboardData?.receitasDespesas?.receitasAgrupadoPorCentros;
-                /* Business rule: receitas breakdown uses cost centers only (not chart of accounts on this chart). */
+                const porCentros = receitasPorCentros;
+                /* Fluxo-aligned: receitas from Resultado custeio + hierarchy 001., grouped by parent plan. */
                 const fromCentros = (Array.isArray(porCentros) ? porCentros : []).map((item: any) => ({
                   descricao: item.descricao,
                   valorNum: Math.abs(Number(item.valor) || 0),
@@ -312,12 +364,11 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                 if (dadosOrdenados.length === 0) return null;
                 const { categorias: cats, valores, percentuais } = limitCompositionSlices(
                   dadosOrdenados,
-                  totalBasePct,
-                  false
+                  totalBasePct
                 );
-                const h = Math.min(480, Math.max(300, valores.length * 34));
+                const h = Math.min(720, Math.max(300, valores.length * 36));
                 return (
-                  <Box sx={{ width: '100%', minWidth: 0, alignSelf: 'center' }}>
+                  <Box sx={{ width: '100%', minWidth: 0, alignSelf: 'flex-start' }}>
                     <Suspense fallback={<CircularProgress />}>
                       <Chart
                         options={buildHorizontalCompositionOptions({
@@ -341,14 +392,14 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
 
           {/* Lado Direito: Despesas - custeio e investimento separados */}
           <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-            <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'error.main', fontSize: '1.35rem' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'error.main', fontSize: '1.5rem' }}>
               Despesas
             </Typography>
             <Box sx={{ mb: 1 }}>
-              <Typography variant="h4" fontWeight="bold" color="error.main">
+              <Typography variant="h4" fontWeight="bold" color="error.main" sx={{ fontSize: { xs: '1.75rem', md: '2rem' } }}>
                 {formatCurrency(totalDespesasConsolidadasMes)}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
                 {mesSelecionado ? `Total de ${mesSelecionado}/${anoSelecionado}` : `Total Anual de ${anoSelecionado}`}
               </Typography>
             </Box>
@@ -366,52 +417,41 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
               gap: 2,
               flexWrap: 'wrap'
             }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
                 Custeio: <strong>{formatCurrency(despesasOperacionaisMes)}</strong>
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>+</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem' }}>+</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
                 Investimento: <strong>{formatCurrency(totalInvestimentosMes)}</strong>
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>=</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem' }}>=</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
                 Total: <strong>{formatCurrency(totalDespesasConsolidadasMes)}</strong>
               </Typography>
             </Box>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2, flex: 1 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2, flex: 1, maxHeight: 560, overflowY: 'auto' }}>
               {(() => {
-                const despesasAgrupado = (dashboardData?.receitasDespesas?.agrupadoPor ?? []).filter(
-                  (item: any) => item.tipoMovimento === 'D'
-                );
-                const custeio = despesasAgrupado.filter((item: any) => (item.subtipoDespesa ?? 'custeio') !== 'investimento');
-                const investimento = despesasAgrupado.filter((item: any) => item.subtipoDespesa === 'investimento');
+                const custeio = despesasCusteioBreakdown;
+                const investimento = despesasInvestimentoBreakdown;
 
                 const renderDespesasSubChart = (
                   titulo: string,
                   cor: string,
-                  items: any[],
-                  emptyMsg: string,
-                  aggregateOthers: boolean = false,
-                  othersLabel: string = 'Outros',
-                  maxBars: number = MAX_COMPOSITION_BARS,
-                  topBeforeOthers: number = TOP_SLICES_BEFORE_OTHERS
+                  items: typeof despesasAgrupado,
+                  emptyMsg: string
                 ) => {
-                  const total = items.reduce((s: number, i: any) => s + Math.abs(i.valor), 0);
+                  const total = items.reduce((s, i) => s + Math.abs(i.valor), 0);
                   const dadosOrdenados = [...items]
-                    .map((item: any) => ({ descricao: item.descricao, valorNum: Math.abs(item.valor) }))
-                    .sort((a: any, b: any) => b.valorNum - a.valorNum);
+                    .map((item) => ({ descricao: item.descricao, valorNum: Math.abs(item.valor) }))
+                    .sort((a, b) => b.valorNum - a.valorNum);
                   const { categorias, valores, percentuais } = limitCompositionSlices(
                     dadosOrdenados,
-                    total,
-                    aggregateOthers,
-                    othersLabel,
-                    maxBars,
-                    topBeforeOthers
+                    total
                   );
                   return (
                     <Box>
-                      <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, fontSize: '0.95rem' }}>
                         {titulo}
                       </Typography>
                       {dadosOrdenados.length === 0 ? (
@@ -427,7 +467,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                             })}
                             series={[{ name: titulo, data: valores }]}
                             type="bar"
-                            height={Math.min(340, Math.max(220, valores.length * 30))}
+                            height={Math.min(520, Math.max(220, valores.length * 34))}
                             width="100%"
                           />
                         </Suspense>
@@ -442,13 +482,14 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       'Despesas de Custeio',
                       '#ef5350',
                       custeio,
-                      'Sem despesas de custeio no período.',
-                      true,
-                      'Outros',
-                      MAX_CUSTEIO_CHART_BARS,
-                      TOP_CUSTEIO_BEFORE_OTHERS
+                      'Sem despesas de custeio no período.'
                     )}
-                    {renderDespesasSubChart('Despesas de Investimento', '#fb8c00', investimento, 'Sem despesas de investimento no período.')}
+                    {renderDespesasSubChart(
+                      'Despesas de Investimento',
+                      '#fb8c00',
+                      investimento,
+                      'Sem despesas de investimento no período.'
+                    )}
                   </>
                 );
               })()}
@@ -557,9 +598,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
           <Button
             variant="outlined"
             startIcon={<FileDownloadIcon />}
-            onClick={() => exportToExcel(dashboardData?.receitasDespesas?.detalhamento || [], 'receitas_despesas')}
-            disabled={!dashboardData?.receitasDespesas?.detalhamento?.length}
-            title="Exporta os dados detalhados para Excel. Para relatórios completos, acesse a seção Relatórios."
+            onClick={exportReceitasDespesasExcel}
+            disabled={!canExport}
+            title="Exporta Receitas e Despesas agrupadas em abas separadas."
           >
             Exportar Excel
           </Button>
@@ -661,7 +702,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
             >
               {tipoDetalhamento === 'receitas'
                 ? (() => {
-                    const porCentros = dashboardData?.receitasDespesas?.receitasAgrupadoPorCentros ?? [];
+                    const porCentros = receitasPorCentros;
                     const baseRows = [...porCentros].map((item) => ({
                       descricao: item.descricao,
                       valorAbs: Math.abs(Number(item.valor) || 0),
@@ -686,15 +727,15 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                     return (
                       <>
                         <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-                          <Table stickyHeader size="small" sx={{ minWidth: 320 }}>
+                          <Table stickyHeader size="medium" sx={{ minWidth: 320 }}>
                             <TableHead>
                               <TableRow>
-                                <TableCell sx={{ fontWeight: 700, width: 56 }}>Ranking</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 700, width: 88 }}>
+                                <TableCell sx={{ fontWeight: 700, width: 56, fontSize: '0.9rem' }}>Ranking</TableCell>
+                                <TableCell sx={{ fontWeight: 700, fontSize: '0.9rem' }}>Nome</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700, width: 88, fontSize: '0.9rem' }}>
                                   %
                                 </TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120 }}>
+                                <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120, fontSize: '0.9rem' }}>
                                   Valor
                                 </TableCell>
                               </TableRow>
@@ -702,7 +743,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                             <TableBody>
                               {ordenado.map((item, idx) => (
                                 <TableRow key={`rec-${tipoDetalhamento}-${idx}-${item.descricao}`} hover>
-                                  <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{idx + 1}</TableCell>
+                                  <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.9rem' }}>{idx + 1}</TableCell>
                                   <TableCell
                                     title={item.descricao}
                                     sx={{
@@ -710,18 +751,19 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
                                       maxWidth: { xs: 140, sm: 200 },
+                                      fontSize: '0.9rem',
                                     }}
                                   >
                                     {item.descricao}
                                   </TableCell>
-                                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontSize: '0.9rem' }}>
                                     {totalBasePct > 0 ? ((item.valorAbs / totalBasePct) * 100).toFixed(1) : '0.0'}%
                                   </TableCell>
                                   <TableCell align="right" sx={{ fontWeight: 600 }}>
                                     <Typography
                                       component="span"
                                       variant="body2"
-                                      sx={{ color: 'success.main', fontVariantNumeric: 'tabular-nums' }}
+                                      sx={{ color: 'success.main', fontVariantNumeric: 'tabular-nums', fontSize: '0.9rem' }}
                                     >
                                       {formatCurrency(item.valorAbs)}
                                     </Typography>
@@ -744,7 +786,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                               textAlign: 'center',
                             }}
                           >
-                            <Typography variant="body2" color="text.secondary" fontSize={'13px'} className="flex items-center justify-between">
+                            <Typography variant="body2" color="text.secondary" fontSize={'14px'} className="flex items-center justify-between">
                               <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
                               <span className="text-gray-500">|</span>
                               <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
@@ -754,12 +796,10 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       </>
                     );
                   })()
-                : dashboardData?.receitasDespesas?.agrupadoPor &&
-                    dashboardData.receitasDespesas.agrupadoPor.some((it) => it.tipoMovimento === 'D')
+                : despesasAgrupado.length > 0
                   ? (() => {
-                      const raw = dashboardData.receitasDespesas.agrupadoPor!.filter((it) => it.tipoMovimento === 'D');
                       const totalBasePct = Math.max(Number(totalDespesasConsolidadasMes) || 0, 1e-9);
-                      const ordenado = [...raw]
+                      const ordenado = [...despesasAgrupado]
                         .map((item) => ({
                           descricao: item.descricao,
                           valorAbs: Math.abs(Number(item.valor) || 0),
@@ -773,15 +813,15 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       return (
                         <>
                           <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-                            <Table stickyHeader size="small" sx={{ minWidth: 320 }}>
+                            <Table stickyHeader size="medium" sx={{ minWidth: 320 }}>
                               <TableHead>
                                 <TableRow>
-                                  <TableCell sx={{ fontWeight: 700, width: 56 }}>Ranking</TableCell>
-                                  <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
-                                  <TableCell align="right" sx={{ fontWeight: 700, width: 88 }}>
+                                  <TableCell sx={{ fontWeight: 700, width: 56, fontSize: '0.9rem' }}>Ranking</TableCell>
+                                  <TableCell sx={{ fontWeight: 700, fontSize: '0.9rem' }}>Nome</TableCell>
+                                  <TableCell align="right" sx={{ fontWeight: 700, width: 88, fontSize: '0.9rem' }}>
                                     %
                                   </TableCell>
-                                  <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120 }}>
+                                  <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120, fontSize: '0.9rem' }}>
                                     Valor
                                   </TableCell>
                                 </TableRow>
@@ -789,7 +829,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                               <TableBody>
                                 {ordenado.map((item, idx) => (
                                   <TableRow key={`desp-${idx}-${item.descricao}`} hover>
-                                    <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{idx + 1}</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.9rem' }}>{idx + 1}</TableCell>
                                     <TableCell
                                       title={item.descricao}
                                       sx={{
@@ -797,11 +837,12 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         maxWidth: { xs: 140, sm: 200 },
+                                        fontSize: '0.9rem',
                                       }}
                                     >
                                       {item.descricao}
                                     </TableCell>
-                                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontSize: '0.9rem' }}>
                                       {item.pct.toFixed(1)}%
                                     </TableCell>
                                     <TableCell align="right" sx={{ fontWeight: 600 }}>
@@ -811,6 +852,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                         sx={{
                                           color: 'error.main',
                                           fontVariantNumeric: 'tabular-nums',
+                                          fontSize: '0.9rem',
                                         }}
                                       >
                                         {formatCurrency(-item.valorAbs)}
@@ -834,7 +876,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                 textAlign: 'center',
                               }}
                             >
-                              <Typography variant="body2" color="text.secondary" fontSize={'13px'} className="flex items-center justify-between">
+                              <Typography variant="body2" color="text.secondary" fontSize={'14px'} className="flex items-center justify-between">
                                 <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
                                 <span className="text-gray-500">|</span>
                                 <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
