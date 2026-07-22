@@ -717,15 +717,31 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                     return (
                       <>
                         <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-                          <Table stickyHeader size="medium" sx={{ minWidth: 320 }}>
+                          <Table
+                            stickyHeader
+                            size="small"
+                            sx={{
+                              minWidth: 320,
+                              '& .MuiTableCell-root': {
+                                py: 0.4,
+                                px: 1,
+                                fontSize: '0.75rem',
+                                lineHeight: 1.25,
+                              },
+                              '& .MuiTableCell-head': {
+                                py: 0.5,
+                                fontSize: '0.72rem',
+                              },
+                            }}
+                          >
                             <TableHead>
                               <TableRow>
-                                <TableCell sx={{ fontWeight: 700, width: 56, fontSize: '0.9rem' }}>Ranking</TableCell>
-                                <TableCell sx={{ fontWeight: 700, fontSize: '0.9rem' }}>Nome</TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 700, width: 88, fontSize: '0.9rem' }}>
+                                <TableCell sx={{ fontWeight: 700, width: 48 }}>Ranking</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700, width: 64 }}>
                                   %
                                 </TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120, fontSize: '0.9rem' }}>
+                                <TableCell align="right" sx={{ fontWeight: 700, minWidth: 100 }}>
                                   Valor
                                 </TableCell>
                               </TableRow>
@@ -733,7 +749,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                             <TableBody>
                               {ordenado.map((item, idx) => (
                                 <TableRow key={`rec-${tipoDetalhamento}-${idx}-${item.descricao}`} hover>
-                                  <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.9rem' }}>{idx + 1}</TableCell>
+                                  <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{idx + 1}</TableCell>
                                   <TableCell
                                     title={item.descricao}
                                     sx={{
@@ -741,22 +757,15 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
                                       maxWidth: { xs: 140, sm: 200 },
-                                      fontSize: '0.9rem',
                                     }}
                                   >
                                     {item.descricao}
                                   </TableCell>
-                                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontSize: '0.9rem' }}>
+                                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                                     {totalBasePct > 0 ? ((item.valorAbs / totalBasePct) * 100).toFixed(1) : '0.0'}%
                                   </TableCell>
-                                  <TableCell align="right" sx={{ fontWeight: 600 }}>
-                                    <Typography
-                                      component="span"
-                                      variant="body2"
-                                      sx={{ color: 'success.main', fontVariantNumeric: 'tabular-nums', fontSize: '0.9rem' }}
-                                    >
-                                      {formatCurrency(item.valorAbs)}
-                                    </Typography>
+                                  <TableCell align="right" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'success.main' }}>
+                                    {formatCurrency(item.valorAbs)}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -767,16 +776,20 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                           <Box
                             sx={{
                               flexShrink: 0,
-                              px: 2,
-                              py: 1.5,
+                              px: 1.5,
+                              py: 0.75,
                               borderTop: 1,
                               borderColor: 'divider',
                               bgcolor: 'background.paper',
-                              boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
+                              boxShadow: '0 -1px 8px rgba(0,0,0,0.04)',
                               textAlign: 'center',
                             }}
                           >
-                            <Typography variant="body2" color="text.secondary" fontSize={'14px'} className="flex items-center justify-between">
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
+                            >
                               <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
                               <span className="text-gray-500">|</span>
                               <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
@@ -803,15 +816,31 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       return (
                         <>
                           <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-                            <Table stickyHeader size="medium" sx={{ minWidth: 320 }}>
+                            <Table
+                              stickyHeader
+                              size="small"
+                              sx={{
+                                minWidth: 320,
+                                '& .MuiTableCell-root': {
+                                  py: 0.4,
+                                  px: 1,
+                                  fontSize: '0.75rem',
+                                  lineHeight: 1.25,
+                                },
+                                '& .MuiTableCell-head': {
+                                  py: 0.5,
+                                  fontSize: '0.72rem',
+                                },
+                              }}
+                            >
                               <TableHead>
                                 <TableRow>
-                                  <TableCell sx={{ fontWeight: 700, width: 56, fontSize: '0.9rem' }}>Ranking</TableCell>
-                                  <TableCell sx={{ fontWeight: 700, fontSize: '0.9rem' }}>Nome</TableCell>
-                                  <TableCell align="right" sx={{ fontWeight: 700, width: 88, fontSize: '0.9rem' }}>
+                                  <TableCell sx={{ fontWeight: 700, width: 48 }}>Ranking</TableCell>
+                                  <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
+                                  <TableCell align="right" sx={{ fontWeight: 700, width: 64 }}>
                                     %
                                   </TableCell>
-                                  <TableCell align="right" sx={{ fontWeight: 700, minWidth: 120, fontSize: '0.9rem' }}>
+                                  <TableCell align="right" sx={{ fontWeight: 700, minWidth: 100 }}>
                                     Valor
                                   </TableCell>
                                 </TableRow>
@@ -819,7 +848,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                               <TableBody>
                                 {ordenado.map((item, idx) => (
                                   <TableRow key={`desp-${idx}-${item.descricao}`} hover>
-                                    <TableCell sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.9rem' }}>{idx + 1}</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{idx + 1}</TableCell>
                                     <TableCell
                                       title={item.descricao}
                                       sx={{
@@ -827,26 +856,15 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         maxWidth: { xs: 140, sm: 200 },
-                                        fontSize: '0.9rem',
                                       }}
                                     >
                                       {item.descricao}
                                     </TableCell>
-                                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontSize: '0.9rem' }}>
+                                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                                       {item.pct.toFixed(1)}%
                                     </TableCell>
-                                    <TableCell align="right" sx={{ fontWeight: 600 }}>
-                                      <Typography
-                                        component="span"
-                                        variant="body2"
-                                        sx={{
-                                          color: 'error.main',
-                                          fontVariantNumeric: 'tabular-nums',
-                                          fontSize: '0.9rem',
-                                        }}
-                                      >
-                                        {formatCurrency(-item.valorAbs)}
-                                      </Typography>
+                                    <TableCell align="right" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'error.main' }}>
+                                      {formatCurrency(-item.valorAbs)}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -857,16 +875,20 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                             <Box
                               sx={{
                                 flexShrink: 0,
-                                px: 2,
-                                py: 1.5,
+                                px: 1.5,
+                                py: 0.75,
                                 borderTop: 1,
                                 borderColor: 'divider',
                                 bgcolor: 'background.paper',
-                                boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
+                                boxShadow: '0 -1px 8px rgba(0,0,0,0.04)',
                                 textAlign: 'center',
                               }}
                             >
-                              <Typography variant="body2" color="text.secondary" fontSize={'14px'} className="flex items-center justify-between">
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
+                              >
                                 <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
                                 <span className="text-gray-500">|</span>
                                 <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
