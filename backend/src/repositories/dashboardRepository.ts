@@ -116,7 +116,12 @@ export class DashboardRepository {
     };
   }
 
-  /** Receitas (credits): business rule groups by centro de custos via MCC + MovimentoBancario.idCentroCustos fallback */
+  /**
+   * Fluxo de caixa default grouping is "centros":
+   * - Receitas = credit MB with cost center (MCC or mb.idCentroCustos)
+   * - Credits without cost center are pendentes in Fluxo (not receitas)
+   * - Financing movements / financing chart-of-accounts excluded via mbExcl + idFinanciamento
+   */
   private async aggregateReceitasPorCentroCredito(args: {
     ano: number;
     mes?: number;
@@ -127,7 +132,7 @@ export class DashboardRepository {
     const { ano, mes, contas, mbExcl, debug } = args;
 
     let whereBase =
-      'WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN (\'transferencia\', \'financiamento\'))';
+      "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
     let paramsBase: unknown[] = [];
     if (contas && contas.length > 0) {
       whereBase += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
@@ -149,11 +154,7 @@ export class DashboardRepository {
       SELECT 
         cc.descricao,
         SUM(ABS(COALESCE(mcc.valor, 0))) as valor,
-        SUM(CASE 
-          WHEN (mb.idCentroCustos IS NOT NULL OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc2 WHERE mcc2.idMovimentoBancario = mb.id))
-          THEN ABS(COALESCE(mcc.valor, 0))
-          ELSE 0 
-        END) as valorConciliado
+        SUM(ABS(COALESCE(mcc.valor, 0))) as valorConciliado
       FROM MovimentoCentroCustos mcc
       JOIN centroCustos cc ON mcc.idCentroCustos = cc.id
       JOIN MovimentoBancario mb ON mcc.idMovimentoBancario = mb.id
@@ -174,21 +175,8 @@ export class DashboardRepository {
       GROUP BY cc.descricao
     `;
 
-    // Credits with no cost center allocation — keep visible so headline totals match breakdown
-    const qSemCentro = `
-      SELECT 
-        'Sem centro de custos' as descricao,
-        SUM(ABS(mb.valor)) as valor,
-        0 as valorConciliado
-      FROM MovimentoBancario mb
-      ${whereBase}${creditOnly}
-        AND mb.idCentroCustos IS NULL
-        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc0 WHERE mcc0.idMovimentoBancario = mb.id)
-    `;
-
     const rMcc = await this.db.prepare(qComMcc).bind(...paramsBase).all();
     const rMb = await this.db.prepare(qSoMbCentro).bind(...paramsBase).all();
-    const rSem = await this.db.prepare(qSemCentro).bind(...paramsBase).all();
 
     const merged = new Map<string, { valor: number; valorConciliado: number }>();
     const addRows = (rows: any[]) => {
@@ -209,7 +197,6 @@ export class DashboardRepository {
     };
     addRows(rMcc.results as any[]);
     addRows(rMb.results as any[]);
-    addRows(rSem.results as any[]);
 
     const out: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
     for (const [descricao, agg] of merged) {
@@ -226,7 +213,126 @@ export class DashboardRepository {
     this.dashDebug(debug, 'aggregateReceitasPorCentroCredito:merged', {
       centroBuckets: out.length,
       sumValoresCentros: out.reduce((s, r) => s + r.valor, 0),
-      semCentroValor: merged.get('Sem centro de custos')?.valor ?? 0,
+    });
+
+    return out;
+  }
+
+  /**
+   * Fluxo centros despesas: debit MB with cost center, split by centroCustos.tipo
+   * (CUSTEIO → custeio, otherwise → investimento).
+   */
+  private async aggregateDespesasPorCentroDebito(args: {
+    ano: number;
+    mes?: number;
+    contas: number[];
+    mbExcl: { sql: string; bind: number[] };
+    debug: boolean;
+  }): Promise<
+    Array<{
+      descricao: string;
+      valor: number;
+      tipoMovimento: 'D';
+      conciliado: boolean;
+      subtipoDespesa: 'custeio' | 'investimento';
+    }>
+  > {
+    const { ano, mes, contas, mbExcl, debug } = args;
+
+    let whereBase =
+      "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
+    let paramsBase: unknown[] = [];
+    if (contas && contas.length > 0) {
+      whereBase += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
+      paramsBase = [...contas];
+    }
+    whereBase += " AND CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?";
+    paramsBase.push(ano);
+    if (mes != null && mes >= 1 && mes <= 12) {
+      whereBase += " AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?";
+      paramsBase.push(mes);
+    }
+    whereBase += mbExcl.sql;
+    paramsBase.push(...mbExcl.bind);
+
+    const debitOnly =
+      " AND (mb.tipoMovimento = 'D' OR (mb.tipoMovimento IS NULL AND mb.valor < 0))";
+
+    const qComMcc = `
+      SELECT 
+        cc.descricao,
+        UPPER(TRIM(COALESCE(cc.tipo, ''))) as centroTipo,
+        SUM(ABS(COALESCE(mcc.valor, 0))) as valor,
+        SUM(ABS(COALESCE(mcc.valor, 0))) as valorConciliado
+      FROM MovimentoCentroCustos mcc
+      JOIN centroCustos cc ON mcc.idCentroCustos = cc.id
+      JOIN MovimentoBancario mb ON mcc.idMovimentoBancario = mb.id
+      ${whereBase}${debitOnly}
+      GROUP BY cc.descricao, UPPER(TRIM(COALESCE(cc.tipo, '')))
+    `;
+
+    const qSoMbCentro = `
+      SELECT 
+        cc.descricao,
+        UPPER(TRIM(COALESCE(cc.tipo, ''))) as centroTipo,
+        SUM(ABS(mb.valor)) as valor,
+        SUM(ABS(mb.valor)) as valorConciliado
+      FROM MovimentoBancario mb
+      INNER JOIN centroCustos cc ON mb.idCentroCustos = cc.id
+      ${whereBase}${debitOnly}
+        AND mb.idCentroCustos IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc0 WHERE mcc0.idMovimentoBancario = mb.id)
+      GROUP BY cc.descricao, UPPER(TRIM(COALESCE(cc.tipo, '')))
+    `;
+
+    const rMcc = await this.db.prepare(qComMcc).bind(...paramsBase).all();
+    const rMb = await this.db.prepare(qSoMbCentro).bind(...paramsBase).all();
+
+    const merged = new Map<
+      string,
+      { descricao: string; subtipo: 'custeio' | 'investimento'; valor: number; valorConciliado: number }
+    >();
+    const addRows = (rows: any[]) => {
+      for (const row of rows) {
+        const d = row.descricao as string;
+        if (!d) continue;
+        const vt = Math.abs(Number(row.valor) || 0);
+        if (vt < 1e-9) continue;
+        const vc = Math.abs(Number(row.valorConciliado) || 0);
+        const subtipo: 'custeio' | 'investimento' =
+          String(row.centroTipo || '') === 'CUSTEIO' ? 'custeio' : 'investimento';
+        const key = `${subtipo}|${d}`;
+        const prev = merged.get(key);
+        if (prev) {
+          prev.valor += vt;
+          prev.valorConciliado += vc;
+        } else {
+          merged.set(key, { descricao: d, subtipo, valor: vt, valorConciliado: vc });
+        }
+      }
+    };
+    addRows(rMcc.results as any[]);
+    addRows(rMb.results as any[]);
+
+    const out = [...merged.values()]
+      .map((agg) => {
+        const conciliado = agg.valorConciliado > 0 && agg.valorConciliado >= agg.valor * 0.99;
+        return {
+          descricao: agg.descricao,
+          valor: agg.valor,
+          tipoMovimento: 'D' as const,
+          conciliado,
+          subtipoDespesa: agg.subtipo,
+        };
+      })
+      .sort((a, b) => b.valor - a.valor || a.descricao.localeCompare(b.descricao));
+
+    this.dashDebug(debug, 'aggregateDespesasPorCentroDebito:merged', {
+      buckets: out.length,
+      sumCusteio: out.filter((r) => r.subtipoDespesa === 'custeio').reduce((s, r) => s + r.valor, 0),
+      sumInvestimento: out
+        .filter((r) => r.subtipoDespesa === 'investimento')
+        .reduce((s, r) => s + r.valor, 0),
     });
 
     return out;
@@ -774,8 +880,8 @@ export class DashboardRepository {
       contasLen: contas.length,
       excludePlanoIdsInternalMovement: excludePlanosInternos,
       notes: [
-        "Monthly arrays (receitas/despesas) here = Resultado + hierarchy 001%/002% (not same as headline MB chart).",
-        "agrupadoPor = Resultado by plan/centro (+ orphan MB credits without Resultado when planos).",
+        "Monthly arrays (receitas/despesas) here = Resultado + hierarchy 001%/002% (legacy series).",
+        "agrupadoPor / receitasAgrupadoPorCentros = Fluxo centros engine (credits/debits by cost center).",
       ],
     });
     
@@ -885,161 +991,35 @@ export class DashboardRepository {
     let totalDespesas = 0;
 
     if (tipoAgrupamento === 'planos') {
-      // Mirror Fluxo de caixa (planos mode): Resultado + plano.tipo + hierarchy 001./002.
-      // Month/year from mb.dtMovimento; only modalidade padrao; skip parcelado; require idReferente for custeio.
+      // Match Fluxo de caixa default ("centros"): credits/debits by cost center.
+      // March/2026 receitas have almost no Resultado 001 lines — only centro allocation.
       const fluxoExclIds = await this.getIdsPlanosExclusaoFluxo();
       const fluxoMbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds);
-      const fluxoRExcl = this.sqlExcludeResultadoPlanoContas(fluxoExclIds);
 
-      let fluxoWhere =
-        "WHERE mb.idFinanciamento IS NULL AND mb.modalidadeMovimento = 'padrao' AND COALESCE(mb.parcelado, 0) = 0";
-      let fluxoParams: any[] = [];
-      if (contas && contas.length > 0) {
-        fluxoWhere += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
-        fluxoParams = [...contas];
-      }
-      fluxoWhere += " AND CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?";
-      fluxoParams.push(ano);
-      if (mes && mes >= 1 && mes <= 12) {
-        fluxoWhere += " AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?";
-        fluxoParams.push(mes);
-      }
-      fluxoWhere += fluxoRExcl.sql;
-      fluxoParams.push(...fluxoRExcl.bind);
-      fluxoWhere += fluxoMbExcl.sql;
-      fluxoParams.push(...fluxoMbExcl.bind);
-      // Only lines Fluxo would put in R / custeio / investimento (exclude pendentes)
-      fluxoWhere += ` AND (
-        pc.tipo = 'investimento'
-        OR (pc.tipo = 'custeio' AND pc.hierarquia LIKE '001.%' AND pc.idReferente IS NOT NULL)
-        OR (pc.tipo = 'custeio' AND pc.hierarquia LIKE '002.%' AND pc.idReferente IS NOT NULL)
-      )`;
-
-      const queryFluxoLike = `
-        SELECT
-          CASE
-            WHEN pc.tipo = 'investimento' THEN 'investimento'
-            WHEN pc.tipo = 'custeio' AND pc.hierarquia LIKE '001.%' THEN 'receita'
-            WHEN pc.tipo = 'custeio' AND pc.hierarquia LIKE '002.%' THEN 'custeio'
-            ELSE NULL
-          END as bucket,
-          COALESCE(pai.descricao, pc.descricao) as descricaoGrupo,
-          pc.descricao as descricaoFolha,
-          SUM(ABS(r.valor)) as valor,
-          SUM(CASE
-            WHEN (mb.idCentroCustos IS NOT NULL
-              OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc WHERE mcc.idMovimentoBancario = mb.id))
-              AND (mb.tipoMovimento = 'C'
-                OR (mb.tipoMovimento = 'D' AND mb.idPlanoContas IS NOT NULL)
-                OR (mb.tipoMovimento IS NULL))
-            THEN ABS(r.valor)
-            ELSE 0
-          END) as valorConciliado
-        FROM Resultado r
-        JOIN planoContas pc ON r.idPlanoContas = pc.id
-        LEFT JOIN planoContas pai ON pc.idReferente = pai.id
-        JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id
-        ${fluxoWhere}
-        GROUP BY
-          CASE
-            WHEN pc.tipo = 'investimento' THEN 'investimento'
-            WHEN pc.tipo = 'custeio' AND pc.hierarquia LIKE '001.%' THEN 'receita'
-            WHEN pc.tipo = 'custeio' AND pc.hierarquia LIKE '002.%' THEN 'custeio'
-            ELSE NULL
-          END,
-          COALESCE(pai.descricao, pc.descricao),
-          pc.descricao
-        ORDER BY pc.descricao
-      `;
-      const fluxoResult = await this.db.prepare(queryFluxoLike).bind(...fluxoParams).all();
-      this.dashDebug(debug, "getReceitasDespesas:planos_fluxoLike_GROUP", {
-        resultRowCount: fluxoResult.results.length,
-        dateField: "mb.dtMovimento",
-        excludeFluxoPlanIds: fluxoExclIds,
-        monthApplied: mes && mes >= 1 && mes <= 12 ? mes : "whole year",
+      receitasAgrupadoPorCentros = await this.aggregateReceitasPorCentroCredito({
+        ano,
+        mes,
+        contas,
+        mbExcl: fluxoMbExcl,
+        debug,
+      });
+      agrupadoPor = await this.aggregateDespesasPorCentroDebito({
+        ano,
+        mes,
+        contas,
+        mbExcl: fluxoMbExcl,
+        debug,
       });
 
-      type AggAcc = {
-        descricao: string;
-        valor: number;
-        tipoMovimento: 'C' | 'D';
-        valorConciliado: number;
-        subtipoDespesa?: 'custeio' | 'investimento';
-      };
-      const byKey = new Map<string, AggAcc>();
-      const receitasByGrupo = new Map<string, { valor: number; valorConciliado: number }>();
-
-      for (const row of fluxoResult.results as any[]) {
-        const bucket = row.bucket as string | null;
-        if (!bucket) continue;
-        const valorTotal = Math.abs(Number(row.valor) || 0);
-        if (valorTotal < 1e-9) continue;
-        const valorConciliado = Math.abs(Number(row.valorConciliado) || 0);
-
-        if (bucket === 'receita') {
-          // Fluxo groups receitas under parent plan description
-          const g = (row.descricaoGrupo as string) || (row.descricaoFolha as string) || 'Sem descrição';
-          const prev = receitasByGrupo.get(g);
-          if (prev) {
-            prev.valor += valorTotal;
-            prev.valorConciliado += valorConciliado;
-          } else {
-            receitasByGrupo.set(g, { valor: valorTotal, valorConciliado });
-          }
-          continue;
-        }
-
-        // Despesas: leaf plan description (Dashboard ranking); subtipo from Fluxo bucket
-        const d = (row.descricaoFolha as string) || (row.descricaoGrupo as string) || 'Sem descrição';
-        const subtipo: 'custeio' | 'investimento' = bucket === 'investimento' ? 'investimento' : 'custeio';
-        const key = `D|${subtipo}|${d}`;
-        const prev = byKey.get(key);
-        if (prev) {
-          prev.valor += valorTotal;
-          prev.valorConciliado += valorConciliado;
-        } else {
-          byKey.set(key, {
-            descricao: d,
-            valor: valorTotal,
-            tipoMovimento: 'D',
-            valorConciliado,
-            subtipoDespesa: subtipo,
-          });
-        }
-      }
-
-      // Receitas breakdown (same field name for API/UI): Fluxo parent-plan groups from Resultado 001.
-      receitasAgrupadoPorCentros = [...receitasByGrupo.entries()]
-        .map(([descricao, agg]) => {
-          const conciliado = agg.valorConciliado > 0 && agg.valorConciliado >= agg.valor * 0.99;
-          return {
-            descricao,
-            valor: agg.valor,
-            tipoMovimento: 'C' as const,
-            conciliado,
-          };
-        })
-        .sort((a, b) => b.valor - a.valor || a.descricao.localeCompare(b.descricao));
-
-      agrupadoPor = [...byKey.values()].map((r) => {
-        const valorTotal = Math.abs(r.valor || 0);
-        const vcAbs = Math.abs(r.valorConciliado || 0);
-        const tol = Math.max(0.02, valorTotal * 1e-4);
-        const conciliado = valorTotal > 1e-9 && Math.abs(valorTotal - vcAbs) <= tol;
+      for (const r of agrupadoPor) {
         totalDespesas += r.valor;
-        if (conciliado) totalConciliado += r.valor;
+        if (r.conciliado) totalConciliado += r.valor;
         else totalSemConciliar += r.valor;
-        return {
-          descricao: r.descricao,
-          valor: r.valor,
-          tipoMovimento: r.tipoMovimento,
-          conciliado,
-          subtipoDespesa: r.subtipoDespesa,
-        };
-      });
+      }
       totalReceitas = receitasAgrupadoPorCentros.reduce((s, r) => s + r.valor, 0);
-      this.dashDebug(debug, "getReceitasDespesas:planos_fluxoLike_final_totals", {
-        agrupadoPorLen: agrupadoPor.length,
+      this.dashDebug(debug, "getReceitasDespesas:planos_fluxoCentros_final_totals", {
+        note: "Same engine as Fluxo tipoAgrupamento=centros",
+        excludeFluxoPlanIds: fluxoExclIds,
         receitasGrupos: receitasAgrupadoPorCentros.length,
         totalReceitas,
         totalDespesas,
@@ -1053,104 +1033,35 @@ export class DashboardRepository {
         totalSemConciliar,
       });
     } else {
-      // Agrupamento por Centros de Custos usando MovimentoCentroCustos (rateio)
-      let agrupamentoWhereClause =
-        "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
-      let agrupamentoParams: any[] = [];
+      // Explicit centros mode — same aggregation as planos path (Fluxo default)
+      const fluxoExclIds = await this.getIdsPlanosExclusaoFluxo();
+      const fluxoMbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds);
 
-      if (contas && contas.length > 0) {
-        agrupamentoWhereClause += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
-        agrupamentoParams = [...contas];
+      agrupadoPor = await this.aggregateDespesasPorCentroDebito({
+        ano,
+        mes,
+        contas,
+        mbExcl: fluxoMbExcl,
+        debug,
+      });
+      for (const r of agrupadoPor) {
+        totalDespesas += r.valor;
+        if (r.conciliado) totalConciliado += r.valor;
+        else totalSemConciliar += r.valor;
       }
-
-      agrupamentoWhereClause += " AND CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?";
-      agrupamentoParams.push(ano);
-
-      if (mes && mes >= 1 && mes <= 12) {
-        agrupamentoWhereClause += " AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?";
-        agrupamentoParams.push(mes);
-      }
-      agrupamentoWhereClause += mbExcl.sql;
-      agrupamentoParams.push(...mbExcl.bind);
-
-      const queryAgrupamento = `
-        SELECT 
-          cc.descricao,
-          SUM(mcc.valor) as valor,
-          mb.tipoMovimento,
-          SUM(CASE 
-            WHEN mb.tipoMovimento = 'C' THEN
-              CASE 
-                WHEN (mb.idCentroCustos IS NOT NULL OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc2 WHERE mcc2.idMovimentoBancario = mb.id))
-                THEN ABS(mcc.valor)
-                ELSE 0 
-              END
-            /* Same rule as planos grouping: expense needs plan + cost center allocation */
-            WHEN mb.tipoMovimento = 'D' THEN
-              CASE 
-                WHEN mb.idPlanoContas IS NOT NULL 
-                  AND (mb.idCentroCustos IS NOT NULL 
-                       OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc2 WHERE mcc2.idMovimentoBancario = mb.id))
-                THEN ABS(mcc.valor)
-                ELSE 0 
-              END
-            ELSE 0
-          END) as valorConciliado
-        FROM MovimentoCentroCustos mcc
-        JOIN centroCustos cc ON mcc.idCentroCustos = cc.id
-        JOIN MovimentoBancario mb ON mcc.idMovimentoBancario = mb.id
-        ${agrupamentoWhereClause}
-        GROUP BY cc.descricao, mb.tipoMovimento
-        ORDER BY cc.descricao
-      `;
-      const agrupamentoResult = await this.db.prepare(queryAgrupamento).bind(...agrupamentoParams).all();
-      this.dashDebug(debug, "getReceitasDespesas:centros_Mcc_GROUP", {
-        resultRowCount: agrupamentoResult.results.length,
-        dateField: "mb.dtMovimento",
-        monthApplied: mes && mes >= 1 && mes <= 12 ? mes : "whole year",
-      });
-
-      agrupadoPor = agrupamentoResult.results.map((row: any) => {
-        const valor = row.valor || 0;
-        const valorConciliado = row.valorConciliado || 0;
-        const valorTotal = Math.abs(valor);
-        const vcAbs = Math.abs(valorConciliado || 0);
-        const tol = Math.max(0.02, valorTotal * 1e-4);
-        const conciliado =
-          row.tipoMovimento === 'D'
-            ? valorTotal > 1e-9 && Math.abs(valorTotal - vcAbs) <= tol
-            : vcAbs > 0 && vcAbs >= valorTotal * 0.99 - 1e-9;
-
-        if (row.tipoMovimento === 'C') {
-          totalReceitas += valorTotal;
-        } else {
-          totalDespesas += valorTotal;
-        }
-        
-        if (conciliado) {
-          totalConciliado += valorTotal;
-        } else {
-          totalSemConciliar += valorTotal;
-        }
-        
-        return {
-          descricao: row.descricao,
-          valor: valorTotal,
-          tipoMovimento: row.tipoMovimento as 'C' | 'D',
-          conciliado
-        };
-      });
-      this.dashDebug(debug, "getReceitasDespesas:centros_final_agrupadoPor_totals", {
-        agrupadoPorLen: agrupadoPor.length,
-        totalReceitas,
-        totalDespesas,
-      });
       receitasAgrupadoPorCentros = await this.aggregateReceitasPorCentroCredito({
         ano,
         mes,
         contas,
-        mbExcl,
+        mbExcl: fluxoMbExcl,
         debug,
+      });
+      totalReceitas = receitasAgrupadoPorCentros.reduce((s, r) => s + r.valor, 0);
+      this.dashDebug(debug, "getReceitasDespesas:centros_final_agrupadoPor_totals", {
+        agrupadoPorLen: agrupadoPor.length,
+        totalReceitas,
+        totalDespesas,
+        excludeFluxoPlanIds: fluxoExclIds,
       });
     }
 
@@ -1166,7 +1077,7 @@ export class DashboardRepository {
       .reduce((s, r) => s + Math.abs(r.valor), 0);
     const mesIdx = mes && mes >= 1 && mes <= 12 ? mes - 1 : -1;
     this.dashDebug(debug, "getReceitasDespesas:consistency_check", {
-      note: "Headline UI uses Fluxo-like Resultado buckets (planos) or centros (centros mode)",
+      note: "UI breakdown matches Fluxo default (centros): credits/debits by cost center",
       tipoAgrupamento,
       sumReceitas,
       sumDespesasAgrupado,
