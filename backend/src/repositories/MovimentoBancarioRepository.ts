@@ -125,13 +125,61 @@ export class MovimentoBancarioRepository {
 		});
 	}
 
-	async getMovimentosPorDetalhamento(planoId: number, mes: number, tipo: string, ano?: number): Promise<MovimentoDetalhado[]> {
+	/**
+	 * Fluxo exclusions for R/D: financing chart-of-accounts from Parametros + children of plan 170.
+	 */
+	private async getIdsPlanosExclusaoFluxo(): Promise<number[]> {
+		const row = await this.db
+			.prepare(
+				`SELECT idPlanoEntradaFinanciamentos, idPlanoPagamentoFinanciamentos FROM parametros WHERE id = 1`,
+			)
+			.first();
+		const ids: number[] = [];
+		if (row) {
+			for (const k of ['idPlanoEntradaFinanciamentos', 'idPlanoPagamentoFinanciamentos'] as const) {
+				const v = (row as Record<string, unknown>)[k];
+				if (v != null && v !== '' && Number.isFinite(Number(v))) ids.push(Number(v));
+			}
+		}
+		const filhos170 = await this.db.prepare(`SELECT id FROM planoContas WHERE idReferente = 170`).all();
+		for (const r of filhos170.results as Array<{ id: number }>) {
+			if (r?.id != null && Number.isFinite(Number(r.id))) ids.push(Number(r.id));
+		}
+		return [...new Set(ids)];
+	}
+
+	/** Exclude MB whose own plan is blocked, or that has any Resultado line on a blocked plan. */
+	private sqlExcludeMbPlanoContas(alias: string, ids: number[]): { sql: string; bind: number[] } {
+		if (!ids.length) return { sql: '', bind: [] };
+		const ph = ids.map(() => '?').join(', ');
+		return {
+			sql: ` AND (${alias}.idPlanoContas IS NULL OR ${alias}.idPlanoContas NOT IN (${ph}))
+        AND NOT EXISTS (
+          SELECT 1 FROM Resultado r_ex
+          WHERE r_ex.idMovimentoBancario = ${alias}.id
+            AND r_ex.idPlanoContas IN (${ph})
+        )`,
+			bind: [...ids, ...ids],
+		};
+	}
+
+	async getMovimentosPorDetalhamento(
+		planoId: number,
+		mes: number,
+		tipo: string,
+		ano?: number,
+		contas: number[] = [],
+	): Promise<MovimentoDetalhado[]> {
 		let sql = '';
 		let params: any[] = [];
 
 		const anoUsar = ano || new Date().getFullYear();
-		const primeiroDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-01`;
-		const ultimoDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-31`;
+		const mesNumero = mes + 1; // API mes is 0-indexed (JS getMonth)
+
+		const contasSql =
+			contas.length > 0 ? ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})` : '';
+		const dateSql = ` AND CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
+      AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?`;
 
 		if (tipo === 'receitas' || tipo === 'despesas' || tipo === 'investimentos') {
 			sql = `
@@ -149,10 +197,13 @@ export class MovimentoBancarioRepository {
 				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
 				LEFT JOIN Banco b ON cc.idBanco = b.id
 				WHERE r.idPlanoContas = ?
-				AND mb.dtMovimento BETWEEN ? AND ?
+				${dateSql}
+				${contasSql}
+				AND mb.idFinanciamento IS NULL
+				AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
 				ORDER BY mb.dtMovimento ASC
 			`;
-			params = [planoId, primeiroDiaMes, ultimoDiaMes];
+			params = [planoId, anoUsar, mesNumero, ...contas];
 		} else if (tipo === 'pendentesSelecao') {
 			sql = `
 				SELECT
@@ -168,11 +219,16 @@ export class MovimentoBancarioRepository {
 				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
 				LEFT JOIN Banco b ON cc.idBanco = b.id
 				WHERE mb.idContaCorrente = ?
-				AND mb.dtMovimento BETWEEN ? AND ?
+				${dateSql}
 				ORDER BY mb.dtMovimento ASC
 			`;
-			params = [planoId, primeiroDiaMes, ultimoDiaMes];
+			params = [planoId, anoUsar, mesNumero];
 		} else if (tipo === 'financiamentos') {
+			const primeiroDiaMes = `${anoUsar}-${String(mesNumero).padStart(2, '0')}-01`;
+			// Exclusive upper bound so ISO timestamps on the last day are included
+			const proximoMes = mesNumero === 12 ? 1 : mesNumero + 1;
+			const proximoAno = mesNumero === 12 ? anoUsar + 1 : anoUsar;
+			const inicioProximoMes = `${proximoAno}-${String(proximoMes).padStart(2, '0')}-01`;
 			sql = `
 				SELECT
 					pf.id,
@@ -188,10 +244,10 @@ export class MovimentoBancarioRepository {
 				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
 				LEFT JOIN Banco b ON cc.idBanco = b.id
 				WHERE mb.idContaCorrente = ?
-				AND pf.dt_vencimento BETWEEN ? AND ?
+				AND pf.dt_vencimento >= ? AND pf.dt_vencimento < ?
 				ORDER BY pf.dt_vencimento ASC
 			`;
-			params = [planoId, primeiroDiaMes, ultimoDiaMes];
+			params = [planoId, primeiroDiaMes, inicioProximoMes];
 		}
 
 		const { results } = await this.db
@@ -218,47 +274,71 @@ export class MovimentoBancarioRepository {
 		mes: number,
 		tipo: string,
 		ano?: number,
+		contas: number[] = [],
 	): Promise<MovimentoDetalhado[]> {
-		let sql = '';
-		let params: any[] = [];
-
-		const anoUsar = ano || new Date().getFullYear();
-		const primeiroDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-01`;
-		const ultimoDiaMes = `${anoUsar}-${String(mes + 1).padStart(2, '0')}-31`;
-
-		if (tipo === 'receitas' || tipo === 'despesas') {
-			// Buscar movimentos que têm o centro de custos na tabela MovimentoCentroCustos (rateio)
-			// OU que têm idCentroCustos diretamente no MovimentoBancario
-			sql = `
-				SELECT
-					mb.id,
-					mb.dtMovimento,
-					mb.historico,
-					COALESCE(mcc.valor, ABS(mb.valor)) as valor,
-					b.nome AS bancoNome,
-					cc.numConta,
-					cc.numCartao,
-					cc.responsavel
-				FROM MovimentoBancario mb
-				LEFT JOIN MovimentoCentroCustos mcc ON mb.id = mcc.idMovimentoBancario AND mcc.idCentroCustos = ?
-				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
-				LEFT JOIN Banco b ON cc.idBanco = b.id
-				WHERE (mcc.idCentroCustos = ? OR mb.idCentroCustos = ?)
-				AND mb.dtMovimento BETWEEN ? AND ?
-				AND mb.tipoMovimento = ?
-				ORDER BY mb.dtMovimento ASC
-			`;
-			const tipoMovimento = tipo === 'receitas' ? 'C' : 'D';
-			params = [centroCustosId, centroCustosId, centroCustosId, primeiroDiaMes, ultimoDiaMes, tipoMovimento];
-		} else {
-			// Para outros tipos, retornar vazio ou tratar conforme necessário
+		if (tipo !== 'receitas' && tipo !== 'despesas') {
 			return [];
 		}
 
-		const { results } = await this.db
-			.prepare(sql)
-			.bind(...params)
-			.all();
+		const anoUsar = ano || new Date().getFullYear();
+		const mesNumero = mes + 1; // API mes is 0-indexed
+		const fluxoExclIds = await this.getIdsPlanosExclusaoFluxo();
+		const mbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds);
+
+		const tipoSql =
+			tipo === 'receitas'
+				? ` AND (mb.tipoMovimento = 'C' OR (mb.tipoMovimento IS NULL AND mb.valor > 0))`
+				: ` AND (mb.tipoMovimento = 'D' OR (mb.tipoMovimento IS NULL AND mb.valor < 0))`;
+
+		const contasSql =
+			contas.length > 0 ? ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})` : '';
+
+		// MCC rateio for this centro, OR mb.idCentroCustos when movement has no MCC rows (Fluxo list rule)
+		const sql = `
+			SELECT
+				mb.id,
+				mb.dtMovimento,
+				mb.historico,
+				ABS(COALESCE(mcc.valor, mb.valor)) as valor,
+				b.nome AS bancoNome,
+				cc.numConta,
+				cc.numCartao,
+				cc.responsavel
+			FROM MovimentoBancario mb
+			LEFT JOIN MovimentoCentroCustos mcc
+				ON mb.id = mcc.idMovimentoBancario AND mcc.idCentroCustos = ?
+			LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
+			LEFT JOIN Banco b ON cc.idBanco = b.id
+			WHERE (
+				mcc.idCentroCustos = ?
+				OR (
+					mb.idCentroCustos = ?
+					AND NOT EXISTS (
+						SELECT 1 FROM MovimentoCentroCustos mcc0 WHERE mcc0.idMovimentoBancario = mb.id
+					)
+				)
+			)
+			AND CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
+			AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?
+			${tipoSql}
+			AND mb.idFinanciamento IS NULL
+			AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
+			${contasSql}
+			${mbExcl.sql}
+			ORDER BY mb.dtMovimento ASC
+		`;
+
+		const params: unknown[] = [
+			centroCustosId,
+			centroCustosId,
+			centroCustosId,
+			anoUsar,
+			mesNumero,
+			...contas,
+			...mbExcl.bind,
+		];
+
+		const { results } = await this.db.prepare(sql).bind(...params).all();
 
 		return results.map((row: any) => {
 			const contaFormatada = `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'} - ${
@@ -317,9 +397,6 @@ export class MovimentoBancarioRepository {
 	}
 
 	async getAllFiltrado(ano: string, contas: number[]): Promise<MovimentoBancario[]> {
-		const inicioAno = `${ano}-01-01`;
-		const fimAno = `${ano}-12-31`;
-
 		const { results } = await this.db
 			.prepare(
 				`
@@ -348,11 +425,11 @@ export class MovimentoBancarioRepository {
 					idFinanciamento,
 					idCentroCustos
 				FROM MovimentoBancario
-				WHERE dtMovimento BETWEEN ? AND ?
+				WHERE CAST(strftime('%Y', dtMovimento) AS INTEGER) = ?
 				AND idContaCorrente IN (${contas.map(() => '?').join(',')})
 				`,
 			)
-			.bind(inicioAno, fimAno, ...contas)
+			.bind(Number(ano), ...contas)
 			.all();
 
 		// Buscar todos os resultados e centros de custos em lote

@@ -108,8 +108,15 @@ function buildHorizontalCompositionOptions(opts: {
       enabled: true,
       offsetX: 6,
       textAnchor: 'start' as const,
-      formatter: (_v: number, ctx: any) =>
-        `${(percentSeries[ctx?.dataPointIndex] ?? 0).toFixed(1)}%`,
+      formatter: (_v: number, ctx: any) => {
+        const pct = percentSeries[ctx?.dataPointIndex] ?? 0;
+        // Tiny slices (e.g. bank fees ~R$ 82) read as 0.0% — show currency instead
+        if (pct < 0.05) {
+          const v = Math.abs(valueSeries[ctx?.dataPointIndex] ?? 0);
+          return formatCurrency(v);
+        }
+        return `${pct.toFixed(1)}%`;
+      },
       style: { fontSize: '13px', fontWeight: 600, colors: ['#424242'] },
     },
     tooltip: {
@@ -128,7 +135,7 @@ function buildHorizontalCompositionOptions(opts: {
       },
     },
     grid: {
-      padding: { left: 4, right: 40, top: 4, bottom: 8 },
+      padding: { left: 4, right: 72, top: 4, bottom: 8 },
       xaxis: { lines: { show: true } },
     },
     // Horizontal bars: numerical scale along the horizontal (reading) axis

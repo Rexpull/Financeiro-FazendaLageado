@@ -490,6 +490,13 @@ export class MovimentoBancarioController {
 				const mes = parseInt(urlObj.searchParams.get('mes') || '');
 				const ano = parseInt(urlObj.searchParams.get('ano') || new Date().getFullYear().toString());
 				const tipoAgrupamento = urlObj.searchParams.get('tipoAgrupamento') || 'planos';
+				const contasParam = urlObj.searchParams.get('contas');
+				const contas: number[] = contasParam
+					? contasParam
+							.split(',')
+							.map((c) => parseInt(c.trim(), 10))
+							.filter((c) => !isNaN(c))
+					: [];
 
 				let movimentos: MovimentoDetalhado[] = [];
 
@@ -503,11 +510,23 @@ export class MovimentoBancarioController {
 				} else if (tipoAgrupamento === 'centros') {
 					// Detalhamento por centro de custos
 					const centroCustosId = parseInt(urlObj.searchParams.get('planoId') || '');
-					movimentos = await this.movBancarioRepository.getMovimentosPorCentroCustosDetalhamento(centroCustosId, mes, tipo, ano);
+					movimentos = await this.movBancarioRepository.getMovimentosPorCentroCustosDetalhamento(
+						centroCustosId,
+						mes,
+						tipo,
+						ano,
+						contas,
+					);
 				} else {
 					// Detalhamento por plano de contas (lógica original)
 					const planoId = parseInt(urlObj.searchParams.get('planoId') || '');
-					movimentos = await this.movBancarioRepository.getMovimentosPorDetalhamento(planoId, mes, tipo, ano);
+					movimentos = await this.movBancarioRepository.getMovimentosPorDetalhamento(
+						planoId,
+						mes,
+						tipo,
+						ano,
+						contas,
+					);
 				}
 
 				return new Response(JSON.stringify(movimentos), {

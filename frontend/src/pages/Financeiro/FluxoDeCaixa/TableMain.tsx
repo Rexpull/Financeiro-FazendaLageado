@@ -292,7 +292,15 @@ const MovimentoBancarioTable: React.FC = () => {
 	const abrirDetalhamento = async (planoId: string, mes: number, tipo: string, descricao: string, subtipoFinanciamento?: 'pagos' | 'contratados') => {
 		try {
 			console.log('abrirDetalhamento', { planoId, mes, tipo, descricao, subtipoFinanciamento });
-			const dados = await buscarDetalhamento(planoId, mes, tipo, anoSelecionado, tipoAgrupamento, subtipoFinanciamento);
+			const dados = await buscarDetalhamento(
+				planoId,
+				mes,
+				tipo,
+				anoSelecionado,
+				tipoAgrupamento,
+				subtipoFinanciamento,
+				contasSelecionadas,
+			);
 			console.log('dados', dados);
 			setTituloDetalhamento(descricao);
 			console.log('tipo', tipo);

@@ -29,10 +29,12 @@ export const buscarDetalhamento = async (
 	tipo: string,
 	ano: string,
 	tipoAgrupamento: 'planos' | 'centros' = 'planos',
-	subtipo?: 'pagos' | 'contratados'
+	subtipo?: 'pagos' | 'contratados',
+	contas: string[] = [],
 ): Promise<MovimentoDetalhado[] | any[]> => {
 	const params = new URLSearchParams({ planoId, mes: String(mes), tipo, ano, tipoAgrupamento });
 	if (subtipo) params.set('subtipo', subtipo);
+	if (contas.length > 0) params.set('contas', contas.join(','));
 	const res = await fetch(`${API_URL}/api/fluxoCaixa/detalhar?${params.toString()}`, {
 		method: 'GET',
 		headers: { 'Accept': 'application/json' },

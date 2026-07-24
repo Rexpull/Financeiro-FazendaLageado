@@ -120,7 +120,7 @@ const ModalDetalhamento: React.FC<Props> = ({ isOpen, onClose, movimentos, titul
 										<td className="px-3 py-2 whitespace-nowrap">{formatarData(mov.data)}</td>
 										<td className="px-3 py-2 text-left">{mov.descricao}</td>
 										<td className="px-3 py-2 text-right font-semibold" style={{ color: mov.valor < 0 ? 'red' : 'green' }}>
-											R$ {mov.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+											R$ {mov.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 										</td>
 									</tr>
 								))}
@@ -129,14 +129,14 @@ const ModalDetalhamento: React.FC<Props> = ({ isOpen, onClose, movimentos, titul
 					</div>
 					{/* Total da Conta visível fora do scroll */}
 					<div className="bg-gray-100 border-t px-3 py-2 text-right font-bold text-sm">
-						Total da Conta: R$ {totalConta.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+						Total da Conta: R$ {totalConta.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 					</div>
 				</div>
 			</div>
 
 			<div className="flex justify-end px-5 py-4 border-t gap-3 mt-3">
 				<div className="text-right text-sm font-bold mt-2">
-					Total Geral: R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+					Total Geral: R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 				</div>
 				<button onClick={onClose} className="bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded hover:bg-gray-400">
 					Fechar
