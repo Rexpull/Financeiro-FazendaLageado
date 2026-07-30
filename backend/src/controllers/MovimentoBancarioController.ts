@@ -9,10 +9,8 @@ import { BancoRepository } from '../repositories/BancoRepository';
 import { CentroCustosRepository } from '../repositories/CentroCustosRepository';
 import { ParametroRepository } from '../repositories/ParametroRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
-import {
-	excluirMovimentoReceitasDespesasFluxo,
-	PlanosFinanciamentoParametros,
-} from '../utils/isMovimentoFinanciamento';
+import { excluirMovimentoReceitasDespesasFluxo, PlanosFinanciamentoParametros } from '../utils/isMovimentoFinanciamento';
+import { calcularSaldoFinalFluxo } from '../utils/fluxoSaldoFinal';
 
 export class MovimentoBancarioController {
 	private movBancarioRepository: MovimentoBancarioRepository;
@@ -510,23 +508,11 @@ export class MovimentoBancarioController {
 				} else if (tipoAgrupamento === 'centros') {
 					// Detalhamento por centro de custos
 					const centroCustosId = parseInt(urlObj.searchParams.get('planoId') || '');
-					movimentos = await this.movBancarioRepository.getMovimentosPorCentroCustosDetalhamento(
-						centroCustosId,
-						mes,
-						tipo,
-						ano,
-						contas,
-					);
+					movimentos = await this.movBancarioRepository.getMovimentosPorCentroCustosDetalhamento(centroCustosId, mes, tipo, ano, contas);
 				} else {
 					// Detalhamento por plano de contas (lógica original)
 					const planoId = parseInt(urlObj.searchParams.get('planoId') || '');
-					movimentos = await this.movBancarioRepository.getMovimentosPorDetalhamento(
-						planoId,
-						mes,
-						tipo,
-						ano,
-						contas,
-					);
+					movimentos = await this.movBancarioRepository.getMovimentosPorDetalhamento(planoId, mes, tipo, ano, contas);
 				}
 
 				return new Response(JSON.stringify(movimentos), {
@@ -661,11 +647,7 @@ export class MovimentoBancarioController {
 							}
 
 							if (centrosDoMovimento.length === 0) {
-								// Sem centro de custos, enviar como pendente
-								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-								}
-								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+								// Missing cost center → Conciliação (not Fluxo). Skip operational buckets.
 								continue;
 							}
 
@@ -726,9 +708,7 @@ export class MovimentoBancarioController {
 
 							const classificarPlanosComoPadrao =
 								movimento.modalidadeMovimento === 'padrao' ||
-								(movimento.modalidadeMovimento === 'financiamento' &&
-									movimento.idFinanciamento != null &&
-									movimento.idFinanciamento > 0);
+								(movimento.modalidadeMovimento === 'financiamento' && movimento.idFinanciamento != null && movimento.idFinanciamento > 0);
 
 							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
 								if (
@@ -977,28 +957,30 @@ export class MovimentoBancarioController {
 							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
 							0,
 						);
-						let financiamentos = 0;
-						if (tipoAgrupamento === 'centros') {
-							// Quando agrupado por centros, financiamentos têm estrutura separada
-							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce(
-								(a: number, b: any) => a + (b.valor || 0),
-								0,
-							);
-							financiamentos = pagos - contratados; // Resultado do mês: pagos reduzem dívida (positivo), contratados aumentam (negativo)
-						} else {
-							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
-						}
-						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce(
-							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
-							0,
-						);
+						const financiamentos = (() => {
+							if (tipoAgrupamento === 'centros') {
+								const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
+								const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce(
+									(a: number, b: any) => a + (b.valor || 0),
+									0,
+								);
+								return pagos - contratados;
+							}
+							return Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
+						})();
 
 						if (i > 0) {
 							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;
 						}
 
-						dadosMensais[i].saldoFinal = dadosMensais[i].saldoInicial + (receitas - despesas) + investimentos + financiamentos + pendentes;
+						// Management Fluxo: exclude conciliation pendências from closing balance
+						dadosMensais[i].saldoFinal = calcularSaldoFinalFluxo({
+							saldoInicial: dadosMensais[i].saldoInicial,
+							receitas,
+							despesas,
+							investimentos,
+							financiamentos,
+						});
 
 						if (dadosMensais[i].saldoInicial === 0) {
 							if (dadosMensais[i].saldoFinal > 0) {
@@ -1033,6 +1015,11 @@ export class MovimentoBancarioController {
 							}
 							parcelasVincendasAnuais[anoVencimento] += parcela.valor;
 						}
+					}
+
+					// Pendências de conciliação belong on Conciliação, not Fluxo
+					for (const mes of dadosMensais) {
+						mes.pendentesSelecao = {};
 					}
 
 					const response = {
@@ -1164,11 +1151,7 @@ export class MovimentoBancarioController {
 							}
 
 							if (centrosDoMovimento.length === 0) {
-								// Sem centro de custos, enviar como pendente
-								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-								}
-								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
+								// Missing cost center → Conciliação (not Fluxo). Skip operational buckets.
 								continue;
 							}
 
@@ -1219,9 +1202,7 @@ export class MovimentoBancarioController {
 
 							const classificarPlanosComoPadrao =
 								movimento.modalidadeMovimento === 'padrao' ||
-								(movimento.modalidadeMovimento === 'financiamento' &&
-									movimento.idFinanciamento != null &&
-									movimento.idFinanciamento > 0);
+								(movimento.modalidadeMovimento === 'financiamento' && movimento.idFinanciamento != null && movimento.idFinanciamento > 0);
 
 							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
 								if (
@@ -1368,14 +1349,16 @@ export class MovimentoBancarioController {
 						} else {
 							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
 						}
-						const pendentes = Object.values(dadosMensais[i].pendentesSelecao ?? {}).reduce(
-							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
-							0,
-						);
 						if (i > 0) {
 							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;
 						}
-						dadosMensais[i].saldoFinal = dadosMensais[i].saldoInicial + (receitas - despesas) + investimentos + financiamentos + pendentes;
+						dadosMensais[i].saldoFinal = calcularSaldoFinalFluxo({
+							saldoInicial: dadosMensais[i].saldoInicial,
+							receitas,
+							despesas,
+							investimentos,
+							financiamentos,
+						});
 						if (dadosMensais[i].saldoInicial === 0) {
 							if (dadosMensais[i].saldoFinal > 0) {
 								dadosMensais[i].lucro = 100;
@@ -1409,6 +1392,11 @@ export class MovimentoBancarioController {
 							}
 							parcelasVincendasAnuaisAnterior[anoVencimento] += parcela.valor;
 						}
+					}
+
+					// Pendências de conciliação belong on Conciliação, not Fluxo
+					for (const mes of dadosMensais) {
+						mes.pendentesSelecao = {};
 					}
 
 					const responseAnterior = {

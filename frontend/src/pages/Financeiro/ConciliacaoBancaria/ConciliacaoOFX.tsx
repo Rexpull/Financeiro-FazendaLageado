@@ -33,6 +33,10 @@ import {
 import { listarParametros } from '../../../services/parametroService';
 import { Parametro } from '../../../../../backend/src/models/Parametro';
 import { calcularTotalizadoresExtrato, PlanosSemEfeitoFinanceiro } from '../../../Utils/extratoTotalizadores';
+import {
+	isMovimentoPendenteConcilacao,
+	resumirPendentesConcilacao,
+} from '../../../../../backend/src/utils/isMovimentoPendenteConcilacao';
 
 Modal.setAppElement('#root');
 
@@ -220,29 +224,15 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 		};
 	}, [dropdownAberto]);
 
-	const isMovimentoPendente = useCallback((mov: MovimentoBancario) => {
-		// Sem efeito financeiro (modalidade transferencia): no centro requirement; pendente only without plan (or resultadoList)
-		if (mov.modalidadeMovimento === 'transferencia') {
-			const temPlanoUnico = mov.idPlanoContas !== null && mov.idPlanoContas !== undefined;
-			const temResultadoList = mov.resultadoList && mov.resultadoList.length > 0;
-			return !temPlanoUnico && !temResultadoList;
-		}
+	const isMovimentoPendente = useCallback(
+		(mov: MovimentoBancario) => isMovimentoPendenteConcilacao(mov),
+		[],
+	);
 
-		// Financing: conciliated only when a contract is linked (crédito e débito)
-		if (mov.modalidadeMovimento === 'financiamento') {
-			return mov.idFinanciamento == null || mov.idFinanciamento <= 0;
-		}
-
-		if (mov.tipoMovimento === 'C') {
-			const temCentroUnico = mov.idCentroCustos !== null && mov.idCentroCustos !== undefined;
-			const temCentroCustosList = mov.centroCustosList && mov.centroCustosList.length > 0;
-			return !temCentroUnico && !temCentroCustosList;
-		}
-
-		const temPlanoUnico = mov.idPlanoContas !== null && mov.idPlanoContas !== undefined;
-		const temResultadoList = mov.resultadoList && mov.resultadoList.length > 0;
-		return !temPlanoUnico && !temResultadoList;
-	}, []);
+	const resumoStatusConcilacao = useMemo(
+		() => resumirPendentesConcilacao(movimentosSendoConciliados as MovimentoBancario[]),
+		[movimentosSendoConciliados],
+	);
 
 	const movimentosFiltrados = useMemo(() => {
 		return (status === 'pendentes' ? movimentosSendoConciliados.filter(isMovimentoPendente) : movimentosSendoConciliados).filter((m) => {
@@ -710,7 +700,13 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 										</span>
 									)}
 								</div>
-								<span>Mostrar todos</span>
+								<span>
+									Mostrar todos{' '}
+									<span className="text-sm font-semibold text-gray-700">
+										({resumoStatusConcilacao.todos.quantidade} · R${' '}
+										{formatarMoeda(resumoStatusConcilacao.todos.valorTotal)})
+									</span>
+								</span>
 							</label>
 							<label className={`flex items-center gap-2 cursor-pointer transition-all ${status === 'pendentes' ? '' : 'text-gray-500'}`}>
 								<input
@@ -734,9 +730,10 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 									)}
 								</div>
 								<span>
-									Pendentes{' '}
+									Pendentes de conciliação{' '}
 									<span className="text-lg font-semibold text-orange-600">
-										({(movimentos as MovimentoBancario[]).filter(isMovimentoPendente).length})
+										({resumoStatusConcilacao.pendentes.quantidade} · R${' '}
+										{formatarMoeda(resumoStatusConcilacao.pendentes.valorTotal)})
 									</span>
 								</span>
 							</label>

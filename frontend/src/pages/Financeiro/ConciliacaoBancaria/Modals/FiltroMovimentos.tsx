@@ -200,7 +200,7 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
             <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "pendentes" ? "bg-red-500 border-red-500" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
               {status === "pendentes" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck}/></span>}
             </div>
-            <span>Apenas pendentes</span>
+            <span>Pendentes de conciliação</span>
           </label>
         </div>
 

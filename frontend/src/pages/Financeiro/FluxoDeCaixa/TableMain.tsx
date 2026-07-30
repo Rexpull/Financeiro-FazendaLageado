@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faMinus, faSearchDollar, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faMinus, faSearchDollar } from '@fortawesome/free-solid-svg-icons';
 import { Tooltip } from 'react-tooltip';
 import { listarContas } from '../../../services/contaCorrenteService';
 import { listarPlanoContas } from '../../../services/planoContasService';
@@ -17,6 +17,23 @@ import ModalDetalhamentoFinanciamento from './ModalDetalhamentoFinanciamento';
 import { FinanciamentoDetalhadoDTO } from '../../../../../backend/src/models/FinanciamentoDetalhadoDTO';
 import FluxoCaixaGrafico from './FluxoCaixaGrafico';
 
+/** Visual bands: operational (R/D) vs financing vs closing balances */
+const FLUXO_CORES = {
+	receitasMain: '#5b9bd5',
+	receitasValor: '#d6eaf8',
+	despesasMain: '#e67e22',
+	despesasValor: '#fdebd0',
+	operacionalLabel: '#0f766e',
+	operacionalCell: '#ecfdf5',
+	financiamentosMain: '#7c3aed',
+	financiamentosValor: '#ede9fe',
+	investimentosMain: '#ca8a04',
+	investimentosValor: '#fef9c3',
+	saldoLabel: '#334155',
+	saldoCell: '#f1f5f9',
+	saldoValor: '#ffffff',
+} as const;
+
 const MovimentoBancarioTable: React.FC = () => {
 	const [dadosFluxo, setDadosFluxo] = useState<FluxoCaixaMes[]>([]);
 	const [dadosFluxoAnterior, setDadosFluxoAnterior] = useState<FluxoCaixaMes[]>([]);
@@ -29,7 +46,6 @@ const MovimentoBancarioTable: React.FC = () => {
 		saidas: true,
 		financiamentos: true,
 		investimentos: true,
-		pendentes: true,
 	});
 	const [expandidoSub, setExpandidoSub] = useState<{ [key: string]: boolean }>({
 		'1': true,
@@ -59,13 +75,11 @@ const MovimentoBancarioTable: React.FC = () => {
 		saidas: Categoria;
 		financiamentos: Categoria;
 		investimentos: Categoria;
-		pendentes: Categoria;
 	}>({
 		entradas: { label: 'Receitas', cor: 'bg-blue-500', subcategorias: [] },
 		saidas: { label: 'Despesas', cor: 'bg-red-500', subcategorias: [] },
-		financiamentos: { label: 'Financiamentos', cor: 'bg-red-500', subcategorias: [] },
+		financiamentos: { label: 'Financiamentos', cor: 'bg-violet-500', subcategorias: [] },
 		investimentos: { label: 'Investimentos', cor: 'bg-yellow-500', subcategorias: [] },
-		pendentes: { label: 'Pendentes Seleção', cor: 'bg-yellow-300', subcategorias: [] },
 	});
 
 	useEffect(() => {
@@ -179,15 +193,6 @@ const MovimentoBancarioTable: React.FC = () => {
 					saidas: { ...prev.saidas, subcategorias: subSaidas },
 					financiamentos: { ...prev.financiamentos, subcategorias: [] },
 					investimentos: { ...prev.investimentos, subcategorias: [] },
-					pendentes: {
-						label: 'Pendentes Seleção',
-						cor: '#fcd34d',
-						subcategorias: Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, valor]) => ({
-							id: idConta,
-							descricao: getDescricaoContaCorrente(idConta),
-							filhos: [],
-						})),
-					},
 				}));
 			} else {
 				// Agrupamento por Planos de Contas (lógica original)
@@ -221,22 +226,11 @@ const MovimentoBancarioTable: React.FC = () => {
 					filhos: [],
 				}));
 
-				const subPendentes = Object.entries(dados[0]?.pendentesSelecao || {}).map(([idConta, valor]) => ({
-					id: idConta,
-					descricao: getDescricaoContaCorrente(idConta),
-					filhos: [],
-				}));
-
 				setCategorias((prev) => ({
 					entradas: { ...prev.entradas, subcategorias: subEntradas },
 					saidas: { ...prev.saidas, subcategorias: subSaidas },
 					financiamentos: { ...prev.financiamentos, subcategorias: subFinanciamentos },
 					investimentos: { ...prev.investimentos, subcategorias: subInvestimentos },
-					pendentes: {
-						label: 'Pendentes Seleção',
-						cor: '#fcd34d',
-						subcategorias: subPendentes,
-					},
 				}));
 			}
 		} catch (e) {
@@ -270,7 +264,6 @@ const MovimentoBancarioTable: React.FC = () => {
 			saidas: true,
 			financiamentos: true,
 			investimentos: true,
-			pendentes: true,
 		});
 		setExpandidoSub(novasSubs);
 	};
@@ -284,7 +277,6 @@ const MovimentoBancarioTable: React.FC = () => {
 			saidas: false,
 			financiamentos: false,
 			investimentos: false,
-			pendentes: false,
 		});
 		setExpandidoSub(novasSubs);
 	};
@@ -321,7 +313,7 @@ const MovimentoBancarioTable: React.FC = () => {
 		return dadosFluxo.map((mes) => {
 			// Quando agrupado por centros, receitas são valores diretos
 			// Financiamentos quando centros têm estrutura diferente (pagos/contratados)
-			const isDireto = tipo === 'investimentos' || tipo === 'pendentesSelecao' ||
+			const isDireto = tipo === 'investimentos' ||
 				(tipoAgrupamento === 'centros' && tipo === 'receitas') ||
 				(tipo === 'financiamentos' && tipoAgrupamento === 'planos');
 			
@@ -428,32 +420,47 @@ const MovimentoBancarioTable: React.FC = () => {
 	const renderSaldoLucratividade = () => {
 		return (
 			<>
-				{/* Saldo (R - D) */}
-				<tr 
-					className="bg-gray-100 font-bold border border-gray-300 cursor-help" 
-					style={{ borderTop: '3px solid lightgrey' }}
+				{/* Operational result: Saldo (R - D) */}
+				<tr
+					className="font-bold border border-gray-300 cursor-help"
+					style={{ borderTop: `3px solid ${FLUXO_CORES.operacionalLabel}` }}
 				>
-					<td id="tooltip-saldo-rd-centros" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo (R - D)</td>
+					<td
+						id="tooltip-saldo-rd-centros"
+						className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+						style={{ backgroundColor: FLUXO_CORES.operacionalLabel }}
+					>
+						Saldo (R - D)
+					</td>
 					{calcularSaldoMes().map((valor, idx) => (
-						<td key={idx} className="text-center border border-gray-300 bg-white">
+						<td
+							key={idx}
+							className="text-center border border-gray-300"
+							style={{ backgroundColor: FLUXO_CORES.operacionalCell }}
+						>
 							{valor}
 						</td>
 					))}
 				</tr>
 
 				{/* Lucratividade do negócio */}
-				<tr 
-					className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-				>
-					<td id="tooltip-lucratividade-centros" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Lucratividade do negócio</td>
+				<tr className="font-bold border border-gray-300 cursor-help">
+					<td
+						id="tooltip-lucratividade-centros"
+						className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+						style={{ backgroundColor: FLUXO_CORES.operacionalLabel }}
+					>
+						Lucratividade do negócio
+					</td>
 					{dadosFluxo.map((mes, idx) => {
 						const lucratividade = calcularLucratividade(idx);
 						return (
 							<td
 								key={idx}
-								className={`text-center border border-gray-300 bg-white ${
-									lucratividade > 0 ? '!text-green-600' : lucratividade < 0 ? '!text-red-600' : 'text-gray-600'
+								className={`text-center border border-gray-300 ${
+									lucratividade > 0 ? '!text-green-700' : lucratividade < 0 ? '!text-red-600' : 'text-gray-600'
 								}`}
+								style={{ backgroundColor: FLUXO_CORES.operacionalCell }}
 							>
 								{`% ${formatarMoeda(lucratividade)}`}
 							</td>
@@ -464,93 +471,22 @@ const MovimentoBancarioTable: React.FC = () => {
 		);
 	};
 
-	const renderLinhaPendentesAlerta = () => {
-		const possuiDados = dadosFluxo.some((mes) => 
-			mes.pendentesSelecao && Object.keys(mes.pendentesSelecao ?? {}).length > 0
-		);
-		
-		if (!possuiDados) return null;
-
-		const tipo = 'pendentesSelecao';
-		const chaveEstado = 'pendentes'; // Chave usada no estado expandido
-		const label = 'Pendentes Seleção';
-		const mainCor = '#fef3c7'; // Amarelo claro para alerta
-		const valueCor = '#fff4d0'; // Amarelo mais claro para valores
-
-		return (
-			<>
-				{/* Linha no rodapé, menor evidência */}
-				<tr className="border border-gray-300 text-sm" style={{ borderTop: '1px solid #e5e7eb' }}>
-					<td
-						className={`px-2 py-1 sticky left-0 z-10 text-left cursor-pointer text-gray-600`}
-						style={{ backgroundColor: mainCor }}
-						onClick={() => toggleCategoria(chaveEstado)}
-					>
-						<FontAwesomeIcon icon={expandido[chaveEstado] ? faMinus : faPlus} className="mr-1 text-gray-500" style={{ fontSize: '0.7rem' }} />
-						<FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-amber-500" style={{ fontSize: '0.75rem' }} />
-						{label}
-					</td>
-					{meses.map((_, idx) => (
-						<td key={idx} className="text-center px-2 py-1 border border-gray-300 text-sm" style={{ backgroundColor: valueCor }}>
-							{(() => {
-								const total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
-									(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
-									0
-								);
-								return total ? `R$ ${formatarMoeda(total)}` : 'R$ 0,00';
-							})()}
-						</td>
-					))}
-				</tr>
-
-				{/* Subcategorias por conta corrente quando expandido */}
-				{expandido[chaveEstado] && 
-					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idConta) => {
-						const descricao = getDescricaoContaCorrente(idConta);
-						return (
-							<tr key={`pendente-${idConta}`} className="bg-white border border-gray-200">
-								<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-									<div className="ml-7">{descricao}</div>
-								</td>
-								{meses.map((_, idx) => {
-									const valor = (dadosFluxo[idx]?.[tipo] as any)?.[idConta];
-									return (
-										<td
-											key={`valor-pendente-${idConta}-${idx}`}
-											className="text-center px-3 py-1 border border-gray-300"
-										>
-											{valor ? (
-												<div
-													className="cursor-pointer hover:underline hover:text-blue-600"
-													onClick={() => abrirDetalhamento(idConta, idx, tipo, descricao)}
-												>
-													{`R$ ${formatarMoeda(valor)}`}
-												</div>
-											) : (
-												'R$ 0,00'
-											)}
-										</td>
-									);
-								})}
-							</tr>
-						);
-					})
-				}
-			</>
-		);
-	};
-
 	const renderRodapeCentroCustos = () => {
 		return (
 			<>
-
-				{/* Saldo do mês (negócio e financiamentos) */}
-				<tr 
-					className="bg-gray-100 font-bold border border-gray-300 cursor-help"
+				{/* Closing balances band */}
+				<tr
+					className="font-bold border border-gray-300 cursor-help"
+					style={{ borderTop: `3px solid ${FLUXO_CORES.saldoLabel}` }}
 				>
-					<td id="tooltip-saldo-mes-centros" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo do mês (negócio e financiamentos)</td>
+					<td
+						id="tooltip-saldo-mes-centros"
+						className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+						style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
+					>
+						Saldo do mês (negócio e financiamentos)
+					</td>
 					{dadosFluxo.map((mes, idx) => {
-						// Calcular saldo R-D diretamente
 						let receita = 0;
 						if (tipoAgrupamento === 'centros') {
 							receita = Object.values(mes.receitas ?? {}).reduce((acc, item: any) => {
@@ -570,9 +506,10 @@ const MovimentoBancarioTable: React.FC = () => {
 						return (
 							<td
 								key={idx}
-								className={`text-center border border-gray-300 bg-white ${
-									saldoTotal > 0 ? '!text-green-600' : saldoTotal < 0 ? '!text-red-600' : 'text-gray-600'
+								className={`text-center border border-gray-300 ${
+									saldoTotal > 0 ? '!text-green-700' : saldoTotal < 0 ? '!text-red-600' : 'text-gray-600'
 								}`}
+								style={{ backgroundColor: FLUXO_CORES.saldoValor }}
 							>
 								{`R$ ${formatarMoeda(saldoTotal)}`}
 							</td>
@@ -580,19 +517,23 @@ const MovimentoBancarioTable: React.FC = () => {
 					})}
 				</tr>
 
-				{/* Saldo dos financiamentos ativos */}
-				<tr 
-					className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-				>
-					<td id="tooltip-saldo-ativos-centros" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo dos financiamentos ativos</td>
+				<tr className="font-bold border border-gray-300 cursor-help">
+					<td
+						id="tooltip-saldo-ativos-centros"
+						className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+						style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
+					>
+						Saldo dos financiamentos ativos
+					</td>
 					{dadosFluxo.map((mes, idx) => {
 						const saldoAtivo = calcularSaldoFinanciamentosAtivos(idx);
 						return (
 							<td
 								key={idx}
-								className={`text-center border border-gray-300 bg-white ${
-									saldoAtivo > 0 ? '!text-green-600' : saldoAtivo < 0 ? '!text-red-600' : 'text-gray-600'
+								className={`text-center border border-gray-300 ${
+									saldoAtivo > 0 ? '!text-green-700' : saldoAtivo < 0 ? '!text-red-600' : 'text-gray-600'
 								}`}
+								style={{ backgroundColor: FLUXO_CORES.saldoValor }}
 							>
 								{`R$ ${formatarMoeda(saldoAtivo)}`}
 							</td>
@@ -600,31 +541,24 @@ const MovimentoBancarioTable: React.FC = () => {
 					})}
 				</tr>
 
-				{/* Saldo de Pendências */}
-				<tr 
-					className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-				>
-					<td id="tooltip-saldo-pend-centros" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Pendências</td>
-					{calcularTotais('pendentesSelecao').map((valor, idx) => (
-						<td key={idx} className="text-center border border-gray-300 bg-white">
-							{valor}
-						</td>
-					))}
-				</tr>
-
 				{/* Parcelas vincendas por ano */}
 				{Object.keys(parcelasVincendasAnuais).length > 0 && (
-					<tr className="bg-blue-50 font-bold border border-gray-300">
-						<td className="sticky left-0 border border-gray-300 z-10 text-center bg-blue-100">Parcelas vincendas por ano</td>
+					<tr className="font-bold border border-gray-300" style={{ backgroundColor: FLUXO_CORES.saldoCell }}>
+						<td
+							className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+							style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
+						>
+							Parcelas vincendas por ano
+						</td>
 						{meses.map((_, idx) => {
-							// Para cada mês, mostrar o total anual se for o último mês do ano, senão vazio
 							const anoAtual = parseInt(anoSelecionado);
 							const totalAnual = parcelasVincendasAnuais[anoAtual] || 0;
 							const isUltimoMes = idx === meses.length - 1;
 							return (
 								<td
 									key={idx}
-									className="text-center border border-gray-300 bg-blue-50"
+									className="text-center border border-gray-300"
+									style={{ backgroundColor: FLUXO_CORES.saldoCell }}
 								>
 									{isUltimoMes ? `R$ ${formatarMoeda(totalAnual)}` : ''}
 								</td>
@@ -641,7 +575,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
 		// Quando agrupado por centros, receitas são diretas (sem hierarquia)
 		// Financiamentos quando agrupado por centros têm estrutura com subcategorias (pagos/contratados)
-		const isFilhoDireto = tipo === 'investimentos' || tipo === 'pendentesSelecao' || 
+		const isFilhoDireto = tipo === 'investimentos' ||
 			(tipoAgrupamento === 'centros' && tipo === 'receitas') ||
 			(tipo === 'financiamentos' && tipoAgrupamento === 'planos');
 		const isFinanciamentosCentros = tipo === 'financiamentos' && tipoAgrupamento === 'centros';
@@ -834,7 +768,7 @@ const MovimentoBancarioTable: React.FC = () => {
 					</>
 				)}
 
-				{/* Se for movimentação direta (Financiamento quando planos, Investimento ou Pendentes) */}
+				{/* Direct rows: financiamento (planos) or investimentos */}
 				{expandido[tipo] && isFilhoDireto && tipo === 'financiamentos' && (
 					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
 						const financiamentoInfo = (dadosFluxo.find((mes) => (mes.financiamentos as any)?.[idFilho])?.financiamentos as any)?.[idFilho];
@@ -869,14 +803,12 @@ const MovimentoBancarioTable: React.FC = () => {
 					})
 				)}
 
-				{/* Se for movimentação direta (Investimento, Pendentes ou Receitas quando agrupado por centros) */}
+				{/* Direct rows: investimentos or receitas (centros) */}
 				{expandido[tipo] && isFilhoDireto && tipo !== 'financiamentos' && (
 					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
 						let descricao = '';
 						if (tipo === 'investimentos') {
 							descricao = getDescricaoPlanoConta(idFilho);
-						} else if (tipo === 'pendentesSelecao') {
-							descricao = getDescricaoContaCorrente(idFilho);
 						} else if (tipo === 'receitas' && tipoAgrupamento === 'centros') {
 							descricao = getDescricaoCentroCustos(idFilho);
 						} else {
@@ -1066,105 +998,144 @@ const MovimentoBancarioTable: React.FC = () => {
 								</tr>
 							</thead>
 							<tbody>
-								{/* Cabeçalho Saldo Inicial */}
-								<tr className="saldoInicial border border-gray-300 ">
-									<td className="sticky left-0 bg-white border border-gray-300 z-10 text-center">Saldo Inicial</td>
+								{/* Closing / opening balance band */}
+								<tr className="border border-gray-300" style={{ backgroundColor: FLUXO_CORES.saldoCell }}>
+									<td
+										className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+										style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
+									>
+										Saldo Inicial
+									</td>
 									{dadosFluxo.map((mes, idx) => (
-										<td key={idx} className="text-center border border-gray-300">
+										<td
+											key={idx}
+											className="text-center border border-gray-300"
+											style={{ backgroundColor: FLUXO_CORES.saldoValor }}
+										>
 											{'R$ ' + formatarMoeda(mes.saldoInicial)}
 										</td>
 									))}
 								</tr>
 
-								{/* Categorias dinâmicas */}
-								{/* {Object.entries(categorias).map(([key, cat]) => renderCategoria(key, cat))} */}
-
-								{renderCategoria('receitas', 'Receitas', '#82b4ff', '#c7eafe')}
-								{renderCategoria('despesas', 'Despesas', '#ffbe82', '#ffe6bc')}
+								{/* Operational: receitas / despesas / resultado */}
+								{renderCategoria('receitas', 'Receitas', FLUXO_CORES.receitasMain, FLUXO_CORES.receitasValor)}
+								{renderCategoria('despesas', 'Despesas', FLUXO_CORES.despesasMain, FLUXO_CORES.despesasValor)}
 								{tipoAgrupamento === 'centros' && renderSaldoLucratividade()}
-								{renderCategoria('financiamentos', 'Financiamentos', '#ffc0c0', '#fce1e3')}
-								{/* Quando agrupado por centros, não mostrar seção de investimentos (já está nas despesas) */}
-								{tipoAgrupamento === 'planos' && renderCategoria('investimentos', 'Investimentos', '#ffefbd', '#fff4d0')}
+								{/* Financing */}
+								{renderCategoria(
+									'financiamentos',
+									'Financiamentos',
+									FLUXO_CORES.financiamentosMain,
+									FLUXO_CORES.financiamentosValor,
+								)}
+								{tipoAgrupamento === 'planos' &&
+									renderCategoria(
+										'investimentos',
+										'Investimentos',
+										FLUXO_CORES.investimentosMain,
+										FLUXO_CORES.investimentosValor,
+									)}
 
-								{/* Totalizadores - Pendentes de seleção no rodapé (menor evidência) */}
-								{renderLinhaPendentesAlerta()}
-
-								{/* Totalizadores - Customizado para Centro de Custos ou padrão para Planos de Contas */}
 								{tipoAgrupamento === 'centros' ? (
 									renderRodapeCentroCustos()
 								) : (
 									<>
-										<tr 
-											className="bg-gray-100 font-bold border border-gray-300 cursor-help" 
-											style={{ borderTop: '3px solid lightgrey' }}
+										<tr
+											className="font-bold border border-gray-300 cursor-help"
+											style={{ borderTop: `3px solid ${FLUXO_CORES.saldoLabel}` }}
 										>
-											<td id="tooltip-saldo-mes-planos" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo do mês (R x D)</td>
+											<td
+												id="tooltip-saldo-mes-planos"
+												className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+												style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
+											>
+												Saldo do mês (R x D)
+											</td>
 											{calcularSaldoMes().map((valor, idx) => (
-												<td key={idx} className="text-center border border-gray-300 bg-white">
+												<td
+													key={idx}
+													className="text-center border border-gray-300"
+													style={{ backgroundColor: FLUXO_CORES.saldoValor }}
+												>
 													{valor}
 												</td>
 											))}
 										</tr>
 
-										<tr 
-											className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-										>
-											<td id="tooltip-saldo-fin-planos" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Financiamentos</td>
+										<tr className="font-bold border border-gray-300 cursor-help">
+											<td
+												id="tooltip-saldo-fin-planos"
+												className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+												style={{ backgroundColor: FLUXO_CORES.financiamentosMain }}
+											>
+												Saldo de Financiamentos
+											</td>
 											{calcularTotais('financiamentos').map((valor, idx) => (
-												<td key={idx} className="text-center border border-gray-300 bg-white">
+												<td
+													key={idx}
+													className="text-center border border-gray-300"
+													style={{ backgroundColor: FLUXO_CORES.financiamentosValor }}
+												>
 													{valor}
 												</td>
 											))}
 										</tr>
 
-										<tr 
-											className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-										>
-											<td id="tooltip-saldo-inv-planos" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Investimentos</td>
+										<tr className="font-bold border border-gray-300 cursor-help">
+											<td
+												id="tooltip-saldo-inv-planos"
+												className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+												style={{ backgroundColor: FLUXO_CORES.investimentosMain }}
+											>
+												Saldo de Investimentos
+											</td>
 											{calcularTotais('investimentos').map((valor, idx) => (
-												<td key={idx} className="text-center border border-gray-300 bg-white">
+												<td
+													key={idx}
+													className="text-center border border-gray-300"
+													style={{ backgroundColor: FLUXO_CORES.investimentosValor }}
+												>
 													{valor}
 												</td>
 											))}
 										</tr>
 
-										<tr 
-											className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-										>
-											<td id="tooltip-saldo-pend-planos" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo de Pendências</td>
-											{calcularTotais('pendentesSelecao').map((valor, idx) => (
-												<td key={idx} className="text-center border border-gray-300 bg-white">
-													{valor}
-												</td>
-											))}
-										</tr>
-
-										<tr 
-											className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-										>
-											<td id="tooltip-saldo-final-planos" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Saldo Final</td>
+										<tr className="font-bold border border-gray-300 cursor-help">
+											<td
+												id="tooltip-saldo-final-planos"
+												className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+												style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
+											>
+												Saldo Final
+											</td>
 											{dadosFluxo.map((mes, idx) => (
 												<td
 													key={idx}
-													className={`text-center border border-gray-300 bg-white ${
-														mes.saldoFinal > 0 ? '!text-green-600' : mes.saldoFinal < 0 ? '!text-red-600' : 'text-gray-600'
+													className={`text-center border border-gray-300 ${
+														mes.saldoFinal > 0 ? '!text-green-700' : mes.saldoFinal < 0 ? '!text-red-600' : 'text-gray-600'
 													}`}
+													style={{ backgroundColor: FLUXO_CORES.saldoValor }}
 												>
 													{'R$ ' + formatarMoeda(mes.saldoFinal)}
 												</td>
 											))}
 										</tr>
 
-										<tr 
-											className="bg-gray-100 font-bold border border-gray-300 cursor-help"
-										>
-											<td id="tooltip-lucratividade-planos" className="sticky left-0 border border-gray-300 z-10 text-center bg-gray-200">Lucratividade</td>
+										<tr className="font-bold border border-gray-300 cursor-help">
+											<td
+												id="tooltip-lucratividade-planos"
+												className="sticky left-0 border border-gray-300 z-10 text-center text-white"
+												style={{ backgroundColor: FLUXO_CORES.operacionalLabel }}
+											>
+												Lucratividade
+											</td>
 											{dadosFluxo.map((mes, idx) => (
 												<td
 													key={idx}
-													className={`text-center border border-gray-300 bg-white ${
-														mes.lucro > 0 ? '!text-green-600' : mes.lucro < 0 ? '!text-red-600' : 'text-gray-600'
+													className={`text-center border border-gray-300 ${
+														mes.lucro > 0 ? '!text-green-700' : mes.lucro < 0 ? '!text-red-600' : 'text-gray-600'
 													}`}
+													style={{ backgroundColor: FLUXO_CORES.operacionalCell }}
 												>
 													{'% ' + formatarMoeda(mes.lucro)}
 												</td>
@@ -1249,12 +1220,6 @@ const MovimentoBancarioTable: React.FC = () => {
 							Representa o saldo total de financiamentos ainda não quitados até o mês atual.
 						</div>
 					</Tooltip>
-					<Tooltip anchorId="tooltip-saldo-pend-centros" place="top" className="z-50">
-						<div className="text-sm">
-							<strong>Cálculo:</strong> Soma de movimentos sem plano de contas ou centro de custos atribuído<br/>
-							Representa valores que ainda precisam ser classificados corretamente.
-						</div>
-					</Tooltip>
 				</>
 			)}
 
@@ -1279,16 +1244,10 @@ const MovimentoBancarioTable: React.FC = () => {
 							Representa o total de despesas classificadas como investimentos no período.
 						</div>
 					</Tooltip>
-					<Tooltip anchorId="tooltip-saldo-pend-planos" place="top" className="z-50">
-						<div className="text-sm">
-							<strong>Cálculo:</strong> Soma de movimentos sem plano de contas ou centro de custos atribuído<br/>
-							Representa valores que ainda precisam ser classificados corretamente.
-						</div>
-					</Tooltip>
 					<Tooltip anchorId="tooltip-saldo-final-planos" place="top" className="z-50">
 						<div className="text-sm">
-							<strong>Cálculo:</strong> Saldo Inicial + Saldo do mês (R-D) + Investimentos + Financiamentos + Pendências<br/>
-							Representa o saldo total da conta corrente ao final do mês.
+							<strong>Cálculo:</strong> Saldo Inicial + Saldo do mês (R-D) + Investimentos + Financiamentos<br/>
+							Representa o saldo total da conta corrente ao final do mês (sem pendências de conciliação).
 						</div>
 					</Tooltip>
 					<Tooltip anchorId="tooltip-lucratividade-planos" place="top" className="z-50">
