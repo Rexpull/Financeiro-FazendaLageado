@@ -25,11 +25,21 @@ const baseMov = (overrides: Partial<MovimentoBancario>): MovimentoBancario =>
   }) as MovimentoBancario;
 
 describe("historicoIndicaSemEfeitoFinanceiro", () => {
-  it("detects transfer and resgate patterns", () => {
+  it("detects strong transfer and resgate patterns", () => {
     expect(historicoIndicaSemEfeitoFinanceiro("TRANSFERENCIA ENTRE CONTAS")).toBe(true);
     expect(historicoIndicaSemEfeitoFinanceiro("RESGATE AUTOMATICO CDB")).toBe(true);
     expect(historicoIndicaSemEfeitoFinanceiro("APLICACAO EM FUNDO")).toBe(true);
     expect(historicoIndicaSemEfeitoFinanceiro("Pagamento de fornecedor")).toBe(false);
+  });
+
+  it("does not treat bare TRANSF in operational memos as sem efeito", () => {
+    // Bank memos often contain TRANSF/TED without meaning internal transfer
+    expect(
+      historicoIndicaSemEfeitoFinanceiro(
+        "TED Transf.Eletr.Disponv - 237 2042 MINERVA S/A VENDA LEITE"
+      )
+    ).toBe(false);
+    expect(historicoIndicaSemEfeitoFinanceiro("TRANSF RECEBIDA VENDA")).toBe(false);
   });
 
   it("detects OFX XFER type", () => {
@@ -54,25 +64,70 @@ describe("isMovimentoSemEfeitoFinanceiro", () => {
       )
     ).toBe(true);
   });
+
+  it("includes padrao operational credit even when historico has TRANSF", () => {
+    // Regression: SICOOB GJN milk sale was excluded from Conciliação receitas
+    expect(
+      isMovimentoSemEfeitoFinanceiro(
+        baseMov({
+          valor: 793319.71,
+          historico: "TED Transf.Eletr.Disponv - VENDA DE LEITE",
+          modalidadeMovimento: "padrao",
+          idPlanoContas: 42,
+        }),
+        { idPlanoTransferenciaEntreContas: 10 }
+      )
+    ).toBe(false);
+  });
+
+  it("still excludes unclassified credit with entre contas historico", () => {
+    expect(
+      isMovimentoSemEfeitoFinanceiro(
+        baseMov({
+          valor: 1000,
+          historico: "PIX ENTRE CONTAS MESMA TITULARIDADE",
+          modalidadeMovimento: "padrao",
+          idPlanoContas: null,
+        })
+      )
+    ).toBe(true);
+  });
 });
 
 describe("calcularTotalizadoresExtrato", () => {
-  it("omits transfers from receitas and keeps operational credits", () => {
+  it("omits true transfers and keeps operational credits including TRANSF memos", () => {
     const movimentos = [
-      baseMov({ valor: 1000, historico: "Venda soja" }),
-      baseMov({ valor: 800, historico: "TRANSFERENCIA RECEBIDA", id: 2 }),
+      baseMov({ valor: 1000, historico: "Venda soja", idPlanoContas: 1 }),
+      baseMov({
+        valor: 793319.71,
+        historico: "TED Transf.Eletr.Disponv - VENDA DE LEITE",
+        idPlanoContas: 42,
+        id: 2,
+      }),
+      baseMov({
+        valor: 12512.08,
+        historico: "Prestacao de servicos",
+        idPlanoContas: 43,
+        id: 4,
+      }),
+      baseMov({
+        valor: 800,
+        historico: "TRANSFERENCIA ENTRE CONTAS",
+        idPlanoContas: null,
+        id: 5,
+      }),
       baseMov({
         valor: 500,
         historico: "RESGATE AUTOMATICO",
         modalidadeMovimento: "transferencia",
         id: 3,
       }),
-      baseMov({ valor: -300, historico: "Combustivel", tipoMovimento: "D" }),
+      baseMov({ valor: -300, historico: "Combustivel", tipoMovimento: "D", id: 6 }),
     ];
 
     const t = calcularTotalizadoresExtrato(movimentos);
-    expect(t.receitas).toBe(1000);
+    expect(t.receitas).toBe(1000 + 793319.71 + 12512.08);
     expect(t.despesas).toBe(-300);
-    expect(t.liquido).toBe(700);
+    expect(t.liquido).toBe(1000 + 793319.71 + 12512.08 - 300);
   });
 });

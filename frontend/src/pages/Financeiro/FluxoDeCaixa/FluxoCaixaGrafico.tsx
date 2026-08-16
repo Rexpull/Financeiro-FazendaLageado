@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { buscarFluxoCaixa, buscarFluxoCaixaAnoAnterior } from '../../../services/fluxoCaixaService';
+import React from 'react';
 import { formatarMoeda } from '../../../Utils/formataMoeda';
 import { Chart } from 'react-chartjs-2';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowUp, faArrowDown, faMinus, faPlus, faAngleDown, faAngleUp, faCaretDown, faCaretUp } from '@fortawesome/free-solid-svg-icons';
+import { faCaretDown, faCaretUp } from '@fortawesome/free-solid-svg-icons';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -33,16 +32,38 @@ interface Props {
   anoSelecionado: string;
   dadosAtual: any[];
   dadosAnterior: any[];
+  /** When true, show skeleton. Parent should pass the real loading flag (not inverted). */
   isLoading: boolean;
   tipoAgrupamento?: 'planos' | 'centros';
+  /** Optional labels for centro/plan ids (Top 10). */
+  labelPorId?: Record<string, string>;
 }
 
 const mesesNomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-const FluxoCaixaGrafico: React.FC<Props> = ({ anoSelecionado, dadosAtual, dadosAnterior, isLoading, tipoAgrupamento = 'planos' }) => {
-  const [tipoTop, setTipoTop] = useState<'receitas' | 'despesas'>('receitas');
+/** Sum month bucket: flat number map (centros receitas) or { filhos } hierarchy. */
+function somarCategoriaMes(catMap: Record<string, any> | undefined): number {
+  if (!catMap) return 0;
+  return Object.values(catMap).reduce((soma: number, cat: any) => {
+    if (typeof cat === 'number') return soma + (cat || 0);
+    if (cat?.filhos) {
+      return soma + Object.values(cat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
+    }
+    return soma;
+  }, 0);
+}
 
-  // Skeletons para loading e para mock
+const FluxoCaixaGrafico: React.FC<Props> = ({
+  anoSelecionado,
+  dadosAtual,
+  dadosAnterior,
+  isLoading,
+  tipoAgrupamento = 'planos',
+  labelPorId = {},
+}) => {
+  const [tipoTop, setTipoTop] = React.useState<'receitas' | 'despesas'>('receitas');
+
+  // Skeletons for loading and empty data
   if (isLoading || !dadosAtual.length) {
     return (
       <div className="w-full flex flex-col gap-4 animate-pulse">
@@ -90,7 +111,6 @@ const FluxoCaixaGrafico: React.FC<Props> = ({ anoSelecionado, dadosAtual, dadosA
     );
   }
 
-  // Funções de cálculo
   function getAcumuladoAno(dados: any[]): number {
     if (!dados.length) return 0;
     return (dados[dados.length - 1]?.saldoFinal ?? 0) - (dados[0]?.saldoInicial ?? 0);
@@ -103,16 +123,27 @@ const FluxoCaixaGrafico: React.FC<Props> = ({ anoSelecionado, dadosAtual, dadosA
     return Number((((final - inicial) / Math.abs(inicial)) * 100).toFixed(2));
   }
   function getTop10(dados: any[], tipo: 'receitas' | 'despesas') {
-    const somaPorPlano: Record<string, number> = {};
-    dados.forEach(mes => {
-      Object.entries(mes?.[tipo] || {}).forEach(([id, { descricao, filhos }]: any) => {
-        Object.entries(filhos || {}).forEach(([idFilho, valor]: any) => {
-          const key = descricao;
-          somaPorPlano[key] = (somaPorPlano[key] || 0) + (valor || 0);
-        });
+    const somaPorItem: Record<string, number> = {};
+    dados.forEach((mes) => {
+      Object.entries(mes?.[tipo] || {}).forEach(([id, cat]: [string, any]) => {
+        if (typeof cat === 'number') {
+          const label = labelPorId[id] || `Item ${id}`;
+          somaPorItem[label] = (somaPorItem[label] || 0) + cat;
+          return;
+        }
+        if (cat?.filhos) {
+          Object.entries(cat.filhos).forEach(([idFilho, valor]: [string, any]) => {
+            const finalKey =
+              labelPorId[idFilho] ||
+              (tipoAgrupamento === 'centros'
+                ? `Centro ${idFilho}`
+                : `${cat.descricao || 'Plano'} (${idFilho})`);
+            somaPorItem[finalKey] = (somaPorItem[finalKey] || 0) + (typeof valor === 'number' ? valor : 0);
+          });
+        }
       });
     });
-    return Object.entries(somaPorPlano)
+    return Object.entries(somaPorItem)
       .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
       .slice(0, 10)
       .map(([descricao, valor]) => ({ descricao, valor }));
@@ -131,13 +162,9 @@ const FluxoCaixaGrafico: React.FC<Props> = ({ anoSelecionado, dadosAtual, dadosA
     };
   }
   function getGraficoData(dados: any[]) {
-    const receitas = dados.map(mes => {
-      return Object.values(mes?.receitas || {}).reduce((soma: number, cat: any) => soma + Object.values(cat.filhos || {}).reduce((a: number, b: any) => a + (b || 0), 0), 0);
-    });
-    const despesas = dados.map(mes => {
-      return Object.values(mes?.despesas || {}).reduce((soma: number, cat: any) => soma + Object.values(cat.filhos || {}).reduce((a: number, b: any) => a + (b || 0), 0), 0);
-    });
-    const saldo = dados.map((mes, idx) => (receitas[idx] || 0) - (despesas[idx] || 0));
+    const receitas = dados.map((mes) => somarCategoriaMes(mes?.receitas));
+    const despesas = dados.map((mes) => somarCategoriaMes(mes?.despesas));
+    const saldo = dados.map((_, idx) => (receitas[idx] || 0) - (despesas[idx] || 0));
     return { receitas, despesas, saldo };
   }
 

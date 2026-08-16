@@ -580,16 +580,16 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			const p0 = parametros[0];
 			if (transferenciaPlanoMode === 'estorno') {
 				if (!p0?.idPlanoEstornos) {
-					newErrors.estornoPlano = 'Configure o Plano de Contas Estornos em Parâmetros.';
+					newErrors.estornoPlano = 'Configure o Plano de Contas Estornos/duplicidades em Parâmetros.';
 				}
 			} else if (transferenciaPlanoMode === 'aplicacao') {
 				if (!p0?.idPlanoAplicacaoResgateInvestimentos) {
 					newErrors.transferenciaPlano =
-						'Configure o Plano de Contas — Aplicação/Resgate em investimentos em Parâmetros.';
+						'Configure o Plano de Contas — Aplicação/resgate de investimentos em Parâmetros.';
 				}
 			} else if (transferenciaPlanoMode === 'transferencia' && !resolvePlanoMovSemEfeitoFinanceiro(p0)) {
 				newErrors.transferenciaPlano =
-					'Configure o Plano de Contas para Movimentações sem efeito financeiro / Transferência entre contas em Parâmetros.';
+					'Configure o Plano de Contas para Movimentações sem efeito / Movimentação interna em Parâmetros.';
 			}
 		}
 		setErrors(newErrors);
@@ -1519,7 +1519,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									</span>
 								)}
 							</div>
-							<span className="text-left max-w-[11rem] sm:max-w-none">Movimentações sem efeito financeiro</span>
+							<span className="text-left max-w-[11rem] sm:max-w-none">Movimentação interna</span>
 						</label>
 
 						<label className="flex items-center gap-2 cursor-pointer text-gray-600 transition-all">
@@ -1543,7 +1543,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									</span>
 								)}
 							</div>
-							<span className="text-left max-w-[11rem] sm:max-w-none">Aplicação/Resgate em investimentos</span>
+							<span className="text-left max-w-[11rem] sm:max-w-none">Aplicação/resgate de investimentos</span>
 						</label>
 
 						<label className="flex items-center gap-2 cursor-pointer text-gray-600 transition-all">
@@ -1567,7 +1567,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 									</span>
 								)}
 							</div>
-							<span>Estornos</span>
+							<span>Estornos/duplicidades</span>
 						</label>
 					</div>
 					<FontAwesomeIcon icon={faMoneyBillTransfer} size="3x" />
@@ -1651,7 +1651,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							>
 								{tipo === 'padrao' && 'Padrão'}
 								{tipo === 'financiamento' && 'Financiamento'}
-								{tipo === 'transferencia' && 'Movimentação interna'}
+								{tipo === 'transferencia' && 'Movimentações sem efeito'}
 							</button>
 						))}
 					</div>

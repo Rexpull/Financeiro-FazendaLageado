@@ -116,7 +116,7 @@ const ParametroPage = () => {
                 <div className="flex flex-col gap-5 w-full">
                     <div ref={transfContasRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Plano de Contas — Movimentações sem efeito financeiro / Transferência entre contas{" "}
+                            Plano de Contas — Movimentações sem efeito / Movimentação interna{" "}
                             <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
@@ -153,7 +153,7 @@ const ParametroPage = () => {
 
                     <div ref={aplicacaoInvRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Plano de Contas — Aplicação/Resgate em investimentos
+                            Plano de Contas — Aplicação/resgate de investimentos
                         </label>
                         <div className="relative">
                             <input
@@ -192,7 +192,7 @@ const ParametroPage = () => {
 
                     <div ref={estornosRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Plano de Contas Estornos (ex.: TED devolvida)
+                            Plano de Contas Estornos/duplicidades (ex.: TED devolvida)
                         </label>
                         <div className="relative">
                             <input

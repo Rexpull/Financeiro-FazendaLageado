@@ -1152,8 +1152,12 @@ const MovimentoBancarioTable: React.FC = () => {
 					anoSelecionado={anoSelecionado}
 					dadosAtual={dadosFluxo}
 					dadosAnterior={dadosFluxoAnterior}
-					isLoading={!isLoading}
+					isLoading={isLoading}
 					tipoAgrupamento={tipoAgrupamento}
+					labelPorId={Object.fromEntries([
+						...centrosCustos.map((c) => [String(c.id), c.descricao] as const),
+						...planosContas.map((p) => [String(p.id), p.descricao] as const),
+					])}
 				/>
 			)}
 			<FiltroFluxoCaixaModal

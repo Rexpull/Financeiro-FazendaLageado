@@ -38,8 +38,8 @@ export function historicoIndicaSemEfeitoFinanceiro(
     /\bresg\s+aut\b/,
     /\baplic(acao|\.|ar)\b/,
     /\baplicacao\s+aut/,
-    /\btransferencia\b/,
-    /\btransf\b/,
+    // Strong transfer phrases only — bare "transf" matches operational TED memos
+    /\btransferencia\s+entre\s+contas\b/,
     /\bentre\s+contas\b/,
     /\bted\s+(mesma|propria|titular)\b/,
     /\bdoc\s+(mesma|propria|titular)\b/,
@@ -75,9 +75,28 @@ function planoIdsSemEfeito(planos?: PlanosSemEfeitoFinanceiro): number[] {
   ].filter((id): id is number => id != null && id > 0);
 }
 
+function temPlanoOperacionalClassificado(
+  mov: MovimentoBancario,
+  planosSemEfeito?: PlanosSemEfeitoFinanceiro
+): boolean {
+  const idsSemEfeito = new Set(planoIdsSemEfeito(planosSemEfeito));
+  const idPlano = idPlanoContasEfetivo(mov);
+  if (idPlano != null && idPlano > 0 && !idsSemEfeito.has(idPlano)) {
+    return true;
+  }
+  const rl = mov.resultadoList ?? [];
+  if (rl.length > 0 && rl.every((r) => r.idPlanoContas > 0 && !idsSemEfeito.has(r.idPlanoContas))) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Transfers between accounts, application/redemption, and estornos must not
  * count as extract revenue/expense (aligned with cash flow exclusion).
+ *
+ * After operational classification (modalidade padrao + non-sem-efeito plan),
+ * MEMO heuristics must not override — otherwise TED "Transf." milk sales are excluded.
  */
 export function isMovimentoSemEfeitoFinanceiro(
   mov: MovimentoBancario,
@@ -102,6 +121,12 @@ export function isMovimentoSemEfeitoFinanceiro(
     if (rl.some((r) => ids.includes(r.idPlanoContas))) {
       return true;
     }
+  }
+
+  // Classified operational P&L → always count (ignore bank MEMO / XFER noise)
+  const modalidade = mov.modalidadeMovimento ?? "padrao";
+  if (modalidade === "padrao" && temPlanoOperacionalClassificado(mov, planosSemEfeito)) {
+    return false;
   }
 
   return historicoIndicaSemEfeitoFinanceiro(mov.historico, trnType);

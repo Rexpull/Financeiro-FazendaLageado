@@ -923,7 +923,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 														}`}
 														style={{ textUnderlineOffset: '2px' }}
 														onClick={() => openModalConcilia(mov)}
-														title="Movimentações sem efeito financeiro — clique para editar a conciliação"
+														title="Movimentações sem efeito — clique para editar a conciliação"
 													>
 														{textoPlanoTransferencia(mov, planos)}
 													</td>

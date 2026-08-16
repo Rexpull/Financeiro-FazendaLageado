@@ -1166,7 +1166,7 @@ const MovimentoBancarioTable: React.FC = () => {
 														}`}
 														style={{ textUnderlineOffset: '2px' }}
 														onClick={() => openModalConcilia(movBancario)}
-														title="Movimentações sem efeito financeiro — clique para editar a conciliação"
+														title="Movimentações sem efeito — clique para editar a conciliação"
 													>
 														{textoPlanoTransferencia(movBancario, planos)}
 													</td>
@@ -1349,7 +1349,7 @@ const MovimentoBancarioTable: React.FC = () => {
 																	: ''
 														}`}
 														onClick={() => openModalConcilia(movBancario)}
-														title="Movimentações sem efeito financeiro — clique para editar a conciliação"
+														title="Movimentações sem efeito — clique para editar a conciliação"
 													>
 														{textoPlanoTransferencia(movBancario, planos)}
 													</div>
