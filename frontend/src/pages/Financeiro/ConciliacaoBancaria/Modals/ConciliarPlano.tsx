@@ -1093,7 +1093,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 								{errors.idPlanoContas && <p className="text-red-500 text-xs mt-1">{errors.idPlanoContas}</p>}
 
 								{showPlanoDropdown && (
-									<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[400px] overflow-y-auto">
+									<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[520px] overflow-y-auto">
 										{isDespesa && (
 											<div className="p-2 border-b bg-gray-50 sticky top-0 z-10">
 												<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
@@ -1145,7 +1145,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 														autoFocus
 													/>
 												</div>
-												<ul className="max-h-60 overflow-y-auto overflow-x-hidden">
+												<ul className="max-h-96 overflow-y-auto overflow-x-hidden">
 													<li
 														className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
 														onClick={() => selectPlanoNew(null)}
@@ -1224,7 +1224,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 							{errors.idCentroCustos && <p className="text-red-500 text-xs mt-1">{errors.idCentroCustos}</p>}
 
 							{showCentroCustosDropdown && (
-								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[400px] overflow-y-auto">
+								<div className="absolute z-50 bg-white w-full border-2 border-gray-300 shadow-lg rounded mt-1 max-h-[520px] overflow-y-auto">
 									{isDespesa && (
 										<div className="p-2 border-b bg-gray-50 sticky top-0 z-10">
 											<label className="block text-xs font-medium text-gray-700 mb-2">Tipo de Despesa</label>
@@ -1280,7 +1280,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 													autoFocus
 												/>
 											</div>
-											<ul className="max-h-60 overflow-y-auto">
+											<ul className="max-h-96 overflow-y-auto">
 												<li
 													className="p-2 hover:bg-gray-100 text-sm cursor-pointer border-b text-gray-500 italic"
 													onClick={() => selectCentroCustosNew(null)}
