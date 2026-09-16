@@ -41,7 +41,7 @@ export const idCentroCustosEfetivo = (mov: MovimentoBancario): number | undefine
 /** Plan column — no financial effect (transferencia mode: intra-company transfers, applications, reversals) */
 export function textoPlanoTransferencia(mov: MovimentoBancario, planos: PlanoConta[]): string {
 	const rl = mov.resultadoList ?? [];
-	if (rl.length > 1) return 'Múltiplos Planos';
+	if (rl.length > 1) return `Múltiplos Planos (${rl.length})`;
 	if (rl.length === 1) {
 		return planos.find((p) => p.id === rl[0].idPlanoContas)?.descricao || 'Transferência entre contas';
 	}
@@ -54,7 +54,7 @@ export function textoPlanoDespesa(mov: MovimentoBancario, planos: PlanoConta[]):
 		return TEXTO_COLUNA_UNICA_FINANCIAMENTO;
 	}
 	const rl = mov.resultadoList ?? [];
-	if (rl.length > 1) return 'Múltiplos Planos';
+	if (rl.length > 1) return `Múltiplos Planos (${rl.length})`;
 	if (rl.length === 1) {
 		return planos.find((p) => p.id === rl[0].idPlanoContas)?.descricao || 'Selecione um Plano de Contas';
 	}
@@ -64,7 +64,7 @@ export function textoPlanoDespesa(mov: MovimentoBancario, planos: PlanoConta[]):
 /** Coluna centro — exceto financiamento */
 export function textoCentroPadrao(mov: MovimentoBancario, centros: CentroCustos[]): string {
 	const ccl = mov.centroCustosList ?? [];
-	if (ccl.length > 1) return 'Múltiplos Centros';
+	if (ccl.length > 1) return `Múltiplos Centros (${ccl.length})`;
 	if (ccl.length === 1) {
 		const id = ccl[0].idCentroCustos;
 		return centros.find((c) => c.id === id)?.descricao || `Centro ${id}`;
@@ -73,6 +73,27 @@ export function textoCentroPadrao(mov: MovimentoBancario, centros: CentroCustos[
 		return centros.find((c) => c.id === mov.idCentroCustos)?.descricao || 'Selecione o Centro de Custos';
 	}
 	return 'Selecione o Centro de Custos';
+}
+
+/** Tooltip summary for multi cost centers */
+export function tituloCentroRateio(mov: MovimentoBancario, centros: CentroCustos[]): string {
+	const ccl = mov.centroCustosList ?? [];
+	if (ccl.length <= 1) return '';
+	return ccl
+		.map((c) => {
+			const nome = centros.find((x) => x.id === c.idCentroCustos)?.descricao || `Centro ${c.idCentroCustos}`;
+			return `${nome}`;
+		})
+		.join(' · ');
+}
+
+/** Tooltip summary for multi plans */
+export function tituloPlanoRateio(mov: MovimentoBancario, planos: PlanoConta[]): string {
+	const rl = mov.resultadoList ?? [];
+	if (rl.length <= 1) return '';
+	return rl
+		.map((r) => planos.find((p) => p.id === r.idPlanoContas)?.descricao || `Plano ${r.idPlanoContas}`)
+		.join(' · ');
 }
 
 /** Ordenação por coluna plano na OFX (receitas não participam) */

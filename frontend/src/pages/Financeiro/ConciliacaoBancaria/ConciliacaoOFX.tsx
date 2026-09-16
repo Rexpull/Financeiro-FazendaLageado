@@ -29,6 +29,8 @@ import {
 	textoPlanoDespesa,
 	textoPlanoOrdenacaoOFX,
 	textoPlanoTransferencia,
+	tituloCentroRateio,
+	tituloPlanoRateio,
 } from './conciliacaoLabels';
 import { listarParametros } from '../../../services/parametroService';
 import { Parametro } from '../../../../../backend/src/models/Parametro';
@@ -63,6 +65,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 	const [status, setStatus] = useState<string>('todos');
 	const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
 	const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
+	const [abrirRateioInicial, setAbrirRateioInicial] = useState<'centros' | 'planos' | null>(null);
 	const [planos, setPlanos] = useState<PlanoConta[]>([]);
 	const [movimentosSendoConciliados, setMovimentosSendoConciliados] = useState<MovimentoBancario[]>([]);
 	const [filtroDescricao, setFiltroDescricao] = useState('');
@@ -314,9 +317,13 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 		return direcaoOrdenacao === 'asc' ? faSortUp : faSortDown;
 	};
 
-	const openModalConcilia = async (movimento: MovimentoBancario) => {
+	const openModalConcilia = async (
+		movimento: MovimentoBancario,
+		opts?: { abrirRateio?: 'centros' | 'planos' | null }
+	) => {
 		try {
 			setMovimentoParaConciliar(movimento);
+			setAbrirRateioInicial(opts?.abrirRateio ?? null);
 			console.log('Movimento para conciliar:', movimento);
 			setTimeout(() => {
 				setModalConciliaIsOpen(true);
@@ -962,8 +969,17 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 																	: 'text-gray-400'
 															}`}
 															style={{ textUnderlineOffset: '2px' }}
-															onClick={() => mov.tipoMovimento === 'D' && openModalConcilia(mov)}
-															title={mov.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
+															onClick={() =>
+																mov.tipoMovimento === 'D' &&
+																openModalConcilia(mov, isPlanoRateioMultiplo(mov) ? { abrirRateio: 'planos' } : undefined)
+															}
+															title={
+																mov.tipoMovimento === 'C'
+																	? 'Receitas não usam Plano de Contas'
+																	: isPlanoRateioMultiplo(mov)
+																		? tituloPlanoRateio(mov, planos) || 'Editar rateio de planos'
+																		: ''
+															}
 														>
 															{mov.tipoMovimento === 'D' ? textoPlanoDespesa(mov, planos) : '-'}
 														</td>
@@ -978,8 +994,14 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 																		: ''
 															}`}
 															style={{ textUnderlineOffset: '2px' }}
-															onClick={() => openModalConcilia(mov)}
-															title=""
+															onClick={() =>
+																openModalConcilia(mov, isCentroRateioMultiplo(mov) ? { abrirRateio: 'centros' } : undefined)
+															}
+															title={
+																isCentroRateioMultiplo(mov)
+																	? tituloCentroRateio(mov, centrosDisponiveis) || 'Editar rateio de centros'
+																	: undefined
+															}
 														>
 															{textoCentroPadrao(mov, centrosDisponiveis)}
 														</td>
@@ -1028,12 +1050,16 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 			{movimentoParaConciliar && (
 				<ConciliarPlano
 					isOpen={!!movimentoParaConciliar}
-					onClose={() => setMovimentoParaConciliar(null)}
+					onClose={() => {
+						setMovimentoParaConciliar(null);
+						setAbrirRateioInicial(null);
+					}}
 					movimento={movimentoParaConciliar}
 					planos={planos}
 					handleConcilia={handleConcilia}
 					movimentosSelecionados={movimentosSelecionados}
 					onConciliaMultiplos={handleConciliaMultiplos}
+					abrirRateioInicial={abrirRateioInicial}
 				/>
 			)}
 		</div>

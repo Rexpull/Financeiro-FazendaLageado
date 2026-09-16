@@ -28,6 +28,7 @@ interface ModalRateioPlanoProps {
 	rateios: Rateio[];
 	setRateios: (rateios: Rateio[]) => void;
 	onConfirmar: (resultados: Resultado[] | { idPlano: number; porcentagem: number }[]) => void;
+	onLimpar?: () => void;
 	movimentosMultiplos?: MovimentoBancario[];
 }
 
@@ -40,6 +41,7 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	rateios,
 	setRateios,
 	onConfirmar,
+	onLimpar,
 	movimentosMultiplos,
 }) => {
 	const [planoSelecionado, setPlanoSelecionado] = useState<PlanoConta | null>(null);
@@ -92,24 +94,30 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	};
 
 	useEffect(() => {
-		if (isOpen) {
-			if (isModoMultiplos) {
-				setRateios([]);
-				rateiosOriginais.current = [];
-			} else if (movimento && (movimento.resultadoList ?? []).length > 0) {
-				const convertidos: Rateio[] = (movimento.resultadoList ?? []).map((r) => {
-					const plano = planosDisponiveis.find((p) => p.id === r.idPlanoContas);
-					return {
-						idPlano: r.idPlanoContas,
-						descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
-						valor: r.valor,
-					};
-				});
-				rateiosOriginais.current = convertidos;
-				setRateios(convertidos);
-			}
+		if (!isOpen) return;
+
+		// Snapshot current draft for Cancel restore — never wipe parent draft on open
+		rateiosOriginais.current = rateios.map((r) => ({ ...r }));
+
+		if (rateios.length > 0) {
+			return;
 		}
-	}, [isOpen, isModoMultiplos]); // intentionally not including movimento.details to mirror prior behavior on open-only
+
+		// Only hydrate from persisted movement when there is no draft yet (single movement)
+		if (!isModoMultiplos && movimento && (movimento.resultadoList ?? []).length > 0) {
+			const convertidos: Rateio[] = (movimento.resultadoList ?? []).map((r) => {
+				const plano = planosDisponiveis.find((p) => p.id === r.idPlanoContas);
+				return {
+					idPlano: r.idPlanoContas,
+					descricao: plano?.descricao || `Plano ${r.idPlanoContas}`,
+					valor: r.valor,
+				};
+			});
+			rateiosOriginais.current = convertidos;
+			setRateios(convertidos);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [isOpen]);
 
 	useEffect(() => {
 		if (!isOpen) {
@@ -123,6 +131,19 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	const handleCancelar = () => {
 		setRateios(rateiosOriginais.current);
 		onClose();
+	};
+
+	const handleLimparESair = () => {
+		setRateios([]);
+		rateiosOriginais.current = [];
+		setSearchPlano('');
+		setPlanoSelecionado(null);
+		setLinhaPercentuais('');
+		if (onLimpar) {
+			onLimpar();
+		} else {
+			onClose();
+		}
 	};
 
 	const handleConfirmar = () => {
@@ -389,7 +410,14 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 					</div>
 				</div>
 
-				<div className="flex justify-end gap-3">
+				<div className="flex justify-end gap-3 flex-wrap">
+					<button
+						type="button"
+						onClick={handleLimparESair}
+						className="px-4 py-2 bg-white text-red-600 border border-red-200 rounded hover:bg-red-50 font-semibold"
+					>
+						Limpar e sair
+					</button>
 					<button
 						onClick={handleCancelar}
 						className="px-4 py-2 bg-gray-100 text-gray-800 border border-gray-200 rounded hover:bg-gray-200 font-semibold"

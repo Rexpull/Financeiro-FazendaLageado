@@ -35,11 +35,39 @@ export class DashboardRepository {
     }
   }
 
+  /** Per-request cache — DashboardRepository is constructed once per HTTP request */
+  private cachedExcludeDashboard: number[] | null = null;
+  private cachedExcludeFluxo: number[] | null = null;
+
+  /**
+   * Sargable date bounds for ISO timestamps (e.g. 2026-03-31T00:00:00.000Z).
+   * Prefer this over strftime('%Y'/'%m') in WHERE so D1 can use indexes.
+   */
+  private sqlDtRange(columnSql: string, ano: number, mes?: number): { sql: string; bind: string[] } {
+    if (mes != null && mes >= 1 && mes <= 12) {
+      const start = `${ano}-${String(mes).padStart(2, '0')}-01`;
+      const nextMes = mes === 12 ? 1 : mes + 1;
+      const nextAno = mes === 12 ? ano + 1 : ano;
+      const end = `${nextAno}-${String(nextMes).padStart(2, '0')}-01`;
+      return { sql: ` AND ${columnSql} >= ? AND ${columnSql} < ?`, bind: [start, end] };
+    }
+    return {
+      sql: ` AND ${columnSql} >= ? AND ${columnSql} < ?`,
+      bind: [`${ano}-01-01`, `${ano + 1}-01-01`],
+    };
+  }
+
+  /** Month number 1–12 from ISO date/datetime string (after range filter already applied). */
+  private sqlMesExtract(columnSql: string): string {
+    return `CAST(substr(${columnSql}, 6, 2) AS INTEGER)`;
+  }
+
   /**
    * Fluxo de caixa exclusions for R/D/I: financing chart-of-accounts from Parametros
    * and children of plan parent 170. (Does not include transferência/estorno/aplicação.)
    */
   private async getIdsPlanosExclusaoFluxo(): Promise<number[]> {
+    if (this.cachedExcludeFluxo) return this.cachedExcludeFluxo;
     const row = await this.db
       .prepare(
         `SELECT idPlanoEntradaFinanciamentos, idPlanoPagamentoFinanciamentos FROM parametros WHERE id = 1`
@@ -58,11 +86,13 @@ export class DashboardRepository {
     for (const r of filhos170.results as Array<{ id: number }>) {
       if (r?.id != null && Number.isFinite(Number(r.id))) ids.push(Number(r.id));
     }
-    return [...new Set(ids)];
+    this.cachedExcludeFluxo = [...new Set(ids)];
+    return this.cachedExcludeFluxo;
   }
 
   /** Planos excluded from Dashboard headline MB charts — Fluxo set + internal movement planos */
   private async getIdsPlanosMovimentoInternoExclusaoDashboard(): Promise<number[]> {
+    if (this.cachedExcludeDashboard) return this.cachedExcludeDashboard;
     const row = await this.db
       .prepare(
         `SELECT idPlanoTransferenciaEntreContas, idPlanoEstornos, idPlanoAplicacaoResgateInvestimentos,
@@ -70,7 +100,10 @@ export class DashboardRepository {
          FROM parametros WHERE id = 1`
       )
       .first();
-    if (!row) return this.getIdsPlanosExclusaoFluxo();
+    if (!row) {
+      this.cachedExcludeDashboard = await this.getIdsPlanosExclusaoFluxo();
+      return this.cachedExcludeDashboard;
+    }
     const keys = [
       'idPlanoTransferenciaEntreContas',
       'idPlanoEstornos',
@@ -89,19 +122,39 @@ export class DashboardRepository {
     for (const r of filhos170.results as Array<{ id: number }>) {
       if (r?.id != null && Number.isFinite(Number(r.id))) ids.push(Number(r.id));
     }
-    return [...new Set(ids)];
+    this.cachedExcludeDashboard = [...new Set(ids)];
+    return this.cachedExcludeDashboard;
   }
 
-  private sqlExcludeMbPlanoContas(alias: string, ids: number[]): { sql: string; bind: number[] } {
+  private sqlExcludeMbPlanoContas(
+    alias: string,
+    ids: number[],
+    /** When set, only movements with a blocked Resultado line inside this ISO range are excluded (much cheaper). */
+    resultadoDtRange?: { start: string; end: string }
+  ): { sql: string; bind: Array<string | number> } {
     if (!ids.length) return { sql: '', bind: [] };
     const ph = ids.map(() => '?').join(', ');
-    // Exclude MB whose own plan is blocked, or that has any Resultado line on a blocked plan (Fluxo rule)
+    // Uncorrelated NOT IN is evaluated once (hash) instead of probing Resultado per outer row.
+    if (resultadoDtRange) {
+      return {
+        sql: ` AND (${alias}.idPlanoContas IS NULL OR ${alias}.idPlanoContas NOT IN (${ph}))
+        AND ${alias}.id NOT IN (
+          SELECT r_ex.idMovimentoBancario
+          FROM Resultado r_ex
+          WHERE r_ex.idPlanoContas IN (${ph})
+            AND r_ex.idMovimentoBancario IS NOT NULL
+            AND r_ex.dtMovimento >= ? AND r_ex.dtMovimento < ?
+        )`,
+        bind: [...ids, ...ids, resultadoDtRange.start, resultadoDtRange.end],
+      };
+    }
     return {
       sql: ` AND (${alias}.idPlanoContas IS NULL OR ${alias}.idPlanoContas NOT IN (${ph}))
-        AND NOT EXISTS (
-          SELECT 1 FROM Resultado r_ex
-          WHERE r_ex.idMovimentoBancario = ${alias}.id
-            AND r_ex.idPlanoContas IN (${ph})
+        AND ${alias}.id NOT IN (
+          SELECT r_ex.idMovimentoBancario
+          FROM Resultado r_ex
+          WHERE r_ex.idPlanoContas IN (${ph})
+            AND r_ex.idMovimentoBancario IS NOT NULL
         )`,
       bind: [...ids, ...ids],
     };
@@ -126,7 +179,7 @@ export class DashboardRepository {
     ano: number;
     mes?: number;
     contas: number[];
-    mbExcl: { sql: string; bind: number[] };
+    mbExcl: { sql: string; bind: Array<string | number> };
     debug: boolean;
   }): Promise<Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }>> {
     const { ano, mes, contas, mbExcl, debug } = args;
@@ -138,12 +191,9 @@ export class DashboardRepository {
       whereBase += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       paramsBase = [...contas];
     }
-    whereBase += " AND CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?";
-    paramsBase.push(ano);
-    if (mes != null && mes >= 1 && mes <= 12) {
-      whereBase += " AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?";
-      paramsBase.push(mes);
-    }
+    const dtRange = this.sqlDtRange('mb.dtMovimento', ano, mes);
+    whereBase += dtRange.sql;
+    paramsBase.push(...dtRange.bind);
     whereBase += mbExcl.sql;
     paramsBase.push(...mbExcl.bind);
 
@@ -162,6 +212,7 @@ export class DashboardRepository {
       GROUP BY cc.descricao
     `;
 
+    // Anti-join: movements with idCentroCustos and no MCC rows (legacy single-centro)
     const qSoMbCentro = `
       SELECT 
         cc.descricao,
@@ -169,14 +220,17 @@ export class DashboardRepository {
         SUM(ABS(mb.valor)) as valorConciliado
       FROM MovimentoBancario mb
       INNER JOIN centroCustos cc ON mb.idCentroCustos = cc.id
+      LEFT JOIN MovimentoCentroCustos mcc0 ON mcc0.idMovimentoBancario = mb.id
       ${whereBase}${creditOnly}
         AND mb.idCentroCustos IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc0 WHERE mcc0.idMovimentoBancario = mb.id)
+        AND mcc0.idMovimentoBancario IS NULL
       GROUP BY cc.descricao
     `;
 
-    const rMcc = await this.db.prepare(qComMcc).bind(...paramsBase).all();
-    const rMb = await this.db.prepare(qSoMbCentro).bind(...paramsBase).all();
+    const [rMcc, rMb] = await Promise.all([
+      this.db.prepare(qComMcc).bind(...paramsBase).all(),
+      this.db.prepare(qSoMbCentro).bind(...paramsBase).all(),
+    ]);
 
     const merged = new Map<string, { valor: number; valorConciliado: number }>();
     const addRows = (rows: any[]) => {
@@ -226,7 +280,7 @@ export class DashboardRepository {
     ano: number;
     mes?: number;
     contas: number[];
-    mbExcl: { sql: string; bind: number[] };
+    mbExcl: { sql: string; bind: Array<string | number> };
     debug: boolean;
   }): Promise<
     Array<{
@@ -246,12 +300,9 @@ export class DashboardRepository {
       whereBase += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       paramsBase = [...contas];
     }
-    whereBase += " AND CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?";
-    paramsBase.push(ano);
-    if (mes != null && mes >= 1 && mes <= 12) {
-      whereBase += " AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?";
-      paramsBase.push(mes);
-    }
+    const dtRange = this.sqlDtRange('mb.dtMovimento', ano, mes);
+    whereBase += dtRange.sql;
+    paramsBase.push(...dtRange.bind);
     whereBase += mbExcl.sql;
     paramsBase.push(...mbExcl.bind);
 
@@ -279,14 +330,17 @@ export class DashboardRepository {
         SUM(ABS(mb.valor)) as valorConciliado
       FROM MovimentoBancario mb
       INNER JOIN centroCustos cc ON mb.idCentroCustos = cc.id
+      LEFT JOIN MovimentoCentroCustos mcc0 ON mcc0.idMovimentoBancario = mb.id
       ${whereBase}${debitOnly}
         AND mb.idCentroCustos IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc0 WHERE mcc0.idMovimentoBancario = mb.id)
+        AND mcc0.idMovimentoBancario IS NULL
       GROUP BY cc.descricao, UPPER(TRIM(COALESCE(cc.tipo, '')))
     `;
 
-    const rMcc = await this.db.prepare(qComMcc).bind(...paramsBase).all();
-    const rMb = await this.db.prepare(qSoMbCentro).bind(...paramsBase).all();
+    const [rMcc, rMb] = await Promise.all([
+      this.db.prepare(qComMcc).bind(...paramsBase).all(),
+      this.db.prepare(qSoMbCentro).bind(...paramsBase).all(),
+    ]);
 
     const merged = new Map<
       string,
@@ -341,7 +395,11 @@ export class DashboardRepository {
   async getTotaisAno(ano: number, contas: number[] = [], debug = false): Promise<DashboardTotais> {
     this.validarAno(ano);
     const excludePlanosMb = await this.getIdsPlanosMovimentoInternoExclusaoDashboard();
-    const mbPlanoSql = this.sqlExcludeMbPlanoContas('mb', excludePlanosMb);
+    const dtYear = this.sqlDtRange('mb.dtMovimento', ano);
+    const mbPlanoSql = this.sqlExcludeMbPlanoContas('mb', excludePlanosMb, {
+      start: dtYear.bind[0],
+      end: dtYear.bind[1],
+    });
     this.dashDebug(debug, "getTotaisAno:filters", {
       ano,
       contasLen: contas.length,
@@ -351,13 +409,11 @@ export class DashboardRepository {
     
     // Construir filtro de contas se fornecido
     let contasFilter = '';
-    let queryParams: any[] = [ano];
+    let queryParams: any[] = [...dtYear.bind, ...mbPlanoSql.bind];
     
     if (contas && contas.length > 0) {
       contasFilter = `AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
-      queryParams = [ano, ...mbPlanoSql.bind, ...contas];
-    } else {
-      queryParams = [ano, ...mbPlanoSql.bind];
+      queryParams = [...dtYear.bind, ...mbPlanoSql.bind, ...contas];
     }
     
     // Usar MovimentoBancario diretamente para receitas e despesas (valores brutos)
@@ -382,7 +438,7 @@ export class DashboardRepository {
         END), 0) as investimentos
       FROM MovimentoBancario mb
       LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
+      WHERE mb.dtMovimento >= ? AND mb.dtMovimento < ?
         AND mb.idFinanciamento IS NULL
         AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
         ${mbPlanoSql.sql}
@@ -399,14 +455,15 @@ export class DashboardRepository {
     });
 
     // Financiamentos: total contratado no ano
+    const dtFinYear = this.sqlDtRange('dataContrato', ano);
     const queryFin = `
       SELECT 
         COUNT(*) as contratosAtivos,
         COALESCE(SUM(valor),0) as totalFinanciado
       FROM Financiamento
-      WHERE CAST(strftime('%Y', dataContrato) AS INTEGER) = ?
+      WHERE dataContrato >= ? AND dataContrato < ?
     `;
-    const fin = await this.db.prepare(queryFin).bind(ano).first();
+    const fin = await this.db.prepare(queryFin).bind(...dtFinYear.bind).first();
     const contratosAtivos = fin && typeof fin.contratosAtivos === 'number' ? fin.contratosAtivos : 0;
     const totalFinanciado = fin && typeof fin.totalFinanciado === 'number' ? fin.totalFinanciado : 0;
 
@@ -418,9 +475,9 @@ export class DashboardRepository {
       FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
       WHERE pf.dt_liquidacao IS NOT NULL
-        AND CAST(strftime('%Y', f.dataContrato) AS INTEGER) = ?
+        AND f.dataContrato >= ? AND f.dataContrato < ?
     `;
-    const resQuitado = await this.db.prepare(queryQuitado).bind(ano).first();
+    const resQuitado = await this.db.prepare(queryQuitado).bind(...dtFinYear.bind).first();
     const totalQuitado = resQuitado && typeof resQuitado.totalQuitado === 'number' ? resQuitado.totalQuitado : 0;
 
     // Saldo em aberto: soma das parcelas ainda não liquidadas apenas dos contratos do ano (mesmo escopo de totalFinanciado)
@@ -430,9 +487,9 @@ export class DashboardRepository {
       FROM parcelaFinanciamento pf
       JOIN Financiamento f ON pf.idFinanciamento = f.id
       WHERE pf.dt_liquidacao IS NULL
-        AND CAST(strftime('%Y', f.dataContrato) AS INTEGER) = ?
+        AND f.dataContrato >= ? AND f.dataContrato < ?
     `;
-    const resEmAberto = await this.db.prepare(queryEmAberto).bind(ano).first();
+    const resEmAberto = await this.db.prepare(queryEmAberto).bind(...dtFinYear.bind).first();
     const totalEmAberto = resEmAberto && typeof resEmAberto.totalEmAberto === 'number' ? resEmAberto.totalEmAberto : 0;
 
     return {
@@ -452,22 +509,26 @@ export class DashboardRepository {
     this.validarAno(ano);
     if (isNaN(mes) || mes < 1 || mes > 12) throw new Error("Mês inválido");
     const excludePlanosMb = await this.getIdsPlanosMovimentoInternoExclusaoDashboard();
-    const mbPlanoSql = this.sqlExcludeMbPlanoContas('mb', excludePlanosMb);
+    const dtMonth = this.sqlDtRange('mb.dtMovimento', ano, mes);
+    const mbPlanoSql = this.sqlExcludeMbPlanoContas('mb', excludePlanosMb, {
+      start: dtMonth.bind[0],
+      end: dtMonth.bind[1],
+    });
     this.dashDebug(debug, "getTotaisMes:filters", {
       ano,
       mes,
-      monthPredicate: "CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = mes (1-12; Mar=3)",
+      monthPredicate: "mb.dtMovimento >= YYYY-MM-01 AND < next month (sargable)",
       contasLen: contas.length,
       excludePlanoIds: excludePlanosMb,
     });
     
     // Construir filtro de contas
     let contasFilter = '';
-    let queryParams: any[] = [ano, mes, ...mbPlanoSql.bind];
+    let queryParams: any[] = [...dtMonth.bind, ...mbPlanoSql.bind];
     
     if (contas && contas.length > 0) {
       contasFilter = `AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
-      queryParams = [ano, mes, ...mbPlanoSql.bind, ...contas];
+      queryParams = [...dtMonth.bind, ...mbPlanoSql.bind, ...contas];
     }
     
     // Usar MovimentoBancario diretamente para receitas e despesas (valores brutos)
@@ -492,8 +553,7 @@ export class DashboardRepository {
         END), 0) as investimentos
       FROM MovimentoBancario mb
       LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
-        AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?
+      WHERE mb.dtMovimento >= ? AND mb.dtMovimento < ?
         AND mb.idFinanciamento IS NULL
         AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
         ${mbPlanoSql.sql}
@@ -502,14 +562,14 @@ export class DashboardRepository {
     const result = await this.db.prepare(query).bind(...queryParams).first();
     
     // Buscar financiamentos do mês específico
+    const dtFinMonth = this.sqlDtRange('dataContrato', ano, mes);
     const queryFin = `
       SELECT 
         COALESCE(SUM(valor),0) as totalFinanciado
       FROM Financiamento
-      WHERE CAST(strftime('%Y', dataContrato) AS INTEGER) = ?
-        AND CAST(strftime('%m', dataContrato) AS INTEGER) = ?
+      WHERE dataContrato >= ? AND dataContrato < ?
     `;
-    const fin = await this.db.prepare(queryFin).bind(ano, mes).first();
+    const fin = await this.db.prepare(queryFin).bind(...dtFinMonth.bind).first();
     const financiamentos = fin && typeof fin.totalFinanciado === 'number' ? fin.totalFinanciado : 0;
 
     const receitasVal = result && typeof result.receitas === 'number' ? result.receitas : 0;
@@ -533,7 +593,11 @@ export class DashboardRepository {
   async getReceitasDespesasPorMes(ano: number, contas: number[] = [], debug = false): Promise<{ labels: string[], receitas: number[], despesas: number[] }> {
     this.validarAno(ano);
     const excludePlanosMb = await this.getIdsPlanosMovimentoInternoExclusaoDashboard();
-    const mbPlanoSql = this.sqlExcludeMbPlanoContas('mb', excludePlanosMb);
+    const dtYear = this.sqlDtRange('mb.dtMovimento', ano);
+    const mbPlanoSql = this.sqlExcludeMbPlanoContas('mb', excludePlanosMb, {
+      start: dtYear.bind[0],
+      end: dtYear.bind[1],
+    });
     this.dashDebug(debug, "getReceitasDespesasPorMes:filters", {
       ano,
       source: "MovimentoBancario + LEFT planoContas on mb.idPlanoContas",
@@ -543,18 +607,18 @@ export class DashboardRepository {
 
     // Construir filtro de contas se fornecido
     let contasFilter = '';
-    let queryParams: any[] = [ano, ...mbPlanoSql.bind];
+    let queryParams: any[] = [...dtYear.bind, ...mbPlanoSql.bind];
     
     if (contas && contas.length > 0) {
       contasFilter = `AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
-      queryParams = [ano, ...mbPlanoSql.bind, ...contas];
+      queryParams = [...dtYear.bind, ...mbPlanoSql.bind, ...contas];
     }
     
     // Usar MovimentoBancario diretamente para o gráfico mensal (valores brutos)
     // Se tipoMovimento for NULL, usar o sinal do valor (positivo = crédito, negativo = débito)
     const query = `
       SELECT 
-        CAST(strftime('%m', mb.dtMovimento) AS INTEGER) as mes,
+        ${this.sqlMesExtract('mb.dtMovimento')} as mes,
         SUM(CASE 
           WHEN mb.tipoMovimento = 'C' THEN mb.valor
           WHEN mb.tipoMovimento IS NULL AND mb.valor > 0 THEN mb.valor
@@ -567,7 +631,7 @@ export class DashboardRepository {
         END) as despesas
       FROM MovimentoBancario mb
       LEFT JOIN planoContas pc ON mb.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', mb.dtMovimento) AS INTEGER) = ?
+      WHERE mb.dtMovimento >= ? AND mb.dtMovimento < ?
         AND mb.idFinanciamento IS NULL
         AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
         ${mbPlanoSql.sql}
@@ -600,24 +664,28 @@ export class DashboardRepository {
   async getInvestimentosPorMes(ano: number, contas: number[] = []): Promise<{ labels: string[], values: number[] }> {
     this.validarAno(ano);
     const excludePlanosMb = await this.getIdsPlanosMovimentoInternoExclusaoDashboard();
-    const mbPlanoSql = this.sqlExcludeMbPlanoContas('m', excludePlanosMb);
+    const dtYear = this.sqlDtRange('m.dtMovimento', ano);
+    const mbPlanoSql = this.sqlExcludeMbPlanoContas('m', excludePlanosMb, {
+      start: dtYear.bind[0],
+      end: dtYear.bind[1],
+    });
     
     // Construir filtro de contas se fornecido
     let contasFilter = '';
-    let queryParams: any[] = [ano, ...mbPlanoSql.bind];
+    let queryParams: any[] = [...dtYear.bind, ...mbPlanoSql.bind];
     
     if (contas && contas.length > 0) {
       contasFilter = `AND m.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
-      queryParams = [ano, ...mbPlanoSql.bind, ...contas];
+      queryParams = [...dtYear.bind, ...mbPlanoSql.bind, ...contas];
     }
     
     const query = `
       SELECT 
-        CAST(strftime('%m', m.dtMovimento) AS INTEGER) as mes,
+        ${this.sqlMesExtract('m.dtMovimento')} as mes,
         SUM(m.valor) as valor
       FROM MovimentoBancario m
       JOIN planoContas pc ON m.idPlanoContas = pc.id
-      WHERE CAST(strftime('%Y', m.dtMovimento) AS INTEGER) = ?
+      WHERE m.dtMovimento >= ? AND m.dtMovimento < ?
       AND pc.tipo = 'investimento'
       AND m.idFinanciamento IS NULL
       AND (m.modalidadeMovimento IS NULL OR m.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
@@ -864,6 +932,9 @@ export class DashboardRepository {
     detalhamento: Array<{ descricao: string, valor: number, data: string, classificacao: string }>,
     agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean, subtipoDespesa?: 'custeio' | 'investimento' }>,
     receitasAgrupadoPorCentros: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }>,
+    /** Full-year centro breakdown (same as period when mes is omitted). */
+    agrupadoPorAno: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean, subtipoDespesa?: 'custeio' | 'investimento' }>,
+    receitasAgrupadoPorCentrosAno: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }>,
     totalConciliado: number,
     totalSemConciliar: number,
     totalReceitas: number,
@@ -872,7 +943,12 @@ export class DashboardRepository {
     this.validarAno(ano);
     const excludePlanosInternos = await this.getIdsPlanosMovimentoInternoExclusaoDashboard();
     const rExcl = this.sqlExcludeResultadoPlanoContas(excludePlanosInternos);
-    const mbExcl = this.sqlExcludeMbPlanoContas('mb', excludePlanosInternos);
+    // Yearly series always uses full year (so one dashboard call with ?mes= still fills 12 months).
+    const dtYearR = this.sqlDtRange('r.dtMovimento', ano);
+    const mbExcl = this.sqlExcludeMbPlanoContas('mb', excludePlanosInternos, {
+      start: dtYearR.bind[0],
+      end: dtYearR.bind[1],
+    });
     this.dashDebug(debug, "getReceitasDespesas:scope", {
       ano,
       mesFilterOnResultadoDate: mes && mes >= 1 && mes <= 12 ? mes : null,
@@ -882,6 +958,7 @@ export class DashboardRepository {
       notes: [
         "Monthly arrays (receitas/despesas) here = Resultado + hierarchy 001%/002% (legacy series).",
         "agrupadoPor / receitasAgrupadoPorCentros = Fluxo centros engine (credits/debits by cost center).",
+        "detalhamento Resultado list is unused by UI — skipped to save D1 row reads.",
       ],
     });
     
@@ -894,13 +971,9 @@ export class DashboardRepository {
       whereClause += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       contasParams = contas;
     }
-    whereClause += " AND CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?";
-    let params = [...contasParams, ano];
+    whereClause += dtYearR.sql;
+    let params = [...contasParams, ...dtYearR.bind];
     
-    if (mes && mes >= 1 && mes <= 12) {
-      whereClause += " AND CAST(strftime('%m', r.dtMovimento) AS INTEGER) = ?";
-      params.push(mes);
-    }
     whereClause += rExcl.sql;
     params.push(...rExcl.bind);
     // Fluxo: drop whole movement if MB plan or any Resultado line uses a blocked plan
@@ -909,7 +982,7 @@ export class DashboardRepository {
     
     const query = `
       SELECT 
-        CAST(strftime('%m', r.dtMovimento) AS INTEGER) as mes,
+        ${this.sqlMesExtract('r.dtMovimento')} as mes,
         SUM(CASE 
           WHEN pc.tipo = 'investimento' THEN 0
           WHEN pc.hierarquia LIKE '001%' THEN r.valor 
@@ -945,46 +1018,14 @@ export class DashboardRepository {
       });
     }
 
-    // Buscar detalhamento com filtro de mês e ignorar movimentações (003%)
-    let detalhamentoContasFilter =
-      'JOIN MovimentoBancario mb ON r.idMovimentoBancario = mb.id';
-    let detalhamentoContasParams: any[] = [];
-    let detalhamentoWhereClause =
-      "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
-    if (contas && contas.length > 0) {
-      detalhamentoWhereClause += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
-      detalhamentoContasParams = contas;
-    }
-    detalhamentoWhereClause += " AND CAST(strftime('%Y', r.dtMovimento) AS INTEGER) = ?";
-    let detalhamentoParams = [...detalhamentoContasParams, ano];
-
-    if (mes && mes >= 1 && mes <= 12) {
-      detalhamentoWhereClause += " AND CAST(strftime('%m', r.dtMovimento) AS INTEGER) = ?";
-      detalhamentoParams.push(mes);
-    }
-    detalhamentoWhereClause += rExcl.sql;
-    detalhamentoParams.push(...rExcl.bind);
-    detalhamentoWhereClause += mbExcl.sql;
-    detalhamentoParams.push(...mbExcl.bind);
-    detalhamentoWhereClause += " AND pc.hierarquia NOT LIKE '003%'";
-
-    const queryDetalhamento = `
-      SELECT 
-        pc.descricao,
-        r.valor,
-        r.dtMovimento as data,
-        pc.hierarquia as classificacao
-      FROM Resultado r
-      JOIN planoContas pc ON r.idPlanoContas = pc.id
-      ${detalhamentoContasFilter}
-      ${detalhamentoWhereClause}
-      ORDER BY r.dtMovimento DESC
-    `;
-    const detalhamento = await this.db.prepare(queryDetalhamento).bind(...detalhamentoParams).all();
+    // Frontend never reads receitasDespesas.detalhamento — skip the heavy Resultado list query.
+    const detalhamento = { results: [] as any[] };
 
     // Buscar dados agrupados por planos ou centros
     let agrupadoPor: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean, subtipoDespesa?: 'custeio' | 'investimento' }> = [];
     let receitasAgrupadoPorCentros: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
+    let agrupadoPorAno: Array<{ descricao: string, valor: number, tipoMovimento: 'C' | 'D', conciliado: boolean, subtipoDespesa?: 'custeio' | 'investimento' }> = [];
+    let receitasAgrupadoPorCentrosAno: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
     let totalConciliado = 0;
     let totalSemConciliar = 0;
     let totalReceitas = 0;
@@ -994,7 +1035,11 @@ export class DashboardRepository {
       // Match Fluxo de caixa default ("centros"): credits/debits by cost center.
       // March/2026 receitas have almost no Resultado 001 lines — only centro allocation.
       const fluxoExclIds = await this.getIdsPlanosExclusaoFluxo();
-      const fluxoMbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds);
+      const dtPeriodo = this.sqlDtRange('mb.dtMovimento', ano, mes);
+      const fluxoMbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds, {
+        start: dtPeriodo.bind[0],
+        end: dtPeriodo.bind[1],
+      });
 
       receitasAgrupadoPorCentros = await this.aggregateReceitasPorCentroCredito({
         ano,
@@ -1017,6 +1062,33 @@ export class DashboardRepository {
         else totalSemConciliar += r.valor;
       }
       totalReceitas = receitasAgrupadoPorCentros.reduce((s, r) => s + r.valor, 0);
+
+      // Full-year breakdown in the same request when ?mes= is set (avoids a second /api/dashboard).
+      if (mes != null && mes >= 1 && mes <= 12) {
+        const dtAno = this.sqlDtRange('mb.dtMovimento', ano);
+        const fluxoMbExclAno = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds, {
+          start: dtAno.bind[0],
+          end: dtAno.bind[1],
+        });
+        agrupadoPorAno = await this.aggregateDespesasPorCentroDebito({
+          ano,
+          mes: undefined,
+          contas,
+          mbExcl: fluxoMbExclAno,
+          debug: false,
+        });
+        receitasAgrupadoPorCentrosAno = await this.aggregateReceitasPorCentroCredito({
+          ano,
+          mes: undefined,
+          contas,
+          mbExcl: fluxoMbExclAno,
+          debug: false,
+        });
+      } else {
+        agrupadoPorAno = agrupadoPor;
+        receitasAgrupadoPorCentrosAno = receitasAgrupadoPorCentros;
+      }
+
       this.dashDebug(debug, "getReceitasDespesas:planos_fluxoCentros_final_totals", {
         note: "Same engine as Fluxo tipoAgrupamento=centros",
         excludeFluxoPlanIds: fluxoExclIds,
@@ -1035,7 +1107,11 @@ export class DashboardRepository {
     } else {
       // Explicit centros mode — same aggregation as planos path (Fluxo default)
       const fluxoExclIds = await this.getIdsPlanosExclusaoFluxo();
-      const fluxoMbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds);
+      const dtPeriodo = this.sqlDtRange('mb.dtMovimento', ano, mes);
+      const fluxoMbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds, {
+        start: dtPeriodo.bind[0],
+        end: dtPeriodo.bind[1],
+      });
 
       agrupadoPor = await this.aggregateDespesasPorCentroDebito({
         ano,
@@ -1057,6 +1133,31 @@ export class DashboardRepository {
         debug,
       });
       totalReceitas = receitasAgrupadoPorCentros.reduce((s, r) => s + r.valor, 0);
+
+      if (mes != null && mes >= 1 && mes <= 12) {
+        const dtAno = this.sqlDtRange('mb.dtMovimento', ano);
+        const fluxoMbExclAno = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds, {
+          start: dtAno.bind[0],
+          end: dtAno.bind[1],
+        });
+        agrupadoPorAno = await this.aggregateDespesasPorCentroDebito({
+          ano,
+          mes: undefined,
+          contas,
+          mbExcl: fluxoMbExclAno,
+          debug: false,
+        });
+        receitasAgrupadoPorCentrosAno = await this.aggregateReceitasPorCentroCredito({
+          ano,
+          mes: undefined,
+          contas,
+          mbExcl: fluxoMbExclAno,
+          debug: false,
+        });
+      } else {
+        agrupadoPorAno = agrupadoPor;
+        receitasAgrupadoPorCentrosAno = receitasAgrupadoPorCentros;
+      }
       this.dashDebug(debug, "getReceitasDespesas:centros_final_agrupadoPor_totals", {
         agrupadoPorLen: agrupadoPor.length,
         totalReceitas,
@@ -1106,6 +1207,8 @@ export class DashboardRepository {
       })),
       agrupadoPor,
       receitasAgrupadoPorCentros,
+      agrupadoPorAno,
+      receitasAgrupadoPorCentrosAno,
       totalConciliado,
       totalSemConciliar,
       totalReceitas: sumReceitas,

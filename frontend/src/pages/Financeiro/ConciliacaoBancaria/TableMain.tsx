@@ -71,6 +71,8 @@ import {
 	textoCentroPadrao,
 	textoPlanoDespesa,
 	textoPlanoTransferencia,
+	tituloCentroRateio,
+	tituloPlanoRateio,
 } from './conciliacaoLabels';
 import { useLocation } from 'react-router-dom';
 import { listarHistoricoImportacoes, limparHistoricoImportacoes } from '../../../services/historicoImportacaoOFXService';
@@ -114,6 +116,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [valorBusca, setValorBusca] = useState<string>('');
 
 	const [modalConciliaIsOpen, setModalConciliaIsOpen] = useState(false);
+	const [abrirRateioInicial, setAbrirRateioInicial] = useState<'centros' | 'planos' | null>(null);
 	const [movimentoParaConciliar, setMovimentoParaConciliar] = useState<MovimentoBancario | null>(null);
 
 	const [modalDetalheOpen, setModalDetalheOpen] = useState(false);
@@ -414,12 +417,16 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
-	const openModalConcilia = async (movimento: MovimentoBancario) => {
+	const openModalConcilia = async (
+		movimento: MovimentoBancario,
+		opts?: { abrirRateio?: 'centros' | 'planos' | null }
+	) => {
 		try {
 			const movimentoCompleto = await buscarMovimentoBancarioById(movimento.id);
 			console.log('Movimento completo:', movimentoCompleto);
 			setMovimentoParaConciliar(movimentoCompleto);
 			setMovimentosConciliacaoModal([movimentoCompleto]);
+			setAbrirRateioInicial(opts?.abrirRateio ?? null);
 			setTimeout(() => {
 				setModalConciliaIsOpen(true);
 			}, 0);
@@ -1206,8 +1213,20 @@ const MovimentoBancarioTable: React.FC = () => {
 																	: 'text-gray-400'
 															}`}
 															style={{ textUnderlineOffset: '2px' }}
-															onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
-															title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
+															onClick={() =>
+																movBancario.tipoMovimento === 'D' &&
+																openModalConcilia(
+																	movBancario,
+																	isPlanoRateioMultiplo(movBancario) ? { abrirRateio: 'planos' } : undefined
+																)
+															}
+															title={
+																movBancario.tipoMovimento === 'C'
+																	? 'Receitas não usam Plano de Contas'
+																	: isPlanoRateioMultiplo(movBancario)
+																		? tituloPlanoRateio(movBancario, planos) || 'Editar rateio de planos'
+																		: ''
+															}
 														>
 															{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
 														</td>
@@ -1222,7 +1241,17 @@ const MovimentoBancarioTable: React.FC = () => {
 																		: ''
 															}`}
 															style={{ textUnderlineOffset: '2px' }}
-															onClick={() => openModalConcilia(movBancario)}
+															onClick={() =>
+																openModalConcilia(
+																	movBancario,
+																	isCentroRateioMultiplo(movBancario) ? { abrirRateio: 'centros' } : undefined
+																)
+															}
+															title={
+																isCentroRateioMultiplo(movBancario)
+																	? tituloCentroRateio(movBancario, centrosDisponiveis) || 'Editar rateio de centros'
+																	: undefined
+															}
 														>
 															{textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</td>
@@ -1391,8 +1420,20 @@ const MovimentoBancarioTable: React.FC = () => {
 																		? 'text-orange-500 font-semibold'
 																		: ''
 															}`}
-															onClick={() => movBancario.tipoMovimento === 'D' && openModalConcilia(movBancario)}
-															title={movBancario.tipoMovimento === 'C' ? 'Receitas não usam Plano de Contas' : ''}
+															onClick={() =>
+																movBancario.tipoMovimento === 'D' &&
+																openModalConcilia(
+																	movBancario,
+																	isPlanoRateioMultiplo(movBancario) ? { abrirRateio: 'planos' } : undefined
+																)
+															}
+															title={
+																movBancario.tipoMovimento === 'C'
+																	? 'Receitas não usam Plano de Contas'
+																	: isPlanoRateioMultiplo(movBancario)
+																		? tituloPlanoRateio(movBancario, planos) || 'Editar rateio de planos'
+																		: ''
+															}
 														>
 															{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
 														</div>
@@ -1409,7 +1450,17 @@ const MovimentoBancarioTable: React.FC = () => {
 																		? 'text-orange-500 font-semibold'
 																		: ''
 															}`}
-															onClick={() => openModalConcilia(movBancario)}
+															onClick={() =>
+																openModalConcilia(
+																	movBancario,
+																	isCentroRateioMultiplo(movBancario) ? { abrirRateio: 'centros' } : undefined
+																)
+															}
+															title={
+																isCentroRateioMultiplo(movBancario)
+																	? tituloCentroRateio(movBancario, centrosDisponiveis) || 'Editar rateio de centros'
+																	: undefined
+															}
 														>
 															{textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</div>
@@ -1642,6 +1693,7 @@ const MovimentoBancarioTable: React.FC = () => {
 					setModalConciliaIsOpen(false);
 					setMovimentoParaConciliar(null);
 					setMovimentosConciliacaoModal([]);
+					setAbrirRateioInicial(null);
 					fetchMovimentos(currentPage);
 				}}
 				movimento={movimentoParaConciliar || ({} as MovimentoBancario)}
@@ -1649,6 +1701,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				handleConcilia={handleConcilia}
 				movimentosSelecionados={movimentosConciliacaoModal}
 				onConciliaMultiplos={handleConciliaMultiplos}
+				abrirRateioInicial={abrirRateioInicial}
 			/>
 
 			{historicoSelecionado && (

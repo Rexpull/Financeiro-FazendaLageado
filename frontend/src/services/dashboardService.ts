@@ -84,6 +84,20 @@ export interface DashboardData {
       tipoMovimento: 'C';
       conciliado: boolean;
     }>;
+    /** Full-year centro breakdown when ?mes= is set (same payload avoids a 2nd dashboard call). */
+    agrupadoPorAno?: Array<{
+      descricao: string;
+      valor: number;
+      tipoMovimento: 'C' | 'D';
+      conciliado: boolean;
+      subtipoDespesa?: 'custeio' | 'investimento';
+    }>;
+    receitasAgrupadoPorCentrosAno?: Array<{
+      descricao: string;
+      valor: number;
+      tipoMovimento: 'C';
+      conciliado: boolean;
+    }>;
     totalConciliado?: number;
     totalSemConciliar?: number;
     totalReceitas?: number;

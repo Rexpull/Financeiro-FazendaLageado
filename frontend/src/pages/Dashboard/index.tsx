@@ -90,6 +90,7 @@ const Dashboard = () => {
     }
   });
   const [contasSelecionadas, setContasSelecionadas] = useState<number[]>([]);
+  const [contasReady, setContasReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -102,6 +103,8 @@ const Dashboard = () => {
       } catch (err) {
         setError('Erro ao carregar contas correntes');
         console.error(err);
+      } finally {
+        setContasReady(true);
       }
     };
 
@@ -109,24 +112,26 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
+    if (!contasReady) return;
+
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        // Busca dados do ano para o gráfico
-        const dashboardDataAno = await getDashboardData(anoSelecionado, undefined, contasSelecionadas, 'planos');
-        // Busca detalhamento filtrando mês se houver
         const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
         const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
-        // Despesas no detalhamento: sempre plano de contas (agrupamento via API tipoAgrupamento=planos).
+        // Single request: year charts + month detail + full-year centro captions (agrupadoPorAno).
         const dashboardDataDetalhe = await getDashboardData(anoSelecionado, mesParam, contasSelecionadas, 'planos');
+        const rd = dashboardDataDetalhe.receitasDespesas;
 
-        // Junta os dados: gráfico do ano, detalhamento do mês/ano; keep year breakdown for annual captions
         setDashboardData({
-          ...dashboardDataAno,
-          receitasDespesas: dashboardDataDetalhe.receitasDespesas,
-          receitasDespesasAno:
-            mesParam != null ? dashboardDataAno.receitasDespesas : dashboardDataDetalhe.receitasDespesas,
+          ...dashboardDataDetalhe,
+          receitasDespesas: rd,
+          receitasDespesasAno: {
+            ...rd,
+            agrupadoPor: rd.agrupadoPorAno ?? rd.agrupadoPor,
+            receitasAgrupadoPorCentros: rd.receitasAgrupadoPorCentrosAno ?? rd.receitasAgrupadoPorCentros,
+          },
         });
       } catch (err) {
         setError('Erro ao carregar dados do dashboard');
@@ -137,7 +142,7 @@ const Dashboard = () => {
     };
 
     fetchData();
-  }, [anoSelecionado, mesSelecionado, contasSelecionadas]);
+  }, [anoSelecionado, mesSelecionado, contasSelecionadas, contasReady]);
 
   // Carregar dados de financiamentos para comparativos (inclusive na aba Receitas/Despesas)
   useEffect(() => {
