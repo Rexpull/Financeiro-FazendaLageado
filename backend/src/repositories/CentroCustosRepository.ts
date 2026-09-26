@@ -20,13 +20,16 @@ export class CentroCustosRepository {
         console.log('🔧 Criando tabela CentroCustos...');
         
         // Criar a tabela
+        // Unique per (descricao, tipo, tipoReceitaDespesa) so CUSTEIO and INVESTIMENTO
+        // can share the same label (e.g. "Agricultura", "Corte - Recria").
         await this.db.prepare(`
           CREATE TABLE CentroCustos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            descricao TEXT NOT NULL UNIQUE,
+            descricao TEXT NOT NULL,
             tipo TEXT DEFAULT 'CUSTEIO' CHECK(tipo IN ('CUSTEIO', 'INVESTIMENTO')),
             tipoReceitaDespesa TEXT CHECK(tipoReceitaDespesa IN ('RECEITA', 'DESPESA')),
-            ordem INTEGER
+            ordem INTEGER,
+            UNIQUE(descricao, tipo, tipoReceitaDespesa)
           )
         `).run();
 
