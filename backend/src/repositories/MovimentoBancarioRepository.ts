@@ -10,6 +10,7 @@ import {
 } from '../utils/coerceMonetaryValue';
 import { isMovimentoFinanciamento } from '../utils/isMovimentoFinanciamento';
 import { shouldReuseOfxMovimento } from '../utils/ofxIdentificadorMatch';
+import { reescalarRateio } from '../utils/rateioOfxCorrecao';
 import * as XLSX from 'xlsx';
 
 export class MovimentoBancarioRepository {
@@ -535,6 +536,10 @@ export class MovimentoBancarioRepository {
 				}
 
 				if (movimentoExistente) {
+					// Lookups above return the bare row; load the rateio lists (Resultado + centros)
+					// so the screen keeps showing multi-centro classifications and update() preserves them.
+					movimentoExistente = (await this.getById(movimentoExistente.id!)) ?? movimentoExistente;
+
 					const valorDiverge =
 						Math.abs(Number(movimentoExistente.valor) - mov.valor) > 0.001;
 					const identificadorDiverge =
@@ -546,12 +551,15 @@ export class MovimentoBancarioRepository {
 							`🔧 Corrigindo movimento OFX existente ID ${movimentoExistente.id}:`,
 							{ de: movimentoExistente.valor, para: mov.valor }
 						);
+						const novoValorAbs = Math.abs(mov.valor);
 						await this.update(movimentoExistente.id!, {
 							...movimentoExistente,
 							valor: mov.valor,
 							identificadorOfx: mov.identificadorOfx,
 							numeroDocumento: mov.numeroDocumento ?? mov.identificadorOfx,
 							tipoMovimento: mov.tipoMovimento,
+							resultadoList: reescalarRateio(movimentoExistente.resultadoList, novoValorAbs),
+							centroCustosList: reescalarRateio(movimentoExistente.centroCustosList, novoValorAbs),
 						});
 						movimentoExistente =
 							(await this.getById(movimentoExistente.id!)) ?? movimentoExistente;
