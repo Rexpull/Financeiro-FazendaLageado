@@ -148,3 +148,7 @@ CREATE INDEX idx_resultado_movimento_plano
 
 CREATE UNIQUE INDEX unique_descricao ON planoContas (descricao);
 
+
+CREATE INDEX idx_mcc_movimento ON MovimentoCentroCustos(idMovimentoBancario);
+
+CREATE INDEX idx_pf_financiamento ON parcelaFinanciamento(idFinanciamento, numParcela);
