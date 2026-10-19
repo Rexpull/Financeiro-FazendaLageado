@@ -939,11 +939,16 @@ export class MovimentoBancarioRepository {
 			console.log('ℹ️ Nenhum campo da tabela para atualizar, apenas processando resultadoList');
 		}
 
-		console.log('🧹 Limpando resultados antigos...');
-		await this.resultadoRepo.deleteByMovimento(id);
+		// Only rebuild Resultado when the classification was sent or the plano changed;
+		// a partial PUT (e.g. only historico) must not wipe the existing Resultado rows.
+		const reprocessarResultados = !!temResultadoList || camposAlterados.idPlanoContas !== undefined;
+		if (reprocessarResultados) {
+			console.log('🧹 Limpando resultados antigos...');
+			await this.resultadoRepo.deleteByMovimento(id);
+		}
 
 		// Processar resultados se necessário
-		let resultadoList = movimento.resultadoList;
+		let resultadoList = reprocessarResultados ? movimento.resultadoList : undefined;
 
 		console.log('🔍 Processando resultadoList:', JSON.stringify(resultadoList, null, 2));
 		console.log('🔍 resultadoList existe?', !!resultadoList);
@@ -996,7 +1001,13 @@ export class MovimentoBancarioRepository {
 			console.log('⚠️ Nenhum resultado para processar');
 		}
 
-		// Processar centroCustosList se necessário
+		// Processar centroCustosList se necessário.
+		// Same rule as Resultado: keep existing MCC rows (incl. multi-centro rateio) on a partial PUT.
+		if (!temCentroCustosList && camposAlterados.idCentroCustos === undefined) {
+			console.log('ℹ️ Centros de custos não informados nem alterados: mantendo rateio atual');
+			console.log('✅ Movimento atualizado com sucesso');
+			return;
+		}
 		console.log('🧹 Limpando centros de custos antigos...');
 		await this.movimentoCentroCustosRepo.deleteByMovimento(id);
 

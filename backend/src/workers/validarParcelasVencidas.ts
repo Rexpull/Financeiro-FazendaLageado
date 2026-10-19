@@ -1,35 +1,21 @@
-import { ParcelaFinanciamentoRepository } from '../repositories/ParcelaFinanciamentoRepository';
-
+/**
+ * Cron: marks past-due parcelas (not Liquidado) as Vencido.
+ * Single UPDATE touching only `status`, so it cannot overwrite a liquidação made
+ * while the job runs and stays within D1's per-invocation query limit.
+ * Dates are compared as UTC calendar days (same as the previous per-row version).
+ */
 export async function validarParcelasVencidas(db: D1Database) {
     try {
-        const repository = new ParcelaFinanciamentoRepository(db);
-        
-        // Busca todas as parcelas que não estão liquidadas
-        const { results } = await db.prepare(`
-            SELECT * FROM parcelaFinanciamento 
-            WHERE status != 'Liquidado'
-        `).all();
+        const { meta } = await db.prepare(`
+            UPDATE parcelaFinanciamento
+            SET status = 'Vencido'
+            WHERE status NOT IN ('Liquidado', 'Vencido')
+              AND date(dt_vencimento) < date('now')
+        `).run();
 
-        const parcelas = results as ParcelaFinanciamento[];
-        const dataAtual = new Date();
-        dataAtual.setHours(0, 0, 0, 0);
-
-        // Filtra e atualiza apenas as parcelas vencidas
-        for (const parcela of parcelas) {
-            const dataVencimento = new Date(parcela.dt_vencimento);
-            dataVencimento.setHours(0, 0, 0, 0);
-
-            if (dataVencimento < dataAtual) {
-                await repository.update(parcela.id, {
-                    ...parcela,
-                    status: 'Vencido'
-                });
-            }
-        }
-
-        console.log(`Validação de parcelas vencidas concluída em ${new Date().toISOString()}`);
+        console.log(`Validação de parcelas vencidas concluída em ${new Date().toISOString()}: ${meta.changes} parcela(s) marcada(s) como Vencido`);
     } catch (error) {
         console.error('Erro ao validar parcelas vencidas:', error);
         throw error;
     }
-} 
+}

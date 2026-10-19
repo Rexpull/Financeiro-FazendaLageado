@@ -11,6 +11,7 @@ import { handleAuthRequest as handleAuthRequest } from "./routes/handleAuthReque
 import { handleRequest as handleNotificacaoRequest } from "./routes/handleNotifications";
 import { handleRequest as handleCentroCustosRequest } from "./routes/handleCentroCustos";
 import { handleRequest as handleRelatorioFinanciamentosRequest } from "./routes/handleRelatorioFinanciamentos";
+import scheduler from "./workers/scheduler";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,4 +70,7 @@ export default {
         return new Response("Rota não encontrada", { status: 404, headers: corsHeaders });
     }
   },
+
+  // Cron trigger (wrangler.json "triggers") — marks past-due parcelas as Vencido
+  scheduled: scheduler.scheduled,
 };
