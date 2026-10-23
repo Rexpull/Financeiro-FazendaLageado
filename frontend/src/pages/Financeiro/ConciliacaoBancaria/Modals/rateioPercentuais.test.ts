@@ -8,6 +8,7 @@ import {
 	somarPercentuaisPreenchidos,
 	splitPercentEquallyWithRemainderOnLast,
 } from './rateioPercentuais';
+import { excede100Porcento } from './rateioPercentuais';
 
 describe('isPercentualPreenchido / parsePercentualCampo', () => {
 	it('treats blank, whitespace and 0 as not filled', () => {
@@ -92,5 +93,20 @@ describe('aplicarPercentuaisEmValoresMonetarios', () => {
 		const rateios = [{ valor: 0 }, { valor: 0 }, { valor: 0 }];
 		const out = aplicarPercentuaisEmValoresMonetarios(rateios, [33.33, 33.33, 33.34], 1000);
 		expect(out.reduce((a, r) => a + r.valor, 0)).toBeCloseTo(1000, 2);
+	});
+});
+
+describe('excede100Porcento', () => {
+	it('blocks a value that pushes the filled total above 100%', () => {
+		expect(excede100Porcento({ '37': '60', '42': '30' }, '43', '11')).toBe(true);
+	});
+
+	it('allows reaching exactly 100%, including 2-decimal splits', () => {
+		expect(excede100Porcento({ '37': '60', '42': '30' }, '43', '10')).toBe(false);
+		expect(excede100Porcento({ '37': '33.33', '42': '33.33' }, '43', '33,34')).toBe(false);
+	});
+
+	it('replaces the edited field instead of adding to it', () => {
+		expect(excede100Porcento({ '37': '90', '42': '10' }, '37', '80')).toBe(false);
 	});
 });

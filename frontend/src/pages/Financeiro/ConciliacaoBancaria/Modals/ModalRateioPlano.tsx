@@ -11,6 +11,7 @@ import {
 	parsePercentuaisLinha,
 	splitPercentEquallyWithRemainderOnLast,
 	aplicarPercentuaisEmValoresMonetarios,
+	TOLERANCIA_100,
 } from './rateioPercentuais';
 
 interface Rateio {
@@ -208,7 +209,7 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 			return;
 		}
 		const soma = nums.reduce((a, b) => a + b, 0);
-		if (Math.abs(soma - 100) > 0.02) {
+		if (Math.abs(soma - 100) > TOLERANCIA_100) {
 			toast.error(`A soma dos percentuais deve ser 100% (atual: ${soma.toFixed(2)}%).`);
 			return;
 		}
@@ -242,10 +243,10 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 	};
 
 	const podeConfirmar = isModoMultiplos
-		? rateios.length > 0 && Math.abs(porcentagemTotalRateada - 100) < 0.02
+		? rateios.length > 0 && Math.abs(porcentagemTotalRateada - 100) <= TOLERANCIA_100
 		: rateios.length > 0 &&
-			Math.abs(totalRateado - valorTotalAbsoluto) < 0.02 &&
-			Math.abs(porcentagemTotalRateada - 100) < 0.05;
+			Math.abs(totalRateado - valorTotalAbsoluto) < 0.005 &&
+			porcentagemTotalRateada <= 100 + TOLERANCIA_100;
 
 	return (
 		<Modal

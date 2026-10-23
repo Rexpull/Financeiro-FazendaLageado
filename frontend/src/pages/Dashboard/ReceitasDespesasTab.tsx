@@ -816,6 +816,13 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                           pct: totalBasePct > 0 ? (Math.abs(Number(item.valor)) / totalBasePct) * 100 : 0,
                           conciliado: !!item.conciliado,
                           tipoMovimento: item.tipoMovimento,
+                          // Same centro name exists in Custeio and Investimento: show which one
+                          subtipo:
+                            item.subtipoDespesa === 'investimento'
+                              ? 'Investimento'
+                              : item.subtipoDespesa === 'custeio'
+                                ? 'Custeio'
+                                : '',
                         }))
                         .sort((a, b) => b.valorAbs - a.valorAbs);
                       const concFoot = ordenado.filter((r) => r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
@@ -854,10 +861,10 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                               </TableHead>
                               <TableBody>
                                 {ordenado.map((item, idx) => (
-                                  <TableRow key={`desp-${idx}-${item.descricao}`} hover>
+                                  <TableRow key={`desp-${idx}-${item.subtipo}-${item.descricao}`} hover>
                                     <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{idx + 1}</TableCell>
                                     <TableCell
-                                      title={item.descricao}
+                                      title={item.subtipo ? `${item.descricao} (${item.subtipo})` : item.descricao}
                                       sx={{
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
@@ -866,6 +873,11 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                       }}
                                     >
                                       {item.descricao}
+                                      {item.subtipo && (
+                                        <Box component="span" sx={{ ml: 0.75, color: 'text.secondary', fontSize: '0.68rem' }}>
+                                          · {item.subtipo}
+                                        </Box>
+                                      )}
                                     </TableCell>
                                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                                       {item.pct.toFixed(1)}%

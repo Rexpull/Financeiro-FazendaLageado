@@ -64,6 +64,14 @@ export function somarPercentuaisPreenchidos(draft: Record<string, string>): numb
 	}, 0);
 }
 
+/** Max float drift tolerated when comparing a % sum with 100 (values are typed with 2 decimals). */
+export const TOLERANCIA_100 = 0.001;
+
+/** True when setting `draft[id] = raw` would push the filled % total above 100%. */
+export function excede100Porcento(draft: Record<string, string>, id: string, raw: string): boolean {
+	return somarPercentuaisPreenchidos({ ...draft, [id]: raw }) > 100 + TOLERANCIA_100;
+}
+
 /**
  * Equal-split only among keys that already have a filled %.
  * Blank rows stay untouched (and stay out of rateio).

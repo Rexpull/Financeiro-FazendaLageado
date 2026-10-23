@@ -12,6 +12,8 @@ import {
 	isPercentualPreenchido,
 	rateiosCentrosFromDraft,
 	somarPercentuaisPreenchidos,
+	excede100Porcento,
+	TOLERANCIA_100,
 } from './rateioPercentuais';
 
 interface RateioCentro {
@@ -82,7 +84,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 
 	const porcentagemTotalRateada = somarPercentuaisPreenchidos(draftPct);
 	const filledCount = Object.values(draftPct).filter(isPercentualPreenchido).length;
-	const podeConfirmar = filledCount > 0 && Math.abs(porcentagemTotalRateada - 100) < 0.02;
+	const podeConfirmar = filledCount > 0 && Math.abs(porcentagemTotalRateada - 100) <= TOLERANCIA_100;
 
 	const totalRateadoMonetario = useMemo(() => {
 		if (isModoMultiplos || valorTotalAbsoluto <= 0) return 0;
@@ -142,6 +144,11 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		const cleanValue = value.replace(/[^0-9.,]/g, '');
 		const numValue = parseFloat(cleanValue.replace(',', '.'));
 		if (cleanValue !== '' && Number.isFinite(numValue) && numValue > 100) {
+			return;
+		}
+		if (excede100Porcento(draftPct, String(idCentro), cleanValue)) {
+			const restante = Math.max(0, 100 - somarPercentuaisPreenchidos({ ...draftPct, [String(idCentro)]: '' }));
+			toast.warning(`O rateio não pode passar de 100%. Disponível para este centro: ${restante.toFixed(2)}%.`);
 			return;
 		}
 		setDraftPct((prev) => ({ ...prev, [String(idCentro)]: cleanValue }));

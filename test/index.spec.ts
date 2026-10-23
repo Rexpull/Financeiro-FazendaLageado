@@ -25,7 +25,8 @@ async function seed() {
 	await db
 		.prepare(
 			`INSERT INTO planoContas (id, nivel, hierarquia, descricao, tipo) VALUES
-			 (300, 3, '002.001.001', 'Pessoal - Planos de saúde', 'custeio')`,
+			 (300, 3, '002.001.001', 'Pessoal - Planos de saúde', 'custeio'),
+			 (301, 3, '002.001.002', 'Manutenção de casas e dependências', 'custeio')`,
 		)
 		.run();
 	await db
@@ -156,6 +157,34 @@ describe('OFX batch import keeps rateio (multi centro de custos)', () => {
 		expect(mov.historico).toBe('UNIMED - editado');
 		expect(mov.resultadoList).toHaveLength(1);
 		expect(mov.centroCustosList).toHaveLength(3);
+	});
+
+	async function put(id: number, body: unknown) {
+		const res = await SELF.fetch(`${BASE}/api/movBancario/${id}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		});
+		expect(res.status).toBe(200);
+		return (await res.json()) as { idPlanoContas: number | null; resultadoList: Array<{ idPlanoContas: number }> };
+	}
+
+	it('reclassifying to another single plano (modal payload) moves Resultado too', async () => {
+		const { id } = await importarComRateio();
+		// ConciliarPlano sends resultadoList [] for a single plano
+		const mov = await put(id, { idPlanoContas: 301, resultadoList: [] });
+		expect(mov.idPlanoContas).toBe(301);
+		expect(mov.resultadoList.map((r) => r.idPlanoContas)).toEqual([301]);
+	});
+
+	it('stale resultadoList never leaves MovimentoBancario and Resultado divergent', async () => {
+		const { id } = await importarComRateio();
+		// Old client behaviour: new idPlanoContas + previous resultadoList [300]
+		const mov = await put(id, {
+			idPlanoContas: 301,
+			resultadoList: [{ idPlanoContas: 300, valor: 4779.85, tipo: 'D', idContaCorrente: 24, dtMovimento: '2026-10-05T00:00:00.000Z' }],
+		});
+		expect(mov.resultadoList.map((r) => r.idPlanoContas)).toEqual([mov.idPlanoContas]);
 	});
 
 	it('valor correction on re-import rescales rateio instead of deleting it', async () => {

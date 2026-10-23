@@ -344,6 +344,12 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 				idCentroCustos: data.idCentroCustos ?? null,
 			};
 
+			// Use the plan split chosen in the modal ([] = single plano via idPlanoContas);
+			// never resend the movement's previous resultadoList, or the old plano is recreated.
+			if (data.resultadoList !== undefined) {
+				movimentoAtualizado.resultadoList = data.resultadoList;
+			}
+
 			// Incluir centroCustosList se presente
 			if (data.centroCustosList !== undefined) {
 				movimentoAtualizado.centroCustosList = data.centroCustosList;
@@ -497,6 +503,10 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 							idUsuario: movimento.idUsuario || undefined,
 							idCentroCustos: data.idCentroCustos ?? null,
 						};
+						// Single plano chosen for the batch: drop each movement's previous plan split
+						if (data.idPlanoContas) {
+							movimentoAtualizado.resultadoList = [];
+						}
 						if (data.centroCustosList !== undefined) {
 							movimentoAtualizado.centroCustosList = data.centroCustosList;
 						}

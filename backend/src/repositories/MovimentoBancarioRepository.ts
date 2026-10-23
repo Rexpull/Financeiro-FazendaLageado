@@ -989,9 +989,12 @@ export class MovimentoBancarioRepository {
 			// Sync mb.idPlanoContas with the Resultado to keep them consistent.
 			// Single Resultado: set mb.idPlanoContas to that plan. Multiple (rateio): clear mb.idPlanoContas.
 			const syncedPlanoContas = resultadoList.length === 1 ? resultadoList[0].idPlanoContas : null;
-			const syncedPlanoChanged = syncedPlanoContas !== (movimentoAtual.idPlanoContas ?? null);
+			// Compare with the value persisted by the UPDATE above, not the pre-update one
+			const planoGravado =
+				camposAlterados.idPlanoContas !== undefined ? camposAlterados.idPlanoContas : movimentoAtual.idPlanoContas;
+			const syncedPlanoChanged = syncedPlanoContas !== (planoGravado ?? null);
 			if (syncedPlanoChanged) {
-				console.log(`🔄 Sincronizando mb.idPlanoContas: ${movimentoAtual.idPlanoContas} → ${syncedPlanoContas}`);
+				console.log(`🔄 Sincronizando mb.idPlanoContas: ${planoGravado} → ${syncedPlanoContas}`);
 				await this.db
 					.prepare(`UPDATE MovimentoBancario SET idPlanoContas = ?, atualizado_em = datetime('now') WHERE id = ?`)
 					.bind(syncedPlanoContas, id)
