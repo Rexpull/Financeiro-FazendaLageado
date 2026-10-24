@@ -74,12 +74,14 @@ export class AuthController {
     };
   }
 
-  // 🔹 Verifica sessão baseada no token (JWT válido + token ainda registrado + usuário ativo)
+  // 🔹 Verifica sessão (JWT válido + usuário existente e ativo) — mesma regra do authGuard,
+  // para que um login em outro aparelho não derrube a sessão deste ao recarregar a página.
   async verifySession(token: string, env: { JWT_SECRET?: string }): Promise<Omit<UserContext, "senha" | "token"> | null> {
     const payload = await verificarToken(token, env.JWT_SECRET ?? "");
-    if (!payload) return null;
+    const id = Number(payload?.id);
+    if (!payload || !Number.isInteger(id) || id <= 0) return null;
 
-    const user = await this.sessionRepository.getByToken(token);
+    const user = await this.sessionRepository.getById(id);
     if (!user || !usuarioAtivo(user.ativo)) return null;
 
     const { senha: _senha, token: _token, ...publico } = user;

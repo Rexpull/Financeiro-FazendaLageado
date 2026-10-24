@@ -26,8 +26,8 @@ export class MovimentoCentroCustosRepository {
 		const { results } = await this.db
 			.prepare(`SELECT * FROM MovimentoCentroCustos WHERE idMovimentoBancario = ?`)
 			.bind(idMovimentoBancario)
-			.all();
-		return results as MovimentoCentroCustos[];
+			.all<MovimentoCentroCustos>();
+		return results;
 	}
 
 	async buscarPorMovimentos(idsMovimentoBancario: number[]): Promise<Map<number, MovimentoCentroCustos[]>> {

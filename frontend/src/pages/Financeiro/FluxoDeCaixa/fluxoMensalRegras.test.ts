@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { montarFluxoMensal } from './fluxoMensalRegras';
+import { anosFiltroFluxo, montarFluxoMensal } from './fluxoMensalRegras';
+
+describe('anosFiltroFluxo', () => {
+	it('goes from 2024 to next year (2027 reachable in 2026)', () => {
+		expect(anosFiltroFluxo(new Date(2026, 9, 24))).toEqual(['2024', '2025', '2026', '2027']);
+		expect(anosFiltroFluxo(new Date(2030, 0, 1)).at(-1)).toBe('2031');
+	});
+});
 
 const vazio = () => ({ receitas: {}, despesas: {}, financiamentos: { pagos: {}, contratados: {} } });
 

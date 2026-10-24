@@ -43,35 +43,79 @@ export async function verificarToken(token: string, secret: string): Promise<JWT
 	}
 }
 
-let avisoSemSegredoEmitido = false;
+export const MSG_SEM_CONFIG_AUTH = "Servidor sem configuração de autenticação";
+export const MSG_FALHA_VALIDAR_SESSAO = "Não foi possível validar a sessão. Tente novamente.";
+
+/** How long (per isolate) the "user still exists and is active" answer is reused: a deactivation takes effect within this window. */
+export const CACHE_USUARIO_TTL_MS = 60_000;
+
+const cacheUsuarioAtivo = new Map<number, { ativo: boolean; ate: number }>();
+
+export function limparCacheUsuarios(): void {
+	cacheUsuarioAtivo.clear();
+}
+
+/** True when usuario `id` still exists and is active. Answer cached per isolate for CACHE_USUARIO_TTL_MS. */
+export async function usuarioContinuaAtivo(db: D1Database, id: number, agora = Date.now()): Promise<boolean> {
+	const cache = cacheUsuarioAtivo.get(id);
+	if (cache && cache.ate > agora) return cache.ativo;
+
+	const row = await db.prepare("SELECT ativo FROM usuario WHERE id = ?").bind(id).first<{ ativo: unknown }>();
+	const ativo = row !== null && usuarioAtivo(row.ativo);
+	cacheUsuarioAtivo.set(id, { ativo, ate: agora + CACHE_USUARIO_TTL_MS });
+	return ativo;
+}
+
+function respostaJson(status: number, error: string): Response {
+	return new Response(JSON.stringify({ error }), {
+		status,
+		headers: { ...corsHeaders, "Content-Type": "application/json" },
+	});
+}
+
+export type EnvAuth = { JWT_SECRET?: string; AUTH_DESATIVADA_TESTES?: string; DB?: D1Database };
+
+let avisoAuthDesativadaEmitido = false;
 
 /**
- * Auth guard for the worker's fetch handler. Returns a 401 Response when the request must be
+ * Auth guard for the worker's fetch handler. Returns the error Response when the request must be
  * rejected, or null when it may proceed.
  *
- * Enforced only when env.JWT_SECRET is set (production secret). Without it (vitest workers pool,
- * local dev without .dev.vars) the guard is skipped and a warning is logged once.
+ * A request passes when it carries a valid HS256 JWT whose user (payload.id) still exists and is
+ * active. The token does NOT have to match usuario.token, so several devices can stay signed in.
+ *
+ * Fail-closed: without env.JWT_SECRET (or the DB binding) every protected route answers 503, unless
+ * env.AUTH_DESATIVADA_TESTES === '1' (binding set only by the vitest workers pool).
  */
-export async function exigeAutenticacao(req: Request, env: { JWT_SECRET?: string } | undefined): Promise<Response | null> {
+export async function exigeAutenticacao(req: Request, env: EnvAuth | undefined): Promise<Response | null> {
 	const { pathname } = new URL(req.url);
 	if (isRotaPublica(req.method, pathname)) return null;
 
 	const secret = env?.JWT_SECRET;
-	if (!secret) {
-		if (!avisoSemSegredoEmitido) {
-			avisoSemSegredoEmitido = true;
-			console.warn("⚠️ JWT_SECRET não configurado: autenticação das rotas /api está DESATIVADA.");
+	if (!secret || !env?.DB) {
+		if (!secret && env?.AUTH_DESATIVADA_TESTES === "1") {
+			if (!avisoAuthDesativadaEmitido) {
+				avisoAuthDesativadaEmitido = true;
+				console.warn("⚠️ AUTH_DESATIVADA_TESTES=1 e sem JWT_SECRET: autenticação das rotas /api está DESATIVADA.");
+			}
+			return null;
 		}
-		return null;
+		console.error("❌ JWT_SECRET ou binding DB ausente: rotas /api bloqueadas.");
+		return respostaJson(503, MSG_SEM_CONFIG_AUTH);
 	}
 
 	const token = extrairBearer(req.headers.get("Authorization"));
-	if (token && (await verificarToken(token, secret))) return null;
+	const payload = token ? await verificarToken(token, secret) : null;
+	const idUsuario = Number(payload?.id);
+	if (!payload || !Number.isInteger(idUsuario) || idUsuario <= 0) return respostaJson(401, MSG_SESSAO_INVALIDA);
 
-	return new Response(JSON.stringify({ error: MSG_SESSAO_INVALIDA }), {
-		status: 401,
-		headers: { ...corsHeaders, "Content-Type": "application/json" },
-	});
+	try {
+		if (await usuarioContinuaAtivo(env.DB, idUsuario)) return null;
+	} catch (error) {
+		console.error("❌ Erro ao validar usuário da sessão:", error);
+		return respostaJson(503, MSG_FALHA_VALIDAR_SESSAO);
+	}
+	return respostaJson(401, MSG_SESSAO_INVALIDA);
 }
 
 /** `ativo` comes from SQLite as 0/1 (BOOLEAN affinity); tolerate booleans/strings too. Missing = active (column default 1). */

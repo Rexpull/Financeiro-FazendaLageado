@@ -426,7 +426,7 @@ const ListConta: React.FC = () => {
         onConfirm={handleDeleteConfirm}
         title="Atenção"
         type="warn"
-        message="Tem certeza que deseja excluir esta pessoa?"
+        message={`Excluir a pessoa "${pessoas.find((p) => p.id === deletePessoaId)?.nome ?? ""}"? Esta ação não pode ser desfeita.`}
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />

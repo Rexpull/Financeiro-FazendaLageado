@@ -3,23 +3,22 @@ import { FluxoCaixaMes, FluxoCaixaResponse } from '../../../backend/src/models/F
 import { MovimentoDetalhado } from '../../../backend/src/models/MovimentoDetalhado';
 const API_URL = (import.meta as any).env.VITE_API_URL;
 
-export const buscarFluxoCaixa = async (ano: string, contas: string[], tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<FluxoCaixaResponse> => {
+/** The Fluxo screen only uses 'centros'; 'planos' is a legacy backend layout. */
+type TipoAgrupamento = 'planos' | 'centros';
 
-	console.log('ano:', ano);
-	console.log('contas:', contas);
-	console.log('tipoAgrupamento:', tipoAgrupamento);
+async function erroDaResposta(res: Response, prefixo: string): Promise<Error> {
+	const errorData = (await res.json().catch(() => ({ error: 'Erro desconhecido' }))) as { error?: string; details?: string };
+	console.error('Erro na resposta do servidor:', errorData);
+	return new Error(`${prefixo}: ${errorData.details || errorData.error || res.statusText}`);
+}
+
+export const buscarFluxoCaixa = async (ano: string, contas: string[], tipoAgrupamento: TipoAgrupamento = 'centros'): Promise<FluxoCaixaResponse> => {
 	const res = await fetch(`${API_URL}/api/fluxoCaixa`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ ano, contas, tipoAgrupamento }),
 	});
-	
-	if (!res.ok) {
-		const errorData = await res.json().catch(() => ({ error: 'Erro desconhecido' })) as { error?: string; details?: string };
-		console.error('Erro na resposta do servidor:', errorData);
-		throw new Error(`Erro ao buscar fluxo de caixa: ${errorData.details || errorData.error || res.statusText}`);
-	}
-	
+	if (!res.ok) throw await erroDaResposta(res, 'Erro ao buscar fluxo de caixa');
 	return res.json();
 };
 
@@ -28,7 +27,7 @@ export const buscarDetalhamento = async (
 	mes: number,
 	tipo: string,
 	ano: string,
-	tipoAgrupamento: 'planos' | 'centros' = 'planos',
+	tipoAgrupamento: TipoAgrupamento = 'centros',
 	subtipo?: 'pagos' | 'contratados',
 	contas: string[] = [],
 ): Promise<MovimentoDetalhado[] | any[]> => {
@@ -44,22 +43,18 @@ export const buscarDetalhamento = async (
 		throw new Error(`Erro ao buscar detalhamento (${res.status})`);
 	}
 
-	const data = await res.json() as any[];
-	console.log('Retorno buscarDetalhamento:', data);
-	return data;
+	return (await res.json()) as any[];
 };
 
-export const buscarFluxoCaixaAnoAnterior = async (ano: string, contas: string[], tipoAgrupamento: 'planos' | 'centros' = 'planos'): Promise<FluxoCaixaMes[]> => {
+/** Same engine as buscarFluxoCaixa, for the previous year (Gráfico comparison). */
+export const buscarFluxoCaixaAnoAnterior = async (ano: string, contas: string[], tipoAgrupamento: TipoAgrupamento = 'centros'): Promise<FluxoCaixaMes[]> => {
 	const res = await fetch(`${API_URL}/api/fluxoCaixa/anoAnterior`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ ano, contas, tipoAgrupamento }),
 	});
-	if (!res.ok) {
-		const errorData = await res.json().catch(() => ({ error: 'Erro desconhecido' })) as { error?: string; details?: string };
-		throw new Error(`Erro ao buscar fluxo de caixa do ano anterior: ${errorData.details || errorData.error || res.statusText}`);
-	}
-	const response = await res.json();
-	// Compatibilidade: se retornar objeto com dadosMensais, usar isso; senão, usar diretamente
-	return response.dadosMensais || response;
+	if (!res.ok) throw await erroDaResposta(res, 'Erro ao buscar fluxo de caixa do ano anterior');
+	const response = (await res.json()) as FluxoCaixaResponse | FluxoCaixaMes[];
+	// Compatibility: { dadosMensais } or the array itself
+	return Array.isArray(response) ? response : response.dadosMensais;
 };

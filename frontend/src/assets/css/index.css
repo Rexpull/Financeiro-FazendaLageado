@@ -361,12 +361,17 @@ body:has(.arvorePlanos) {
     overflow-x: hidden !important;
 }
 
-/* Garantir que o container principal não cause overflow */
+/* Garantir que o container principal não cause overflow (o desconto da sidebar só existe no desktop) */
 .plano-contas-container {
     overflow-x: hidden !important;
-    max-width: calc(100vw - 330px) !important;
+    max-width: 100% !important;
     width: 100% !important;
     box-sizing: border-box !important;
+}
+@media (min-width: 1024px) {
+    .plano-contas-container {
+        max-width: calc(100vw - 330px) !important;
+    }
 }
 
 /* Forçar todos os elementos filhos a respeitarem os limites */

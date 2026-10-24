@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import MainLayout from "./MainLayout"; // 🔹 Importa o layout principal
 import Dashboard from "./src/pages/Dashboard";
 import Parametros from "./src/pages/Parametros";
@@ -19,7 +19,6 @@ import Login from "./src/pages/Login/index";
 import ProtectedRoute from "./src/pages/Login/ProtectedRoute";
 import { AuthProvider } from "./src/pages/Login/AuthContext";
 
-import LoadingScreen from "./src/components/LoadingScreen";
 
 const AppRoutes = React.memo(() => {
   return (
@@ -34,26 +33,9 @@ const AppRoutes = React.memo(() => {
 });
 
 const MainLayoutWithLoading = React.memo(() => {
-  const [isLoading, setIsLoading] = useState(false);
-  const location = useLocation();
-
-  const handleNavigation = useCallback(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 300); // Reduzido de 500ms para 300ms
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const cleanup = handleNavigation();
-    return cleanup;
-  }, [location.pathname]); // Mudança específica para pathname em vez de location completo
-
+  // No artificial loading overlay between pages: each screen shows its own loading state
   return (
     <>
-      {isLoading && <LoadingScreen />} 
       <Routes>
         <Route path="/login" element={<Login />} />
 

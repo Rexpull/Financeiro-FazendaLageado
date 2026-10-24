@@ -123,6 +123,7 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
   const [detalhe, setDetalhe] = useState<{ tipo: TipoDetalhe; data: string } | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [excluindo, setExcluindo] = useState<CaixaLancamento | null>(null);
+  const [excluindoStatus, setExcluindoStatus] = useState(false);
   const requisicao = useRef(0);
 
   const carregar = useCallback(async () => {
@@ -200,7 +201,7 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
       : saldoStatus === "erro"
         ? "Não foi possível salvar"
         : saldoAlterado
-          ? "Pressione Enter para salvar"
+          ? "Salva ao pressionar Enter ou sair do campo"
           : dados.saldoInicial === null
             ? "Não informado"
             : `Salvo${dados.saldoInicialAtualizadoEm ? ` em ${formatarAtualizadoEm(dados.saldoInicialAtualizadoEm)}` : ""}`;
@@ -216,21 +217,24 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
 
   const { totais, minimo } = dados;
   const nBoletos = dados.lancamentos.filter((l) => l.tipo === "BOLETO").length;
-  const menorNegativo = minimo.saldo.valor < 0;
+  // Without the saldo inicial the balances start at zero: show the cash need neutrally, not as an alarm
+  const semSaldoInicial = dados.saldoInicial === null;
+  const menorNegativo = !semSaldoInicial && minimo.saldo.valor < 0;
+  const corDestaque = semSaldoInicial ? "info" : menorNegativo ? "error" : "success";
 
   const quadros = [
     { titulo: "Total de boletos", valor: totais.boletos, cor: "error.main", nota: `${nBoletos} boleto(s) no mês` },
     { titulo: "Total de financiamentos", valor: totais.financiamento, cor: "error.main", nota: `${dados.parcelas.length} parcela(s) com vencimento no mês` },
     {
-      titulo: "Saldo no fim do mês",
+      titulo: "Saldo projetado (sem entradas)",
       valor: totais.saldo,
-      cor: totais.saldo < 0 ? "error.main" : "text.primary",
-      nota: "Saldo inicial − boletos − financiamentos",
+      cor: totais.saldo < 0 && !semSaldoInicial ? "error.main" : "text.primary",
+      nota: "No fim do mês: saldo inicial − boletos − financiamentos",
     },
     {
       titulo: "Saldo final com previsões",
       valor: totais.saldoFinal,
-      cor: totais.saldoFinal < 0 ? "error.main" : "text.primary",
+      cor: totais.saldoFinal < 0 && !semSaldoInicial ? "error.main" : "text.primary",
       nota: `Entradas ${formatCurrency(totais.previsaoC)} · saídas ${formatCurrency(totais.previsaoD)}`,
     },
   ];
@@ -238,7 +242,8 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
   const abrirNovo = (tipo: TipoLancamentoCaixa, data = dataPadrao) => setForm({ tipo, lancamento: null, data });
 
   const confirmarExclusao = async () => {
-    if (!excluindo) return;
+    if (!excluindo || excluindoStatus) return;
+    setExcluindoStatus(true);
     try {
       await excluirLancamentoCaixa(excluindo.id);
       toast.success(excluindo.tipo === "BOLETO" ? "Boleto excluído" : "Previsão excluída");
@@ -246,6 +251,8 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
       await carregar();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+    } finally {
+      setExcluindoStatus(false);
     }
   };
 
@@ -318,32 +325,55 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
             ...CARD_SX,
             gridColumn: { sm: "1 / -1", lg: "auto" },
             border: "2px solid",
-            borderColor: menorNegativo ? "error.main" : "success.main",
-            bgcolor: alpha(menorNegativo ? theme.palette.error.main : theme.palette.success.main, 0.06),
+            borderColor: `${corDestaque}.main`,
+            bgcolor: alpha(theme.palette[corDestaque].main, 0.06),
           })}
         >
-          <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 700 }}>
-            Menor saldo do mês
-          </Typography>
-          <Typography variant="h4" fontWeight="bold" color={menorNegativo ? "error.main" : "success.dark"} sx={{ my: 0.25, ...NUMERO_SX }}>
-            {formatCurrency(minimo.saldo.valor)}
-          </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            em {dataBR(minimo.saldo.data)} ({diaSemana(minimo.saldo.data)})
-          </Typography>
-          <Typography variant="caption" color={menorNegativo ? "error.main" : "text.secondary"} sx={{ mt: 0.5, lineHeight: 1.4 }}>
-            {menorNegativo
-              ? `Faltam ${formatCurrency(minimo.saldo.aporteNecessario)} para honrar os compromissos.`
-              : "Compromissos cobertos pelo saldo inicial."}{" "}
-            Caixa mínimo necessário no início do mês: <b>{formatCurrency(minimo.saldo.caixaNecessario)}</b>.
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }}>
-            Com previsões:{" "}
-            <Box component="span" sx={{ color: minimo.saldoFinal.valor < 0 ? "error.main" : "inherit", fontWeight: 600 }}>
-              {formatCurrency(minimo.saldoFinal.valor)}
-            </Box>{" "}
-            em {rotuloDia(minimo.saldoFinal.data)}
-          </Typography>
+          {semSaldoInicial ? (
+            <>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 700 }}>
+                Necessidade de caixa no mês
+              </Typography>
+              <Typography variant="h4" fontWeight="bold" color="text.primary" sx={{ my: 0.25, ...NUMERO_SX }}>
+                {formatCurrency(minimo.saldo.caixaNecessario)}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                saídas acumuladas até {rotuloDia(minimo.saldo.data)} ({diaSemana(minimo.saldo.data)})
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.4 }}>
+                Valor que precisa estar no caixa no início do mês para pagar os boletos e financiamentos.
+                Informe o saldo inicial acima para ver se o caixa cobre esses compromissos.
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+                Com previsões: <b>{formatCurrency(minimo.saldoFinal.caixaNecessario)}</b> até {rotuloDia(minimo.saldoFinal.data)} ({diaSemana(minimo.saldoFinal.data)})
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 700 }}>
+                Menor saldo do mês
+              </Typography>
+              <Typography variant="h4" fontWeight="bold" color={menorNegativo ? "error.main" : "success.dark"} sx={{ my: 0.25, ...NUMERO_SX }}>
+                {formatCurrency(minimo.saldo.valor)}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                em {rotuloDia(minimo.saldo.data)} ({diaSemana(minimo.saldo.data)})
+              </Typography>
+              <Typography variant="caption" color={menorNegativo ? "error.main" : "text.secondary"} sx={{ mt: 0.5, lineHeight: 1.4 }}>
+                {menorNegativo
+                  ? `Faltam ${formatCurrency(minimo.saldo.aporteNecessario)} para honrar os compromissos.`
+                  : "Compromissos cobertos pelo saldo inicial."}{" "}
+                Caixa mínimo necessário no início do mês: <b>{formatCurrency(minimo.saldo.caixaNecessario)}</b>.
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+                Com previsões:{" "}
+                <Box component="span" sx={{ color: minimo.saldoFinal.valor < 0 ? "error.main" : "inherit", fontWeight: 600 }}>
+                  {formatCurrency(minimo.saldoFinal.valor)}
+                </Box>{" "}
+                em {rotuloDia(minimo.saldoFinal.data)} ({diaSemana(minimo.saldoFinal.data)})
+              </Typography>
+            </>
+          )}
         </Paper>
 
         {quadros.map((q) => (
@@ -367,7 +397,13 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
         </Alert>
       )}
 
-      <TabelaDias dados={dados} hoje={hoje} carregando={carregando} onAbrir={(tipo, data) => setDetalhe({ tipo, data })} />
+      <TabelaDias
+        dados={dados}
+        hoje={hoje}
+        carregando={carregando}
+        semSaldoInicial={semSaldoInicial}
+        onAbrir={(tipo, data) => setDetalhe({ tipo, data })}
+      />
 
       {detalhe && (
         <DetalheDiaDialog
@@ -395,7 +431,7 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
         />
       )}
 
-      <Dialog open={!!excluindo} onClose={() => setExcluindo(null)} maxWidth="xs" fullWidth>
+      <Dialog open={!!excluindo} onClose={excluindoStatus ? undefined : () => setExcluindo(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Excluir {excluindo?.tipo === "BOLETO" ? "boleto" : "previsão"}?</DialogTitle>
         <DialogContent>
           {excluindo && (
@@ -405,9 +441,17 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setExcluindo(null)}>Cancelar</Button>
-          <Button color="error" variant="contained" onClick={confirmarExclusao}>
-            Excluir
+          <Button onClick={() => setExcluindo(null)} disabled={excluindoStatus}>
+            Cancelar
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={confirmarExclusao}
+            disabled={excluindoStatus}
+            startIcon={excluindoStatus ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            {excluindoStatus ? "Excluindo…" : "Excluir"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -421,10 +465,19 @@ const TabelaDias: React.FC<{
   dados: CaixaMes;
   hoje: string;
   carregando: boolean;
+  semSaldoInicial: boolean;
   onAbrir: (tipo: TipoDetalhe, data: string) => void;
-}> = ({ dados, hoje, carregando, onAbrir }) => {
-  const corSaldo = (v: number, mudo: boolean) => (v < 0 ? "error.main" : mudo ? "text.disabled" : "text.primary");
+}> = ({ dados, hoje, carregando, semSaldoInicial, onAbrir }) => {
+  // Without the saldo inicial the balances start at zero: negatives are not an alarm yet
+  const corSaldo = (v: number, mudo: boolean) => (v < 0 && !semSaldoInicial ? "error.main" : mudo ? "text.disabled" : "text.primary");
   const rodape = (cor = "text.primary") => ({ fontWeight: 700, color: cor, fontSize: "0.875rem", bgcolor: "grey.50", ...NUMERO_SX });
+  // The Data column stays visible while the table scrolls sideways on small screens (min width 760px)
+  const colunaFixa = { position: "sticky", left: 0 } as const;
+  const notaFimDoMes = (
+    <Box component="span" sx={{ display: "block", fontSize: "0.7rem", fontWeight: 400, color: "text.secondary" }}>
+      no fim do mês
+    </Box>
+  );
 
   const celulaClicavel = (titulo: string, onClick: () => void) => ({
     role: "button",
@@ -449,7 +502,7 @@ const TabelaDias: React.FC<{
     { rotulo: "Boletos", dica: "Boletos a pagar com vencimento no dia. Clique para ver, incluir ou editar." },
     { rotulo: "Financiamento", dica: "Parcelas de financiamento com vencimento no dia (todos os status)." },
     { rotulo: "Saldo", dica: "Saldo inicial − boletos − financiamentos, acumulado até o dia." },
-    { rotulo: "Previsão C/D", dica: "Previsões de entrada (C) e saída (D) ainda não confirmadas. Clique para ver, incluir ou editar." },
+    { rotulo: "Previsões (entradas − saídas)", dica: "Previsões de entrada (C) menos previsões de saída (D) ainda não confirmadas. Clique para ver, incluir ou editar." },
     { rotulo: "Saldo final", dica: "Saldo + previsões de entrada − previsões de saída, acumulado até o dia." },
   ];
 
@@ -461,7 +514,11 @@ const TabelaDias: React.FC<{
           <TableHead>
             <TableRow>
               {cabecalho.map((c, i) => (
-                <TableCell key={c.rotulo} align={i === 0 ? "left" : "right"} sx={{ fontWeight: 700, bgcolor: "grey.100", whiteSpace: "nowrap" }}>
+                <TableCell
+                  key={c.rotulo}
+                  align={i === 0 ? "left" : "right"}
+                  sx={{ fontWeight: 700, bgcolor: "grey.100", whiteSpace: "nowrap", ...(i === 0 ? { ...colunaFixa, zIndex: 3 } : {}) }}
+                >
                   {c.dica ? (
                     <Tooltip title={c.dica} arrow>
                       <span>{c.rotulo}</span>
@@ -486,7 +543,18 @@ const TabelaDias: React.FC<{
                     ...(ehHoje ? { bgcolor: alpha(t.palette.primary.main, 0.07), boxShadow: `inset 3px 0 0 ${t.palette.primary.main}` } : {}),
                   })}
                 >
-                  <TableCell sx={{ whiteSpace: "nowrap", color: corMov }}>
+                  <TableCell
+                    sx={(t) => ({
+                      whiteSpace: "nowrap",
+                      color: corMov,
+                      ...colunaFixa,
+                      zIndex: 1,
+                      // Opaque background so the cells scrolled underneath don't show through
+                      background: ehHoje
+                        ? `linear-gradient(${alpha(t.palette.primary.main, 0.07)}, ${alpha(t.palette.primary.main, 0.07)}), ${t.palette.background.paper}`
+                        : t.palette.background.paper,
+                    })}
+                  >
                     <Box component="span" sx={{ fontWeight: mudo ? 400 : 600, ...NUMERO_SX }}>
                       {rotuloDia(d.data)}
                     </Box>
@@ -544,17 +612,19 @@ const TabelaDias: React.FC<{
           </TableBody>
           <TableFooter>
             <TableRow>
-              <TableCell sx={rodape()}>Total</TableCell>
+              <TableCell sx={{ ...rodape(), ...colunaFixa, zIndex: 1 }}>Total do mês</TableCell>
               <TableCell align="right" sx={rodape()}>{formatCurrency(dados.totais.boletos)}</TableCell>
               <TableCell align="right" sx={rodape()}>{formatCurrency(dados.totais.financiamento)}</TableCell>
-              <TableCell align="right" sx={rodape(dados.totais.saldo < 0 ? "error.main" : undefined)}>
+              <TableCell align="right" sx={rodape(dados.totais.saldo < 0 && !semSaldoInicial ? "error.main" : undefined)}>
                 {formatCurrency(dados.totais.saldo)}
+                {notaFimDoMes}
               </TableCell>
               <TableCell align="right" sx={rodape()}>
                 {dados.totais.previsao ? formatSinal(dados.totais.previsao) : formatCurrency(0)}
               </TableCell>
-              <TableCell align="right" sx={rodape(dados.totais.saldoFinal < 0 ? "error.main" : undefined)}>
+              <TableCell align="right" sx={rodape(dados.totais.saldoFinal < 0 && !semSaldoInicial ? "error.main" : undefined)}>
                 {formatCurrency(dados.totais.saldoFinal)}
+                {notaFimDoMes}
               </TableCell>
             </TableRow>
           </TableFooter>
@@ -730,6 +800,21 @@ const LancamentoFormDialog: React.FC<{
   const [natureza, setNatureza] = useState<NaturezaCaixa>(lancamento?.natureza ?? (tipo === "BOLETO" ? "D" : "C"));
   const [tentou, setTentou] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [confirmarDescarte, setConfirmarDescarte] = useState(false);
+
+  const naturezaInicial = lancamento?.natureza ?? (tipo === "BOLETO" ? "D" : "C");
+  const alterado =
+    data !== estado.data ||
+    descricao !== (lancamento?.descricao ?? "") ||
+    valor !== lancamento?.valor ||
+    natureza !== naturezaInicial;
+
+  // Esc / click outside must not throw away what was typed: ask first
+  const fecharPorFora = () => {
+    if (salvando) return;
+    if (alterado) setConfirmarDescarte(true);
+    else onClose();
+  };
 
   const erros = {
     data: /^\d{4}-\d{2}-\d{2}$/.test(data) ? "" : "Informe a data",
@@ -760,7 +845,7 @@ const LancamentoFormDialog: React.FC<{
   };
 
   return (
-    <Dialog open onClose={salvando ? undefined : onClose} maxWidth="xs" fullWidth>
+    <Dialog open onClose={fecharPorFora} maxWidth="xs" fullWidth>
       <form onSubmit={enviar} noValidate>
         <DialogTitle>{lancamento ? `Editar ${nome}` : tipo === "BOLETO" ? "Novo boleto" : "Nova previsão"}</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: "8px !important" }}>
@@ -830,6 +915,27 @@ const LancamentoFormDialog: React.FC<{
           </Button>
         </DialogActions>
       </form>
+
+      <Dialog open={confirmarDescarte} onClose={() => setConfirmarDescarte(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Descartar o que foi digitado?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {lancamento
+              ? "As alterações ainda não foram salvas."
+              : tipo === "BOLETO"
+                ? "Este boleto ainda não foi salvo."
+                : "Esta previsão ainda não foi salva."}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmarDescarte(false)} autoFocus>
+            Continuar editando
+          </Button>
+          <Button color="error" onClick={onClose}>
+            Descartar
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };

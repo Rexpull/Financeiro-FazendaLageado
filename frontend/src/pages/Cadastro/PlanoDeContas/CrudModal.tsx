@@ -10,7 +10,7 @@ interface PlanoContaModalProps {
   isOpen: boolean;
   onClose: () => void;
   planoData: PlanoConta;
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   handleSave: () => void;
   isSaving: boolean;
   planos: PlanoConta[];

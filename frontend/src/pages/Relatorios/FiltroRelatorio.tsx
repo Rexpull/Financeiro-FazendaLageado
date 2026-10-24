@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { listarContas } from '../../services/contaCorrenteService';
 import { listarCentroCustos } from '../../services/centroCustosService';
 import { CentroCustos } from '../../../../backend/src/models/CentroCustos';
+import { formatarDataISO, hojeISO } from '../../Utils/dataSemFuso';
 
 interface ContaCorrente {
 	id: number;
@@ -11,31 +12,43 @@ interface ContaCorrente {
 	agencia?: string;
 	bancoNome?: string;
 	responsavel?: string;
-	ativo?: boolean;
+	ativo?: boolean | number;
+}
+
+export interface FiltrosRelatorio {
+	dataInicio?: string;
+	dataFim?: string;
+	contaId?: number;
+	status?: string;
+	centroCustosId?: number;
 }
 
 interface FiltroRelatorioProps {
-	onAplicarFiltros: (filters: {
-		dataInicio?: string;
-		dataFim?: string;
-		contaId?: number;
-		status?: string;
-		centroCustosId?: number;
-	}) => void;
+	onAplicarFiltros: (filters: FiltrosRelatorio) => void;
 	mostrarCentroCustos?: boolean;
 }
+
+const contaInativa = (conta: ContaCorrente) => conta.ativo === false || conta.ativo === 0;
+
+const rotuloConta = (conta: ContaCorrente) => {
+	const texto = conta.numConta
+		? `${conta.bancoNome || ''} - ${conta.agencia || ''} - ${conta.numConta}${conta.responsavel ? ` (${conta.responsavel})` : ''}`
+		: `${conta.bancoNome || ''}${conta.responsavel ? ` (${conta.responsavel})` : ''}`;
+	return contaInativa(conta) ? `${texto} (inativa)` : texto;
+};
+
+const ROTULO_STATUS: Record<string, string> = { conciliados: 'só conciliados', pendentes: 'só pendentes' };
 
 const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 	onAplicarFiltros,
 	mostrarCentroCustos = false
 }) => {
+	// Local calendar dates (toISOString() is UTC and can shift the day)
 	const getCurrentMonthRange = () => {
 		const now = new Date();
-		const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-		const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 		return {
-			inicio: firstDay.toISOString().split('T')[0],
-			fim: lastDay.toISOString().split('T')[0]
+			inicio: hojeISO(new Date(now.getFullYear(), now.getMonth(), 1)),
+			fim: hojeISO(new Date(now.getFullYear(), now.getMonth() + 1, 0))
 		};
 	};
 
@@ -47,6 +60,13 @@ const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 	const [contas, setContas] = useState<ContaCorrente[]>([]);
 	const [centrosCustos, setCentrosCustos] = useState<CentroCustos[]>([]);
 	const [erroData, setErroData] = useState<string>('');
+	// Filter the report on screen was generated with (summary next to the button)
+	const [aplicado, setAplicado] = useState<FiltrosRelatorio | null>(null);
+
+	const aplicar = (filtros: FiltrosRelatorio) => {
+		setAplicado(filtros);
+		onAplicarFiltros(filtros);
+	};
 
 	useEffect(() => {
 		const carregarDados = async () => {
@@ -63,10 +83,12 @@ const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 		};
 		carregarDados();
 
-		// Inicializar com o mês atual
+		// Opens already loaded with the default filter: current month, all accounts
 		const range = getCurrentMonthRange();
 		setDataInicio(range.inicio);
 		setDataFim(range.fim);
+		aplicar({ dataInicio: range.inicio, dataFim: range.fim });
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [mostrarCentroCustos]);
 
 	useEffect(() => {
@@ -82,7 +104,7 @@ const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 			return;
 		}
 
-		onAplicarFiltros({
+		aplicar({
 			dataInicio: dataInicio || undefined,
 			dataFim: dataFim || undefined,
 			contaId,
@@ -90,6 +112,32 @@ const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 			centroCustosId
 		});
 	};
+
+	// Active accounts first; inactive ones stay available (old periods may need them)
+	const contasOrdenadas = contas
+		.filter((conta, index, self) =>
+			// Remover duplicatas baseado no id
+			index === self.findIndex(c => c.id === conta.id)
+		)
+		.sort((a, b) => Number(contaInativa(a)) - Number(contaInativa(b)));
+
+	const resumoAplicado = (() => {
+		if (!aplicado) return '';
+		const periodo =
+			aplicado.dataInicio || aplicado.dataFim
+				? `${formatarDataISO(aplicado.dataInicio, '…')} a ${formatarDataISO(aplicado.dataFim, '…')}`
+				: 'todo o período';
+		const conta = aplicado.contaId ? contas.find(c => c.id === aplicado.contaId) : undefined;
+		const centro = aplicado.centroCustosId ? centrosCustos.find(c => c.id === aplicado.centroCustosId) : undefined;
+		return [
+			periodo,
+			aplicado.contaId ? (conta ? rotuloConta(conta) : `conta ${aplicado.contaId}`) : 'todas as contas',
+			aplicado.status ? ROTULO_STATUS[aplicado.status] ?? aplicado.status : '',
+			aplicado.centroCustosId ? `centro: ${centro?.descricao ?? aplicado.centroCustosId}` : '',
+		]
+			.filter(Boolean)
+			.join(' · ');
+	})();
 
 	return (
 		<div className="bg-white border border-gray-200 shadow-sm rounded-xl p-5 mb-6">
@@ -136,22 +184,11 @@ const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 						className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
 					>
 						<option value="">Todas</option>
-						{contas
-							.filter((conta, index, self) => 
-								// Remover duplicatas baseado no id
-								index === self.findIndex(c => c.id === conta.id)
-							)
-							.filter(conta => conta.ativo !== false) // Filtrar apenas contas ativas
-							.map((conta) => {
-								const displayText = conta.numConta 
-									? `${conta.bancoNome || ''} - ${conta.agencia || ''} - ${conta.numConta}${conta.responsavel ? ` (${conta.responsavel})` : ''}`
-									: `${conta.bancoNome || ''}${conta.responsavel ? ` (${conta.responsavel})` : ''}`;
-								return (
-									<option key={conta.id} value={conta.id}>
-										{displayText}
-									</option>
-								);
-							})}
+						{contasOrdenadas.map((conta) => (
+							<option key={conta.id} value={conta.id}>
+								{rotuloConta(conta)}
+							</option>
+						))}
 					</select>
 				</div>
 
@@ -193,11 +230,18 @@ const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 				)}
 			</div>
 
-			<div className="mt-5 flex justify-end">
+			<div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+				<p className="text-sm text-gray-600 min-w-0" title="Filtro usado no relatório abaixo">
+					{resumoAplicado && (
+						<>
+							Mostrando: <span className="font-medium text-gray-800">{resumoAplicado}</span>
+						</>
+					)}
+				</p>
 				<button
 					onClick={handleAplicar}
 					disabled={!!erroData}
-					className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
+					className="ml-auto px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
 				>
 					Aplicar Filtros
 				</button>
@@ -207,4 +251,3 @@ const FiltroRelatorio: React.FC<FiltroRelatorioProps> = ({
 };
 
 export default FiltroRelatorio;
-

@@ -1,12 +1,15 @@
 /**
- * Same rules as Conciliação OFX "Pendentes de conciliação":
- * - transferência: pending without plan/resultadoList
- * - financiamento: pending without linked contract
- * - crédito (C): pending without cost center
- * - débito (D): pending without plan/resultadoList (centro alone does NOT make it pending)
+ * ONE rule for "pendente de conciliação", used by every screen (Conciliação lists/exports, Conciliação
+ * OFX, notification bell, reports, Dashboard footer). JS version for the frontend + SQL version for
+ * queries — keep both in sync (tests cover both).
  *
- * This differs from Fluxo "Pendentes Seleção" (centros mode), which treated any
- * movement without centro as pending — including classified despesas with a plan.
+ * - transferência: pending without plan (MB.idPlanoContas or Resultado rows)
+ * - financiamento: pending without a linked contract (idFinanciamento > 0)
+ * - padrão crédito: pending without cost centre (MB.idCentroCustos or MovimentoCentroCustos rows)
+ * - padrão débito: pending without plan OR without cost centre. Result screens (Dashboard, Fluxo)
+ *   split expenses by cost centre (custeio × investimento), so a debit with a plan but no centre
+ *   would vanish from them; it must show up here to be completed.
+ * tipoMovimento NULL (legacy) falls back to the sign of valor.
  */
 export type MovimentoPendenteInput = {
 	tipoMovimento?: string | null;
@@ -19,26 +22,44 @@ export type MovimentoPendenteInput = {
 	valor?: number | null;
 };
 
+const ehCredito = (mov: MovimentoPendenteInput) =>
+	mov.tipoMovimento === 'C' || (mov.tipoMovimento == null && Number(mov.valor) > 0);
+
+const temPlano = (mov: MovimentoPendenteInput) =>
+	mov.idPlanoContas != null || !!(mov.resultadoList && mov.resultadoList.length > 0);
+
+const temCentro = (mov: MovimentoPendenteInput) =>
+	mov.idCentroCustos != null || !!(mov.centroCustosList && mov.centroCustosList.length > 0);
+
 export function isMovimentoPendenteConcilacao(mov: MovimentoPendenteInput): boolean {
-	if (mov.modalidadeMovimento === 'transferencia') {
-		const temPlanoUnico = mov.idPlanoContas != null;
-		const temResultadoList = !!(mov.resultadoList && mov.resultadoList.length > 0);
-		return !temPlanoUnico && !temResultadoList;
-	}
+	if (mov.modalidadeMovimento === 'transferencia') return !temPlano(mov);
+	if (mov.modalidadeMovimento === 'financiamento') return mov.idFinanciamento == null || Number(mov.idFinanciamento) <= 0;
+	if (ehCredito(mov)) return !temCentro(mov);
+	return !temPlano(mov) || !temCentro(mov);
+}
 
-	if (mov.modalidadeMovimento === 'financiamento') {
-		return mov.idFinanciamento == null || Number(mov.idFinanciamento) <= 0;
-	}
+/**
+ * SQL boolean expression: TRUE when the movement (table alias `mb`) is pending. Same rule as
+ * isMovimentoPendenteConcilacao. No bind parameters.
+ */
+export function sqlMovimentoPendente(alias = 'mb'): string {
+	const a = alias;
+	const plano = `(${a}.idPlanoContas IS NOT NULL OR EXISTS (SELECT 1 FROM Resultado r_pend WHERE r_pend.idMovimentoBancario = ${a}.id))`;
+	const centro = `(${a}.idCentroCustos IS NOT NULL OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc_pend WHERE mcc_pend.idMovimentoBancario = ${a}.id))`;
+	const credito = `(${a}.tipoMovimento = 'C' OR (${a}.tipoMovimento IS NULL AND ${a}.valor > 0))`;
+	return `(
+		(${a}.modalidadeMovimento = 'transferencia' AND NOT ${plano})
+		OR (${a}.modalidadeMovimento = 'financiamento' AND (${a}.idFinanciamento IS NULL OR ${a}.idFinanciamento <= 0))
+		OR (COALESCE(${a}.modalidadeMovimento, 'padrao') NOT IN ('transferencia', 'financiamento') AND (
+			(${credito} AND NOT ${centro})
+			OR (NOT ${credito} AND (NOT ${plano} OR NOT ${centro}))
+		))
+	)`;
+}
 
-	if (mov.tipoMovimento === 'C') {
-		const temCentroUnico = mov.idCentroCustos != null;
-		const temCentroCustosList = !!(mov.centroCustosList && mov.centroCustosList.length > 0);
-		return !temCentroUnico && !temCentroCustosList;
-	}
-
-	const temPlanoUnico = mov.idPlanoContas != null;
-	const temResultadoList = !!(mov.resultadoList && mov.resultadoList.length > 0);
-	return !temPlanoUnico && !temResultadoList;
+/** SQL boolean expression: TRUE when the movement is classified (not pending). */
+export function sqlMovimentoClassificado(alias = 'mb'): string {
+	return `(NOT ${sqlMovimentoPendente(alias)})`;
 }
 
 export type ResumoPendentesConcilacao = {

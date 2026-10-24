@@ -97,7 +97,7 @@ const PessoaModal: React.FC<PessoaModalProps> = ({
     // Atualiza os valores do formulário
     const event = {
       target: { name: tipo === "receita" ? "idReceita" : "idDespesa", value: plano.id }
-    } as React.ChangeEvent<HTMLInputElement>;
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
     handleInputChange(event);
   };
 

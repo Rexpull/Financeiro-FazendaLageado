@@ -27,7 +27,8 @@ export default {
     const pathname = url.pathname;
 
     if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders });
+      // Max-Age lets the browser cache the preflight (otherwise every call with Authorization costs 2 requests).
+      return new Response(null, { status: 204, headers: { ...corsHeaders, "Access-Control-Max-Age": "86400" } });
     }
 
     // Every route except login and session check requires a valid Bearer JWT.

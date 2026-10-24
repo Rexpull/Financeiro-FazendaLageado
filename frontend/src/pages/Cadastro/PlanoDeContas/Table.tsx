@@ -22,6 +22,8 @@ import { listarPlanoContas, salvarPlanoConta, atualizarStatusConta } from '../..
 import { excluirPlanoContaCadastro } from '../../../services/excluirCadastroService';
 import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
 
+const ROTULOS_COLUNA: Record<string, string> = { nivel: 'Nível', hierarquia: 'Hierarquia', descricao: 'Descrição', tipo: 'Tipo' };
+
 const PlanoContasTable: React.FC = () => {
 	const [planos, setPlanos] = useState<PlanoConta[]>([]);
 	const [filteredPlanos, setFilteredPlanos] = useState<PlanoConta[]>([]);
@@ -216,7 +218,7 @@ const PlanoContasTable: React.FC = () => {
 	const totalPages = Math.ceil(filteredPlanos.length / itemsPerPage);
 
 	return (
-		<div className="plano-contas-container" style={{ overflowX: 'hidden', maxWidth: 'calc(100vw - 300px)', width: '100%' }}>
+		<div className="plano-contas-container">
 			<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-5 mb-4" style={{ maxWidth: '100%', width: '100%' }}>
 				<div className="flex border-b border-gray-300">
 					<button
@@ -225,7 +227,7 @@ const PlanoContasTable: React.FC = () => {
 						}`}
 						onClick={() => setActiveTab('tabela')}
 					>
-						TABELA DOS DADOS
+						Tabela
 					</button>
 					<button
 						className={`px-3 sm:px-4 py-2 font-bold text-xs sm:text-sm text-nowrap whitespace-nowrap ${
@@ -233,7 +235,7 @@ const PlanoContasTable: React.FC = () => {
 						}`}
 						onClick={() => setActiveTab('arvore')}
 					>
-						VISÃO EM ÁRVORE
+						Visão em árvore
 					</button>
 				</div>
 
@@ -304,7 +306,7 @@ const PlanoContasTable: React.FC = () => {
 										<tr className="bg-gray-200">
 											{['nivel', ...(mostrarHierarquia ? ['hierarquia'] : []), 'descricao', 'tipo'].map((column) => (
 												<th key={column} className="p-2 cursor-pointer" onClick={() => handleSort(column)}>
-													{column.charAt(0).toUpperCase() + column.slice(1)}
+													{ROTULOS_COLUNA[column] ?? column.charAt(0).toUpperCase() + column.slice(1)}
 													{sortColumn === column && (
 														<FontAwesomeIcon icon={sortDirection === 'asc' ? faSortUp : faSortDown} className="ml-1" />
 													)}
@@ -345,12 +347,16 @@ const PlanoContasTable: React.FC = () => {
 														<button
 															className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
 															onClick={() => openModal(planoC)}
+															aria-label={`Editar ${planoC.descricao}`}
+															title="Editar"
 														>
 															<FontAwesomeIcon icon={faPencil} />
 														</button>
 														<button
 															className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
 															onClick={() => handleDelete(planoC.id)}
+															aria-label={`Excluir ${planoC.descricao}`}
+															title="Excluir"
 														>
 															<FontAwesomeIcon icon={faTrash} />
 														</button>
@@ -364,7 +370,7 @@ const PlanoContasTable: React.FC = () => {
 								{/* 🔹 Paginação */}
 								<div className="flex flex-col sm:flex-row justify-between items-center my-4 mx-2 gap-3">
 									<span className="text-gray-800 text-sm sm:text-base">
-										{planos.length} <span className="text-xs sm:text-sm">Registros</span>
+										{filteredPlanos.length} <span className="text-xs sm:text-sm">Registros</span>
 									</span>
 
 									<div className="flex items-center gap-2">
@@ -472,7 +478,7 @@ const PlanoContasTable: React.FC = () => {
 				onConfirm={handleDeleteConfirm}
 				title="Atenção"
 				type="warn"
-				message="Tem certeza que deseja excluir este Plano de Conta?"
+				message={`Excluir o plano de contas "${planos.find((p) => p.id === deletePlanoId)?.descricao ?? ""}"? Esta ação não pode ser desfeita.`}
 				confirmLabel="Excluir"
 				cancelLabel="Cancelar"
 			/>

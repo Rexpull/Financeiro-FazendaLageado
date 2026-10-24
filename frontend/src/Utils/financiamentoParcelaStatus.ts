@@ -1,8 +1,7 @@
 import type { ParcelaFinanciamento } from '../../../backend/src/models/ParcelaFinanciamento';
+import { statusParcelaEmAberto } from '../pages/Financeiro/Financiamento/parcelaRegras';
 
-/**
- * Calendar-day comparison in local timezone (same idea as validarStatusParcela in services).
- */
+/** Vencido/Aberto by local calendar day read from the text (same rule as the services). */
 export function isParcelaOverdueForDisplay(parcela: ParcelaFinanciamento): boolean {
 	if (parcela.status === 'Liquidado') {
 		return false;
@@ -10,11 +9,7 @@ export function isParcelaOverdueForDisplay(parcela: ParcelaFinanciamento): boole
 	if (parcela.status === 'Vencido') {
 		return true;
 	}
-	const dataVencimento = new Date(parcela.dt_vencimento);
-	const dataAtual = new Date();
-	dataVencimento.setHours(0, 0, 0, 0);
-	dataAtual.setHours(0, 0, 0, 0);
-	return dataVencimento < dataAtual;
+	return statusParcelaEmAberto(parcela.dt_vencimento) === 'Vencido';
 }
 
 export function financiamentoTemParcelasVencidas(

@@ -1,4 +1,4 @@
-import { MovimentoBancarioRepository } from '../repositories/MovimentoBancarioRepository';
+import { MovimentoBancarioRepository, type FiltrosExportacaoConciliacao } from '../repositories/MovimentoBancarioRepository';
 import { MovimentoBancario } from '../models/MovimentoBancario';
 import { PlanoContaRepository } from '../repositories/PlanoContaRepository';
 import { ParcelaFinanciamentoRepository } from '../repositories/ParcelaFinanciamentoRepository';
@@ -8,9 +8,8 @@ import { PessoaRepository } from '../repositories/PessoaRepository';
 import { BancoRepository } from '../repositories/BancoRepository';
 import { CentroCustosRepository } from '../repositories/CentroCustosRepository';
 import { ParametroRepository } from '../repositories/ParametroRepository';
-import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
-import { excluirMovimentoReceitasDespesasFluxo, PlanosFinanciamentoParametros } from '../utils/isMovimentoFinanciamento';
-import { calcularSaldoFinalFluxo } from '../utils/fluxoSaldoFinal';
+import { PlanosFinanciamentoParametros } from '../utils/isMovimentoFinanciamento';
+import { montarFluxoCaixaAno, normalizarTipoAgrupamento, type FluxoCaixaAno, type TipoAgrupamentoFluxo } from '../utils/fluxoCaixaAno';
 import { TransferenciaInvalidaError, validarTransferencia } from '../utils/transferencia';
 
 export class MovimentoBancarioController {
@@ -46,6 +45,28 @@ export class MovimentoBancarioController {
 		this.parametroRepository = parametroRepository;
 	}
 
+	/** Query of /api/movBancario/export(-pdf): the same parameters as /paginado, so the file matches the list on screen. */
+	private filtrosExportacaoConciliacao(searchParams: URLSearchParams): FiltrosExportacaoConciliacao {
+		const ids = (nome: string) => {
+			const lista = (searchParams.get(nome) || '')
+				.split(',')
+				.map((id) => parseInt(id, 10))
+				.filter((id) => Number.isInteger(id) && id > 0);
+			return lista.length > 0 ? lista : undefined;
+		};
+		const contaId = parseInt(searchParams.get('contaId') || '', 10);
+		return {
+			contaId: Number.isInteger(contaId) && contaId > 0 ? contaId : undefined,
+			dataInicio: searchParams.get('dataInicio') || undefined,
+			dataFim: searchParams.get('dataFim') || undefined,
+			status: searchParams.get('status') || undefined,
+			planosIds: ids('planosIds'),
+			centrosIds: ids('centrosIds'),
+			historicoContem: searchParams.get('historicoContem') || undefined,
+			valorBusca: searchParams.get('valorBusca') || undefined,
+		};
+	}
+
 	private async planosFinanciamentoFromParametros(): Promise<PlanosFinanciamentoParametros> {
 		const parametros = await this.parametroRepository.getAll();
 		const p0 = parametros[0];
@@ -53,6 +74,33 @@ export class MovimentoBancarioController {
 			entrada: p0?.idPlanoEntradaFinanciamentos,
 			pagamento: p0?.idPlanoPagamentoFinanciamentos,
 		};
+	}
+
+	/** Loads one year and builds the Fluxo de Caixa (same engine for POST /api/fluxoCaixa and /anoAnterior). */
+	private async gerarFluxoCaixaAno(ano: string, contas: number[], tipoAgrupamento: TipoAgrupamentoFluxo): Promise<FluxoCaixaAno> {
+		const [movimentos, parcelasDoAno, planos, financiamentos, pessoas, bancos, centrosCustos, planosFinanciamento] = await Promise.all([
+			contas.length > 0 ? this.movBancarioRepository.getAllFiltrado(ano, contas) : Promise.resolve([]),
+			this.parcelaRepo.getParcelasDoAno(ano),
+			this.planoContaRepository.getAll(),
+			this.financiamentoRepo.getAll(),
+			this.pessoaRepo.getAll(),
+			this.bancoRepo.getAll(),
+			tipoAgrupamento === 'centros' ? this.centroCustosRepository.getAll() : Promise.resolve([]),
+			this.planosFinanciamentoFromParametros(),
+		]);
+		return montarFluxoCaixaAno({
+			ano,
+			contas,
+			tipoAgrupamento,
+			movimentos,
+			parcelasDoAno,
+			planos,
+			financiamentos,
+			pessoas,
+			bancos,
+			centrosCustos,
+			planosFinanciamento,
+		});
 	}
 
 	async handleRequest(req: Request): Promise<Response> {
@@ -157,20 +205,11 @@ export class MovimentoBancarioController {
 			if (method === 'GET' && pathname === '/api/movBancario/export') {
 				console.log('📥 Requisição GET /api/movBancario/export recebida');
 
-				const searchParams = url.searchParams;
-				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
-				const dataInicio = searchParams.get('dataInicio') || undefined;
-				const dataFim = searchParams.get('dataFim') || undefined;
-				const status = searchParams.get('status') || undefined;
+				const filtros = this.filtrosExportacaoConciliacao(url.searchParams);
 
-				console.log('🔍 Parâmetros de exportação:', { contaId, dataInicio, dataFim, status });
+				console.log('🔍 Parâmetros de exportação:', filtros);
 
-				const excelBuffer = await this.movBancarioRepository.exportToExcel({
-					contaId,
-					dataInicio,
-					dataFim,
-					status,
-				});
+				const excelBuffer = await this.movBancarioRepository.exportToExcel(filtros);
 
 				console.log('📤 Retornando arquivo Excel de', excelBuffer.length, 'bytes');
 
@@ -186,20 +225,11 @@ export class MovimentoBancarioController {
 			if (method === 'GET' && pathname === '/api/movBancario/export-pdf') {
 				console.log('📥 Requisição GET /api/movBancario/export-pdf recebida');
 
-				const searchParams = url.searchParams;
-				const contaId = searchParams.get('contaId') ? parseInt(searchParams.get('contaId')!) : undefined;
-				const dataInicio = searchParams.get('dataInicio') || undefined;
-				const dataFim = searchParams.get('dataFim') || undefined;
-				const status = searchParams.get('status') || undefined;
+				const filtros = this.filtrosExportacaoConciliacao(url.searchParams);
 
-				console.log('🔍 Parâmetros de exportação PDF:', { contaId, dataInicio, dataFim, status });
+				console.log('🔍 Parâmetros de exportação PDF:', filtros);
 
-				const pdfBuffer = await this.movBancarioRepository.exportToPDF({
-					contaId,
-					dataInicio,
-					dataFim,
-					status,
-				});
+				const pdfBuffer = await this.movBancarioRepository.exportToPDF(filtros);
 
 				console.log('📤 Retornando arquivo PDF de', pdfBuffer.length, 'bytes');
 
@@ -454,8 +484,7 @@ export class MovimentoBancarioController {
 			// 📌 PATCH - Atualizar conta de movimentos OFX
 			if (method === 'PATCH' && pathname === '/api/movBancario/update-conta-ofx') {
 				try {
-					const body: { idMovimentos: number[]; novaContaId: number } = await req.json();
-					console.log(`📥 Atualizando conta de ${body.idMovimentos.length} movimentos para conta ${body.novaContaId}`);
+					const body: { idMovimentos: number[]; novaContaId: number; idHistorico?: number | null } = await req.json();
 
 					if (!body.idMovimentos || !Array.isArray(body.idMovimentos) || body.idMovimentos.length === 0) {
 						return new Response(JSON.stringify({ error: 'Lista de IDs de movimentos inválida' }), {
@@ -471,8 +500,22 @@ export class MovimentoBancarioController {
 						});
 					}
 
-					const resultado = await this.movBancarioRepository.updateContaMovimentosOFX(body.idMovimentos, body.novaContaId);
-					console.log(`✅ Conta atualizada para ${resultado.atualizados} movimentos`);
+					const idHistorico = Number(body.idHistorico);
+					const resultado = await this.movBancarioRepository.updateContaMovimentosOFX(
+						body.idMovimentos,
+						body.novaContaId,
+						Number.isInteger(idHistorico) && idHistorico > 0 ? idHistorico : null,
+					);
+
+					if (resultado.falhas > 0) {
+						return new Response(
+							JSON.stringify({
+								...resultado,
+								error: `Mudança de conta incompleta: ${resultado.falhas} falha(s), ${resultado.atualizados} movimento(s) movido(s). Repita a operação para concluir.`,
+							}),
+							{ status: 500, headers: corsHeaders },
+						);
+					}
 
 					return new Response(JSON.stringify(resultado), {
 						status: 200,
@@ -502,19 +545,21 @@ export class MovimentoBancarioController {
 							.filter((c) => !isNaN(c))
 					: [];
 
-				let movimentos: MovimentoDetalhado[] = [];
+				// Movements (MovimentoDetalhado) or, for financiamentos, contracts with parcelas (FinanciamentoDetalhadoDTO)
+				let movimentos: unknown[] = [];
 
 				if (tipo === 'financiamentos') {
 					const credorKey = urlObj.searchParams.get('planoId') || '';
 					if (credorKey === 'todos') {
-						// Fluxo (centros): Quitados / Créditos novos totalizados do mês, todos os credores
-						movimentos = (await this.movBancarioRepository.getDetalhesFinanciamentoMes(
+						// Fluxo (centros): Quitados / Créditos novos of the month, every contract — same rule as the
+						// cell (utils/fluxoCaixaAno.financiamentosMensaisFluxo)
+						movimentos = await this.movBancarioRepository.getDetalhesFinanciamentoMes(
 							mes,
 							ano,
 							subtipo === 'contratados' ? 'contratados' : 'pagos',
-						)) as any;
+						);
 					} else if (subtipo === 'contratados') {
-						movimentos = (await this.movBancarioRepository.getDetalhesFinanciamentoContratados(credorKey, mes, ano)) as any;
+						movimentos = await this.movBancarioRepository.getDetalhesFinanciamentoContratados(credorKey, mes, ano);
 					} else {
 						movimentos = await this.movBancarioRepository.getDetalhesFinanciamento(credorKey, mes, ano);
 					}
@@ -534,910 +579,28 @@ export class MovimentoBancarioController {
 				});
 			}
 
-			if (method === 'POST' && pathname === '/api/fluxoCaixa') {
+			if (method === 'POST' && (pathname === '/api/fluxoCaixa' || pathname === '/api/fluxoCaixa/anoAnterior')) {
+				const anoAnterior = pathname === '/api/fluxoCaixa/anoAnterior';
 				try {
-					const body = await req.json();
-					const {
+					const body = (await req.json()) as { ano: string | number; contas?: Array<string | number>; tipoAgrupamento?: string };
+					// anoAnterior (Gráfico comparison): the very same engine, one year earlier
+					const ano = anoAnterior ? String(parseInt(String(body.ano), 10) - 1) : String(body.ano);
+					const resultado = await this.gerarFluxoCaixaAno(
 						ano,
-						contas,
-						tipoAgrupamento: tipoAgrupamentoRaw = 'planos',
-					} = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
-					// Garantir que tipoAgrupamento seja string e normalize para 'centros' ou 'planos'
-					const tipoAgrupamento = tipoAgrupamentoRaw === 'centros' || tipoAgrupamentoRaw === 'Centro de Custos' ? 'centros' : 'planos';
-					const contasNumber = contas.map(Number);
-					console.log(
-						'📊 Gerando fluxo de caixa para ano:',
-						ano,
-						'contas:',
-						contas,
-						'tipoAgrupamento (raw):',
-						tipoAgrupamentoRaw,
-						'tipoAgrupamento (normalizado):',
-						tipoAgrupamento,
+						(body.contas ?? []).map(Number),
+						normalizarTipoAgrupamento(body.tipoAgrupamento),
 					);
-
-					const todosMovimentos = await this.movBancarioRepository.getAllFiltrado(ano, contasNumber);
-					console.log('📥 Total movimentos carregados:', todosMovimentos.length);
-
-					const parcelas = await this.parcelaRepo.getParcelasDoAno(ano);
-					console.log('📥 Total parcelas de financiamento carregadas:', parcelas.length);
-
-					const planos = await this.planoContaRepository.getAll();
-					console.log('📥 Total planos carregados:', planos.length);
-
-					const contasCorrentes = await this.contaCorrenteRepository.getAll();
-					console.log('📥 Total contas correntes carregadas:', contasCorrentes.length);
-
-					const financiamentos = await this.financiamentoRepo.getAll();
-					const pessoas = await this.pessoaRepo.getAll();
-					const bancos = await this.bancoRepo.getAll();
-
-					// Buscar centros de custos se for agrupamento por centros
-					const centrosCustos = tipoAgrupamento === 'centros' ? await this.centroCustosRepository.getAll() : [];
-
-					const pendentesPorConta: { [idConta: number]: number } = {};
-
-					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
-					const planosFin = await this.planosFinanciamentoFromParametros();
-
-					const movimentosFiltrados = todosMovimentos.filter((mov) => {
-						if (mov.modalidadeMovimento === 'transferencia') return false;
-						if (excluirMovimentoReceitasDespesasFluxo(mov, planosFin)) return false;
-
-						const planoContasIds = [...(mov.resultadoList?.map((r) => r.idPlanoContas) || [])];
-						if (mov.idPlanoContas) planoContasIds.push(mov.idPlanoContas);
-
-						const contemPlanoIgnorado = planoContasIds.some((id) => planosComPai170.includes(id));
-						if (contemPlanoIgnorado) {
-							console.log('⛔️ Removendo movimento com plano bloqueado:', mov.id);
-							return false;
-						}
-
-						return typeof mov.dtMovimento === 'string' && mov.dtMovimento.startsWith(ano) && contasNumber.includes(mov.idContaCorrente);
-					});
-
-					console.log('🎯 Movimentos filtrados:', movimentosFiltrados.length);
-					console.log(
-						'🔍 Tipo de agrupamento recebido:',
-						tipoAgrupamento,
-						'Tipo:',
-						typeof tipoAgrupamento,
-						'É igual a "centros"?',
-						tipoAgrupamento === 'centros',
-					);
-
-					// Estrutura de dados diferente baseada no tipo de agrupamento
-					const dadosMensais: any[] = Array(12)
-						.fill(null)
-						.map(() => ({
-							// Quando agrupado por centros, receitas são valores diretos (números)
-							// Quando agrupado por planos, receitas têm estrutura com descricao e filhos
-							receitas:
-								tipoAgrupamento === 'centros'
-									? ({} as { [key: number]: number })
-									: ({} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } }),
-							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
-							investimentos: {} as { [key: number]: number },
-							// Quando agrupado por centros, financiamentos têm estrutura separada (pagos/contratados)
-							// Quando agrupado por planos, financiamentos têm estrutura simples
-							financiamentos:
-								tipoAgrupamento === 'centros'
-									? {
-											pagos: {} as { [key: string]: { valor: number; descricao: string } },
-											contratados: {} as { [key: string]: { valor: number; descricao: string } },
-										}
-									: ({} as { [key: string]: { valor: number; descricao: string } }),
-							pendentesSelecao: {} as { [key: number]: number },
-							saldoInicial: 0,
-							saldoFinal: 0,
-							lucro: 0,
-						}));
-
-					// Processar movimentos baseado no tipo de agrupamento
-					if (tipoAgrupamento === 'centros') {
-						console.log('✅ Processando com agrupamento por CENTROS DE CUSTOS');
-						// Agrupamento por Centro de Custos
-						for (const movimento of movimentosFiltrados) {
-							const mes = new Date(movimento.dtMovimento).getMonth();
-
-							// Obter centros de custos do movimento (pode ser lista ou único)
-							const centrosDoMovimento: { id: number; valor: number }[] = [];
-
-							if (movimento.centroCustosList && movimento.centroCustosList.length > 0) {
-								// Múltiplos centros (rateio)
-								centrosDoMovimento.push(
-									...movimento.centroCustosList.map((cc) => ({
-										id: cc.idCentroCustos,
-										valor: Math.abs(cc.valor),
-									})),
-								);
-							} else if (movimento.idCentroCustos) {
-								// Centro único
-								centrosDoMovimento.push({
-									id: movimento.idCentroCustos,
-									valor: Math.abs(movimento.valor),
-								});
-							}
-
-							if (centrosDoMovimento.length === 0) {
-								// Missing cost center → Conciliação (not Fluxo). Skip operational buckets.
-								continue;
-							}
-
-							// Processar cada centro de custos do movimento
-							for (const centroMov of centrosDoMovimento) {
-								const centro = centrosCustos.find((c) => c.id === centroMov.id);
-								if (!centro) {
-									console.warn('⚠️ Centro de custos não encontrado:', centroMov.id);
-									continue;
-								}
-
-								// Determinar se é receita ou despesa baseado no tipoMovimento
-								const grupo = movimento.tipoMovimento === 'C' ? 'receitas' : 'despesas';
-
-								if (grupo === 'receitas') {
-									// Receitas: agrupar diretamente por centro de custos (sem hierarquia)
-									// Armazenar como valor direto, não em estrutura de filhos
-									if (!dadosMensais[mes].receitas[centro.id]) {
-										dadosMensais[mes].receitas[centro.id] = 0;
-									}
-									dadosMensais[mes].receitas[centro.id] += centroMov.valor;
-								} else {
-									// Despesas: separar por tipo (CUSTEIO/INVESTIMENTO)
-									// Usar IDs especiais para categorias: 1000 = Custeio, 2000 = Investimentos
-									const categoriaId = centro.tipo === 'CUSTEIO' ? 1000 : 2000;
-									const categoriaDesc = centro.tipo === 'CUSTEIO' ? 'Custeio' : 'Investimentos';
-
-									if (!dadosMensais[mes].despesas[categoriaId]) {
-										dadosMensais[mes].despesas[categoriaId] = {
-											descricao: categoriaDesc,
-											filhos: {},
-										};
-									}
-									if (!dadosMensais[mes].despesas[categoriaId].filhos[centro.id]) {
-										dadosMensais[mes].despesas[categoriaId].filhos[centro.id] = 0;
-									}
-									dadosMensais[mes].despesas[categoriaId].filhos[centro.id] += centroMov.valor;
-								}
-							}
-						}
-					} else {
-						// Agrupamento por Planos de Contas (lógica original)
-						for (const movimento of movimentosFiltrados) {
-							const mes = new Date(movimento.dtMovimento).getMonth();
-							console.log('🔎 Processando movimento:', {
-								id: movimento.id,
-								data: movimento.dtMovimento,
-								conta: movimento.idContaCorrente,
-								valor: movimento.valor,
-								modalidade: movimento.modalidadeMovimento,
-								parcelado: movimento.parcelado,
-								resultados: movimento.resultadoList?.length,
-							});
-
-							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
-								continue;
-							}
-
-							const classificarPlanosComoPadrao =
-								movimento.modalidadeMovimento === 'padrao' ||
-								(movimento.modalidadeMovimento === 'financiamento' && movimento.idFinanciamento != null && movimento.idFinanciamento > 0);
-
-							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
-								if (
-									movimento.modalidadeMovimento === 'financiamento' &&
-									movimento.idFinanciamento != null &&
-									movimento.idFinanciamento > 0
-								) {
-									continue;
-								}
-								console.warn('⚠️ Movimento sem resultadoList. Enviando como pendente!');
-								const mesPend = new Date(movimento.dtMovimento).getMonth();
-								const conta = movimento.idContaCorrente;
-								pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
-
-								// Corrigindo para usar apenas o valor numérico conforme o modelo
-								if (!dadosMensais[mesPend].pendentesSelecao[movimento.idContaCorrente]) {
-									dadosMensais[mesPend].pendentesSelecao[movimento.idContaCorrente] = 0;
-								}
-								dadosMensais[mesPend].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
-							}
-
-							if (movimento.resultadoList) {
-								for (const resultado of movimento.resultadoList) {
-									console.log('🔍 Processando resultado:', {
-										idMovimentoBancario: resultado.idMovimentoBancario,
-										idPlanoContas: resultado.idPlanoContas,
-										valor: resultado.valor,
-										tipo: resultado.tipo,
-									});
-
-									const plano = planos.find((p) => p.id === resultado.idPlanoContas);
-									const contaId = movimento.idContaCorrente;
-
-									if (!plano) {
-										console.error('🚨 Plano de contas não encontrado!', resultado.idPlanoContas, 'Movimento:', movimento.id);
-
-										// Se o plano de contas não existir, considera como pendente
-										if (!dadosMensais[mes].pendentesSelecao[contaId]) {
-											dadosMensais[mes].pendentesSelecao[contaId] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[contaId] += resultado.valor;
-
-										continue;
-									}
-
-									console.log('📘 Plano encontrado:', {
-										id: plano.id,
-										descricao: plano.descricao,
-										tipo: plano.tipo,
-										hierarquia: plano.hierarquia,
-									});
-
-									const tipoMov = plano.tipo;
-									const hierarquia = plano.hierarquia;
-
-									console.warn(
-										'Tipo Movimento: ' +
-											tipoMov +
-											', Modalidade do Movimento: ' +
-											movimento.modalidadeMovimento +
-											', Parcelado?: ' +
-											movimento.parcelado,
-									);
-									if (tipoMov === 'investimento' && classificarPlanosComoPadrao && !movimento.parcelado) {
-										console.log('➕ Adicionando investimento:', resultado.valor);
-
-										// Corrigindo para usar apenas o valor numérico conforme o modelo
-										if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
-											dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
-										}
-										dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
-
-										continue;
-									} else if (tipoMov === 'custeio' && classificarPlanosComoPadrao && !movimento.parcelado) {
-										const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
-
-										if (!grupo) {
-											console.warn('⚠️ Hierarquia inválida no plano. Jogando para pendentes:', hierarquia);
-											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-											}
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-											continue;
-										}
-
-										const idPai = plano.idReferente;
-										if (!idPai) {
-											console.warn('⚠️ Plano de contas sem idPai. Jogando para pendentes:', plano);
-											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-											}
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-											continue;
-										}
-
-										// Se chegou até aqui, tudo está OK
-										if (!dadosMensais[mes][grupo][idPai]) {
-											dadosMensais[mes][grupo][idPai] = {
-												descricao: planos.find((p) => p.id === idPai)?.descricao || 'Outro',
-												filhos: {},
-											};
-										}
-
-										console.log(`➕ Adicionando ${grupo} (Pai: ${idPai}) com valor:`, resultado.valor);
-										if (!dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas]) {
-											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] = resultado.valor;
-										} else {
-											// Se já existe, soma o valor
-											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] += resultado.valor;
-										}
-									} else {
-										console.warn('⚠️ Tipo não reconhecido, jogando para pendentes!', tipoMov);
-
-										// Se não for investimento nem custeio, também lança como pendente
-										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-									}
-								}
-							}
-						}
-					}
-
-					// Processar financiamentos contratados pelo dataContrato (quando agrupado por centros)
-					if (tipoAgrupamento === 'centros') {
-						// Créditos novos = all parcelas of the contract (the year list above only has this year's);
-						// financiamentoRepo.getAll() already brings each contract's parcelasList
-						const totalParcelasPorContrato = new Map<number, number>(
-							financiamentos.map((f: any) => [
-								f.id,
-								(f.parcelasList ?? []).reduce((acc: number, p: any) => acc + (Number(p.valor) || 0), 0),
-							]),
-						);
-						// Primeiro, processar financiamentos para identificar contratados pelo dataContrato
-						const financiamentosProcessados = new Set<number>();
-						for (const financiamento of financiamentos) {
-							if (financiamentosProcessados.has(financiamento.id)) continue;
-							financiamentosProcessados.add(financiamento.id);
-
-							let credorKey = '';
-							let credorDescricao = 'Não identificado';
-
-							if (financiamento.idPessoa) {
-								const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
-								credorKey = `p_${financiamento.idPessoa}`;
-								credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
-							} else if (financiamento.idBanco) {
-								const banco = bancos.find((b) => b.id === financiamento.idBanco);
-								credorKey = `b_${financiamento.idBanco}`;
-								credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
-							} else {
-								// No lender registered: still a new credit (totals must match the Dashboard)
-								credorKey = `f_${financiamento.id}`;
-								credorDescricao = financiamento.responsavel || `Contrato ${financiamento.numeroContrato}`;
-							}
-
-							// Contratados: usar dataContrato do financiamento
-							const dataContrato = new Date(financiamento.dataContrato);
-							const mesContrato = dataContrato.getMonth();
-							const anoContrato = dataContrato.getFullYear();
-
-							// Só adicionar se o contrato foi feito no ano sendo processado (ano vem string do body)
-							if (anoContrato.toString() === ano) {
-								if (!dadosMensais[mesContrato].financiamentos.contratados[credorKey]) {
-									dadosMensais[mesContrato].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
-								}
-								// Créditos novos = soma das parcelas do contrato (mesma regra do saldo devedor no Dashboard)
-								const valorTotal = totalParcelasPorContrato.get(financiamento.id) ?? 0;
-								dadosMensais[mesContrato].financiamentos.contratados[credorKey].valor += valorTotal;
-							}
-						}
-
-						// Depois, processar parcelas para "pagos" (somente quando efetivamente liquidadas)
-						for (const parcela of parcelas) {
-							const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
-							if (!financiamento) continue;
-
-							let credorKey = '';
-							let credorDescricao = 'Não identificado';
-
-							if (financiamento.idPessoa) {
-								const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
-								credorKey = `p_${financiamento.idPessoa}`;
-								credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
-							} else if (financiamento.idBanco) {
-								const banco = bancos.find((b) => b.id === financiamento.idBanco);
-								credorKey = `b_${financiamento.idBanco}`;
-								credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
-							}
-
-							if (!credorKey) continue;
-
-							// Fluxo de caixa deve considerar apenas parcelas realmente pagas
-							if (!parcela.dt_liquidacao) continue;
-							const dataEfetiva = new Date(parcela.dt_liquidacao);
-							const mesEfetivo = dataEfetiva.getMonth();
-							const anoEfetivo = dataEfetiva.getFullYear();
-
-							if (anoEfetivo.toString() !== ano) continue;
-
-							if (!dadosMensais[mesEfetivo].financiamentos.pagos[credorKey]) {
-								dadosMensais[mesEfetivo].financiamentos.pagos[credorKey] = { valor: 0, descricao: credorDescricao };
-							}
-							dadosMensais[mesEfetivo].financiamentos.pagos[credorKey].valor += parcela.valor;
-						}
-					} else {
-						// Estrutura original para planos de contas (usar lógica antiga)
-						for (const parcela of parcelas) {
-							const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
-							if (!financiamento) continue;
-
-							let credorKey = '';
-							let credorDescricao = 'Não identificado';
-
-							if (financiamento.idPessoa) {
-								const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
-								credorKey = `p_${financiamento.idPessoa}`;
-								credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
-							} else if (financiamento.idBanco) {
-								const banco = bancos.find((b) => b.id === financiamento.idBanco);
-								credorKey = `b_${financiamento.idBanco}`;
-								credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
-							}
-
-							if (!credorKey) continue;
-
-							// Fluxo de caixa deve considerar apenas parcelas realmente pagas
-							if (!parcela.dt_liquidacao) continue;
-							const dataEfetiva = new Date(parcela.dt_liquidacao);
-							const mes = dataEfetiva.getMonth();
-							if (!dadosMensais[mes].financiamentos[credorKey]) {
-								dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
-							}
-							dadosMensais[mes].financiamentos[credorKey].valor += parcela.valor;
-						}
-					}
-
-					for (let i = 0; i < dadosMensais.length; i++) {
-						let receitas = 0;
-						if (tipoAgrupamento === 'centros') {
-							// Quando agrupado por centros, receitas são valores diretos (números)
-							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce(
-								(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
-								0,
-							);
-						} else {
-							receitas = Object.values(dadosMensais[i].receitas ?? {})
-								.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
-								.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						}
-						const despesas = Object.values(dadosMensais[i].despesas ?? {})
-							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
-							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce(
-							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
-							0,
-						);
-						const financiamentos = (() => {
-							if (tipoAgrupamento === 'centros') {
-								const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-								const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce(
-									(a: number, b: any) => a + (b.valor || 0),
-									0,
-								);
-								return pagos - contratados;
-							}
-							return Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
-						})();
-
-						if (i > 0) {
-							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;
-						}
-
-						// Management Fluxo: exclude conciliation pendências from closing balance
-						dadosMensais[i].saldoFinal = calcularSaldoFinalFluxo({
-							saldoInicial: dadosMensais[i].saldoInicial,
-							receitas,
-							despesas,
-							investimentos,
-							financiamentos,
-						});
-
-						if (dadosMensais[i].saldoInicial === 0) {
-							if (dadosMensais[i].saldoFinal > 0) {
-								dadosMensais[i].lucro = 100;
-							} else if (dadosMensais[i].saldoFinal < 0) {
-								dadosMensais[i].lucro = -100;
-							} else {
-								dadosMensais[i].lucro = 0;
-							}
-						} else {
-							const variacao = ((dadosMensais[i].saldoFinal - dadosMensais[i].saldoInicial) / Math.abs(dadosMensais[i].saldoInicial)) * 100;
-							dadosMensais[i].lucro = Number(variacao.toFixed(1));
-						}
-					}
-
-					// Calcular parcelas vincendas por ano (parcelas com dt_vencimento futura)
-					const parcelasVincendasAnuais: { [ano: number]: number } = {};
-					const hoje = new Date();
-					hoje.setHours(0, 0, 0, 0);
-
-					for (const parcela of parcelas) {
-						if (!parcela.dt_vencimento) continue;
-
-						const dataVencimento = new Date(parcela.dt_vencimento);
-						dataVencimento.setHours(0, 0, 0, 0);
-
-						// Só considerar parcelas com vencimento futuro e sem liquidação
-						if (dataVencimento >= hoje && !parcela.dt_liquidacao) {
-							const anoVencimento = dataVencimento.getFullYear();
-							if (!parcelasVincendasAnuais[anoVencimento]) {
-								parcelasVincendasAnuais[anoVencimento] = 0;
-							}
-							parcelasVincendasAnuais[anoVencimento] += parcela.valor;
-						}
-					}
-
-					// Pendências de conciliação belong on Conciliação, not Fluxo
-					for (const mes of dadosMensais) {
-						mes.pendentesSelecao = {};
-					}
-
-					const response = {
-						dadosMensais,
-						parcelasVincendasAnuais,
-					};
-
-					return new Response(JSON.stringify(response), {
+					return new Response(JSON.stringify(resultado), {
 						headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 						status: 200,
 					});
 				} catch (error) {
-					console.error('🚨 Erro ao gerar fluxo de caixa:', error);
+					const mensagem = anoAnterior ? 'Erro ao gerar fluxo de caixa do ano anterior' : 'Erro ao gerar fluxo de caixa';
+					console.error('🚨', mensagem, error);
 					return new Response(
 						JSON.stringify({
-							error: 'Erro ao gerar fluxo de caixa',
+							error: mensagem,
 							details: error instanceof Error ? error.message : 'Erro desconhecido',
-							stack: error instanceof Error ? error.stack : undefined,
-						}),
-						{
-							status: 500,
-							headers: corsHeaders,
-						},
-					);
-				}
-			}
-
-			if (method === 'POST' && pathname === '/api/fluxoCaixa/anoAnterior') {
-				try {
-					const body = await req.json();
-					const {
-						ano,
-						contas,
-						tipoAgrupamento = 'planos',
-					} = body as { ano: string; contas: string[]; tipoAgrupamento?: 'planos' | 'centros' };
-					const anoAnterior = (parseInt(ano) - 1).toString();
-					const contasNumber = contas.map(Number);
-					console.log('📊 Gerando fluxo de caixa do ano anterior:', anoAnterior, 'contas:', contas, 'tipoAgrupamento:', tipoAgrupamento);
-
-					const todosMovimentos = await this.movBancarioRepository.getAllFiltrado(anoAnterior, contasNumber);
-					console.log('📥 Total movimentos carregados (ano anterior):', todosMovimentos.length);
-
-					const parcelas = await this.parcelaRepo.getParcelasDoAno(anoAnterior);
-					console.log('📥 Total parcelas de financiamento carregadas (ano anterior):', parcelas.length);
-
-					const planos = await this.planoContaRepository.getAll();
-					console.log('📥 Total planos carregados (ano anterior):', planos.length);
-
-					const contasCorrentes = await this.contaCorrenteRepository.getAll();
-					console.log('📥 Total contas correntes carregadas (ano anterior):', contasCorrentes.length);
-
-					const financiamentos = await this.financiamentoRepo.getAll();
-					const pessoas = await this.pessoaRepo.getAll();
-					const bancos = await this.bancoRepo.getAll();
-
-					// Buscar centros de custos se for agrupamento por centros
-					const centrosCustos = tipoAgrupamento === 'centros' ? await this.centroCustosRepository.getAll() : [];
-
-					const pendentesPorConta: { [idConta: number]: number } = {};
-
-					const planosComPai170 = planos.filter((p) => p.idReferente === 170).map((p) => p.id);
-					const planosFin = await this.planosFinanciamentoFromParametros();
-
-					const movimentosFiltrados = todosMovimentos.filter((mov) => {
-						if (mov.modalidadeMovimento === 'transferencia') return false;
-						if (excluirMovimentoReceitasDespesasFluxo(mov, planosFin)) return false;
-
-						const planoContasIds = [...(mov.resultadoList?.map((r) => r.idPlanoContas) || [])];
-						if (mov.idPlanoContas) planoContasIds.push(mov.idPlanoContas);
-						const contemPlanoIgnorado = planoContasIds.some((id) => planosComPai170.includes(id));
-						if (contemPlanoIgnorado) {
-							return false;
-						}
-						return (
-							typeof mov.dtMovimento === 'string' && mov.dtMovimento.startsWith(anoAnterior) && contasNumber.includes(mov.idContaCorrente)
-						);
-					});
-
-					// Estrutura de dados diferente baseada no tipo de agrupamento
-					const dadosMensais: any[] = Array(12)
-						.fill(null)
-						.map(() => ({
-							// Quando agrupado por centros, receitas são valores diretos (números)
-							// Quando agrupado por planos, receitas têm estrutura com descricao e filhos
-							receitas:
-								tipoAgrupamento === 'centros'
-									? ({} as { [key: number]: number })
-									: ({} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } }),
-							despesas: {} as { [key: number]: { descricao: string; filhos: { [key: number]: number } } },
-							investimentos: {} as { [key: number]: number },
-							// Quando agrupado por centros, financiamentos têm estrutura separada (pagos/contratados)
-							// Quando agrupado por planos, financiamentos têm estrutura simples
-							financiamentos:
-								tipoAgrupamento === 'centros'
-									? {
-											pagos: {} as { [key: string]: { valor: number; descricao: string } },
-											contratados: {} as { [key: string]: { valor: number; descricao: string } },
-										}
-									: ({} as { [key: string]: { valor: number; descricao: string } }),
-							pendentesSelecao: {} as { [key: number]: number },
-							saldoInicial: 0,
-							saldoFinal: 0,
-							lucro: 0,
-						}));
-
-					// Processar movimentos baseado no tipo de agrupamento
-					if (tipoAgrupamento === 'centros') {
-						// Agrupamento por Centro de Custos
-						for (const movimento of movimentosFiltrados) {
-							const mes = new Date(movimento.dtMovimento).getMonth();
-
-							// Obter centros de custos do movimento (pode ser lista ou único)
-							const centrosDoMovimento: { id: number; valor: number }[] = [];
-
-							if (movimento.centroCustosList && movimento.centroCustosList.length > 0) {
-								// Múltiplos centros (rateio)
-								centrosDoMovimento.push(
-									...movimento.centroCustosList.map((cc) => ({
-										id: cc.idCentroCustos,
-										valor: Math.abs(cc.valor),
-									})),
-								);
-							} else if (movimento.idCentroCustos) {
-								// Centro único
-								centrosDoMovimento.push({
-									id: movimento.idCentroCustos,
-									valor: Math.abs(movimento.valor),
-								});
-							}
-
-							if (centrosDoMovimento.length === 0) {
-								// Missing cost center → Conciliação (not Fluxo). Skip operational buckets.
-								continue;
-							}
-
-							// Processar cada centro de custos do movimento
-							for (const centroMov of centrosDoMovimento) {
-								const centro = centrosCustos.find((c) => c.id === centroMov.id);
-								if (!centro) {
-									console.warn('⚠️ Centro de custos não encontrado:', centroMov.id);
-									continue;
-								}
-
-								// Determinar se é receita ou despesa baseado no tipoMovimento
-								const grupo = movimento.tipoMovimento === 'C' ? 'receitas' : 'despesas';
-
-								if (grupo === 'receitas') {
-									// Receitas: agrupar diretamente por centro de custos (sem hierarquia)
-									// Armazenar como valor direto, não em estrutura de filhos
-									if (!dadosMensais[mes].receitas[centro.id]) {
-										dadosMensais[mes].receitas[centro.id] = 0;
-									}
-									dadosMensais[mes].receitas[centro.id] += centroMov.valor;
-								} else {
-									// Despesas: separar por tipo (CUSTEIO/INVESTIMENTO)
-									// Usar IDs especiais para categorias: 1000 = Custeio, 2000 = Investimentos
-									const categoriaId = centro.tipo === 'CUSTEIO' ? 1000 : 2000;
-									const categoriaDesc = centro.tipo === 'CUSTEIO' ? 'Custeio' : 'Investimentos';
-
-									if (!dadosMensais[mes].despesas[categoriaId]) {
-										dadosMensais[mes].despesas[categoriaId] = {
-											descricao: categoriaDesc,
-											filhos: {},
-										};
-									}
-									if (!dadosMensais[mes].despesas[categoriaId].filhos[centro.id]) {
-										dadosMensais[mes].despesas[categoriaId].filhos[centro.id] = 0;
-									}
-									dadosMensais[mes].despesas[categoriaId].filhos[centro.id] += centroMov.valor;
-								}
-							}
-						}
-					} else {
-						// Agrupamento por Planos de Contas (lógica original)
-						for (const movimento of movimentosFiltrados) {
-							const mes = new Date(movimento.dtMovimento).getMonth();
-							if (movimento.modalidadeMovimento === 'financiamento' && movimento.parcelado) {
-								continue;
-							}
-
-							const classificarPlanosComoPadrao =
-								movimento.modalidadeMovimento === 'padrao' ||
-								(movimento.modalidadeMovimento === 'financiamento' && movimento.idFinanciamento != null && movimento.idFinanciamento > 0);
-
-							if (!movimento.resultadoList || movimento.resultadoList.length === 0) {
-								if (
-									movimento.modalidadeMovimento === 'financiamento' &&
-									movimento.idFinanciamento != null &&
-									movimento.idFinanciamento > 0
-								) {
-									continue;
-								}
-								const conta = movimento.idContaCorrente;
-								pendentesPorConta[conta] = (pendentesPorConta[conta] || 0) + Math.abs(movimento.valor);
-								if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-									dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-								}
-								dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += Math.abs(movimento.valor);
-							}
-							if (movimento.resultadoList) {
-								for (const resultado of movimento.resultadoList) {
-									const plano = planos.find((p) => p.id === resultado.idPlanoContas);
-									const contaId = movimento.idContaCorrente;
-									if (!plano) {
-										if (!dadosMensais[mes].pendentesSelecao[contaId]) {
-											dadosMensais[mes].pendentesSelecao[contaId] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[contaId] += resultado.valor;
-										continue;
-									}
-									const tipoMov = plano.tipo;
-									const hierarquia = plano.hierarquia;
-									if (tipoMov === 'investimento' && classificarPlanosComoPadrao && !movimento.parcelado) {
-										if (!dadosMensais[mes].investimentos[resultado.idPlanoContas]) {
-											dadosMensais[mes].investimentos[resultado.idPlanoContas] = 0;
-										}
-										dadosMensais[mes].investimentos[resultado.idPlanoContas] += resultado.valor;
-										continue;
-									} else if (tipoMov === 'custeio' && classificarPlanosComoPadrao && !movimento.parcelado) {
-										const grupo = hierarquia.startsWith('001.') ? 'receitas' : hierarquia.startsWith('002.') ? 'despesas' : null;
-										if (!grupo) {
-											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-											}
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-											continue;
-										}
-										const idPai = plano.idReferente;
-										if (!idPai) {
-											if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-												dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-											}
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-											continue;
-										}
-										if (!dadosMensais[mes][grupo][idPai]) {
-											dadosMensais[mes][grupo][idPai] = {
-												descricao: planos.find((p) => p.id === idPai)?.descricao || 'Outro',
-												filhos: {},
-											};
-										}
-										if (!dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas]) {
-											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] = resultado.valor;
-										} else {
-											dadosMensais[mes][grupo][idPai].filhos[resultado.idPlanoContas] += resultado.valor;
-										}
-									} else {
-										if (!dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente]) {
-											dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] = 0;
-										}
-										dadosMensais[mes].pendentesSelecao[movimento.idContaCorrente] += resultado.valor;
-									}
-								}
-							}
-						}
-					}
-
-					for (const parcela of parcelas) {
-						const financiamento = financiamentos.find((f) => f.id === parcela.idFinanciamento);
-						if (!financiamento) continue;
-						let credorKey = '';
-						let credorDescricao = 'Não identificado';
-						if (financiamento.idPessoa) {
-							const pessoa = pessoas.find((p) => p.id === financiamento.idPessoa);
-							credorKey = `p_${financiamento.idPessoa}`;
-							credorDescricao = pessoa ? pessoa.nome : `Pessoa ${financiamento.idPessoa}`;
-						} else if (financiamento.idBanco) {
-							const banco = bancos.find((b) => b.id === financiamento.idBanco);
-							credorKey = `b_${financiamento.idBanco}`;
-							credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
-						}
-						if (!credorKey) continue;
-
-						if (tipoAgrupamento === 'centros') {
-							// Separar em pagos e contratados
-							// Fluxo de caixa deve considerar somente parcelas efetivamente pagas (dt_liquidacao)
-							if (parcela.dt_liquidacao) {
-								// Parcela paga
-								const mesLiquidacao = new Date(parcela.dt_liquidacao).getMonth();
-								if (!dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey]) {
-									dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey] = { valor: 0, descricao: credorDescricao };
-								}
-								dadosMensais[mesLiquidacao].financiamentos.pagos[credorKey].valor += parcela.valor;
-							}
-						} else {
-							// Estrutura original para planos de contas
-							// Fluxo de caixa deve considerar apenas parcelas realmente pagas
-							if (!parcela.dt_liquidacao) continue;
-							const dataEfetiva = new Date(parcela.dt_liquidacao);
-							const mes = dataEfetiva.getMonth();
-							if (!dadosMensais[mes].financiamentos[credorKey]) {
-								dadosMensais[mes].financiamentos[credorKey] = { valor: 0, descricao: credorDescricao };
-							}
-							dadosMensais[mes].financiamentos[credorKey].valor += parcela.valor;
-						}
-					}
-
-					for (let i = 0; i < dadosMensais.length; i++) {
-						let receitas = 0;
-						if (tipoAgrupamento === 'centros') {
-							// Quando agrupado por centros, receitas são valores diretos (números)
-							receitas = Object.values(dadosMensais[i].receitas ?? {}).reduce(
-								(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
-								0,
-							);
-						} else {
-							receitas = Object.values(dadosMensais[i].receitas ?? {})
-								.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
-								.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						}
-						const despesas = Object.values(dadosMensais[i].despesas ?? {})
-							.flatMap((subcat: any) => Object.values(subcat.filhos || {}))
-							.reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-						const investimentos = Object.values(dadosMensais[i].investimentos ?? {}).reduce(
-							(a: number, b: any) => a + (typeof b === 'number' ? b : 0),
-							0,
-						);
-						let financiamentos = 0;
-						if (tipoAgrupamento === 'centros') {
-							// Quando agrupado por centros, financiamentos têm estrutura separada
-							const pagos = Object.values(dadosMensais[i].financiamentos?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-							const contratados = Object.values(dadosMensais[i].financiamentos?.contratados ?? {}).reduce(
-								(a: number, b: any) => a + (b.valor || 0),
-								0,
-							);
-							financiamentos = pagos - contratados; // Resultado do mês: pagos reduzem dívida (positivo), contratados aumentam (negativo)
-						} else {
-							financiamentos = Object.values(dadosMensais[i].financiamentos ?? {}).reduce((a: number, b: any) => a + b.valor, 0);
-						}
-						if (i > 0) {
-							dadosMensais[i].saldoInicial = dadosMensais[i - 1].saldoFinal;
-						}
-						dadosMensais[i].saldoFinal = calcularSaldoFinalFluxo({
-							saldoInicial: dadosMensais[i].saldoInicial,
-							receitas,
-							despesas,
-							investimentos,
-							financiamentos,
-						});
-						if (dadosMensais[i].saldoInicial === 0) {
-							if (dadosMensais[i].saldoFinal > 0) {
-								dadosMensais[i].lucro = 100;
-							} else if (dadosMensais[i].saldoFinal < 0) {
-								dadosMensais[i].lucro = -100;
-							} else {
-								dadosMensais[i].lucro = 0;
-							}
-						} else {
-							const variacao = ((dadosMensais[i].saldoFinal - dadosMensais[i].saldoInicial) / Math.abs(dadosMensais[i].saldoInicial)) * 100;
-							dadosMensais[i].lucro = Number(variacao.toFixed(1));
-						}
-					}
-
-					// Calcular parcelas vincendas por ano (parcelas com dt_vencimento futura)
-					const parcelasVincendasAnuaisAnterior: { [ano: number]: number } = {};
-					const hoje = new Date();
-					hoje.setHours(0, 0, 0, 0);
-
-					for (const parcela of parcelas) {
-						if (!parcela.dt_vencimento) continue;
-
-						const dataVencimento = new Date(parcela.dt_vencimento);
-						dataVencimento.setHours(0, 0, 0, 0);
-
-						// Só considerar parcelas com vencimento futuro e sem liquidação
-						if (dataVencimento >= hoje && !parcela.dt_liquidacao) {
-							const anoVencimento = dataVencimento.getFullYear();
-							if (!parcelasVincendasAnuaisAnterior[anoVencimento]) {
-								parcelasVincendasAnuaisAnterior[anoVencimento] = 0;
-							}
-							parcelasVincendasAnuaisAnterior[anoVencimento] += parcela.valor;
-						}
-					}
-
-					// Pendências de conciliação belong on Conciliação, not Fluxo
-					for (const mes of dadosMensais) {
-						mes.pendentesSelecao = {};
-					}
-
-					const responseAnterior = {
-						dadosMensais,
-						parcelasVincendasAnuais: parcelasVincendasAnuaisAnterior,
-					};
-
-					return new Response(JSON.stringify(responseAnterior), {
-						headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-						status: 200,
-					});
-				} catch (error) {
-					console.error('🚨 Erro ao gerar fluxo de caixa do ano anterior:', error);
-					return new Response(
-						JSON.stringify({
-							error: 'Erro ao gerar fluxo de caixa do ano anterior',
-							details: error instanceof Error ? error.message : 'Erro desconhecido',
-							stack: error instanceof Error ? error.stack : undefined,
 						}),
 						{
 							status: 500,
@@ -1652,9 +815,8 @@ export class MovimentoBancarioController {
 
 			if (method === 'DELETE' && pathname.startsWith('/api/movBancario/')) {
 				const id = parseInt(pathname.split('/')[3]);
-				console.log(`🗑 Excluindo movimento ID ${id}`);
+				// Parcelas paid by it are reopened, generated ones unlinked — never deleted (same transaction)
 				await this.movBancarioRepository.deleteById(id);
-				console.log('✅ Exclusão realizada com sucesso');
 
 				return new Response(JSON.stringify({ message: 'Movimento bancário excluído com sucesso!' }), {
 					status: 200,
@@ -1677,7 +839,15 @@ export class MovimentoBancarioController {
 			}
 
 			if (method === 'GET' && pathname.startsWith('/api/movBancario/saldo/')) {
-				const idConta = parseInt(pathname.split('/')[3]);
+				// /api/movBancario/saldo/:idConta → ['', 'api', 'movBancario', 'saldo', ':idConta']
+				const rawConta = pathname.split('/')[4] ?? '';
+				if (!/^\d+$/.test(rawConta)) {
+					return new Response(JSON.stringify({ error: 'ID da conta corrente inválido' }), {
+						status: 400,
+						headers: corsHeaders,
+					});
+				}
+				const idConta = parseInt(rawConta, 10);
 				const urlObj = new URL(req.url);
 				const data = urlObj.searchParams.get('data');
 

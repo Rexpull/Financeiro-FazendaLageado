@@ -1,64 +1,48 @@
 import React, { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faSearchDollar } from '@fortawesome/free-solid-svg-icons';
-import { Tooltip } from 'react-tooltip';
+import { toast } from 'react-toastify';
 import { listarContas } from '../../../services/contaCorrenteService';
-import { listarPlanoContas } from '../../../services/planoContasService';
 import { listarCentroCustos } from '../../../services/centroCustosService';
 import FiltroFluxoCaixaModal from './FiltroFluxoCaixaModal';
 import { buscarFluxoCaixa, buscarDetalhamento, buscarFluxoCaixaAnoAnterior } from '../../../services/fluxoCaixaService';
-import { FluxoCaixaMes, FluxoCaixaResponse } from '../../../../../backend/src/models/FluxoCaixaDTO';
-import { formatarMoeda, formatarMoedaOuTraco, parseMoeda } from '../../../Utils/formataMoeda';
 import ModalDetalhamento from './ModalDetalhamento';
 import { MovimentoDetalhado } from '../../../../../backend/src/models/MovimentoDetalhado';
-import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
 import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
+import { ContaCorrente } from '../../../../../backend/src/models/ContaCorrente';
 import ModalDetalhamentoFinanciamento from './ModalDetalhamentoFinanciamento';
 import { FinanciamentoDetalhadoDTO } from '../../../../../backend/src/models/FinanciamentoDetalhadoDTO';
 import FluxoCaixaGrafico from './FluxoCaixaGrafico';
 import FluxoMensalCentros, { GrupoCentros } from './FluxoMensalCentros';
+import { FluxoMesCentrosInput } from './fluxoMensalRegras';
 
-/** Visual bands: operational (R/D) vs financing vs closing balances */
-const FLUXO_CORES = {
-	receitasMain: '#d4e6f7',
-	receitasValor: '#eef5fc',
-	despesasMain: '#fbdcbc',
-	despesasValor: '#fff4e8',
-	operacionalLabel: '#cdebe2',
-	operacionalCell: '#f0faf6',
-	financiamentosMain: '#e2d8f8',
-	financiamentosValor: '#f6f2fd',
-	investimentosMain: '#f8eab0',
-	investimentosValor: '#fffbea',
-	saldoLabel: '#e2e8f0',
-	saldoCell: '#f8fafc',
-	saldoValor: '#ffffff',
-} as const;
+const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+/** "2026 · todas as contas (26)" / "2026 · 3 de 26 contas": active filter shown next to the button. */
+function resumoFiltro(ano: string, selecionadas: number, total: number): string {
+	if (!total) return ano;
+	if (selecionadas >= total) return `${ano} · todas as contas (${total})`;
+	return `${ano} · ${selecionadas} de ${total} ${total === 1 ? 'conta' : 'contas'}`;
+}
+
+/**
+ * Fluxo de Caixa, always grouped by centro de custos (the plano de contas layout was removed: receitas are
+ * classified by centro only, so it showed revenue R$ 0 and a meaningless saldo final).
+ * Opens already loaded with the default filter: current year, all accounts.
+ */
 const MovimentoBancarioTable: React.FC = () => {
-	const [dadosFluxo, setDadosFluxo] = useState<FluxoCaixaMes[]>([]);
-	const [dadosFluxoAnterior, setDadosFluxoAnterior] = useState<FluxoCaixaMes[]>([]);
-	const [parcelasVincendasAnuais, setParcelasVincendasAnuais] = useState<{ [ano: number]: number }>({});
+	const [dadosFluxo, setDadosFluxo] = useState<FluxoMesCentrosInput[]>([]);
+	const [dadosFluxoAnterior, setDadosFluxoAnterior] = useState<FluxoMesCentrosInput[]>([]);
 	const [activeTab, setActiveTab] = useState<'tabela' | 'grafico'>('tabela');
 	const [modalPesquisaAberto, setModalPesquisaAberto] = useState(false);
-	const [isLoading, setIsLoading] = useState(true);
-	const [expandido, setExpandido] = useState<{ [key: string]: boolean }>({
-		entradas: true,
-		saidas: true,
-		financiamentos: true,
-		investimentos: true,
-	});
-	const [expandidoSub, setExpandidoSub] = useState<{ [key: string]: boolean }>({
-		'1': true,
-		'2': true,
-	});
-	const [contasCorrentes, setContasCorrentes] = useState<any[]>([]);
-	const [planosContas, setPlanosContas] = useState<PlanoConta[]>([]);
+	// Starts true: the first load runs as soon as the accounts arrive
+	const [carregando, setCarregando] = useState(true);
+	const [erro, setErro] = useState<string | null>(null);
+	const [contasCorrentes, setContasCorrentes] = useState<ContaCorrente[]>([]);
 	const [centrosCustos, setCentrosCustos] = useState<CentroCustos[]>([]);
 	const [contasSelecionadas, setContasSelecionadas] = useState<string[]>([]);
 	const [anoSelecionado, setAnoSelecionado] = useState<string>(String(new Date().getFullYear()));
-	const [tipoAgrupamento, setTipoAgrupamento] = useState<'planos' | 'centros'>('centros');
-	// New centros layout: which groups show one column per centro de custos
+	// Which groups show one column per centro de custos
 	const [gruposExpandidos, setGruposExpandidos] = useState<Record<GrupoCentros, boolean>>({
 		receitas: false,
 		operacionais: false,
@@ -71,243 +55,70 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [modalFinanciamentoDetalhesAberto, setModalFinanciamentoDetalhesAberto] = useState(false);
 	const [financiamentosDetalhados, setFinanciamentosDetalhados] = useState<FinanciamentoDetalhadoDTO[]>([]);
 
-	interface Categoria {
-		label: string;
-		cor: string;
-		subcategorias: { id: string; descricao: string; filhos?: { id: string; descricao: string }[] }[];
-	}
-
-	const [categorias, setCategorias] = useState<{
-		entradas: Categoria;
-		saidas: Categoria;
-		financiamentos: Categoria;
-		investimentos: Categoria;
-	}>({
-		entradas: { label: 'Receitas', cor: 'bg-blue-500', subcategorias: [] },
-		saidas: { label: 'Despesas', cor: 'bg-red-500', subcategorias: [] },
-		financiamentos: { label: 'Financiamentos', cor: 'bg-violet-500', subcategorias: [] },
-		investimentos: { label: 'Investimentos', cor: 'bg-yellow-500', subcategorias: [] },
-	});
-
-	useEffect(() => {
-		async function buscarContas() {
-			const contas = await listarContas();
-			setContasCorrentes(contas);
-			if (contasSelecionadas.length === 0) {
-				setContasSelecionadas(contas.map((c: any) => c.id.toString()));
-			}
+	const gerarFluxo = async (contas: string[], ano: string) => {
+		if (contas.length === 0) {
+			setCarregando(false);
+			setErro('Nenhuma conta corrente selecionada. Use "Pesquisar Fluxo de Caixa" para escolher as contas.');
+			return;
 		}
-
-		async function buscarPlanosContas() {
-			const planos = await listarPlanoContas();
-			setPlanosContas(planos);
+		try {
+			setCarregando(true);
+			setErro(null);
+			// Same engine for both years (the Gráfico compares with the previous year)
+			const [dados, dadosAnterior] = await Promise.all([
+				buscarFluxoCaixa(ano, contas),
+				buscarFluxoCaixaAnoAnterior(ano, contas),
+			]);
+			setDadosFluxo(dados.dadosMensais as unknown as FluxoMesCentrosInput[]);
+			setDadosFluxoAnterior(dadosAnterior as unknown as FluxoMesCentrosInput[]);
+			setMeses(MESES.map((mes) => `${mes}/${ano}`));
+		} catch (e) {
+			console.error('Erro ao gerar fluxo de caixa:', e instanceof Error ? e.message : e);
+			setErro('Não foi possível carregar o fluxo de caixa.');
+		} finally {
+			setCarregando(false);
 		}
-
-		async function buscarCentrosCustos() {
-			const centros = await listarCentroCustos();
-			setCentrosCustos(centros);
-		}
-
-		buscarContas();
-		buscarPlanosContas();
-		buscarCentrosCustos();
-	}, []);
-
-	// Função para obter descrição do plano de contas
-	const getDescricaoPlanoConta = (idPlano: string): string => {
-		const plano = planosContas.find(p => p.id.toString() === idPlano);
-		return plano ? plano.descricao : `Plano ${idPlano}`;
 	};
 
-	// Função para obter descrição do centro de custos
+	useEffect(() => {
+		listarContas()
+			.then((resposta) => {
+				// The API returns the backend model (numConta, bancoNome, responsavel…)
+				const contas = resposta as unknown as ContaCorrente[];
+				const todas = contas.map((c) => c.id.toString());
+				setContasCorrentes(contas);
+				setContasSelecionadas(todas);
+				// Default filter: current year, all accounts
+				gerarFluxo(todas, anoSelecionado);
+			})
+			.catch(() => {
+				setCarregando(false);
+				setErro('Não foi possível carregar as contas correntes.');
+			});
+		listarCentroCustos().then(setCentrosCustos).catch((e) => console.error('Erro ao carregar centros de custos:', e));
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
 	const getDescricaoCentroCustos = (idCentro: string): string => {
-		const centro = centrosCustos.find(c => c.id.toString() === idCentro);
+		const centro = centrosCustos.find((c) => c.id.toString() === idCentro);
 		return centro ? centro.descricao : `Centro ${idCentro}`;
 	};
 
-	// Função para obter descrição da conta corrente
-	const getDescricaoContaCorrente = (idConta: string): string => {
-		const conta = contasCorrentes.find((c) => c.id.toString() === idConta);
-		if (!conta) {
-			return `Conta ${idConta}`;
-		}
+	const expandirTodos = () => setGruposExpandidos({ receitas: true, operacionais: true, investimentos: true });
+	const recolherTodos = () => setGruposExpandidos({ receitas: false, operacionais: false, investimentos: false });
 
-		// Prioriza nomeBanco ou nome. Se não houver, usa 'Conta Corrente'.
-		const nomeBanco = conta.nomeBanco || conta.nome || 'Conta Corrente';
-		// Prioriza numConta ou numero. Se não houver, usa o ID.
-		const numConta = conta.numConta || conta.numero || idConta;
-		// Adiciona o responsável se existir.
-		const responsavel = conta.responsavel ? ` - ${conta.responsavel}` : '';
-
-		return `${nomeBanco} - ${numConta}${responsavel}`;
-	};
-
-	const gerarFluxo = async (contasParaGerar?: string[], tipoAgrupamentoParaGerar?: 'planos' | 'centros', anoParaGerar?: string) => {
+	const abrirDetalhamento = async (
+		planoId: string,
+		mes: number,
+		tipo: string,
+		descricao: string,
+		subtipoFinanciamento?: 'pagos' | 'contratados',
+	) => {
 		try {
-			setIsLoading(false);
-			const contas = contasParaGerar || contasSelecionadas;
-			const tipoAgrup = tipoAgrupamentoParaGerar || tipoAgrupamento;
-			const ano = anoParaGerar || anoSelecionado;
-			if (contas.length === 0) {
-				console.error('Selecione pelo menos uma conta corrente para gerar o fluxo de caixa.');
-				return;
-			}
-			const dados = await buscarFluxoCaixa(ano, contas, tipoAgrup);
-			const dadosAnterior = await buscarFluxoCaixaAnoAnterior(ano, contas, tipoAgrup);
-			setDadosFluxo(dados.dadosMensais || dados as any);
-			setParcelasVincendasAnuais(dados.parcelasVincendasAnuais || {});
-			setDadosFluxoAnterior(dadosAnterior);
-			setIsLoading(true);
-			console.log('Dados do fluxo de caixa:', dados);
-
-			const mesesDoAno = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(
-				(mes) => `${mes}/${ano}`
-			);
-			setMeses(mesesDoAno);
-
-			const receitas = dados[0]?.receitas || {};
-			const despesas = dados[0]?.despesas || {};
-
-			// Adaptar renderização baseado no tipo de agrupamento
-			if (tipoAgrup === 'centros') {
-				// Agrupamento por Centro de Custos
-				// Receitas são valores diretos (números), não objetos com filhos
-				const subEntradas: any[] = [];
-				Object.entries(receitas).forEach(([id, valor]) => {
-					// Se for um número, é um centro de custos direto
-					if (typeof valor === 'number') {
-						subEntradas.push({
-							id,
-							descricao: getDescricaoCentroCustos(id),
-							filhos: [],
-							isDireto: true, // Flag para indicar que é direto
-						});
-					}
-				});
-
-				// Despesas separadas por Custeio e Investimentos (mantém estrutura de filhos)
-				const subSaidas = Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
-					id,
-					descricao,
-					filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
-						id: idFilho,
-						descricao: getDescricaoCentroCustos(idFilho),
-					})),
-				}));
-
-				setCategorias((prev) => ({
-					entradas: { ...prev.entradas, subcategorias: subEntradas },
-					saidas: { ...prev.saidas, subcategorias: subSaidas },
-					financiamentos: { ...prev.financiamentos, subcategorias: [] },
-					investimentos: { ...prev.investimentos, subcategorias: [] },
-				}));
-			} else {
-				// Agrupamento por Planos de Contas (lógica original)
-				const subEntradas = Object.entries(receitas).map(([id, { descricao, filhos }]) => ({
-					id,
-					descricao,
-					filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
-						id: idFilho,
-						descricao: getDescricaoPlanoConta(idFilho),
-					})),
-				}));
-
-				const subSaidas = Object.entries(despesas).map(([id, { descricao, filhos }]) => ({
-					id,
-					descricao,
-					filhos: Object.entries(filhos).map(([idFilho, valor]) => ({
-						id: idFilho,
-						descricao: getDescricaoPlanoConta(idFilho),
-					})),
-				}));
-
-				const subFinanciamentos = Object.entries(dados[0]?.financiamentos || {}).map(([idConta, valor]) => ({
-					id: idConta,
-					descricao: getDescricaoContaCorrente(idConta),
-					filhos: [],
-				}));
-
-				const subInvestimentos = Object.entries(dados[0]?.investimentos || {}).map(([idPlano, valor]) => ({
-					id: idPlano,
-					descricao: getDescricaoPlanoConta(idPlano),
-					filhos: [],
-				}));
-
-				setCategorias((prev) => ({
-					entradas: { ...prev.entradas, subcategorias: subEntradas },
-					saidas: { ...prev.saidas, subcategorias: subSaidas },
-					financiamentos: { ...prev.financiamentos, subcategorias: subFinanciamentos },
-					investimentos: { ...prev.investimentos, subcategorias: subInvestimentos },
-				}));
-			}
-		} catch (e) {
-			console.error('Erro ao gerar fluxo de caixa:', e);
-			const errorMessage = e instanceof Error ? e.message : 'Erro desconhecido ao gerar fluxo de caixa';
-			console.error(`Erro ao gerar fluxo de caixa: ${errorMessage}`);
-			setIsLoading(true);
-		}
-	};
-
-	const toggleCategoria = (cat: string) => {
-		setExpandido((prev) => ({ ...prev, [cat]: !prev[cat] }));
-	};
-
-	const toggleSubcategoria = (subId: string) => {
-		setExpandidoSub((prev) => ({ ...prev, [subId]: !prev[subId] }));
-	};
-
-	const expandirTodos = () => {
-		const novasSubs: any = {};
-		Object.values(categorias).forEach((cat) => cat.subcategorias.forEach((sub) => (novasSubs[sub.id] = true)));
-		
-		// Adicionar subcategorias de financiamentos quando for Centro de Custos
-		if (tipoAgrupamento === 'centros') {
-			novasSubs['fin-pagos'] = true;
-			novasSubs['fin-contratados'] = true;
-		}
-
-		setGruposExpandidos({ receitas: true, operacionais: true, investimentos: true });
-		setExpandido({
-			entradas: true,
-			saidas: true,
-			financiamentos: true,
-			investimentos: true,
-		});
-		setExpandidoSub(novasSubs);
-	};
-
-	const recolherTodos = () => {
-		const novasSubs: any = {};
-		Object.values(categorias).forEach((cat) => cat.subcategorias.forEach((sub) => (novasSubs[sub.id] = false)));
-
-		setGruposExpandidos({ receitas: false, operacionais: false, investimentos: false });
-		setExpandido({
-			entradas: false,
-			saidas: false,
-			financiamentos: false,
-			investimentos: false,
-		});
-		setExpandidoSub(novasSubs);
-	};
-
-	const abrirDetalhamento = async (planoId: string, mes: number, tipo: string, descricao: string, subtipoFinanciamento?: 'pagos' | 'contratados') => {
-		try {
-			console.log('abrirDetalhamento', { planoId, mes, tipo, descricao, subtipoFinanciamento });
-			const dados = await buscarDetalhamento(
-				planoId,
-				mes,
-				tipo,
-				anoSelecionado,
-				tipoAgrupamento,
-				subtipoFinanciamento,
-				contasSelecionadas,
-			);
-			console.log('dados', dados);
+			const dados = await buscarDetalhamento(planoId, mes, tipo, anoSelecionado, 'centros', subtipoFinanciamento, contasSelecionadas);
 			setTituloDetalhamento(descricao);
-			console.log('tipo', tipo);
 			if (tipo === 'financiamentos') {
-				console.log('dados financiamentos', dados);
-				setFinanciamentosDetalhados(dados as any);
+				setFinanciamentosDetalhados(dados as FinanciamentoDetalhadoDTO[]);
 				setModalFinanciamentoDetalhesAberto(true);
 			} else {
 				setMovimentosDetalhados(dados as MovimentoDetalhado[]);
@@ -315,470 +126,21 @@ const MovimentoBancarioTable: React.FC = () => {
 			}
 		} catch (error) {
 			console.error('Erro ao buscar detalhamento:', error);
+			toast.error('Não foi possível abrir o detalhamento.');
 		}
 	};
 
-	const calcularTotais = (tipo: keyof FluxoCaixaMes): string[] => {
-		return dadosFluxo.map((mes) => {
-			// Quando agrupado por centros, receitas são valores diretos
-			// Financiamentos quando centros têm estrutura diferente (pagos/contratados)
-			const isDireto = tipo === 'investimentos' ||
-				(tipoAgrupamento === 'centros' && tipo === 'receitas') ||
-				(tipo === 'financiamentos' && tipoAgrupamento === 'planos');
-			
-			if (tipo === 'financiamentos' && tipoAgrupamento === 'centros') {
-				// Para centros, calcular resultado (contratados - pagos)
-				const pagos = Object.values((mes.financiamentos as any)?.pagos ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-				const contratados = Object.values((mes.financiamentos as any)?.contratados ?? {}).reduce((a: number, b: any) => a + (b.valor || 0), 0);
-				return 'R$ ' + formatarMoedaOuTraco(contratados - pagos);
-			}
-			
-			if (isDireto) {
-				const soma = Object.values(mes[tipo] ?? {}).reduce((a, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-				return 'R$ ' + formatarMoedaOuTraco(soma);
-			}
-			let total = 0;
-			Object.values(mes[tipo] ?? {}).forEach((subcat: any) => {
-				total += Object.values(subcat.filhos ?? {}).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-			});
-			return 'R$ ' + formatarMoedaOuTraco(total);
-		});
-	};
-
-	const calcularSaldoMes = (): string[] => {
-		return dadosFluxo.map((mes) => {
-			let receita = 0;
-			if (tipoAgrupamento === 'centros') {
-				// Quando agrupado por centros, receitas são valores diretos (números)
-				receita = Object.values(mes.receitas ?? {}).reduce((acc, item: any) => {
-					return acc + (typeof item === 'number' ? item : 0);
-				}, 0);
-			} else {
-				receita = Object.values(mes.receitas ?? {}).reduce((acc, subcat: any) => {
-					return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-				}, 0);
-			}
-
-			const despesa = Object.values(mes.despesas ?? {}).reduce((acc, subcat: any) => {
-				return acc + Object.values(subcat.filhos).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-			}, 0);
-
-			return 'R$ ' + formatarMoeda(receita - despesa);
-		});
-	};
-
-	// Funções auxiliares para cálculos quando agrupado por Centro de Custos
-	const calcularFinanciamentosPagos = (mesIndex: number): number => {
-		if (tipoAgrupamento !== 'centros') return 0;
-		const mes = dadosFluxo[mesIndex];
-		if (!mes || !(mes.financiamentos as any)?.pagos) return 0;
-		return Object.values((mes.financiamentos as any).pagos).reduce((acc: number, item: any) => acc + (item.valor || 0), 0);
-	};
-
-	const calcularFinanciamentosContratados = (mesIndex: number): number => {
-		if (tipoAgrupamento !== 'centros') return 0;
-		const mes = dadosFluxo[mesIndex];
-		if (!mes || !(mes.financiamentos as any)?.contratados) return 0;
-		return Object.values((mes.financiamentos as any).contratados).reduce((acc: number, item: any) => acc + (item.valor || 0), 0);
-	};
-
-	// Used by the planos table's financing rows (pagos − contratados)
-	const calcularResultadoFinanciamentos = (mesIndex: number): number =>
-		calcularFinanciamentosPagos(mesIndex) - calcularFinanciamentosContratados(mesIndex);
-
-	const renderCategoria = (tipo: keyof FluxoCaixaMes, label: string, mainCor: string, valueCor: string) => {
-		const possuiDados = dadosFluxo.some((mes) => mes[tipo] && Object.keys(mes[tipo] ?? {}).length > 0);
-
-		// Quando agrupado por centros, receitas são diretas (sem hierarquia)
-		// Financiamentos quando agrupado por centros têm estrutura com subcategorias (pagos/contratados)
-		const isFilhoDireto = tipo === 'investimentos' ||
-			(tipoAgrupamento === 'centros' && tipo === 'receitas') ||
-			(tipo === 'financiamentos' && tipoAgrupamento === 'planos');
-		const isFinanciamentosCentros = tipo === 'financiamentos' && tipoAgrupamento === 'centros';
-
-		return (
-			<>
-				{/* Linha principal da categoria */}
-				<tr className="font-bold border border-gray-300">
-					<td
-						className={`px-3 py-2 sticky left-0 z-10 text-left ${possuiDados ? 'cursor-pointer' : ''}`}
-						style={{ backgroundColor: mainCor }}
-						onClick={possuiDados ? () => toggleCategoria(tipo) : undefined}
-					>
-						{possuiDados && <FontAwesomeIcon icon={expandido[tipo] ? faMinus : faPlus} className="mr-2 text-blue-600" />}
-						{label}
-					</td>
-					{meses.map((_, idx) => (
-						<td key={idx} className="text-center px-3 py-2 border border-gray-300" style={{ backgroundColor: valueCor }}>
-							{(() => {
-								let total = 0;
-								if (isFinanciamentosCentros) {
-									// Quando agrupado por centros, calcular resultado (contratados - pagos)
-									const pagos = Object.values((dadosFluxo[idx]?.financiamentos as any)?.pagos ?? {}).reduce(
-										(acc: number, item: any) => acc + (item.valor || 0),
-										0
-									);
-									const contratados = Object.values((dadosFluxo[idx]?.financiamentos as any)?.contratados ?? {}).reduce(
-										(acc: number, item: any) => acc + (item.valor || 0),
-										0
-									);
-									total = contratados - pagos;
-								} else if (tipo === 'financiamentos') {
-									total = Object.values(dadosFluxo[idx]?.financiamentos ?? {}).reduce(
-										(acc: number, item: any) => acc + (item.valor || 0),
-										0
-									);
-								} else if (isFilhoDireto) {
-									// Para receitas quando agrupado por centros, os valores são números diretos
-									if (tipoAgrupamento === 'centros' && tipo === 'receitas') {
-										total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
-											(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
-											0
-										);
-									} else {
-										total = Object.values(dadosFluxo[idx]?.[tipo] ?? {}).reduce(
-											(acc: number, item: any) => acc + (typeof item === 'number' ? item : 0),
-											0
-										);
-									}
-								} else {
-									Object.values(dadosFluxo[idx]?.[tipo] ?? {}).forEach((subcat: any) => {
-										total += Object.values(subcat.filhos ?? {}).reduce(
-											(acc: number, filho: any) => acc + (typeof filho === 'number' ? filho : 0),
-											0
-										);
-									});
-								}
-								return total ? `R$ ${formatarMoeda(total)}` : 'R$ 0,00';
-							})()}
-						</td>
-					))}
-				</tr>
-
-				{/* Financiamentos quando agrupado por centros (com subcategorias Pagos/Contratados) */}
-				{expandido[tipo] && isFinanciamentosCentros && (
-					<>
-						{/* Subcategoria: Pagos */}
-						<tr className="cursor-pointer border border-gray-300 bg-gray-100">
-							<td className="px-6 py-2 sticky left-0 z-10 text-left font-bold bg-gray-100" onClick={() => toggleSubcategoria('fin-pagos')}>
-								<FontAwesomeIcon icon={expandidoSub['fin-pagos'] ? faMinus : faPlus} className="ml-2 mr-2 text-blue-600" />
-								Pagos
-							</td>
-							{meses.map((_, idx) => (
-								<td key={`total-pagos-${idx}`} className="text-center px-3 py-2 border border-gray-300 bg-gray-100">
-									{(() => {
-										const pagos = Object.values((dadosFluxo[idx]?.financiamentos as any)?.pagos ?? {}).reduce(
-											(total: number, item: any) => total + (item.valor || 0),
-											0
-										);
-										return pagos ? `R$ ${formatarMoeda(pagos)}` : 'R$ 0,00';
-									})()}
-								</td>
-							))}
-						</tr>
-						{expandidoSub['fin-pagos'] && 
-							Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys((mes.financiamentos as any)?.pagos ?? {})))).map((credorKey) => {
-								const credorInfo = (dadosFluxo.find((mes) => (mes.financiamentos as any)?.pagos?.[credorKey])?.financiamentos as any)?.pagos?.[credorKey];
-								const descricao = credorInfo?.descricao || `Credor ${credorKey}`;
-								return (
-									<tr key={`pago-${credorKey}`} className="bg-white border border-gray-200">
-										<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-											<div className="ml-7">{descricao}</div>
-										</td>
-										{meses.map((_, idx) => {
-											const valor = (dadosFluxo[idx]?.financiamentos as any)?.pagos?.[credorKey]?.valor;
-											return (
-												<td
-													key={`valor-pago-${credorKey}-${idx}`}
-													className="text-center px-3 py-1 border border-gray-300"
-												>
-													{valor ? (
-														<div
-															className="cursor-pointer hover:underline hover:text-blue-600"
-															onClick={() => abrirDetalhamento(credorKey, idx, 'financiamentos', descricao, 'pagos')}
-														>
-															{`R$ ${formatarMoeda(valor)}`}
-														</div>
-													) : (
-														'R$ 0,00'
-													)}
-												</td>
-											);
-										})}
-									</tr>
-								);
-							})
-						}
-
-						{/* Subcategoria: Contratados */}
-						<tr className="cursor-pointer border border-gray-300 bg-gray-100">
-							<td className="px-6 py-2 sticky left-0 z-10 text-left font-bold bg-gray-100" onClick={() => toggleSubcategoria('fin-contratados')}>
-								<FontAwesomeIcon icon={expandidoSub['fin-contratados'] ? faMinus : faPlus} className="ml-2 mr-2 text-blue-600" />
-								Contratados
-							</td>
-							{meses.map((_, idx) => (
-								<td key={`total-contratados-${idx}`} className="text-center px-3 py-2 border border-gray-300 bg-gray-100">
-									{(() => {
-										const contratados = Object.values((dadosFluxo[idx]?.financiamentos as any)?.contratados ?? {}).reduce(
-											(total: number, item: any) => total + (item.valor || 0),
-											0
-										);
-										return contratados ? `R$ ${formatarMoeda(contratados)}` : 'R$ 0,00';
-									})()}
-								</td>
-							))}
-						</tr>
-						{expandidoSub['fin-contratados'] && 
-							Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys((mes.financiamentos as any)?.contratados ?? {})))).map((credorKey) => {
-								const credorInfo = (dadosFluxo.find((mes) => (mes.financiamentos as any)?.contratados?.[credorKey])?.financiamentos as any)?.contratados?.[credorKey];
-								const descricao = credorInfo?.descricao || `Credor ${credorKey}`;
-								return (
-									<tr key={`contratado-${credorKey}`} className="bg-white border border-gray-200">
-										<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-											<div className="ml-7">{descricao}</div>
-										</td>
-										{meses.map((_, idx) => {
-											const valor = (dadosFluxo[idx]?.financiamentos as any)?.contratados?.[credorKey]?.valor;
-											return (
-												<td
-													key={`valor-contratado-${credorKey}-${idx}`}
-													className="text-center px-3 py-1 border border-gray-300"
-												>
-													{valor ? (
-														<div
-															className="cursor-pointer hover:underline hover:text-blue-600"
-															onClick={() => abrirDetalhamento(credorKey, idx, 'financiamentos', descricao, 'contratados')}
-														>
-															{`R$ ${formatarMoeda(valor)}`}
-														</div>
-													) : (
-														'R$ 0,00'
-													)}
-												</td>
-											);
-										})}
-									</tr>
-								);
-							})
-						}
-
-						{/* Resultado financiamentos do mês */}
-						<tr className="border border-gray-300 bg-gray-100">
-							<td className="px-6 py-2 sticky left-0 z-10 text-left font-bold bg-gray-100">
-								Resultado financiamentos do mês
-							</td>
-							{meses.map((_, idx) => {
-								const resultado = calcularResultadoFinanciamentos(idx);
-								return (
-									<td
-										key={idx}
-										className={`text-center px-3 py-2 border border-gray-300 bg-gray-100 ${
-											resultado > 0 ? '!text-green-600' : resultado < 0 ? '!text-red-600' : 'text-gray-600'
-										}`}
-									>
-										{`R$ ${formatarMoeda(resultado)}`}
-									</td>
-								);
-							})}
-						</tr>
-					</>
-				)}
-
-				{/* Direct rows: financiamento (planos) or investimentos */}
-				{expandido[tipo] && isFilhoDireto && tipo === 'financiamentos' && (
-					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
-						const financiamentoInfo = (dadosFluxo.find((mes) => (mes.financiamentos as any)?.[idFilho])?.financiamentos as any)?.[idFilho];
-						const descricao = financiamentoInfo?.descricao || `Credor ${idFilho}`;
-						return (
-							<tr key={`filho-direto-${idFilho}`} className="bg-white border border-gray-200">
-								<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-									<div className="ml-7">{descricao}</div>
-								</td>
-								{meses.map((_, idx) => {
-									const valorFinanciamento = (dadosFluxo[idx]?.financiamentos as any)?.[idFilho]?.valor;
-									return (
-										<td
-											key={`valor-direto-${idFilho}-${idx}`}
-											className="text-center px-3 py-1 border border-gray-300"
-										>
-											{valorFinanciamento ? (
-												<div
-													className="cursor-pointer hover:underline hover:text-blue-600"
-													onClick={() => abrirDetalhamento(idFilho, idx, 'financiamentos', descricao)}
-												>
-													{`R$ ${formatarMoeda(valorFinanciamento)}`}
-												</div>
-											) : (
-												'R$ 0,00'
-											)}
-										</td>
-									);
-								})}
-							</tr>
-						);
-					})
-				)}
-
-				{/* Direct rows: investimentos or receitas (centros) */}
-				{expandido[tipo] && isFilhoDireto && tipo !== 'financiamentos' && (
-					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idFilho) => {
-						let descricao = '';
-						if (tipo === 'investimentos') {
-							descricao = getDescricaoPlanoConta(idFilho);
-						} else if (tipo === 'receitas' && tipoAgrupamento === 'centros') {
-							descricao = getDescricaoCentroCustos(idFilho);
-						} else {
-							descricao = `Item ${idFilho}`;
-						}
-						return (
-							<tr key={`filho-direto-${idFilho}`} className="bg-white border border-gray-200">
-								<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-									<div className="ml-7">{descricao}</div>
-								</td>
-								{meses.map((_, idx) => {
-									const filhoValor = (dadosFluxo[idx]?.[tipo] as any)?.[idFilho];
-									// Para receitas quando agrupado por centros, o valor é um número direto
-									const valor = typeof filhoValor === 'number' ? filhoValor : filhoValor;
-									return (
-										<td
-											key={`valor-direto-${idFilho}-${idx}`}
-											className="text-center px-3 py-1 border border-gray-300"
-										>
-											{valor ? (
-												<div
-													className="cursor-pointer hover:underline hover:text-blue-600"
-													onClick={() => abrirDetalhamento(idFilho, idx, tipo, descricao)}
-												>
-													{`R$ ${formatarMoeda(valor)}`}
-												</div>
-											) : (
-												'R$ 0,00'
-											)}
-										</td>
-									);
-								})}
-							</tr>
-						);
-					})
-				)}
-
-				{/* Se for Receitas/Despesas (normal com expandir/recolher subcategorias) */}
-				{expandido[tipo] &&
-					!isFilhoDireto &&
-					!isFinanciamentosCentros &&
-					Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys(mes[tipo] ?? {})))).map((idPai) => {
-						const pai = (dadosFluxo.find((mes) => (mes[tipo] as any)?.[idPai])?.[tipo] as any)?.[idPai];
-						if (!pai) return null;
-
-						return (
-							<React.Fragment key={idPai}>
-								<tr className="cursor-pointer border border-gray-300 bg-gray-100">
-									<td className="px-6 py-2 sticky left-0 z-10 text-left font-bold bg-gray-100" onClick={() => toggleSubcategoria(idPai)}>
-										<FontAwesomeIcon icon={expandidoSub[idPai] ? faMinus : faPlus} className="ml-2 mr-2 text-blue-600" />
-										{pai.descricao}
-									</td>
-									{meses.map((_, idx) => (
-										<td key={`total-pai-${idPai}-${idx}`} className="text-center px-3 py-2 border border-gray-300 bg-gray-100">
-											{(() => {
-												const valorPai = Object.values((dadosFluxo[idx]?.[tipo] as any)?.[idPai]?.filhos ?? {}).reduce(
-													(total: number, filho: any) => total + (typeof filho === 'number' ? filho : 0),
-													0
-												);
-												return valorPai ? `R$ ${formatarMoeda(valorPai)}` : 'R$ 0,00';
-											})()}
-										</td>
-									))}
-								</tr>
-
-								{expandidoSub[idPai] &&
-									Array.from(new Set(dadosFluxo.flatMap((mes) => Object.keys((mes[tipo] as any)?.[idPai]?.filhos ?? {})))).map((idFilho) => {
-										const filho = (dadosFluxo.find((mes) => (mes[tipo] as any)?.[idPai]?.filhos?.[idFilho])?.[tipo] as any)?.[
-											idPai
-										]?.filhos?.[idFilho];
-										if (!filho) return null;
-
-										// Quando agrupado por centros, usar getDescricaoCentroCustos para despesas
-										const descricaoFilho = (tipoAgrupamento === 'centros' && tipo === 'despesas') 
-											? getDescricaoCentroCustos(idFilho)
-											: getDescricaoPlanoConta(idFilho);
-
-										return (
-											<tr key={`filho-${idPai}-${idFilho}`} className="bg-white border border-gray-200">
-												<td className="px-10 py-1 sticky left-0 z-10 bg-white text-left">
-													<div className="ml-7">{descricaoFilho}</div>
-												</td>
-												{meses.map((_, idx) => (
-													<td
-														key={`valor-${idFilho}-${idx}`}
-														className="text-center px-3 py-1 border border-gray-300"
-													>
-														{(() => {
-															const filhoValor = (dadosFluxo[idx]?.[tipo] as any)?.[idPai]?.filhos?.[idFilho];
-															return filhoValor ? (
-																<div
-																	className="cursor-pointer hover:underline hover:text-blue-600"
-																	onClick={() => abrirDetalhamento(idFilho, idx, tipo, descricaoFilho)}
-																>
-																	{`R$ ${formatarMoeda(filhoValor)}`}
-																</div>
-															) : (
-																'R$ 0,00'
-															);
-														})()}
-													</td>
-												))}
-											</tr>
-										);
-									})}
-							</React.Fragment>
-						);
-					})}
-			</>
-		);
-	};
+	const abaClasse = (aba: 'tabela' | 'grafico') =>
+		`px-4 py-2 font-bold text-sm ${activeTab === aba ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'}`;
 
 	return (
 		<div>
-			<div className="flex justify-between items-end gap-5 mb-4">
-				<div className="flex items-end gap-3 relative w-auto whitespace-nowrap">
-					<div className="flex border-b border-gray-300">
-						<button
-							className={`px-4 py-2 font-bold text-sm ${
-								activeTab === 'tabela' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'
-							}`}
-							onClick={() => setActiveTab('tabela')}
-						>
-							TABELA DOS DADOS
-						</button>
-						<button
-							className={`px-4 py-2 font-bold text-sm ${
-								activeTab === 'grafico' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'
-							}`}
-							onClick={() => setActiveTab('grafico')}
-						>
-							GRÁFICO DOS DADOS
-						</button>
-					</div>
-				</div>
-				<div className="flex justify-end items-center gap-3 w-full">
-					{activeTab === 'tabela' && (
-						<>
-							<button
-								className="bg-white border text-gray-800 font-medium px-4 py-1 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
-								onClick={() => recolherTodos()}
-							>
-								Recolher Todos <FontAwesomeIcon icon={faMinus} className="text-blue-500 font-bold" />
-							</button>
-							<button
-								className="bg-white border text-gray-800 font-medium px-4 py-1 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
-								onClick={() => expandirTodos()}
-							>
-								Expandir Todos <FontAwesomeIcon icon={faPlus} className="text-blue-500 font-bold" />
-							</button>
-							|
-						</>
-					)}
-					
+			{/* Phone: filter first, everything wraps. Desktop: tabs on the left, buttons on the right. */}
+			<div className="flex flex-wrap items-center gap-3 mb-4">
+				<div className={`order-1 md:order-3 flex flex-wrap items-center gap-x-3 gap-y-1 ${activeTab === 'grafico' ? 'md:ml-auto' : ''}`}>
+					<span className="text-sm text-gray-600" title="Filtro aplicado (ano e contas correntes)">
+						{resumoFiltro(anoSelecionado, contasSelecionadas.length, contasCorrentes.length)}
+					</span>
 					<button
 						className="bg-primary text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-500"
 						onClick={() => setModalPesquisaAberto(true)}
@@ -786,23 +148,57 @@ const MovimentoBancarioTable: React.FC = () => {
 						Pesquisar Fluxo de Caixa <FontAwesomeIcon icon={faSearchDollar} className="ml-3 font-bold" />
 					</button>
 				</div>
+
+				<div className="order-2 md:order-1 flex border-b border-gray-300 w-full md:w-auto">
+					<button className={abaClasse('tabela')} onClick={() => setActiveTab('tabela')}>
+						Tabela dos dados
+					</button>
+					<button className={abaClasse('grafico')} onClick={() => setActiveTab('grafico')}>
+						Gráfico dos dados
+					</button>
+				</div>
+
+				{activeTab === 'tabela' && (
+					<div className="order-3 md:order-2 md:ml-auto flex flex-wrap items-center gap-2">
+						<button
+							className="bg-white border text-gray-800 font-medium px-4 py-1.5 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
+							onClick={recolherTodos}
+						>
+							Recolher todos <FontAwesomeIcon icon={faMinus} className="text-blue-500 font-bold" />
+						</button>
+						<button
+							className="bg-white border text-gray-800 font-medium px-4 py-1.5 flex justify-center items-center gap-3 rounded-md hover:bg-gray-100"
+							onClick={expandirTodos}
+						>
+							Expandir todos <FontAwesomeIcon icon={faPlus} className="text-blue-500 font-bold" />
+						</button>
+					</div>
+				)}
 			</div>
+
+			{erro && !carregando && (
+				<div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+					<span>{erro}</span>
+					{contasSelecionadas.length > 0 && (
+						<button
+							className="rounded border border-red-300 bg-white px-3 py-1 font-medium hover:bg-red-100"
+							onClick={() => gerarFluxo(contasSelecionadas, anoSelecionado)}
+						>
+							Tentar novamente
+						</button>
+					)}
+				</div>
+			)}
+
 			{activeTab === 'tabela' ? (
-				<div
-					className={
-						tipoAgrupamento === 'centros'
-							? 'max-w-full relative'
-							: 'bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto max-w-full relative'
-					}
-					style={tipoAgrupamento === 'centros' ? undefined : { overflowX: 'auto', position: 'relative' }}
-				>
-					{!isLoading ? (
+				<div className="max-w-full relative">
+					{carregando ? (
 						<div className="flex justify-center items-center h-64">
 							<div className="loader"></div>
 						</div>
-					) : tipoAgrupamento === 'centros' ? (
+					) : (
 						<FluxoMensalCentros
-							dadosFluxo={dadosFluxo as any}
+							dadosFluxo={dadosFluxo}
 							meses={meses}
 							ano={anoSelecionado}
 							expandidos={gruposExpandidos}
@@ -813,168 +209,6 @@ const MovimentoBancarioTable: React.FC = () => {
 								abrirDetalhamento('todos', mesIdx, 'financiamentos', descricao, subtipo)
 							}
 						/>
-					) : (
-						<table className="table rounded-lg overflow-hidden w-full">
-							<thead>
-								<tr className="bg-gray-100 border border-gray-300">
-									<th className="text-center text-lg px-3 py-2 border border-gray-300 sticky left-0 bg-white z-10 ">Fluxo Mensal</th>
-
-									{meses.map((mes) => (
-										<th
-											key={mes}
-											className="text-center text-md px-3 py-2 border border-gray-300 font-medium"
-											style={{ fontSize: '1rem', lineHeight: '1.50rem' }}
-										>
-											{mes}
-										</th>
-									))}
-								</tr>
-							</thead>
-							<tbody>
-								{/* Closing / opening balance band */}
-								<tr className="border border-gray-300" style={{ backgroundColor: FLUXO_CORES.saldoCell }}>
-									<td
-										className="sticky left-0 border border-gray-300 z-10 text-center text-slate-800"
-										style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
-									>
-										Saldo Inicial
-									</td>
-									{dadosFluxo.map((mes, idx) => (
-										<td
-											key={idx}
-											className="text-center border border-gray-300"
-											style={{ backgroundColor: FLUXO_CORES.saldoValor }}
-										>
-											{'R$ ' + formatarMoeda(mes.saldoInicial)}
-										</td>
-									))}
-								</tr>
-
-								{/* Operational: receitas / despesas / resultado */}
-								{renderCategoria('receitas', 'Receitas', FLUXO_CORES.receitasMain, FLUXO_CORES.receitasValor)}
-								{renderCategoria('despesas', 'Despesas', FLUXO_CORES.despesasMain, FLUXO_CORES.despesasValor)}
-								{/* Financing */}
-								{renderCategoria(
-									'financiamentos',
-									'Financiamentos',
-									FLUXO_CORES.financiamentosMain,
-									FLUXO_CORES.financiamentosValor,
-								)}
-								{tipoAgrupamento === 'planos' &&
-									renderCategoria(
-										'investimentos',
-										'Investimentos',
-										FLUXO_CORES.investimentosMain,
-										FLUXO_CORES.investimentosValor,
-									)}
-
-								{(
-									<>
-										<tr
-											className="font-bold border border-gray-300 cursor-help"
-											style={{ borderTop: `3px solid ${FLUXO_CORES.saldoLabel}` }}
-										>
-											<td
-												id="tooltip-saldo-mes-planos"
-												className="sticky left-0 border border-gray-300 z-10 text-center text-slate-800"
-												style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
-											>
-												Saldo do mês (R x D)
-											</td>
-											{calcularSaldoMes().map((valor, idx) => (
-												<td
-													key={idx}
-													className="text-center border border-gray-300"
-													style={{ backgroundColor: FLUXO_CORES.saldoValor }}
-												>
-													{valor}
-												</td>
-											))}
-										</tr>
-
-										<tr className="font-bold border border-gray-300 cursor-help">
-											<td
-												id="tooltip-saldo-fin-planos"
-												className="sticky left-0 border border-gray-300 z-10 text-center text-slate-800"
-												style={{ backgroundColor: FLUXO_CORES.financiamentosMain }}
-											>
-												Saldo de Financiamentos
-											</td>
-											{calcularTotais('financiamentos').map((valor, idx) => (
-												<td
-													key={idx}
-													className="text-center border border-gray-300"
-													style={{ backgroundColor: FLUXO_CORES.financiamentosValor }}
-												>
-													{valor}
-												</td>
-											))}
-										</tr>
-
-										<tr className="font-bold border border-gray-300 cursor-help">
-											<td
-												id="tooltip-saldo-inv-planos"
-												className="sticky left-0 border border-gray-300 z-10 text-center text-slate-800"
-												style={{ backgroundColor: FLUXO_CORES.investimentosMain }}
-											>
-												Saldo de Investimentos
-											</td>
-											{calcularTotais('investimentos').map((valor, idx) => (
-												<td
-													key={idx}
-													className="text-center border border-gray-300"
-													style={{ backgroundColor: FLUXO_CORES.investimentosValor }}
-												>
-													{valor}
-												</td>
-											))}
-										</tr>
-
-										<tr className="font-bold border border-gray-300 cursor-help">
-											<td
-												id="tooltip-saldo-final-planos"
-												className="sticky left-0 border border-gray-300 z-10 text-center text-slate-800"
-												style={{ backgroundColor: FLUXO_CORES.saldoLabel }}
-											>
-												Saldo Final
-											</td>
-											{dadosFluxo.map((mes, idx) => (
-												<td
-													key={idx}
-													className={`text-center border border-gray-300 ${
-														mes.saldoFinal > 0 ? '!text-green-700' : mes.saldoFinal < 0 ? '!text-red-600' : 'text-gray-600'
-													}`}
-													style={{ backgroundColor: FLUXO_CORES.saldoValor }}
-												>
-													{'R$ ' + formatarMoeda(mes.saldoFinal)}
-												</td>
-											))}
-										</tr>
-
-										<tr className="font-bold border border-gray-300 cursor-help">
-											<td
-												id="tooltip-lucratividade-planos"
-												className="sticky left-0 border border-gray-300 z-10 text-center text-slate-800"
-												style={{ backgroundColor: FLUXO_CORES.operacionalLabel }}
-											>
-												Lucratividade
-											</td>
-											{dadosFluxo.map((mes, idx) => (
-												<td
-													key={idx}
-													className={`text-center border border-gray-300 ${
-														mes.lucro > 0 ? '!text-green-700' : mes.lucro < 0 ? '!text-red-600' : 'text-gray-600'
-													}`}
-													style={{ backgroundColor: FLUXO_CORES.operacionalCell }}
-												>
-													{'% ' + formatarMoeda(mes.lucro)}
-												</td>
-											))}
-										</tr>
-									</>
-								)}
-							</tbody>
-						</table>
 					)}
 				</div>
 			) : (
@@ -982,13 +216,8 @@ const MovimentoBancarioTable: React.FC = () => {
 					anoSelecionado={anoSelecionado}
 					dadosAtual={dadosFluxo}
 					dadosAnterior={dadosFluxoAnterior}
-					isLoading={!isLoading}
-					tipoAgrupamento={tipoAgrupamento}
-					labelPorId={Object.fromEntries(
-						tipoAgrupamento === 'centros'
-							? centrosCustos.map((c) => [String(c.id), c.descricao] as const)
-							: planosContas.map((p) => [String(p.id), p.descricao] as const),
-					)}
+					isLoading={carregando}
+					centros={centrosCustos}
 				/>
 			)}
 			<FiltroFluxoCaixaModal
@@ -997,15 +226,10 @@ const MovimentoBancarioTable: React.FC = () => {
 				contasDisponiveis={contasCorrentes}
 				anoSelecionado={anoSelecionado}
 				contasSelecionadas={contasSelecionadas}
-				tipoAgrupamento={tipoAgrupamento}
-				onAplicarFiltro={(ano, contas, tipoAgrup) => {
+				onAplicarFiltro={(ano, contas) => {
 					setAnoSelecionado(ano);
 					setContasSelecionadas(contas);
-					setTipoAgrupamento(tipoAgrup);
-					gerarFluxo(contas, tipoAgrup, ano).then(() => {
-						// Centros layout starts compact (totals only); the planos table starts expanded
-						if (tipoAgrup === 'planos') expandirTodos();
-					});
+					gerarFluxo(contas, ano);
 				}}
 			/>
 
@@ -1022,42 +246,6 @@ const MovimentoBancarioTable: React.FC = () => {
 				financiamentos={financiamentosDetalhados}
 				titulo={tituloDetalhamento}
 			/>
-
-			{/* Tooltips para Planos de Contas */}
-			{tipoAgrupamento === 'planos' && (
-				<>
-					<Tooltip anchorId="tooltip-saldo-mes-planos" place="top" className="z-50">
-						<div className="text-sm">
-							<strong>Cálculo:</strong> Receitas - Despesas<br/>
-							Representa o resultado operacional do mês, sem considerar investimentos e financiamentos.
-						</div>
-					</Tooltip>
-					<Tooltip anchorId="tooltip-saldo-fin-planos" place="top" className="z-50">
-						<div className="text-sm">
-							<strong>Cálculo:</strong> Soma de todos os valores de financiamentos do mês<br/>
-							Representa o total de parcelas de financiamentos pagas ou contratadas no período.
-						</div>
-					</Tooltip>
-					<Tooltip anchorId="tooltip-saldo-inv-planos" place="top" className="z-50">
-						<div className="text-sm">
-							<strong>Cálculo:</strong> Soma de todos os valores de investimentos do mês<br/>
-							Representa o total de despesas classificadas como investimentos no período.
-						</div>
-					</Tooltip>
-					<Tooltip anchorId="tooltip-saldo-final-planos" place="top" className="z-50">
-						<div className="text-sm">
-							<strong>Cálculo:</strong> Saldo Inicial + Saldo do mês (R-D) + Investimentos + Financiamentos<br/>
-							Representa o saldo total da conta corrente ao final do mês (sem pendências de conciliação).
-						</div>
-					</Tooltip>
-					<Tooltip anchorId="tooltip-lucratividade-planos" place="top" className="z-50">
-						<div className="text-sm">
-							<strong>Cálculo:</strong> ((Saldo Final - Saldo Inicial) / |Saldo Inicial|) × 100<br/>
-							Indica a variação percentual do saldo no mês. Se saldo inicial for zero, usa 100% ou -100%.
-						</div>
-					</Tooltip>
-				</>
-			)}
 		</div>
 	);
 };

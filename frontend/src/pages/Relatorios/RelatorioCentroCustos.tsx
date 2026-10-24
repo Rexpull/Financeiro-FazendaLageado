@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BreadCrumb from '../../components/BreadCrumb';
 import FiltroRelatorio from './FiltroRelatorio';
 import {
 	getRelatorioCentroCustos,
@@ -121,31 +122,31 @@ const RelatorioCentroCustos: React.FC = () => {
 		}
 	};
 
-	const totalReceitas = dados
-		.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA')
-		.reduce((sum, item) => sum + item.total, 0);
-	
-	const totalDespesas = dados
-		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA')
-		.reduce((sum, item) => sum + item.total, 0);
-	
-	const totalDespesasCusteio = dados
-		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO')
-		.reduce((sum, item) => sum + item.total, 0);
-	
-	const totalDespesasInvestimento = dados
-		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo !== 'CUSTEIO')
-		.reduce((sum, item) => sum + item.total, 0);
-	
-	const totalFinanciamentos = dados
-		.filter(item => item.centro.tipoReceitaDespesa === 'FINANCIAMENTO')
-		.reduce((sum, item) => sum + item.total, 0);
+	// Same rules as the Dashboard / Fluxo de Caixa (and the Excel/PDF of this report):
+	// - Receitas = credits by cost centre; Despesas = debits, custeio (centre tipo CUSTEIO) × investimento
+	// - financing and "sem centro de custos" (pending) are shown apart, outside the totals
+	const ehCusteio = (item: RelatorioCentroCustosItem) =>
+		item.centro.subtipoDespesa ? item.centro.subtipoDespesa === 'custeio' : item.centro.tipo === 'CUSTEIO';
 
-	const saldoOperacional = totalReceitas - totalDespesas;
+	const comCentro = dados.filter(item => !item.centro.semCentro);
+	const dadosReceitas = comCentro.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA');
+	const dadosDespesas = comCentro.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA');
+	const dadosFinanciamentos = comCentro.filter(item => item.centro.tipoReceitaDespesa === 'FINANCIAMENTO');
+	const dadosSemCentro = dados.filter(item => item.centro.semCentro);
 
-	const dadosReceitas = dados.filter(item => item.centro.tipoReceitaDespesa === 'RECEITA');
-	const dadosDespesas = dados.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA');
-	const dadosFinanciamentos = dados.filter(item => item.centro.tipoReceitaDespesa === 'FINANCIAMENTO');
+	const somar = (itens: RelatorioCentroCustosItem[]) => Math.round(itens.reduce((sum, item) => sum + item.total, 0) * 100) / 100;
+	const totalReceitas = somar(dadosReceitas);
+	const totalDespesasCusteio = somar(dadosDespesas.filter(ehCusteio));
+	const totalDespesasInvestimento = somar(dadosDespesas.filter(item => !ehCusteio(item)));
+	const totalDespesas = totalDespesasCusteio + totalDespesasInvestimento;
+	const totalFinanciamentos = somar(dadosFinanciamentos);
+	const totalSemCentro = somar(dadosSemCentro);
+
+	// A = Receitas − Despesas operacionais (custeio); C = Receitas − todas as despesas
+	const saldoOperacional = totalReceitas - totalDespesasCusteio;
+	const saldoAposInvestimentos = totalReceitas - totalDespesas;
+
+	const quantidadeCentros = new Set(comCentro.map(item => item.centro.id)).size;
 
 	const grupoKey = (item: RelatorioCentroCustosItem) =>
 		`${item.centro.id}|${item.centro.tipoReceitaDespesa ?? ''}`;
@@ -153,18 +154,7 @@ const RelatorioCentroCustos: React.FC = () => {
 	const formatBRL = (value: number) =>
 		new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-	// Função para calcular totais de despesas por tipo para um centro específico
-	const calcularTotaisDespesasPorTipo = (item: RelatorioCentroCustosItem) => {
-		if (item.centro.tipoReceitaDespesa !== 'DESPESA') {
-			return { custeio: 0, investimento: 0 };
-		}
-		
-		// Mesma regra do Dashboard/Fluxo (e do Excel/PDF): só tipo CUSTEIO é custeio; qualquer outro (inclusive sem tipo) é investimento
-		if (item.centro.tipo === 'CUSTEIO') {
-			return { custeio: item.total, investimento: 0 };
-		}
-		return { custeio: 0, investimento: item.total };
-	};
+	const corSaldo = (v: number) => (v < 0 ? 'text-rose-700' : 'text-emerald-700');
 
 	const expandirTodos = () => {
 		setCentrosExpandidos(new Set(dados.map(grupoKey)));
@@ -174,12 +164,73 @@ const RelatorioCentroCustos: React.FC = () => {
 		setCentrosExpandidos(new Set());
 	};
 
+	const botaoExpandir = (item: RelatorioCentroCustosItem) => (
+		<button
+			onClick={() => toggleCentro(grupoKey(item))}
+			className="text-blue-600 hover:text-blue-800"
+			title={centrosExpandidos.has(grupoKey(item)) ? 'Recolher' : 'Expandir'}
+		>
+			<FontAwesomeIcon icon={centrosExpandidos.has(grupoKey(item)) ? faChevronUp : faChevronDown} />
+		</button>
+	);
+
+	const renderDetalhe = (item: RelatorioCentroCustosItem) =>
+		centrosExpandidos.has(grupoKey(item)) && (
+			<tr>
+				<td colSpan={5} className="px-6 py-4 bg-slate-50">
+					<div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+						<table className="min-w-full">
+							<thead className="bg-slate-100">
+								<tr>
+									<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Data</th>
+									<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Histórico</th>
+									<th className="px-4 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Valor R$</th>
+									<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Tipo</th>
+									<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Plano de Contas</th>
+									<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Pessoa</th>
+									<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Conta Corrente</th>
+								</tr>
+							</thead>
+							<tbody className="divide-y divide-gray-100">
+								{item.movimentos.map((mov, idx) => (
+									<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
+										<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{formatarDataISO(mov.dtMovimento)}</td>
+										<td className="px-4 py-2 text-sm text-gray-800">
+											{mov.historico}
+											{mov.pendente && (
+												<span
+													className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold uppercase"
+													title="Pendente de conciliação (falta plano de contas ou centro de custos)"
+												>
+													Pendente
+												</span>
+											)}
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatBRL(mov.valor)}</td>
+										<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
+										<td className="px-4 py-2 text-sm text-gray-700">
+											{mov.planoDescricao || (mov.tipoMovimento === 'D' ? <span className="text-amber-700">Sem plano</span> : '-')}
+										</td>
+										<td className="px-4 py-2 text-sm text-gray-700">{mov.pessoaNome || '-'}</td>
+										<td className="px-4 py-2 text-sm text-gray-700">
+											<div className="flex items-center gap-2" title={mov.contaDescricao || ''}>
+												{mov.bancoCodigo && <img src={getBancoLogo(mov.bancoCodigo)} alt={mov.bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
+												<span className="truncate whitespace-nowrap">{mov.agencia ? `${mov.agencia} - ` : ''}{mov.numConta || '-'}</span>
+											</div>
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				</td>
+			</tr>
+		);
+
 	return (
 		<div className="min-h-screen">
 			<div className="max-w-8xl mx-auto">
-				<div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-					<h1 className="text-2xl font-bold text-gray-900">Relatório de Centro de Custos</h1>
-				</div>
+				<BreadCrumb grupo="Relatórios" pagina="Centro de Custos" />
 				<FiltroRelatorio onAplicarFiltros={handleAplicarFiltros} mostrarCentroCustos={true} />
 
 			{isLoading && (
@@ -204,9 +255,9 @@ const RelatorioCentroCustos: React.FC = () => {
 				<div className="bg-white border border-gray-200 rounded-xl shadow-sm">
 					{/* Resumo */}
 					<div className="p-5 border-b border-gray-200">
-						<div className="flex items-center justify-between mb-2">
+						<div className="flex flex-wrap items-center justify-between gap-3 mb-2">
 							<h3 className="text-lg font-semibold text-gray-800">Resumo por Centro de Custos</h3>
-							<div className="flex gap-2">
+							<div className="flex flex-wrap gap-2">
 								<button
 									onClick={expandirTodos}
 									className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-2"
@@ -247,50 +298,45 @@ const RelatorioCentroCustos: React.FC = () => {
 								</button>
 							</div>
 						</div>
-						<div className="mb-4 pt-4 mt-4 border-t flex items-center gap-4 text-sm">
+						<div className="mb-4 pt-4 mt-4 border-t flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
 							<div className="text-gray-600">
-								Total de centros: <span className="font-medium text-gray-900">{dados.length}</span>
+								Total de centros: <span className="font-medium text-gray-900">{quantidadeCentros}</span>
 							</div>
 							<span className="text-gray-600">|</span>
 							<div className="text-emerald-700">
-								Total Receitas: <span className="font-semibold">
-									{new Intl.NumberFormat('pt-BR', {
-										style: 'currency',
-										currency: 'BRL'
-									}).format(totalReceitas)}
-								</span>
+								Total Receitas: <span className="font-semibold">{formatBRL(totalReceitas)}</span>
 							</div>
 							<span className="text-gray-600">|</span>
 							<div className="text-rose-700">
-								Total Despesas: <span className="font-semibold">
-									{new Intl.NumberFormat('pt-BR', {
-										style: 'currency',
-										currency: 'BRL'
-									}).format(totalDespesas)}
-								</span>
+								Total Despesas: <span className="font-semibold">{formatBRL(totalDespesas)}</span>
 								<span className="text-xs ml-2">
-									(Custeio: {new Intl.NumberFormat('pt-BR', {
-										style: 'currency',
-										currency: 'BRL'
-									}).format(totalDespesasCusteio)} | Investimento: {new Intl.NumberFormat('pt-BR', {
-										style: 'currency',
-										currency: 'BRL'
-									}).format(totalDespesasInvestimento)})
+									(Custeio: {formatBRL(totalDespesasCusteio)} | Investimento: {formatBRL(totalDespesasInvestimento)})
 								</span>
 							</div>
 							<span className="text-gray-600">|</span>
+							<div className="text-gray-900 font-semibold" title="A = Receitas − Despesas de custeio">
+								Saldo operacional (A): <span className={corSaldo(saldoOperacional)}>{formatBRL(saldoOperacional)}</span>
+							</div>
+							<span className="text-gray-600">|</span>
+							<div className="text-gray-900 font-semibold" title="C = Receitas − Despesas de custeio − Despesas de investimento">
+								Saldo após investimentos (C): <span className={corSaldo(saldoAposInvestimentos)}>{formatBRL(saldoAposInvestimentos)}</span>
+							</div>
 							{dadosFinanciamentos.length > 0 && (
 								<>
 									<span className="text-gray-600">|</span>
-									<div className="text-blue-700">
-										Total Financiamentos: <span className="font-semibold">{formatBRL(totalFinanciamentos)}</span>
+									<div className="text-blue-700" title="Financiamentos ficam fora de receitas, despesas e saldos">
+										Financiamentos (fora do resultado): <span className="font-semibold">{formatBRL(totalFinanciamentos)}</span>
 									</div>
 								</>
 							)}
-							<span className="text-gray-600">|</span>
-							<div className="text-gray-900 font-semibold">
-								Saldo operacional: {formatBRL(saldoOperacional)}
-							</div>
+							{dadosSemCentro.length > 0 && (
+								<>
+									<span className="text-gray-600">|</span>
+									<div className="text-amber-700" title="Movimentos pendentes de conciliação sem centro de custos: não entram nos totais">
+										Sem centro de custos (pendentes): <span className="font-semibold">{formatBRL(totalSemCentro)}</span>
+									</div>
+								</>
+							)}
 						</div>
 						<div className="overflow-x-auto border border-gray-200 rounded-lg overflow-hidden">
 							<table className="min-w-full table-fixed">
@@ -323,9 +369,7 @@ const RelatorioCentroCustos: React.FC = () => {
 									{dadosReceitas.length > 0 && (
 										<tr className="bg-emerald-50 font-semibold border-b-2 border-emerald-200">
 											<td className="px-6 py-3 whitespace-nowrap text-gray-900">Total Receitas</td>
-											<td className="px-6 py-3 whitespace-nowrap text-right text-emerald-700">
-												{formatBRL(totalReceitas)}
-											</td>
+											<td className="px-6 py-3 whitespace-nowrap text-right text-emerald-700">{formatBRL(totalReceitas)}</td>
 											<td className="px-6 py-3"></td>
 											<td className="px-6 py-3"></td>
 											<td className="px-6 py-3"></td>
@@ -334,74 +378,15 @@ const RelatorioCentroCustos: React.FC = () => {
 									{dadosReceitas.map((item, idxResumo) => (
 										<React.Fragment key={grupoKey(item)}>
 											<tr className={idxResumo % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-												<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-													{item.centro.descricao}
-												</td>
+												<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{item.centro.descricao}</td>
 												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-													<span className="text-emerald-700">
-														{new Intl.NumberFormat('pt-BR', {
-															style: 'currency',
-															currency: 'BRL'
-														}).format(item.total)}
-													</span>
+													<span className="text-emerald-700">{formatBRL(item.total)}</span>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-													<span className="text-gray-400">-</span>
-												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-													<span className="text-gray-400">-</span>
-												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-center">
-													<button
-														onClick={() => toggleCentro(grupoKey(item))}
-														className="text-blue-600 hover:text-blue-800"
-														title={centrosExpandidos.has(grupoKey(item)) ? 'Recolher' : 'Expandir'}
-													>
-														<FontAwesomeIcon
-															icon={centrosExpandidos.has(grupoKey(item)) ? faChevronUp : faChevronDown}
-														/>
-													</button>
-												</td>
+												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900"><span className="text-gray-400">-</span></td>
+												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900"><span className="text-gray-400">-</span></td>
+												<td className="px-6 py-4 whitespace-nowrap text-center">{botaoExpandir(item)}</td>
 											</tr>
-											{centrosExpandidos.has(grupoKey(item)) && (
-												<tr>
-													<td colSpan={5} className="px-6 py-4 bg-slate-50">
-														<div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-															<table className="min-w-full">
-																<thead className="bg-slate-100">
-																	<tr>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Data</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Histórico</th>
-																		<th className="px-4 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Valor R$</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Tipo</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Plano de Contas</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Pessoa</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Conta Corrente</th>
-																	</tr>
-																</thead>
-																<tbody className="divide-y divide-gray-100">
-																	{item.movimentos.map((mov, idx) => (
-																		<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{formatarDataISO(mov.dtMovimento)}</td>
-																			<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)}</td>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">{mov.planoDescricao || '-'}</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">{mov.pessoaNome || '-'}</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">
-																				<div className="flex items-center gap-2" title={mov.contaDescricao || ''}>
-																					{(mov as any).bancoCodigo && <img src={getBancoLogo((mov as any).bancoCodigo)} alt={(mov as any).bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
-																					<span className="truncate whitespace-nowrap">{(mov as any).agencia ? `${(mov as any).agencia} - ` : ''}{(mov as any).numConta || '-'}</span>
-																				</div>
-																			</td>
-																		</tr>
-																	))}
-																</tbody>
-															</table>
-														</div>
-													</td>
-												</tr>
-											)}
+											{renderDetalhe(item)}
 										</React.Fragment>
 									))}
 									{/* Bloco Despesas: totalizador primeiro, depois desdobramentos */}
@@ -415,73 +400,47 @@ const RelatorioCentroCustos: React.FC = () => {
 										</tr>
 									)}
 									{dadosDespesas.map((item, idxResumo) => {
-										const totaisDespesas = calcularTotaisDespesasPorTipo(item);
+										const custeio = ehCusteio(item);
 										return (
 											<React.Fragment key={grupoKey(item)}>
 												<tr className={idxResumo % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
 													<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{item.centro.descricao}</td>
 													<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900"><span className="text-gray-400">-</span></td>
 													<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-														{totaisDespesas.custeio > 0 ? <span className="text-rose-700">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totaisDespesas.custeio)}</span> : <span className="text-gray-400">-</span>}
+														{custeio ? <span className="text-rose-700">{formatBRL(item.total)}</span> : <span className="text-gray-400">-</span>}
 													</td>
 													<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900">
-														{totaisDespesas.investimento > 0 ? <span className="text-rose-700">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totaisDespesas.investimento)}</span> : <span className="text-gray-400">-</span>}
+														{!custeio ? <span className="text-rose-700">{formatBRL(item.total)}</span> : <span className="text-gray-400">-</span>}
 													</td>
-													<td className="px-6 py-4 whitespace-nowrap text-center">
-														<button onClick={() => toggleCentro(grupoKey(item))} className="text-blue-600 hover:text-blue-800" title={centrosExpandidos.has(grupoKey(item)) ? 'Recolher' : 'Expandir'}>
-															<FontAwesomeIcon icon={centrosExpandidos.has(grupoKey(item)) ? faChevronUp : faChevronDown} />
-														</button>
-													</td>
+													<td className="px-6 py-4 whitespace-nowrap text-center">{botaoExpandir(item)}</td>
 												</tr>
-												{centrosExpandidos.has(grupoKey(item)) && (
-													<tr>
-														<td colSpan={5} className="px-6 py-4 bg-slate-50">
-															<div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-																<table className="min-w-full">
-																	<thead className="bg-slate-100">
-																		<tr>
-																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Data</th>
-																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Histórico</th>
-																			<th className="px-4 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Valor R$</th>
-																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Tipo</th>
-																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Plano de Contas</th>
-																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Pessoa</th>
-																			<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Conta Corrente</th>
-																		</tr>
-																	</thead>
-																	<tbody className="divide-y divide-gray-100">
-																		{item.movimentos.map((mov, idx) => (
-																			<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
-																				<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{formatarDataISO(mov.dtMovimento)}</td>
-																				<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
-																				<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)}</td>
-																				<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
-																				<td className="px-4 py-2 text-sm text-gray-700">{mov.planoDescricao || '-'}</td>
-																				<td className="px-4 py-2 text-sm text-gray-700">{mov.pessoaNome || '-'}</td>
-																				<td className="px-4 py-2 text-sm text-gray-700">
-																					<div className="flex items-center gap-2" title={mov.contaDescricao || ''}>
-																						{(mov as any).bancoCodigo && <img src={getBancoLogo((mov as any).bancoCodigo)} alt={(mov as any).bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
-																						<span className="truncate whitespace-nowrap">{(mov as any).agencia ? `${(mov as any).agencia} - ` : ''}{(mov as any).numConta || '-'}</span>
-																					</div>
-																				</td>
-																			</tr>
-																		))}
-																	</tbody>
-																</table>
-															</div>
-														</td>
-													</tr>
-												)}
+												{renderDetalhe(item)}
 											</React.Fragment>
 										);
 									})}
-									{/* Bloco Financiamentos: separado de receitas/despesas */}
+									{/* Saldos (A e C) */}
+									{(dadosReceitas.length > 0 || dadosDespesas.length > 0) && (
+										<>
+											<tr className="bg-slate-100 font-semibold border-t-2 border-slate-300">
+												<td className="px-6 py-3 whitespace-nowrap text-gray-900" title="A = Receitas − Despesas de custeio">Saldo operacional (A)</td>
+												<td colSpan={3} className={`px-6 py-3 whitespace-nowrap text-right ${corSaldo(saldoOperacional)}`}>{formatBRL(saldoOperacional)}</td>
+												<td className="px-6 py-3"></td>
+											</tr>
+											<tr className="bg-slate-100 font-semibold border-b-2 border-slate-300">
+												<td className="px-6 py-3 whitespace-nowrap text-gray-900" title="C = Receitas − Despesas de custeio − Despesas de investimento">Saldo após investimentos (C)</td>
+												<td colSpan={3} className={`px-6 py-3 whitespace-nowrap text-right ${corSaldo(saldoAposInvestimentos)}`}>{formatBRL(saldoAposInvestimentos)}</td>
+												<td className="px-6 py-3"></td>
+											</tr>
+										</>
+									)}
+									{/* Bloco Financiamentos: separado de receitas/despesas (fora do resultado) */}
 									{dadosFinanciamentos.length > 0 && (
 										<tr className="bg-blue-50 font-semibold border-t-2 border-b-2 border-blue-200">
-											<td className="px-6 py-3 whitespace-nowrap text-gray-900">Total Financiamentos</td>
-											<td className="px-6 py-3 whitespace-nowrap text-right text-blue-700">{formatBRL(totalFinanciamentos)}</td>
-											<td className="px-6 py-3"></td>
-											<td className="px-6 py-3"></td>
+											<td className="px-6 py-3 whitespace-nowrap text-gray-900">Total Financiamentos <span className="text-xs font-normal text-gray-500">(fora do resultado)</span></td>
+											<td colSpan={3} className="px-6 py-3 whitespace-nowrap text-center text-blue-700">
+												<span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide mr-2">Financiamentos R$</span>
+												{formatBRL(totalFinanciamentos)}
+											</td>
 											<td className="px-6 py-3"></td>
 										</tr>
 									)}
@@ -489,56 +448,41 @@ const RelatorioCentroCustos: React.FC = () => {
 										<React.Fragment key={grupoKey(item)}>
 											<tr className={idxResumo % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
 												<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{item.centro.descricao}</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-blue-700">{formatBRL(item.total)}</td>
-												<td className="px-6 py-4 text-right"><span className="text-gray-400">-</span></td>
-												<td className="px-6 py-4 text-right"><span className="text-gray-400">-</span></td>
-												<td className="px-6 py-4 whitespace-nowrap text-center">
-													<button onClick={() => toggleCentro(grupoKey(item))} className="text-blue-600 hover:text-blue-800" title={centrosExpandidos.has(grupoKey(item)) ? 'Recolher' : 'Expandir'}>
-														<FontAwesomeIcon icon={centrosExpandidos.has(grupoKey(item)) ? faChevronUp : faChevronDown} />
-													</button>
-												</td>
+												<td colSpan={3} className="px-6 py-4 whitespace-nowrap text-center font-semibold text-blue-700">{formatBRL(item.total)}</td>
+												<td className="px-6 py-4 whitespace-nowrap text-center">{botaoExpandir(item)}</td>
 											</tr>
-											{centrosExpandidos.has(grupoKey(item)) && (
-												<tr>
-													<td colSpan={5} className="px-6 py-4 bg-slate-50">
-														<div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-															<table className="min-w-full">
-																<thead className="bg-slate-100">
-																	<tr>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Data</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Histórico</th>
-																		<th className="px-4 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Valor R$</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Tipo</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Plano de Contas</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Pessoa</th>
-																		<th className="px-4 py-2 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Conta Corrente</th>
-																	</tr>
-																</thead>
-																<tbody className="divide-y divide-gray-100">
-																	{item.movimentos.map((mov, idx) => (
-																		<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{formatarDataISO(mov.dtMovimento)}</td>
-																			<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatBRL(mov.valor)}</td>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">{mov.planoDescricao || '-'}</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">{mov.pessoaNome || '-'}</td>
-																			<td className="px-4 py-2 text-sm text-gray-700">
-																				<div className="flex items-center gap-2" title={mov.contaDescricao || ''}>
-																					{(mov as any).bancoCodigo && <img src={getBancoLogo((mov as any).bancoCodigo)} alt={(mov as any).bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
-																					<span className="truncate whitespace-nowrap">{(mov as any).agencia ? `${(mov as any).agencia} - ` : ''}{(mov as any).numConta || '-'}</span>
-																				</div>
-																			</td>
-																		</tr>
-																	))}
-																</tbody>
-															</table>
-														</div>
-													</td>
-												</tr>
-											)}
+											{renderDetalhe(item)}
 										</React.Fragment>
 									))}
+									{/* Pendentes sem centro de custos: fora dos totais */}
+									{dadosSemCentro.length > 0 && (
+										<tr className="bg-amber-50 font-semibold border-t-2 border-b-2 border-amber-200">
+											<td className="px-6 py-3 text-gray-900">
+												Sem centro de custos <span className="text-xs font-normal text-gray-500">(pendentes de conciliação, fora dos totais)</span>
+											</td>
+											<td colSpan={3} className="px-6 py-3 whitespace-nowrap text-center text-amber-700">
+												<span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide mr-2">Pendentes R$</span>
+												{formatBRL(totalSemCentro)}
+											</td>
+											<td className="px-6 py-3"></td>
+										</tr>
+									)}
+									{dadosSemCentro.map((item, idxResumo) => {
+										const rotulo =
+											item.centro.tipoReceitaDespesa === 'RECEITA' ? 'créditos' : item.centro.tipoReceitaDespesa === 'DESPESA' ? 'débitos' : 'financiamentos';
+										return (
+											<React.Fragment key={grupoKey(item)}>
+												<tr className={idxResumo % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+													<td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
+														{item.centro.descricao} <span className="text-xs text-gray-500">({rotulo})</span>
+													</td>
+													<td colSpan={3} className="px-6 py-4 whitespace-nowrap text-center font-semibold text-amber-700">{formatBRL(item.total)}</td>
+													<td className="px-6 py-4 whitespace-nowrap text-center">{botaoExpandir(item)}</td>
+												</tr>
+												{renderDetalhe(item)}
+											</React.Fragment>
+										);
+									})}
 								</tbody>
 							</table>
 						</div>
@@ -551,4 +495,3 @@ const RelatorioCentroCustos: React.FC = () => {
 };
 
 export default RelatorioCentroCustos;
-

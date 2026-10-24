@@ -1,9 +1,7 @@
-export interface ContaCorrente {
-  id: number;
-  nome: string;
-  numero: string;
-  inativo?: boolean;
-}
+import type { ContaCorrente as ContaCorrenteModelo } from "../../../backend/src/models/ContaCorrente";
+
+/** Account as the API returns it (the list also joins the bank's name and code). */
+export type ContaCorrente = ContaCorrenteModelo & { bancoCodigo?: string; inativo?: boolean };
 
 interface ErrorResponse {
   details?: string;

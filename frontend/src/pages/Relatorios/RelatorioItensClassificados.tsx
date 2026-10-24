@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import BreadCrumb from '../../components/BreadCrumb';
 import FiltroRelatorio from './FiltroRelatorio';
 import {
 	getRelatorioItensClassificados,
@@ -106,15 +107,26 @@ const RelatorioItensClassificados: React.FC = () => {
 		}
 	};
 
-	const totalReceitas = dados
-		.filter(item => item.tipoMovimento === 'C')
-		.reduce((sum, item) => sum + item.valor, 0);
-	
-	const totalDespesas = dados
-		.filter(item => item.tipoMovimento === 'D')
-		.reduce((sum, item) => sum + item.valor, 0);
-	
+	// Same rules as the Dashboard / Fluxo / Relatório de Centro de Custos:
+	// receitas = credits by cost centre; despesas = debits with centre, custeio (centre tipo CUSTEIO) × investimento.
+	// Rows without cost centre are pending ("Sem centro"): shown, but outside the totals.
+	const ehSemCentro = (item: RelatorioItensClassificadosItem) => item.semCentro === true;
+	const subtipoDespesa = (item: RelatorioItensClassificadosItem): 'custeio' | 'investimento' | null => {
+		if (item.tipoMovimento !== 'D' || ehSemCentro(item)) return null;
+		if (item.subtipoDespesa) return item.subtipoDespesa;
+		return item.centroCustosTipo === 'CUSTEIO' ? 'custeio' : 'investimento';
+	};
+	const somar = (itens: RelatorioItensClassificadosItem[]) => Math.round(itens.reduce((sum, item) => sum + item.valor, 0) * 100) / 100;
+
+	const totalReceitas = somar(dados.filter(item => item.tipoMovimento === 'C' && !ehSemCentro(item)));
+	const totalDespesasCusteio = somar(dados.filter(item => subtipoDespesa(item) === 'custeio'));
+	const totalDespesasInvestimento = somar(dados.filter(item => subtipoDespesa(item) === 'investimento'));
+	const totalDespesas = totalDespesasCusteio + totalDespesasInvestimento;
+	const totalSemCentro = somar(dados.filter(ehSemCentro));
+
 	const totalGeral = totalReceitas - totalDespesas;
+	// One movement can produce several rows (rateio plan × centre)
+	const totalMovimentos = new Set(dados.map(item => item.id)).size;
 
 	// Agrupamento por plano (para visualização "Por plano de contas")
 	const gruposPorPlano = useMemo(() => {
@@ -140,25 +152,48 @@ const RelatorioItensClassificados: React.FC = () => {
 			key={`${item.id}-${item.idPlanoContas ?? ''}-${idx}`}
 			className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}
 		>
-			<td className="px-2 py-2 whitespace-nowrap text-xs text-gray-800">{formatarDataISO(item.dtMovimento)}</td>
-			<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.historico}>{item.historico}</td>
-			<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-				{item.tipoMovimento === 'C' ? <span className="text-emerald-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>}
+			<td className="px-2 py-2 whitespace-nowrap text-[13px] text-gray-800">{formatarDataISO(item.dtMovimento)}</td>
+			<td className="px-2 py-2 text-[13px] truncate text-gray-800" title={item.historico}>{item.historico}</td>
+			<td className="px-2 py-2 whitespace-nowrap text-[13px] text-right font-medium text-gray-900">
+				{item.tipoMovimento === 'C' ? (
+					<span
+						className={ehSemCentro(item) ? 'text-amber-700' : 'text-emerald-700'}
+						title={ehSemCentro(item) ? 'Pendente sem centro de custos: fora dos totais' : undefined}
+					>
+						{formatarMoeda(item.valor)}
+						{ehSemCentro(item) && ' *'}
+					</span>
+				) : (
+					<span className="text-gray-400">-</span>
+				)}
 			</td>
-			<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-				{item.tipoMovimento === 'D' && item.centroCustosTipo === 'CUSTEIO' ? <span className="text-rose-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>}
+			{item.tipoMovimento === 'D' && ehSemCentro(item) ? (
+				// Debit without cost centre: pending, neither custeio nor investimento (outside the totals)
+				<td colSpan={2} className="px-2 py-2 whitespace-nowrap text-[13px] text-center font-medium text-amber-700" title="Pendente sem centro de custos: fora dos totais">
+					{formatarMoeda(item.valor)} * (sem centro)
+				</td>
+			) : (
+				<>
+					<td className="px-2 py-2 whitespace-nowrap text-[13px] text-right font-medium text-gray-900">
+						{subtipoDespesa(item) === 'custeio' ? <span className="text-rose-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>}
+					</td>
+					<td className="px-2 py-2 whitespace-nowrap text-[13px] text-right font-medium text-gray-900">
+						{subtipoDespesa(item) === 'investimento' ? <span className="text-rose-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>}
+					</td>
+				</>
+			)}
+			<td className="px-2 py-2 text-[13px] truncate text-gray-800" title={item.planoDescricao || ''}>
+				{item.planoDescricao ||
+					(item.tipoMovimento === 'C' ? (
+						<span className="text-gray-400" title="Receita classificada só por centro de custos">—</span>
+					) : (
+						<span className="text-amber-700 font-medium" title="Pendente: débito sem plano de contas">Sem plano</span>
+					))}
 			</td>
-			<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-				{(() => {
-					const mostraInvest = item.tipoMovimento === 'D' && (item.centroCustosTipo === 'INVESTIMENTO' || !item.centroCustosTipo);
-					return mostraInvest ? <span className="text-rose-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>;
-				})()}
+			<td className="px-2 py-2 text-[13px] truncate" title={item.centroCustosDescricao || ''}>
+				<span className={ehSemCentro(item) ? 'text-red-600 font-medium' : 'text-gray-800'}>{item.centroCustosDescricao || '-'}</span>
 			</td>
-			<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.planoDescricao || ''}>{item.planoDescricao || '-'}</td>
-			<td className="px-2 py-2 text-xs truncate" title={item.centroCustosDescricao || ''}>
-				<span className={item.centroCustosDescricao === 'Não definido' ? 'text-red-600 font-medium' : 'text-gray-800'}>{item.centroCustosDescricao || '-'}</span>
-			</td>
-			<td className="px-2 py-2 text-xs text-gray-800">
+			<td className="px-2 py-2 text-[13px] text-gray-800">
 				<div className="flex items-center gap-1.5" title={item.contaDescricao || ''}>
 					{item.bancoCodigo && <img src={getBancoLogo(item.bancoCodigo)} alt={item.bancoNome || 'Banco'} className="w-5 h-5 object-contain flex-shrink-0" />}
 					<span className="truncate whitespace-nowrap">{item.agencia ? `${item.agencia} - ` : ''}{item.numConta || '-'}</span>
@@ -170,9 +205,7 @@ const RelatorioItensClassificados: React.FC = () => {
 	return (
 		<div className="min-h-screen ">
 			<div className="max-w-8xl mx-auto">
-				<div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-					<h1 className="text-2xl font-bold text-gray-900">Relatório de Plano de Contas</h1>
-				</div>
+				<BreadCrumb grupo="Relatórios" pagina="Plano de Contas" />
 				<FiltroRelatorio onAplicarFiltros={handleAplicarFiltros} mostrarCentroCustos={false} />
 
 			{isLoading && (
@@ -197,7 +230,7 @@ const RelatorioItensClassificados: React.FC = () => {
 				<div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
 					<div className="p-5">
 						<div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-							<div className="flex items-center gap-3">
+							<div className="flex flex-wrap items-center gap-3">
 								<h3 className="text-lg font-semibold text-gray-800">Plano de Contas</h3>
 								<span className="text-sm text-gray-500">Visualização:</span>
 								<select
@@ -209,7 +242,7 @@ const RelatorioItensClassificados: React.FC = () => {
 									<option value="plano">Por plano de contas (subtotais)</option>
 								</select>
 							</div>
-							<div className="flex gap-2">
+							<div className="flex flex-wrap gap-2">
 								<button
 									onClick={handleExportExcel}
 									disabled={isExporting}
@@ -236,9 +269,10 @@ const RelatorioItensClassificados: React.FC = () => {
 								</button>
 							</div>
 						</div>
-						<div className=" mb-4 pt-4 mt-4 border-t flex items-center gap-4 text-sm">
-							<div className="text-gray-600">
-								Total de registros: <span className="font-medium text-gray-900">{dados.length}</span>
+						<div className="mb-4 pt-4 mt-4 border-t flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+							<div className="text-gray-600" title="Um movimento rateado aparece em uma linha por plano × centro">
+								Total de movimentos: <span className="font-medium text-gray-900">{totalMovimentos}</span>
+								{dados.length !== totalMovimentos && <span className="text-xs text-gray-500 ml-1">({dados.length} linhas)</span>}
 							</div>
 							<span className="text-gray-600">|</span>
 							<div className="text-emerald-700">
@@ -257,47 +291,57 @@ const RelatorioItensClassificados: React.FC = () => {
 										currency: 'BRL'
 									}).format(totalDespesas)}
 								</span>
+								<span className="text-xs ml-2">
+									(Custeio: {formatarMoeda(totalDespesasCusteio)} | Investimento: {formatarMoeda(totalDespesasInvestimento)})
+								</span>
 							</div>
 							<span className="text-gray-600">|</span>
 
-							<div className="text-gray-900 font-semibold">
-								Saldo: {new Intl.NumberFormat('pt-BR', {
-									style: 'currency',
-									currency: 'BRL'
-								}).format(totalGeral)}
+							<div className="text-gray-900 font-semibold" title="C = Receitas − Despesas de custeio − Despesas de investimento">
+								Saldo após investimentos (C):{' '}
+								<span className={totalGeral < 0 ? 'text-rose-700' : 'text-emerald-700'}>{formatarMoeda(totalGeral)}</span>
 							</div>
+							{totalSemCentro > 0 && (
+								<>
+									<span className="text-gray-600">|</span>
+									<div className="text-amber-700" title="Movimentos pendentes sem centro de custos: não entram nos totais">
+										* Sem centro (pendentes): <span className="font-semibold">{formatarMoeda(totalSemCentro)}</span>
+									</div>
+								</>
+							)}
 						</div>
-						<div className="border border-gray-200 rounded-lg overflow-hidden">
-							<table className="w-full table-fixed">
+						{/* Horizontal scroll on small screens instead of squeezing the columns */}
+						<div className="border border-gray-200 rounded-lg overflow-x-auto">
+							<table className="w-full min-w-[960px] table-fixed">
 							<thead className="bg-slate-50">
 								<tr>
-									<th rowSpan={2} className="w-24 px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
+									<th rowSpan={2} className="w-24 px-2 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
 										Data
 									</th>
-									<th rowSpan={2} className="w-48 px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
+									<th rowSpan={2} className="w-48 px-2 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
 										Histórico
 									</th>
-									<th rowSpan={2} className="w-28 px-2 py-3 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-l-1 border-r border-t-1 border-gray-300 align-middle bg-emerald-50">
+									<th rowSpan={2} className="w-28 px-2 py-3 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-l-1 border-r border-t-1 border-gray-300 align-middle bg-emerald-50">
 										Receita R$
 									</th>
-									<th colSpan={2} className="px-2 py-2 text-center text-[10px] font-semibold text-slate-700 uppercase tracking-wide border-b border-r border-gray-300 bg-rose-50">
+									<th colSpan={2} className="px-2 py-2 text-center text-[11px] font-semibold text-slate-700 uppercase tracking-wide border-b border-r border-gray-300 bg-rose-50">
 										Despesa R$
 									</th>
-									<th rowSpan={2} className="px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-l border-gray-300 align-middle">
+									<th rowSpan={2} className="px-2 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-l border-gray-300 align-middle">
 										Plano de Contas
 									</th>
-									<th rowSpan={2} className="px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
+									<th rowSpan={2} className="px-2 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300 align-middle">
 										Centro de Custos
 									</th>
-									<th rowSpan={2} className="w-40 px-2 py-3 text-left text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-gray-300 align-middle">
+									<th rowSpan={2} className="w-40 px-2 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-gray-300 align-middle">
 										Conta Corrente
 									</th>
 								</tr>
 								<tr className="bg-rose-50">
-									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300">
+									<th className="w-28 px-2 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-r border-gray-300">
 										Custeio
 									</th>
-									<th className="w-28 px-2 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-gray-300">
+									<th className="w-28 px-2 py-2 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide border-b-2 border-gray-300">
 										Investimento
 									</th>
 								</tr>
@@ -306,22 +350,22 @@ const RelatorioItensClassificados: React.FC = () => {
 								{ordenarPor === 'data' && dados.map((item, idx) => renderLinhaItem(item, idx))}
 								{ordenarPor === 'plano' && gruposPorPlano.map(([chave, itens]) => {
 									const nomePlano = typeof chave === 'string' ? chave : (itens[0]?.planoDescricao ?? String(chave));
-									const subReceita = itens.filter(i => i.tipoMovimento === 'C').reduce((s, i) => s + i.valor, 0);
-									const subDespesaCusteio = itens.filter(i => i.tipoMovimento === 'D' && i.centroCustosTipo === 'CUSTEIO').reduce((s, i) => s + i.valor, 0);
-									const subDespesaInvest = itens.filter(i => i.tipoMovimento === 'D' && (i.centroCustosTipo === 'INVESTIMENTO' || !i.centroCustosTipo)).reduce((s, i) => s + i.valor, 0);
+									const subReceita = itens.filter(i => i.tipoMovimento === 'C' && !ehSemCentro(i)).reduce((s, i) => s + i.valor, 0);
+									const subDespesaCusteio = itens.filter(i => subtipoDespesa(i) === 'custeio').reduce((s, i) => s + i.valor, 0);
+									const subDespesaInvest = itens.filter(i => subtipoDespesa(i) === 'investimento').reduce((s, i) => s + i.valor, 0);
 									return (
 										<React.Fragment key={String(chave)}>
 											<tr className="bg-slate-100 border-t-2 border-slate-200">
-												<td colSpan={8} className="px-2 py-2 text-xs font-semibold text-slate-700">
+												<td colSpan={8} className="px-2 py-2 text-[13px] font-semibold text-slate-700">
 													Plano de contas: {nomePlano}
 												</td>
 											</tr>
 											{itens.map((item, idx) => renderLinhaItem(item, idx))}
 											<tr className="bg-slate-50 font-semibold border-t border-slate-200">
-												<td colSpan={2} className="px-2 py-2 text-xs text-gray-700">Subtotal {nomePlano}</td>
-												<td className="px-2 py-2 text-xs text-right text-emerald-700">{subReceita > 0 ? formatarMoeda(subReceita) : '-'}</td>
-												<td className="px-2 py-2 text-xs text-right text-rose-700">{subDespesaCusteio > 0 ? formatarMoeda(subDespesaCusteio) : '-'}</td>
-												<td className="px-2 py-2 text-xs text-right text-rose-700">{subDespesaInvest > 0 ? formatarMoeda(subDespesaInvest) : '-'}</td>
+												<td colSpan={2} className="px-2 py-2 text-[13px] text-gray-700">Subtotal {nomePlano}</td>
+												<td className="px-2 py-2 text-[13px] text-right text-emerald-700">{subReceita > 0 ? formatarMoeda(subReceita) : '-'}</td>
+												<td className="px-2 py-2 text-[13px] text-right text-rose-700">{subDespesaCusteio > 0 ? formatarMoeda(subDespesaCusteio) : '-'}</td>
+												<td className="px-2 py-2 text-[13px] text-right text-rose-700">{subDespesaInvest > 0 ? formatarMoeda(subDespesaInvest) : '-'}</td>
 												<td colSpan={3} className="px-2 py-2"></td>
 											</tr>
 										</React.Fragment>

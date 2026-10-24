@@ -52,11 +52,11 @@ async function requisitar<T>(path: string, init?: RequestInit): Promise<T> {
 		...init,
 		headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
 	});
-	const corpo = await res.json().catch(() => null);
+	const corpo = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
 	if (!res.ok) {
 		throw new Error((corpo && (corpo.error || corpo.message)) || `Erro ${res.status} ao acessar o caixa`);
 	}
-	return corpo as T;
+	return corpo as unknown as T;
 }
 
 export const getCaixa = (ano: number, mes: number) => requisitar<CaixaMes>(`/api/caixa?ano=${ano}&mes=${mes}`);

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { IoMdNotificationsOutline } from "react-icons/io";
 import { getNotificacoesComTotal, NotificacaoConciliacao } from '../services/notificacaoService';
 import { useNavigate } from 'react-router-dom';
+import { formatarDataISO } from '../Utils/formatarData';
 
 const NotificacaoIcon: React.FC = () => {
   const [notificacoes, setNotificacoes] = useState<NotificacaoConciliacao[]>([]);
@@ -56,36 +57,34 @@ const NotificacaoIcon: React.FC = () => {
     // Atualizar o localStorage com a conta selecionada
     localStorage.setItem('contaSelecionada', JSON.stringify(contaCompleta));
 
-    // Navegar para a tela de conciliação bancária com os dados da conta
-    navigate('/financeiro/conciliacao-bancaria', { 
-      state: { 
+    // Navegar para a tela de conciliação bancária com a conta e o PERÍODO da notificação
+    // (sem o período a tela abria no mês atual e não mostrava os pendentes de outros meses)
+    navigate('/financeiro/conciliacao-bancaria', {
+      state: {
         contaSelecionada: contaCompleta,
         filtroPendentes: true,
-        fromNotification: true
-      } 
+        fromNotification: true,
+        dataInicial: notificacao.dataInicial ? String(notificacao.dataInicial).slice(0, 10) : undefined,
+        dataFinal: notificacao.dataFinal ? String(notificacao.dataFinal).slice(0, 10) : undefined,
+      },
     });
     setIsOpen(false);
   };
 
+  // Dates come as ISO text ('2026-10-31T00:00:00.000Z'): read the calendar day from the text —
+  // new Date(iso).toLocaleDateString() would show the previous day in UTC−3.
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    return formatarDataISO(dateString) || 'N/A';
   };
 
   const formatDateRange = (dataInicial: string, dataFinal: string) => {
     if (!dataInicial || !dataFinal) return 'N/A';
-    
-    const inicio = new Date(dataInicial);
-    const fim = new Date(dataFinal);
-    
-    if (inicio.getTime() === fim.getTime()) {
+
+    if (formatDate(dataInicial) === formatDate(dataFinal)) {
       return formatDate(dataInicial);
     }
-    
+
     return `${formatDate(dataInicial)} - ${formatDate(dataFinal)}`;
   };
 
@@ -95,6 +94,9 @@ const NotificacaoIcon: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-gray-600 hover:text-gray-800 transition-colors"
         disabled={isLoading}
+        aria-label={`Notificações de conciliação${totalNotificacoes > 0 ? ` (${totalNotificacoes} pendentes)` : ''}`}
+        title="Notificações de conciliação"
+        aria-expanded={isOpen}
       >
         <IoMdNotificationsOutline size={26} />
         {totalNotificacoes > 0 && (
@@ -105,7 +107,7 @@ const NotificacaoIcon: React.FC = () => {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-1rem)] bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50">
           {/* Header */}
           <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -145,6 +147,14 @@ const NotificacaoIcon: React.FC = () => {
                   key={index}
                     className="p-4 hover:bg-gray-50 cursor-pointer transition-all duration-200 group"
                   onClick={() => handleNotificacaoClick(notificacao)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleNotificacaoClick(notificacao);
+                    }
+                  }}
                 >
                     <div className="flex items-start space-x-3">
                       {/* Ícone do banco */}

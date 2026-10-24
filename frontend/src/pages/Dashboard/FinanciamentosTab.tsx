@@ -1,15 +1,13 @@
 import React, { lazy, Suspense } from "react";
-import { Paper, Typography, Box, CircularProgress } from "@mui/material";
+import { Paper, Typography, Box, CircularProgress, Chip } from "@mui/material";
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import type { ResumoSaldoDevedorMes } from "../../services/dashboardService";
 import { saldoDevedorPeriodo } from "./saldoDevedorPeriodo";
+import { brl, brlCompacto } from "../../Utils/formatos";
 
 const Chart = lazy(() => import("react-apexcharts"));
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
 const CARD_SX = {
   border: '1px solid #e0e0e0',
@@ -22,6 +20,8 @@ const CARD_SX = {
   justifyContent: 'center',
 } as const;
 
+const DICA_PROJECAO = 'Período futuro: valores previstos pelas parcelas e contratos já cadastrados (ainda não aconteceram).';
+
 const NoData = ({ message }: { message: string }) => (
   <Box sx={{ textAlign: 'center', py: 6, color: 'grey.500' }}>
     <InsertChartOutlinedIcon sx={{ fontSize: 60, color: 'grey.400' }} />
@@ -29,6 +29,10 @@ const NoData = ({ message }: { message: string }) => (
       {message}
     </Typography>
   </Box>
+);
+
+const BadgeProjecao = () => (
+  <Chip label="Projeção" size="small" color="warning" variant="outlined" title={DICA_PROJECAO} sx={{ height: 20, fontSize: '0.7rem', fontWeight: 600 }} />
 );
 
 interface FinanciamentosTabProps {
@@ -56,10 +60,14 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
   const rotuloInicio = mesIdx >= 0 ? `início de ${MESES[mesIdx]}/${anoSelecionado}` : `início de ${anoSelecionado}`;
   const rotuloFim = mesIdx >= 0 ? `fim de ${MESES[mesIdx]}/${anoSelecionado}` : `fim de ${anoSelecionado}`;
 
-  // Evolução do saldo: no ano corrente, só até o mês atual (meses futuros ainda não aconteceram)
+  // Months up to the current one already happened; later months are a projection (open parcelas as if unpaid)
   const hoje = new Date();
   const ultimoMes = anoSelecionado === hoje.getFullYear() ? hoje.getMonth() + 1 : anoSelecionado < hoje.getFullYear() ? 12 : 0;
-  const evolucao = resumo.map((r) => (r.mes <= ultimoMes ? r.saldoFinal : null));
+  const periodoFuturo = mesIdx >= 0 ? mesIdx + 1 > ultimoMes : ultimoMes === 0;
+  const realizado = resumo.map((r) => (r.mes <= ultimoMes ? r.saldoFinal : null));
+  // Starts at the current month so both lines meet
+  const projecao = resumo.map((r) => (ultimoMes < 12 && r.mes >= Math.max(ultimoMes, 1) ? r.saldoFinal : null));
+  const temProjecao = projecao.some((v) => v != null);
 
   const quadros = periodo
     ? [
@@ -81,7 +89,7 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
           cor: 'info.main',
           nota:
             periodo.contratosNovos > 0
-              ? `${periodo.contratosNovos} contrato(s), valor contratado ${formatCurrency(periodo.valorContratadoNovos)}`
+              ? `${periodo.contratosNovos} contrato(s), valor contratado ${brl(periodo.valorContratadoNovos)}`
               : `Nenhum contrato novo em ${rotulo}`,
         },
         {
@@ -96,6 +104,11 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
 
   return (
     <Box sx={{ mb: 4 }}>
+      {periodoFuturo && quadros.length > 0 && (
+        <Typography variant="body2" color="warning.dark" sx={{ mb: 1.5, fontWeight: 600 }}>
+          {rotulo} ainda não aconteceu: os valores abaixo são uma projeção com base nas parcelas e contratos cadastrados.
+        </Typography>
+      )}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: 4 }}>
         {quadros.map((q) => (
           <Paper
@@ -103,11 +116,14 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
             elevation={3}
             sx={{ ...CARD_SX, ...(q.destaque ? { border: '2px solid', borderColor: 'warning.main' } : {}) }}
           >
-            <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.9rem', fontWeight: q.destaque ? 700 : 600 }}>
-              {q.titulo}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.9rem', fontWeight: q.destaque ? 700 : 600 }}>
+                {q.titulo}
+              </Typography>
+              {periodoFuturo && <BadgeProjecao />}
+            </Box>
             <Typography variant="h5" fontWeight="bold" color={q.cor} sx={{ my: 0.5 }}>
-              {formatCurrency(q.valor)}
+              {brl(q.valor)}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem', lineHeight: 1.35 }}>
               {q.nota}
@@ -119,7 +135,7 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
         <Paper sx={{ p: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-            Contratados x Liquidados por mês — {anoSelecionado}
+            Créditos novos x Quitados por mês — {anoSelecionado}
           </Typography>
           {resumo.some((r) => r.creditosNovos || r.quitados) ? (
             <Suspense fallback={<CircularProgress />}>
@@ -128,8 +144,8 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
                   chart: { type: 'bar', toolbar: { show: false } },
                   plotOptions: { bar: { horizontal: false, columnWidth: '60%', borderRadius: 3 } },
                   xaxis: { categories: MESES },
-                  yaxis: { labels: { formatter: (val: number) => formatCurrency(val) } },
-                  tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+                  yaxis: { labels: { formatter: (val: number) => brlCompacto(val), minWidth: 70 } },
+                  tooltip: { y: { formatter: (val: number) => brl(val) } },
                   colors: ['#2196f3', '#4caf50'],
                   legend: { position: 'top' },
                   dataLabels: { enabled: false },
@@ -149,30 +165,37 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
         </Paper>
 
         <Paper sx={{ p: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-            Evolução do saldo devedor — {anoSelecionado}
-          </Typography>
-          {evolucao.some((v) => v != null) ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Evolução do saldo devedor — {anoSelecionado}
+            </Typography>
+            {temProjecao && <BadgeProjecao />}
+          </Box>
+          {resumo.some((r) => r.saldoFinal) ? (
             <Suspense fallback={<CircularProgress />}>
               <Chart
                 options={{
                   chart: { type: 'line', toolbar: { show: false }, zoom: { enabled: false } },
-                  stroke: { curve: 'straight', width: 3 },
+                  stroke: { curve: 'straight', width: 3, dashArray: [0, 6] },
                   xaxis: { categories: MESES },
-                  yaxis: { labels: { formatter: (val: number) => formatCurrency(val) } },
-                  tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-                  colors: ['#ff9800'],
+                  yaxis: { labels: { formatter: (val: number) => brlCompacto(val), minWidth: 70 } },
+                  tooltip: { y: { formatter: (val: number) => brl(val) } },
+                  colors: ['#ff9800', '#ffb74d'],
                   markers: { size: 5 },
+                  legend: { position: 'top', show: temProjecao },
                   dataLabels: { enabled: false },
                 }}
-                series={[{ name: 'Saldo devedor no fim do mês', data: evolucao }]}
+                series={[
+                  { name: 'Saldo devedor no fim do mês', data: realizado },
+                  ...(temProjecao ? [{ name: 'Projeção (parcelas ainda em aberto)', data: projecao }] : []),
+                ]}
                 type="line"
                 height={350}
                 width="100%"
               />
             </Suspense>
           ) : (
-            <NoData message="Ano futuro: ainda não há saldo para mostrar." />
+            <NoData message={`Nenhum saldo devedor em ${anoSelecionado}.`} />
           )}
         </Paper>
       </Box>

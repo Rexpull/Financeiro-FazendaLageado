@@ -38,7 +38,11 @@ function inicioMes(ano: number, m: number): string {
 	return m > 12 ? `${ano + 1}-01-01` : `${ano}-${pad(m)}-01`;
 }
 
-function liquidacaoEfetiva(p: ParcelaRow): string | null {
+/**
+ * Date (AAAA-MM-DD) a parcela counts as paid ("Quitados"), or null when it is not paid.
+ * Shared with the Fluxo de Caixa (utils/fluxoCaixaAno) so both screens use the same rule.
+ */
+export function liquidacaoEfetiva(p: Pick<ParcelaRow, 'status' | 'dt_vencimento'> & { dt_liquidacao?: string | null }): string | null {
 	if (p.status !== 'Liquidado') return null;
 	// Data liquidada sem data registrada: assume o vencimento
 	return dia(p.dt_liquidacao) || dia(p.dt_vencimento);

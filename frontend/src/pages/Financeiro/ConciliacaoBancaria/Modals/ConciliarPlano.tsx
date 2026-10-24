@@ -28,7 +28,7 @@ import { Resultado } from '../../../../../../backend/src/models/Resultado';
 import ModalRateioCentroCustos from './ModalRateioCentroCustos';
 import ModalRateioPlano from './ModalRateioPlano';
 import ModalFinanciamento from '../../Financiamento/ModalFinanciamento';
-import { listarFinanciamentos, salvarFinanciamento } from '../../../../services/financiamentoService';
+import { listarFinanciamentos } from '../../../../services/financiamentoService';
 import { Financiamento } from '../../../../../../backend/src/models/Financiamento';
 import ModalParcelas from '../../Financiamento/ModalParcelas';
 import DialogModal from '../../../../components/DialogModal';
@@ -38,6 +38,10 @@ import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinancia
 import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
 import type { MovimentoBancarioEdicao } from '../../../../services/movimentoBancarioService';
 import { DadosConciliacao, montarMovimentosLote } from '../conciliacaoPayload';
+import { avisoTipoPlanoCentro, debitoFicaSemCentro } from '../conciliacaoValidacao';
+import CurrencyInput from 'react-currency-input-field';
+import { PROPS_MOEDA_BRL, valorMonetarioPositivo } from '../../../../Utils/valorMonetario';
+import { brl, pct } from '../../../../Utils/formatos';
 
 Modal.setAppElement('#root');
 
@@ -665,7 +669,7 @@ const ConciliaPlanoContasModal: React.FC<
 					!temRateiosPlanosPorcentagem &&
 					!movimentoJaConciliado
 				) {
-					newErrors.idPlanoContas = 'Selecione um plano de contas ou defina múltiplos!';
+					newErrors.idPlanoContas = 'Selecione um plano de contas ou defina múltiplos.';
 				}
 			}
 
@@ -678,7 +682,23 @@ const ConciliaPlanoContasModal: React.FC<
 			const temRateiosCentrosPorcentagem = (rateiosCentrosPorcentagem ?? []).length > 0;
 			const movimentoJaTinhaCentro = movimento.idCentroCustos !== null && movimento.idCentroCustos !== undefined;
 
-			if (
+			if (!isReceita) {
+				// Padrão DEBIT without cost centre is pending (single "pendente" rule) and vanishes from the
+				// Dashboard/Fluxo split by centre: always required (no "clear" escape, as in LancarManual).
+				if (
+					debitoFicaSemCentro({
+						centroEscolhido: temCentroUnico,
+						rateioCentrosEscolhido: temRateiosCentros || temRateiosCentrosPorcentagem,
+						movimento,
+						movimentosLote: movimentosSelecionados,
+					})
+				) {
+					newErrors.idCentroCustos =
+						movimentosSelecionados.length > 1
+							? 'Selecione um centro de custos: há lançamentos de débito selecionados sem centro.'
+							: 'Selecione um centro de custos ou defina múltiplos. Débito sem centro de custos fica pendente.';
+				}
+			} else if (
 				!temCentroUnico &&
 				!temCentroCustosListMultiplo &&
 				!temUmCentroEmLista &&
@@ -686,12 +706,12 @@ const ConciliaPlanoContasModal: React.FC<
 				!temRateiosCentrosPorcentagem &&
 				!movimentoJaTinhaCentro
 			) {
-				newErrors.idCentroCustos = 'Selecione um centro de custos ou defina múltiplos!';
+				newErrors.idCentroCustos = 'Selecione um centro de custos ou defina múltiplos.';
 			}
 		}
 		if (modalidadeMovimento === 'financiamento') {
 			if (!financiamentoSelecionado) {
-				newErrors.financiamento = 'Selecione um financiamento ou crie um novo!';
+				newErrors.financiamento = 'Selecione um financiamento ou crie um novo.';
 			}
 			// Para financiamentos bancários, não exigir plano de contas nem centro de custos
 			// A informação vai apenas para o item financiamento
@@ -785,15 +805,10 @@ const ConciliaPlanoContasModal: React.FC<
 		}
 	};
 
-	const handleSaveFinanciamento = async (financiamento: Financiamento) => {
-		try {
-			await salvarFinanciamento(financiamento);
-			await carregarFinanciamentos();
-			toast.success('Financiamento atualizado com sucesso!');
-		} catch (error) {
-			console.error('Erro ao salvar financiamento:', error);
-			toast.error('Erro ao salvar financiamento');
-		}
+	// ModalParcelas saves the installments by itself (and shows its own toast): here only reload the
+	// contracts. Saving the contract again would overwrite it with the stale copy passed to onSave.
+	const handleSaveFinanciamento = async () => {
+		await carregarFinanciamentos();
 	};
 
 	// Data do movimento (OFX grava 'YYYY-MM-DDT00:00:00Z'): lê dd/mm/aaaa do próprio texto,
@@ -812,10 +827,12 @@ const ConciliaPlanoContasModal: React.FC<
 		});
 	};
 
+	/** Reloads the contracts and refreshes the selected one (its installments may have changed). */
 	const carregarFinanciamentos = async () => {
 		try {
 			const financiamentosList = await listarFinanciamentos();
 			setFinanciamentos(financiamentosList);
+			setFinanciamentoSelecionado((atual) => (atual ? (financiamentosList.find((f) => f.id == atual.id) ?? atual) : atual));
 		} catch (error) {
 			console.error('Erro ao carregar financiamentos:', error);
 		}
@@ -947,11 +964,14 @@ const ConciliaPlanoContasModal: React.FC<
 
 	const handleLiquidarParcela = async () => {
 		if (!selectedParcela || !liquidationDate) return;
+		// "1.500,50" / "1500,50" / "1500.50" → 1500.5; "," or 0 are refused (they used to become NaN/150050)
+		const valorLiquidacao = liquidationValor ? valorMonetarioPositivo(liquidationValor) : selectedParcela.valor;
+		if (valorLiquidacao === null || !(valorLiquidacao > 0)) {
+			toast.error('Informe um valor de liquidação maior que zero (ex.: 1.500,00).');
+			return;
+		}
 
 		try {
-			// Converter valor de string formatada para número
-			const valorLiquidacao = liquidationValor ? parseFloat(liquidationValor.replace(/\./g, '').replace(',', '.')) : selectedParcela.valor;
-
 			const parcelaAtualizada: ParcelaFinanciamento = {
 				...selectedParcela,
 				status: 'Liquidado' as 'Liquidado',
@@ -980,7 +1000,7 @@ const ConciliaPlanoContasModal: React.FC<
 					toast.error(
 						`Parcela liquidada, mas o movimento não foi atualizado: ${
 							error instanceof Error ? error.message : 'erro desconhecido'
-						}. Use "Associar" para tentar de novo.`
+						}. Use "Salvar classificação" para tentar de novo.`
 					);
 				}
 			}
@@ -1067,6 +1087,32 @@ const ConciliaPlanoContasModal: React.FC<
 					: ccl.length === 1
 						? centroCustos.find((c) => c.id === ccl[0].idCentroCustos)?.descricao || searchCentroCustos
 						: searchCentroCustos;
+			// Non-blocking: plan type (investimento/custeio) × centre type. The Dashboard splits by centre, the
+			// plan-based views by plan, so a mismatch makes them disagree. Batch mode only looks at what was chosen.
+			const unico = movimentosSelecionados.length <= 1;
+			const tipoPlano = (id: number | null | undefined) => planos.find((p) => p.id === Number(id))?.tipo;
+			const tipoCentro = (id: number | null | undefined) => centroCustos.find((c) => c.id === Number(id))?.tipo;
+			const tiposPlanoEscolhidos =
+				rateiosPlanos.length > 0
+					? rateiosPlanos.map((r) => tipoPlano(r.idPlano))
+					: rateiosPlanosPorcentagem.length > 0
+						? rateiosPlanosPorcentagem.map((r) => tipoPlano(r.idPlano))
+						: formData.idPlanoContas
+							? [tipoPlano(formData.idPlanoContas)]
+							: unico
+								? rl.map((r) => tipoPlano(r.idPlanoContas))
+								: [];
+			const tiposCentroEscolhidos =
+				rateiosCentros.length > 0
+					? rateiosCentros.map((r) => tipoCentro(r.idCentro))
+					: rateiosCentrosPorcentagem.length > 0
+						? rateiosCentrosPorcentagem.map((r) => tipoCentro(r.idCentro))
+						: formData.idCentroCustos
+							? [tipoCentro(formData.idCentroCustos)]
+							: unico
+								? ccl.map((c) => tipoCentro(c.idCentroCustos))
+								: [];
+			const avisoTipo = isReceita ? null : avisoTipoPlanoCentro(tiposPlanoEscolhidos, tiposCentroEscolhidos);
 			return (
 				<>
 					{/* Plano de Contas and Centro de Custos side by side (or only Centro if receita) */}
@@ -1087,7 +1133,7 @@ const ConciliaPlanoContasModal: React.FC<
 											>
 												<span className="text-sm font-semibold text-blue-700 truncate">Múltiplos Planos</span>
 												<span className="text-xs text-blue-600/80 flex-shrink-0 whitespace-nowrap">
-													{qtdPlanosMulti} · {pctPlanosMulti.toFixed(0)}%
+													{qtdPlanosMulti} · {pct(pctPlanosMulti, 0)}
 												</span>
 											</button>
 											<button
@@ -1240,7 +1286,7 @@ const ConciliaPlanoContasModal: React.FC<
 										>
 											<span className="text-sm font-semibold text-green-800 truncate">Múltiplos Centros</span>
 											<span className="text-xs text-green-700/80 flex-shrink-0 whitespace-nowrap">
-												{qtdCentrosMulti} · {pctCentrosMulti.toFixed(0)}%
+												{qtdCentrosMulti} · {pct(pctCentrosMulti, 0)}
 											</span>
 										</button>
 										<button
@@ -1290,6 +1336,11 @@ const ConciliaPlanoContasModal: React.FC<
 								</button>
 							</div>
 							{errors.idCentroCustos && <p className="text-red-500 text-xs mt-1">{errors.idCentroCustos}</p>}
+							{avisoTipo && (
+								<p className="text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs mt-1" role="status">
+									{avisoTipo}
+								</p>
+							)}
 
 							{showCentroCustosDropdown && !bloqueioMultiplosCentros && (
 								<div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-md overflow-hidden flex flex-col max-h-72">
@@ -1449,7 +1500,7 @@ const ConciliaPlanoContasModal: React.FC<
 												setNovoFinanciamentoData({
 													valor: movimento.valor?.toString().replace('.', ',') || '0,00',
 													dataContrato: movimento.dtMovimento?.slice(0, 10) || '',
-													observacao: 'Conciliação Bancária: ' + movimento.historico + ' - No valor de: R$ ' + movimento.valor || '',
+													observacao: `Conciliação Bancária: ${movimento.historico ?? ''} - No valor de: ${brl(movimento.valor)}`,
 												});
 												setModalFinanciamentoOpen(true);
 											}
@@ -1463,7 +1514,7 @@ const ConciliaPlanoContasModal: React.FC<
 							{errors.financiamento && <p className="text-red-500 text-xs">{errors.financiamento}</p>}
 
 							{buscaFinanciamento && !financiamentoSelecionado && financiamentosFiltrados.length > 0 && (
-								<ul className="absolute z-10 border rounded mt-1 bg-white max-h-40 overflow-y-auto w-full shadow-lg">
+								<ul className="absolute z-50 border rounded mt-1 bg-white max-h-40 overflow-y-auto w-full shadow-lg">
 									{financiamentosFiltrados.map((f: Financiamento) => (
 										<li key={f.id} className="p-2 cursor-pointer hover:bg-orange-100" onClick={() => setFinanciamentoSelecionado(f)}>
 											<strong>{f.numeroContrato}</strong> - {f.responsavel} -{' '}
@@ -1492,9 +1543,9 @@ const ConciliaPlanoContasModal: React.FC<
 								</button>
 							</div>
 
-							<div className="overflow-x-auto">
+							<div className="overflow-auto max-h-[45vh] border rounded">
 								<table className="w-full">
-									<thead className="bg-gray-50">
+									<thead className="bg-gray-50 sticky top-0 z-10">
 										<tr>
 											<th className="p-2 text-left">Parcela</th>
 											<th className="p-2 text-left">Vencimento</th>
@@ -1581,7 +1632,7 @@ const ConciliaPlanoContasModal: React.FC<
 							/>
 							<div
 								className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
-									transferenciaPlanoMode === 'transferencia' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+									transferenciaPlanoMode === 'transferencia' ? 'bg-orange-600 border-orange-600' : 'border-gray-400'
 								}`}
 								style={{ padding: '0.60rem' }}
 							>
@@ -1605,7 +1656,7 @@ const ConciliaPlanoContasModal: React.FC<
 							/>
 							<div
 								className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
-									transferenciaPlanoMode === 'aplicacao' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+									transferenciaPlanoMode === 'aplicacao' ? 'bg-orange-600 border-orange-600' : 'border-gray-400'
 								}`}
 								style={{ padding: '0.60rem' }}
 							>
@@ -1629,7 +1680,7 @@ const ConciliaPlanoContasModal: React.FC<
 							/>
 							<div
 								className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
-									transferenciaPlanoMode === 'estorno' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+									transferenciaPlanoMode === 'estorno' ? 'bg-orange-600 border-orange-600' : 'border-gray-400'
 								}`}
 								style={{ padding: '0.60rem' }}
 							>
@@ -1658,14 +1709,14 @@ const ConciliaPlanoContasModal: React.FC<
 				isOpen={isOpen}
 				onRequestClose={onClose}
 				shouldCloseOnOverlayClick={false}
-				className="bg-white rounded-lg shadow-lg w-full max-w-3xl mx-auto z-100"
-				overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-100"
+				className="bg-white rounded-lg shadow-lg w-full max-w-3xl mx-auto my-auto z-100"
+				overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center overflow-y-auto p-2 sm:p-4 z-100"
 			>
 				<div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
 					<h2 className="text-xl font-semibold text-gray-800">
-						{movimentosSelecionados.length > 1 ? 'Associação de Plano de Contas em Lote' : 'Associação de Plano de Contas'}
+						{movimentosSelecionados.length > 1 ? `Classificar ${movimentosSelecionados.length} lançamentos` : 'Classificar lançamento'}
 					</h2>
-					<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+					<button onClick={onClose} className="text-gray-500 hover:text-gray-700" aria-label="Fechar" title="Fechar">
 						<FontAwesomeIcon icon={faTimes} size="xl" />
 					</button>
 				</div>
@@ -1717,11 +1768,12 @@ const ConciliaPlanoContasModal: React.FC<
 								type="button"
 								onClick={() => setModalidadeMovimento(tipo)}
 								title={tipo === 'transferencia' ? 'Movimentações sem efeito' : undefined}
-								className={`flex-1 min-h-[2.75rem] px-2 py-2 flex items-center justify-center text-center text-sm sm:text-base font-semibold leading-tight whitespace-nowrap ${
-									modalidadeMovimento === tipo ? 'bg-red-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+								className={`flex-1 min-h-[2.75rem] px-2 py-2 flex items-center justify-center text-center text-sm sm:text-base font-semibold leading-tight sm:whitespace-nowrap ${
+									modalidadeMovimento === tipo ? 'bg-orange-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
 								}`}
+								aria-pressed={modalidadeMovimento === tipo}
 							>
-								{tipo === 'padrao' && 'Padrão'}
+								{tipo === 'padrao' && 'Receita/Despesa'}
 								{tipo === 'financiamento' && 'Financiamento'}
 								{tipo === 'transferencia' && 'Movimentações sem efeito'}
 							</button>
@@ -1729,19 +1781,19 @@ const ConciliaPlanoContasModal: React.FC<
 					</div>
 
 					{renderCampos()}
+				</div>
 
-					<div className="flex justify-end mt-8 border-t pt-4">
-						<button
-							className={`font-semibold px-5 py-2 rounded flex items-center gap-2 transition ${
-								isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white'
-							}`}
-							onClick={handleSalvar}
-							disabled={isSaving}
-						>
-							<FontAwesomeIcon icon={faSave} />
-							{isSaving ? 'Salvando...' : 'Associar'}
-						</button>
-					</div>
+				<div className="sticky bottom-0 z-10 flex justify-end border-t bg-white px-4 py-3 rounded-b-lg">
+					<button
+						className={`font-semibold px-5 py-2 rounded flex items-center gap-2 transition ${
+							isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'
+						}`}
+						onClick={handleSalvar}
+						disabled={isSaving}
+					>
+						<FontAwesomeIcon icon={faSave} />
+						{isSaving ? 'Salvando...' : 'Salvar classificação'}
+					</button>
 				</div>
 			</Modal>
 			<ModalRateioCentroCustos
@@ -1770,7 +1822,11 @@ const ConciliaPlanoContasModal: React.FC<
 			/>
 			<ModalFinanciamento
 				isOpen={modalFinanciamentoOpen}
-				onClose={() => setModalFinanciamentoOpen(false)}
+				onClose={(gravacaoIncompleta?: boolean) => {
+					setModalFinanciamentoOpen(false);
+					// Closed after a partial save: the contract already exists, so it must show up in the search
+					if (gravacaoIncompleta) carregarFinanciamentos();
+				}}
 				onSave={async (financiamento: Financiamento) => {
 					setModalFinanciamentoOpen(false);
 					await carregarFinanciamentos();
@@ -1785,7 +1841,16 @@ const ConciliaPlanoContasModal: React.FC<
 							centroCustosList: undefined,
 							resultadoList: [],
 						};
-						handleConcilia(dadosFinanciamento);
+						try {
+							await handleConcilia(dadosFinanciamento);
+						} catch (error) {
+							console.error('Erro ao classificar o movimento com o novo financiamento:', error);
+							toast.error(
+								`Financiamento criado, mas o lançamento não foi classificado: ${
+									error instanceof Error ? error.message : 'erro desconhecido'
+								}. Use "Salvar classificação" para tentar de novo.`
+							);
+						}
 					}
 				}}
 				bancos={bancos as any}
@@ -1797,6 +1862,8 @@ const ConciliaPlanoContasModal: React.FC<
 					isOpen={modalParcelasOpen}
 					onClose={() => {
 						setModalParcelasOpen(false);
+						// Liquidar/estornar inside ModalParcelas save immediately: show the current installments
+						carregarFinanciamentos();
 					}}
 					financiamento={financiamentoSelecionado}
 					onSave={handleSaveFinanciamento}
@@ -1827,6 +1894,8 @@ const ConciliaPlanoContasModal: React.FC<
 								setLiquidationValor('');
 							}}
 							className="text-gray-500 hover:text-gray-700"
+							aria-label="Fechar"
+							title="Fechar"
 						>
 							<FontAwesomeIcon icon={faTimes} />
 						</button>
@@ -1840,7 +1909,7 @@ const ConciliaPlanoContasModal: React.FC<
 								</label>
 								<input
 									type="text"
-									value={selectedParcela.valor.toFixed(2).replace('.', ',')}
+									value={brl(selectedParcela.valor)}
 									disabled
 									className="w-full p-2 border border-gray-300 rounded bg-gray-100 text-gray-600"
 								/>
@@ -1850,23 +1919,17 @@ const ConciliaPlanoContasModal: React.FC<
 								<label className="block text-sm font-medium text-gray-700 mb-1">
 									Valor da Liquidação <span className="text-red-500">*</span>
 								</label>
-								<input
-									type="text"
+								{/* pt-BR currency field whatever the browser locale; parsed by valorMonetarioPositivo */}
+								<CurrencyInput
+									{...PROPS_MOEDA_BRL}
+									prefix="R$ "
+									allowNegativeValue={false}
 									value={liquidationValor}
-									onChange={(e) => {
-										// Permitir apenas números, vírgula e ponto
-										const value = e.target.value.replace(/[^\d,.-]/g, '');
-										setLiquidationValor(value);
-									}}
-									placeholder="Digite o valor (ex: 1500,00)"
+									onValueChange={(value) => setLiquidationValor(value ?? '')}
+									placeholder="R$ 0,00 (ex: 1.500,00)"
 									className="w-full p-2 border border-gray-300 rounded"
 								/>
-								<p className="text-xs text-gray-500 mt-1">
-									Valor do movimento: R${' '}
-									{Math.abs(movimento.valor || 0)
-										.toFixed(2)
-										.replace('.', ',')}
-								</p>
+								<p className="text-xs text-gray-500 mt-1">Valor do movimento: {brl(Math.abs(movimento.valor || 0))}</p>
 							</div>
 
 							<div>
@@ -1896,7 +1959,7 @@ const ConciliaPlanoContasModal: React.FC<
 								</button>
 								<button
 									onClick={handleLiquidarParcela}
-									disabled={!liquidationDate || !liquidationValor}
+									disabled={!liquidationDate || valorMonetarioPositivo(liquidationValor) === null}
 									className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
 								>
 									Liquidar

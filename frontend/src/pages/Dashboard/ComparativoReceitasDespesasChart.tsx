@@ -1,11 +1,9 @@
 import React, { lazy, Suspense } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import type { TotaisPorCentros } from './totaisPorCentros';
+import { brl, brlCompacto } from '../../Utils/formatos';
 
 const Chart = lazy(() => import('react-apexcharts'));
-
-const formatCurrency = (value: number) =>
-	new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
 /** Receitas vs despesas de custeio vs despesas de investimento (3 bars). */
 const ComparativoReceitasDespesasChart: React.FC<{
@@ -24,12 +22,12 @@ const ComparativoReceitasDespesasChart: React.FC<{
 					chart: { type: 'bar', toolbar: { show: false } },
 					plotOptions: { bar: { horizontal: false, columnWidth: '60%', borderRadius: 4 } },
 					xaxis: { categories: [categoria] },
+					// Short axis labels ("R$ 1,5 mi"): the full currency was cut to "R$ 0..."
 					yaxis: {
-						title: { text: 'Valor (R$)' },
-						labels: { formatter: (val: number) => formatCurrency(val) },
+						labels: { formatter: (val: number) => brlCompacto(val), minWidth: 70 },
 					},
 					dataLabels: { enabled: false },
-					tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
+					tooltip: { y: { formatter: (val: number) => brl(val) } },
 					colors: ['#4caf50', '#f44336', '#ff9800'],
 					legend: { position: 'top' },
 				}}

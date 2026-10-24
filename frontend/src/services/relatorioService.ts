@@ -5,7 +5,14 @@ export interface RelatorioCentroCustosItem {
 		id: number;
 		descricao: string;
 		tipo?: string;
+		/** Block of the report: RECEITA (credits) / DESPESA (debits) by movement direction, or FINANCIAMENTO */
 		tipoReceitaDespesa?: 'RECEITA' | 'DESPESA' | 'FINANCIAMENTO';
+		/** The centre's own registration (Receita/Despesa) */
+		tipoReceitaDespesaCentro?: string;
+		/** DESPESA groups: custeio (centre tipo CUSTEIO) or investimento — same rule as Dashboard/Fluxo */
+		subtipoDespesa?: 'custeio' | 'investimento';
+		/** "Sem centro de custos": pending movements, outside the receitas/despesas totals */
+		semCentro?: boolean;
 	};
 	total: number;
 	movimentos: Array<{
@@ -14,6 +21,8 @@ export interface RelatorioCentroCustosItem {
 		historico: string;
 		valor: number;
 		tipoMovimento: string;
+		/** Pending conciliation (single rule): e.g. debit with centre but without plan */
+		pendente?: boolean;
 		planoDescricao?: string;
 		pessoaNome?: string;
 		bancoNome?: string;
@@ -35,6 +44,14 @@ export interface RelatorioItensClassificadosItem {
 	planoDescricao?: string;
 	centroCustosDescricao?: string;
 	centroCustosTipo?: string;
+	idCentroCustos?: number;
+	/** Debit with centre: custeio / investimento (centre tipo) */
+	subtipoDespesa?: 'custeio' | 'investimento';
+	/** Without cost centre: pending, outside the receitas/despesas totals */
+	semCentro?: boolean;
+	/** Classified only by cost centre (normal for receitas) */
+	semPlano?: boolean;
+	pendente?: boolean;
 	pessoaNome?: string;
 	bancoNome?: string;
 	bancoCodigo?: string;

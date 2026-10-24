@@ -17,6 +17,8 @@ import { MovimentoCentroCustos } from "../../../../../../backend/src/models/Movi
 import ModalRateioCentroCustos from "./ModalRateioCentroCustos";
 import { dividirValorEmParcelas, gerarDatasVencimento } from "../../../../Utils/parcelamento";
 import { hojeISO } from "../../../../Utils/dataSemFuso";
+import { diaDoValor } from "../../../../Utils/dataMovimento";
+import { PROPS_MOEDA_BRL, valorMonetarioPositivo } from "../../../../Utils/valorMonetario";
 
 Modal.setAppElement("#root");
 
@@ -27,7 +29,8 @@ const getInitialFormState = () => ({
   idCentroCustos: "",
   valor: "0,00",
   saldo: 0,
-  dtMovimento: new Date().toISOString().slice(0, 16),
+  // Local calendar day (toISOString() is UTC: after 21h in UTC-3 it already said "tomorrow")
+  dtMovimento: hojeISO(),
   numeroDocumento: "",
   descricao: "",
   transfOrigem: null as null,
@@ -170,7 +173,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
 	const gerarParcelas = () => {
     // formData.valor is undefined when the currency field is cleared: parse defensively.
-    const valorTotal = parseFloat(String(formData.valor ?? "").replace(",", ".")) || 0;
+    const valorTotal = valorMonetarioPositivo(formData.valor) ?? 0;
     if (!parcelado || valorTotal <= 0 || numParcelas < 1) {
       setParcelas([]);
       return;
@@ -234,32 +237,35 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
   }, [modalidadeMovimento]);
 
+  // Receita é classificada pelo centro de custos (igual à Conciliação): o plano só é obrigatório na despesa
+  const planoObrigatorio = tipoMovimento === "debito" || modalidadeMovimento === "financiamento";
+
   const validarFormulario = () => {
     const newErrors: { [key: string]: string } = {};
-    if (!formData.idPlanoContas) newErrors.idPlanoContas = "Selecione um plano de contas!";
-    if (!formData.valor || formData.valor === "0,00") newErrors.valor = "Informe um valor!";
-    if (!formData.dtMovimento) newErrors.dtMovimento = "Selecione uma data!";
-    if (!formData.historico.trim()) newErrors.historico = "A descrição é obrigatória!";
+    if (planoObrigatorio && !formData.idPlanoContas) newErrors.idPlanoContas = "Selecione um plano de contas.";
+    if (valorMonetarioPositivo(formData.valor) === null) newErrors.valor = "Informe um valor maior que zero.";
+    if (!diaDoValor(formData.dtMovimento)) newErrors.dtMovimento = "Selecione uma data.";
+    if (!formData.historico.trim()) newErrors.historico = "Informe o histórico.";
 
     if (modalidadeMovimento === "financiamento") {
-      if (!formData.idFinanciamento) newErrors.idFinanciamento = "Selecione um financiamento!";
+      if (!formData.idFinanciamento) newErrors.idFinanciamento = "Selecione um financiamento.";
     }
     if (modalidadeMovimento === "padrao") {
-      const valorNum = parseFloat(String(formData.valor ?? "").replace(",", ".")) || 0;
+      const valorNum = valorMonetarioPositivo(formData.valor) ?? 0;
       if (rateiosCentros.length > 0) {
         const somaCentros = rateiosCentros.reduce((s, r) => s + r.valor, 0);
         if (Math.abs(somaCentros - Math.abs(valorNum)) > 0.01) {
-          newErrors.idCentroCustos = "A soma dos centros deve ser igual ao valor do lançamento!";
+          newErrors.idCentroCustos = "A soma dos centros deve ser igual ao valor do lançamento.";
         }
       } else if (!formData.idCentroCustos || formData.idCentroCustos === "") {
-        newErrors.idCentroCustos = "Selecione um centro de custos!";
+        newErrors.idCentroCustos = "Selecione um centro de custos.";
       }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const parseValorNumerico = () => parseFloat((formData.valor || "0").replace(",", ".")) || 0;
+  const parseValorNumerico = () => valorMonetarioPositivo(formData.valor) ?? 0;
 
   const movimentoSintetico: MovimentoBancario = {
     tipoMovimento: tipoMovimento === "credito" ? "C" : "D",
@@ -366,9 +372,19 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
   const handleChangeTipoMovimento = (tipoMovimento: string) => {
     setTipoMovimento(tipoMovimento as "credito" | "debito");
-    setFormData((prev) => ({ ...prev, idPlanoContas: "", descricao: "" }));
+    // Centros de receita e de despesa são listas diferentes: o centro escolhido não vale para o outro tipo
+    setFormData((prev) => ({ ...prev, idPlanoContas: "", descricao: "", idCentroCustos: "" }));
+    setRateiosCentros([]);
     setSearchPlano("");
   }
+
+  // Como na Conciliação: crédito só com centros de receita, débito só com centros de despesa
+  // (os de despesa repetem o nome em custeio e investimento, por isso o tipo vai no rótulo)
+  const centrosDoTipo = centros
+    .filter((c) => !c.tipoReceitaDespesa || c.tipoReceitaDespesa === (tipoMovimento === "credito" ? "RECEITA" : "DESPESA"))
+    .sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "", "pt-BR"));
+  const rotuloCentro = (c: CentroCustos) =>
+    c.tipoReceitaDespesa === "DESPESA" && c.tipo ? `${c.descricao} · ${c.tipo === "INVESTIMENTO" ? "Investimento" : "Custeio"}` : c.descricao;
 
   const carregarFinanciamentos = async () => {
     try {
@@ -392,13 +408,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     isOpen={isOpen}
     onRequestClose={() => {}}
     shouldCloseOnOverlayClick={false}
-    className={`bg-white rounded-lg shadow-lg w-full max-w-[${parcelado? "1000px" : "700px"}]`}
-    overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    className={`bg-white rounded-lg shadow-lg w-full my-auto max-w-[${parcelado? "1000px" : "700px"}]`}
+    overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center overflow-y-auto p-2 z-50"
   >
     {/* 🔹 Cabeçalho */}
     <div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
       <h2 className="text-xl font-semibold text-gray-800">Lançamento Manual</h2>
-      <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+      <button onClick={onClose} disabled={isSaving} className="text-gray-500 hover:text-gray-700" aria-label="Fechar" title="Fechar">
         <FontAwesomeIcon icon={faTimes} size="xl" />
       </button>
     </div>
@@ -413,7 +429,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         }`}
         onClick={() => handleChangeTipoMovimento("credito") }
       >
-        Crédito <span className="text-xs">(Depósito)</span>
+        Entrada <span className="text-xs">(crédito)</span>
       </button>
       <button
         className={`flex-1 text-center text-lg py-2 font-semibold border-b ${
@@ -423,7 +439,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         }`}
         onClick={() => handleChangeTipoMovimento("debito")}
       >
-        Débito <span className="text-xs">(Saque)</span>
+        Saída <span className="text-xs">(débito)</span>
       </button>
     </div>
 
@@ -441,7 +457,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
               }`}
               onClick={() => alterarModalidadeMovimento("padrao")}
             >
-              Padrão
+              Receita/Despesa
             </button>
             <button
               className={`flex-1 text-center text-lg py-1 font-semibold border-x ${
@@ -524,7 +540,10 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
           {/* Plano de Contas */}
           <div ref={planoRef} className="relative ">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Plano de Contas <span className="text-red-500">*</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Plano de Contas{" "}
+              {planoObrigatorio ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(opcional)</span>}
+            </label>
 						<div className="relative">
 							<input
 								type="text"
@@ -571,13 +590,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
                   ) : (
                     <>
                       <option value="">Selecione um centro de custos</option>
-                      {[...centros]
-                        .sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "", "pt-BR"))
-                        .map((c) => (
-                          <option key={c.id} value={String(c.id)}>
-                            {c.descricao}
-                          </option>
-                        ))}
+                      {centrosDoTipo.map((c) => (
+                        <option key={c.id} value={String(c.id)}>
+                          {rotuloCentro(c)}
+                        </option>
+                      ))}
                     </>
                   )}
                 </select>
@@ -600,13 +617,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Valor {tipoMovimento === "credito" ? "do Crédito" : "do Débito"} R$ <span className="text-red-500">*</span>
+              Valor {tipoMovimento === "credito" ? "da entrada" : "da saída"} R$ <span className="text-red-500">*</span>
             </label>
             <CurrencyInput
               name="valor"
               className="w-full p-2 bg-white border border-gray-300 rounded"
               placeholder="R$ 0,00"
-              decimalsLimit={2}
+              {...PROPS_MOEDA_BRL}
               prefix="R$ "
               value={formData.valor}
               onValueChange={(value) => handleInputChange({ target: { name: "valor", value } } as any)}
@@ -618,8 +635,9 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Data <span className="text-red-500">*</span>
               </label>
+              {/* Calendar day only: stored as 'YYYY-MM-DDT00:00:00.000Z' like OFX rows */}
               <input
-                type="datetime-local"
+                type="date"
                 name="dtMovimento"
                 className={`w-full p-2 bg-white border ${errors.dtMovimento ? "border-red-500" : "border-gray-300"} rounded`}
                 value={formData.dtMovimento}
@@ -633,13 +651,13 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         {/* Observação */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Descrição do Movimento <span className="text-red-500">*</span>
+            Histórico <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             name="historico"
-            className="w-full p-2 bg-white border border-gray-300 rounded"
-            placeholder="Digite uma descrição"
+            className={`w-full p-2 bg-white border rounded ${errors.historico ? "border-red-500" : "border-gray-300"}`}
+            placeholder="Ex.: Venda de bezerros"
             value={formData.historico}
             onChange={handleInputChange}
             disabled={isSaving}
@@ -654,7 +672,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     {/* 🔹 Botão de Confirmar */}
     <div className="p-3 flex justify-end border-t mt-3">
       <button
-        className="bg-red-500 text-white font-semibold px-5 py-2 rounded flex items-center gap-2 hover:bg-red-600 transition"
+        className="bg-green-600 text-white font-semibold px-5 py-2 rounded flex items-center gap-2 hover:bg-green-700 transition"
         onClick={handleSubmit}
         disabled={isSaving}
       >

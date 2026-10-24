@@ -14,6 +14,7 @@ import { faFileExcel, faSpinner, faChevronDown, faChevronUp, faFilter } from '@f
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 import { Banco } from '../../../../backend/src/models/Banco';
+import BreadCrumb from '../../components/BreadCrumb';
 
 const Chart = lazy(() => import("react-apexcharts"));
 
@@ -33,6 +34,15 @@ const STATUS_INFO: Record<StatusContratoFinanciamento, { label: string; plural: 
 	QUITADO: { label: 'Quitado', plural: 'Quitados', badge: 'bg-green-100 text-green-800', borda: 'border-l-green-500', texto: 'text-green-600', valor: 'Valor pago' },
 };
 const STATUS_ORDEM: StatusContratoFinanciamento[] = ['NOVO', 'ATIVO', 'QUITADO'];
+
+/** Summary card overrides: the Quitados total is everything paid on the contracts settled in the period, not the monthly chart sum. */
+const CARD_RESUMO: Partial<Record<StatusContratoFinanciamento, { titulo: string; explicacao: string }>> = {
+	QUITADO: {
+		titulo: 'Contratos quitados (valor pago)',
+		explicacao:
+			'Tudo o que foi pago nos contratos quitados no período, incluindo parcelas de anos anteriores. Não é a soma do gráfico "Parcelas liquidadas no mês".',
+	},
+};
 
 const CORES = { novos: '#8b5cf6', liquidados: '#22c55e', compromissos: '#3b82f6' };
 
@@ -65,6 +75,24 @@ const ANOS = Array.from({ length: anoAtual + 5 - 2010 + 1 }, (_, i) => anoAtual 
 const filtrosIniciais: FiltrosRelatorioFinanciamentos = { ano: anoAtual };
 
 const rotuloPeriodo = (ano: number, mes?: number | null) => (mes ? `${MESES_EXTENSO[mes - 1]}/${ano}` : String(ano));
+
+/**
+ * "Valor (conforme status)" is the contract value for Novo, the parcelas still to pay for Ativo and the amount paid
+ * for Quitado: they can only be added up within one status. Returns the total per status present in the list.
+ */
+function totaisPorStatus(itens: ItemRelatorioFinanciamentos[]) {
+	return STATUS_ORDEM.map((status) => {
+		const doStatus = itens.filter((i) => i.statusContrato === status);
+		return { status, quantidade: doStatus.length, valor: Math.round(doStatus.reduce((s, i) => s + (Number(i.valor) || 0), 0) * 100) / 100 };
+	}).filter((t) => t.quantidade > 0);
+}
+
+/** Excel: one column per meaning of "valor", so a column sum never mixes them. */
+const colunasValorPorStatus = (item: ItemRelatorioFinanciamentos) => ({
+	'Valor contratado (Novo)': item.statusContrato === 'NOVO' ? item.valor : '',
+	'Parcelas a pagar (Ativo)': item.statusContrato === 'ATIVO' ? item.valor : '',
+	'Valor pago (Quitado)': item.statusContrato === 'QUITADO' ? item.valor : '',
+});
 
 const opcoesBarras = (categorias: string[], cores: string[], legenda = false): ApexOptions => ({
 	chart: { type: 'bar', toolbar: { show: false }, zoom: { enabled: false }, fontFamily: 'inherit' },
@@ -186,7 +214,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 				'Total Juros': item.totalJuros,
 				'Valor Total': item.valorTotal,
 				'Status': STATUS_INFO[item.statusContrato].label,
-				'Valor (conforme status)': item.valor,
+				...colunasValorPorStatus(item),
 				'Data Quitação': item.dataQuitacao ? formatDate(item.dataQuitacao) : '',
 				'Parcelas Liquidadas': item.parcelas.filter((p) => p.status === 'Liquidado').length,
 				'Total Parcelas': item.parcelas.length,
@@ -202,7 +230,6 @@ const RelatorioFinanciamentos: React.FC = () => {
 					'Valor Contrato': item.valorContrato,
 					'Modalidade': labelModalidade(item),
 					'Status Contrato': STATUS_INFO[item.statusContrato].label,
-					'Valor (conforme status)': item.valor,
 					'Parcela': parcela.numParcela,
 					'Valor Parcela': parcela.valor,
 					'Vencimento': formatDate(parcela.dt_vencimento),
@@ -233,13 +260,15 @@ const RelatorioFinanciamentos: React.FC = () => {
 	const anoGraficos = dados?.periodo.ano ?? filtros.ano;
 	const semValores = (valores: number[]) => valores.every((v) => !v);
 	const tot = dados?.totalizadores ?? totalizadoresVazios;
+	const valoresPorStatus = totaisPorStatus(dados?.itens ?? []);
+	const statusUnico = valoresPorStatus.length === 1 ? valoresPorStatus[0] : null;
 
 	return (
 		<div className="min-h-screen">
 			<div className="max-w-8xl mx-auto">
 				{/* Period under the title: the top-right corner is covered by the global navbar icons */}
-				<div className="flex flex-col gap-1 mb-6">
-					<h1 className="text-2xl font-bold text-gray-900">Relatório de Financiamentos</h1>
+				<div className="flex flex-col mb-6">
+					<BreadCrumb grupo="Relatórios" pagina="Financiamentos" />
 					{dados && (
 						<span className="text-sm text-gray-600">
 							Período: <strong>{rotuloPeriodo(dados.periodo.ano, dados.periodo.mes)}</strong>
@@ -433,14 +462,15 @@ const RelatorioFinanciamentos: React.FC = () => {
 							<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 								{STATUS_ORDEM.map((s) => {
 									const resumo = dados?.resumoStatus?.[s] ?? { quantidade: 0, valor: 0 };
+									const card = CARD_RESUMO[s];
 									return (
-										<div key={s} className={`border-l-4 ${STATUS_INFO[s].borda} border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow`}>
+										<div key={s} title={card?.explicacao} className={`border-l-4 ${STATUS_INFO[s].borda} border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow`}>
 											<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-												Contratos {STATUS_INFO[s].plural}
+												{card?.titulo ?? `Contratos ${STATUS_INFO[s].plural}`}
 											</p>
 											<p className={`text-2xl font-bold ${STATUS_INFO[s].texto} mb-1`}>{resumo.quantidade}</p>
 											<p className="text-sm text-gray-700 font-medium">{formatCurrency(resumo.valor)}</p>
-											<p className="text-xs text-gray-500">{STATUS_INFO[s].valor}</p>
+											<p className="text-xs text-gray-500">{card?.explicacao ?? STATUS_INFO[s].valor}</p>
 										</div>
 									);
 								})}
@@ -455,9 +485,30 @@ const RelatorioFinanciamentos: React.FC = () => {
 									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Contratos</p>
 									<p className="text-2xl font-bold text-gray-900">{tot.totalContratos}</p>
 								</div>
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor (conforme status)</p>
-									<p className="text-2xl font-bold text-gray-900">{formatCurrency(tot.totalValor)}</p>
+								<div
+									className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow"
+									title="Novo: valor contratado · Ativo: parcelas a pagar · Quitado: valor pago. Só se somam dentro do mesmo status."
+								>
+									{statusUnico || valoresPorStatus.length === 0 ? (
+										<>
+											<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+												{statusUnico ? `${STATUS_INFO[statusUnico.status].valor} (${STATUS_INFO[statusUnico.status].plural.toLowerCase()})` : 'Valor conforme status'}
+											</p>
+											<p className="text-2xl font-bold text-gray-900">{formatCurrency(statusUnico?.valor ?? 0)}</p>
+										</>
+									) : (
+										<>
+											<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor conforme status</p>
+											<ul className="space-y-0.5 text-sm">
+												{valoresPorStatus.map((t) => (
+													<li key={t.status} className="flex justify-between gap-2">
+														<span className="text-gray-600">{STATUS_INFO[t.status].valor}</span>
+														<span className={`font-bold whitespace-nowrap ${STATUS_INFO[t.status].texto}`}>{formatCurrency(t.valor)}</span>
+													</li>
+												))}
+											</ul>
+										</>
+									)}
 								</div>
 								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
 									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor Total Contratos</p>
@@ -492,15 +543,15 @@ const RelatorioFinanciamentos: React.FC = () => {
 							<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 								<CartaoGrafico
 									className="lg:col-span-2"
-									titulo={`Contratos novos x quitados — ${anoGraficos}`}
-									subtitulo="Novos: valor dos contratos assinados no mês · Quitados: parcelas liquidadas no mês"
+									titulo={`Contratos novos x parcelas liquidadas — ${anoGraficos}`}
+									subtitulo="Novos: valor dos contratos assinados no mês · Parcelas liquidadas no mês: soma das parcelas pagas em cada mês (mesma regra do Dashboard)"
 									vazio={semValores(g.mensal.flatMap((m) => [m.novos, m.liquidados]))}
 								>
 									<Chart
 										options={opcoesBarras(MESES, [CORES.novos, CORES.liquidados], true)}
 										series={[
 											{ name: 'Novos', data: g.mensal.map((m) => m.novos) },
-											{ name: 'Quitados', data: g.mensal.map((m) => m.liquidados) },
+											{ name: 'Parcelas liquidadas no mês', data: g.mensal.map((m) => m.liquidados) },
 										]}
 										type="bar"
 										height={320}
@@ -720,7 +771,19 @@ const RelatorioFinanciamentos: React.FC = () => {
 												<td colSpan={6} className="px-4 py-3 text-sm font-semibold text-gray-700">Total ({tot.totalContratos} contratos)</td>
 												<td className="px-4 py-3 text-sm text-right font-semibold text-gray-700">{formatCurrency(tot.totalValorContratos)}</td>
 												<td></td>
-												<td className="px-4 py-3 text-sm text-right font-bold text-gray-900 whitespace-nowrap">{formatCurrency(tot.totalValor)}</td>
+												<td className="px-4 py-3 text-sm text-right font-bold text-gray-900 whitespace-nowrap">
+													{statusUnico ? (
+														formatCurrency(statusUnico.valor)
+													) : (
+														// Different meanings per status: one subtotal each, never a grand total
+														valoresPorStatus.map((t) => (
+															<span key={t.status} className="block">
+																<span className="text-xs font-normal text-gray-500 mr-1">{STATUS_INFO[t.status].plural}:</span>
+																{formatCurrency(t.valor)}
+															</span>
+														))
+													)}
+												</td>
 												<td colSpan={2}></td>
 											</tr>
 										</tfoot>

@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
+import { Tooltip } from '@mui/material';
 import { formatarMoeda } from '../../../Utils/formataMoeda';
+import { pct } from '../../../Utils/formatos';
 import { montarFluxoMensal, FluxoMesCentrosInput, LinhaFluxo } from './fluxoMensalRegras';
 
 /** Light group colours (the old dark bands were hard to read): header background / text. */
@@ -23,6 +25,9 @@ interface Props {
 	onDetalharCentro: (idCentro: string, mesIdx: number, tipo: 'receitas' | 'despesas', descricao: string) => void;
 	onDetalharFinanciamento: (mesIdx: number, subtipo: 'pagos' | 'contratados', descricao: string) => void;
 }
+
+/** Quitados / Créditos novos come from the contracts, not from bank movements. */
+const AVISO_FINANCIAMENTOS = 'Financiamentos não dependem das contas selecionadas';
 
 const valorTxt = (v: number) => (v ? formatarMoeda(v) : '—');
 const corValor = (v: number) => (v < 0 ? '#b91c1c' : undefined);
@@ -101,7 +106,7 @@ const FluxoMensalCentros: React.FC<Props> = ({
 				{celulaValor(
 					l.quitados,
 					ehTotal ? GRUPO.financiamentos.bg : GRUPO.financiamentos.cell,
-					ehTotal ? undefined : () => onDetalharFinanciamento(idx!, 'pagos', `Amortizações e liquidações — ${rotulo}`),
+					ehTotal ? undefined : () => onDetalharFinanciamento(idx!, 'pagos', `Quitados — ${rotulo}`),
 				)}
 				{celulaValor(
 					l.creditosNovos,
@@ -132,8 +137,9 @@ const FluxoMensalCentros: React.FC<Props> = ({
 											<button
 												type="button"
 												onClick={() => onToggleGrupo(g.key)}
-												className="rounded border border-current px-1.5 leading-4 text-[11px] font-bold hover:bg-white/60"
+												className="inline-flex items-center justify-center min-w-[28px] h-7 rounded border border-current px-2 text-sm font-bold hover:bg-white/60"
 												aria-expanded={expandidos[g.key]}
+												aria-label={expandidos[g.key] ? `Recolher centros de custos de ${g.titulo}` : `Ver ${g.titulo} por centro de custos`}
 												title={expandidos[g.key] ? 'Recolher centros de custos' : 'Ver por centro de custos'}
 											>
 												{expandidos[g.key] ? '−' : '+'}
@@ -142,13 +148,30 @@ const FluxoMensalCentros: React.FC<Props> = ({
 									</span>
 								</th>
 							))}
-							<th rowSpan={2} className={`${th} text-center`} style={thGrupo('saldo')} title="Receitas menos todas as despesas (operacionais e de investimento)">
-								Saldo
+							<th
+								rowSpan={2}
+								className={`${th} text-center`}
+								style={thGrupo('saldo')}
+								title="Receitas menos todas as despesas, operacionais e de investimento (R − D)"
+							>
+								(C) Saldo após
 								<br />
-								(R − D)
+								investimentos
 							</th>
 							<th colSpan={2} className={`${th} text-center`} style={thGrupo('financiamentos')}>
-								Financiamentos
+								<span className="inline-flex items-center gap-1">
+									Financiamentos
+									{/* Hover, keyboard focus and tap (the native title only worked with a mouse) */}
+									<Tooltip title={AVISO_FINANCIAMENTOS} arrow enterTouchDelay={0} leaveTouchDelay={4000}>
+										<button
+											type="button"
+											className="inline-flex items-center justify-center w-7 h-7 rounded-full font-normal hover:bg-white/60"
+											aria-label={AVISO_FINANCIAMENTOS}
+										>
+											ⓘ
+										</button>
+									</Tooltip>
+								</span>
 							</th>
 						</tr>
 						<tr>
@@ -220,7 +243,7 @@ const FluxoMensalCentros: React.FC<Props> = ({
 								<td className={td}>{valorTxt(l.investimentosRealizados)}</td>
 								<td className={td} style={{ color: corValor(l.saldoAposInvestimentos), fontWeight: 700 }}>{valorTxt(l.saldoAposInvestimentos)}</td>
 								<td className={td} style={{ color: corValor(l.lucratividade ?? 0) }}>
-									{l.lucratividade == null ? '—' : `${formatarMoeda(l.lucratividade, 1)}%`}
+									{pct(l.lucratividade)}
 								</td>
 							</tr>
 						))}

@@ -4,7 +4,7 @@ import DialogModal from '../../../components/DialogModal';
 import LancamentoManual from './Modals/LancarManual';
 import ImportOFXModal from './Modals/ImportOFXModal';
 import FiltroMovimentosModal from './Modals/FiltroMovimentos';
-import SelectContaCorrente from './Modals/SelectContaCorrente';
+import SelectContaCorrente, { ContaOpcao } from './Modals/SelectContaCorrente';
 import DetalhamentoMovimento from './Modals/DetalhamentoMovimento';
 import Transferir from './Modals/Transferir';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -44,18 +44,16 @@ import {
 } from '../../../services/movimentoBancarioService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import { DadosConciliacao, montarMovimentoConciliacaoIndividual, montarMovimentoConciliacaoLote } from './conciliacaoPayload';
-import {
-	excluirParcelaFinanciamento,
-	listarParcelaFinanciamentos,
-	salvarParcelaFinanciamento,
-	verificarParcelasAssociadas,
-} from '../../../services/financiamentoParcelasService';
+import { verificarParcelasAssociadas } from '../../../services/financiamentoParcelasService';
+import { formatarDataISO } from '../../../Utils/dataSemFuso';
+import { brl } from '../../../Utils/formatos';
+import { dtMovimentoDoDia } from '../../../Utils/dataMovimento';
+import { parseValorMonetario } from '../../../Utils/valorMonetario';
 import { listarPlanoContas } from '../../../services/planoContasService';
 import { listarCentroCustos } from '../../../services/centroCustosService';
 import { CentroCustos } from '../../../../../backend/src/models/CentroCustos';
 import { Tooltip } from 'react-tooltip';
 import ConciliarPlano from './Modals/ConciliarPlano';
-import { formatarData } from '../../../Utils/formatarData';
 import { buscarBancoById } from '../../../services/bancoService';
 import { buscarPessoaById } from '../../../services/pessoaService';
 import { toast } from 'react-toastify';
@@ -105,7 +103,9 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [menuAtivoId, setMenuAtivoId] = useState<number | null>(null);
 	const [planos, setPlanos] = useState<any[]>([]);
 	const [centrosDisponiveis, setCentrosDisponiveis] = useState<CentroCustos[]>([]);
-	const [isExporting, setIsExporting] = useState(false);
+	const [isExporting, setIsExporting] = useState<'PDF' | 'Excel' | null>(null);
+	/** Message of the last failed list load (shown with "Tentar novamente" instead of "nenhum movimento"). */
+	const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
 
 	const [dataInicio, setDataInicio] = useState<string>('');
 	const [dataFim, setDataFim] = useState<string>('');
@@ -141,6 +141,8 @@ const MovimentoBancarioTable: React.FC = () => {
 	// Estados para edição de conta do histórico OFX
 	const [modalEditarContaIsOpen, setModalEditarContaIsOpen] = useState(false);
 	const [historicoParaEditarConta, setHistoricoParaEditarConta] = useState<any | null>(null);
+	/** Destination chosen for "Editar conta", waiting for the user to confirm the move. */
+	const [mudancaContaPendente, setMudancaContaPendente] = useState<{ destino: ContaOpcao; origem?: ContaOpcao } | null>(null);
 
 	// Estados para seleção múltipla e conciliação em lote
 	const [movimentosSelecionados, setMovimentosSelecionados] = useState<MovimentoBancario[]>([]);
@@ -170,6 +172,22 @@ const MovimentoBancarioTable: React.FC = () => {
 				setStatusFiltro('pendentes');
 			}
 
+			// Period of the notification ("Período 03/07–28/08"): without it the current month showed nothing.
+			// The other filters are cleared so every pending movement of the period appears.
+			const inicioNotificacao = String(location.state?.dataInicial ?? '').slice(0, 10);
+			const fimNotificacao = String(location.state?.dataFinal ?? '').slice(0, 10);
+			if (/^\d{4}-\d{2}-\d{2}$/.test(inicioNotificacao) && /^\d{4}-\d{2}-\d{2}$/.test(fimNotificacao)) {
+				setDataInicio(inicioNotificacao);
+				setDataFim(fimNotificacao);
+				setPlanosFiltroIds(undefined);
+				setCentrosFiltroIds(undefined);
+				setPlanosSelecao([]);
+				setCentrosSelecao([]);
+				setHistoricoContem('');
+				setValorBusca('');
+				setCurrentPage(1);
+			}
+
 			// Limpar o state da navegação para evitar reaplicação
 			window.history.replaceState({}, document.title);
 
@@ -177,8 +195,9 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	}, [location.state]);
 
-	// useEffect para definir datas iniciais (mês atual)
+	// useEffect para definir datas iniciais (mês atual) — exceto quando a notificação já trouxe o período
 	useEffect(() => {
+		if (location.state?.fromNotification && location.state?.dataInicial && location.state?.dataFinal) return;
 		const now = new Date();
 		const inicio = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
 		const fim = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
@@ -313,8 +332,10 @@ const MovimentoBancarioTable: React.FC = () => {
 			setHasNext(result.hasNext);
 			setHasPrev(result.hasPrev);
 			setCurrentPage(result.currentPage);
+			setErroCarregamento(null);
 		} catch (error) {
 			console.error('❌ Erro ao buscar Movimentos Bancários:', error);
+			setErroCarregamento(error instanceof Error && error.message ? error.message : 'Erro desconhecido');
 			// Em caso de erro, limpar os dados
 			setMovimentos([]);
 			setFilteredMovimentos([]);
@@ -327,12 +348,26 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
+	/** Same filters as the list on screen (plan, centre, histórico and valor too), so the file matches the table. */
+	const filtrosExtrasExportacao = () => ({
+		planosIds: planosFiltroIds,
+		centrosIds: centrosFiltroIds,
+		historicoContem: historicoContem || undefined,
+		valorBusca: valorBusca || undefined,
+	});
+
 	const exportarParaExcel = async () => {
 		try {
 			setAcoesMenu(false);
-			setIsExporting(true);
+			setIsExporting('Excel');
 
-			const blob = await exportarMovimentosBancariosExcel(contaSelecionada?.id, dataInicio, dataFim, statusFiltro);
+			const blob = await exportarMovimentosBancariosExcel(
+				contaSelecionada?.id,
+				dataInicio,
+				dataFim,
+				statusFiltro,
+				filtrosExtrasExportacao(),
+			);
 
 			// Criar link para download
 			const url = window.URL.createObjectURL(blob);
@@ -349,16 +384,22 @@ const MovimentoBancarioTable: React.FC = () => {
 			console.error('Erro ao exportar Excel:', error);
 			toast.error('Erro ao gerar o Excel. Verifique os dados e tente novamente.');
 		} finally {
-			setIsExporting(false);
+			setIsExporting(null);
 		}
 	};
 
 	const exportarParaPDF = async () => {
 		try {
 			setAcoesMenu(false);
-			setIsExporting(true);
+			setIsExporting('PDF');
 
-			const blob = await exportarMovimentosBancariosPDF(contaSelecionada?.id, dataInicio, dataFim, statusFiltro);
+			const blob = await exportarMovimentosBancariosPDF(
+				contaSelecionada?.id,
+				dataInicio,
+				dataFim,
+				statusFiltro,
+				filtrosExtrasExportacao(),
+			);
 
 			// Criar link para download
 			const url = window.URL.createObjectURL(blob);
@@ -375,7 +416,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			console.error('Erro ao exportar PDF:', error);
 			toast.error('Erro ao gerar o PDF. Verifique os dados e tente novamente.');
 		} finally {
-			setIsExporting(false);
+			setIsExporting(null);
 		}
 	};
 
@@ -409,11 +450,15 @@ const MovimentoBancarioTable: React.FC = () => {
 		// O useEffect vai detectar a mudança e chamar fetchMovimentos automaticamente
 	};
 
+	/** Lança erro em caso de falha: o modal Transferir continua aberto (o service já mostra o toast do erro da API). */
 	const handleTransferir = async (data: any) => {
 		try {
 			const usuario = JSON.parse(localStorage.getItem('user') || '{}');
 			const contaDestino = data.contas.find((c: any) => c.id === parseInt(data.idContaDestino));
-			if (!contaDestino) throw new Error('Conta destino não encontrada');
+			if (!contaDestino) {
+				toast.error('Conta de destino não encontrada. Feche e abra a transferência de novo.');
+				throw new Error('Conta destino não encontrada');
+			}
 
 			const payload = {
 				contaOrigemId: data.contaOrigem.id,
@@ -422,7 +467,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				contaDestinoDescricao: `${contaDestino.responsavel} | ${contaDestino.bancoNome} | ${contaDestino.numConta}`,
 				valor: data.valor,
 				descricao: data.descricao,
-				data: new Date(data.data).toISOString(),
+				// Chosen local calendar day stored like OFX rows ('YYYY-MM-DDT00:00:00.000Z'), never shifted to UTC
+				data: dtMovimentoDoDia(data.data),
 				idUsuario: usuario?.id,
 			};
 
@@ -433,6 +479,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			fetchMovimentos(currentPage);
 		} catch (error) {
 			console.error('Erro ao transferir:', error);
+			throw error;
 		}
 	};
 
@@ -451,6 +498,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			}, 0);
 		} catch (error) {
 			console.error('Erro ao buscar dados completos:', error);
+			toast.error(error instanceof Error && error.message ? error.message : 'Não foi possível abrir o lançamento.');
 		}
 	};
 
@@ -501,9 +549,10 @@ const MovimentoBancarioTable: React.FC = () => {
 			const usuario = JSON.parse(localStorage.getItem('user') || '{}');
 			const movimentoCompleto = {
 				...formData,
-				valor: parseFloat((formData.valor || '0').replace(',', '.')),
-				dtMovimento: new Date(formData.dtMovimento).toISOString(),
-				idPlanoContas: parseInt(formData.idPlanoContas),
+				valor: parseValorMonetario(formData.valor),
+				// Chosen local calendar day stored like OFX rows ('YYYY-MM-DDT00:00:00.000Z'), never shifted to UTC
+				dtMovimento: dtMovimentoDoDia(formData.dtMovimento),
+				idPlanoContas: formData.idPlanoContas ? parseInt(formData.idPlanoContas) : null,
 				idContaCorrente: formData.idContaCorrente,
 				historico: formData.historico,
 				criadoEm: new Date().toISOString(),
@@ -525,9 +574,17 @@ const MovimentoBancarioTable: React.FC = () => {
 
 			setModalIsOpen(false);
 			fetchMovimentos(currentPage);
-			toast.info('Lançamento salvo. Para excluir, use o menu ⋮ na linha da conciliação.');
+			// The only confirmation of this action (the service does not toast on create)
+			const dia = String(movimentoCompleto.dtMovimento ?? '').slice(0, 10);
+			const foraDoPeriodo = !!dataInicio && !!dataFim && (dia < dataInicio || dia > dataFim);
+			toast.success(
+				`${formData.tipoMovimento === 'D' ? 'Saída' : 'Entrada'} de ${brl(Math.abs(Number(movimentoCompleto.valor)))} incluída em ${formatarDataISO(dia)}.` +
+					(foraDoPeriodo ? ' Ela não aparece na lista porque está fora do período filtrado.' : ''),
+			);
 		} catch (error) {
 			console.error('Erro ao salvar movimento bancário:', error);
+			// Modal stays open with what was typed
+			toast.error(error instanceof Error && error.message ? error.message : 'Erro ao salvar o lançamento.');
 		} finally {
 			setIsSaving(false);
 		}
@@ -553,7 +610,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			setConfirmModalOpen(false);
 		} catch (error) {
 			console.error('Erro ao excluir movimento bancário:', error);
-			toast.error(error instanceof Error ? error.message : 'Falha na exclusão do movimento!');
+			toast.error(error instanceof Error ? error.message : 'Falha na exclusão do movimento.');
 		}
 	};
 
@@ -576,6 +633,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			setConfirmDeleteAllModalOpen(false);
 			console.log(`✅ Exclusão em massa concluída: ${resultado.excluidos} movimentos excluídos`);
 		} catch (error) {
+			// The service already shows the error toast
 			console.error('❌ Erro ao excluir movimentos em massa:', error);
 		} finally {
 			setIsSaving(false);
@@ -583,7 +641,14 @@ const MovimentoBancarioTable: React.FC = () => {
 	};
 
 	const handleDelete = async (id: number) => {
-		const temParcelas = await verificarParcelasAssociadas(id);
+		let temParcelas: boolean;
+		try {
+			temParcelas = await verificarParcelasAssociadas(id);
+		} catch (error) {
+			console.error('Erro ao verificar parcelas do movimento:', error);
+			toast.error(error instanceof Error ? error.message : 'Erro ao verificar as parcelas vinculadas ao movimento');
+			return;
+		}
 		setDeleteMovimentoId(id);
 
 		if (temParcelas) {
@@ -616,7 +681,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				idFinanciamento: null,
 				parcelado: false,
 				ideagro: false,
-				numeroDocumento: null,
+				// numeroDocumento is the bank document / OFX identifier: never erased by "Limpar".
+				// The installment paid by this movement is reopened by the backend (limparConciliacao).
 				resultadoList: [],
 				centroCustosList: undefined,
 				modalidadeMovimento: 'padrao',
@@ -624,7 +690,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				limparConciliacao: true,
 			};
 
-			await salvarMovimentoBancario(movimentoLimpo);
+			await salvarMovimentoBancario(movimentoLimpo, { silencioso: true });
 
 			// Atualizar a lista
 			await fetchMovimentos(currentPage);
@@ -653,6 +719,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
 			await fetchMovimentos(currentPage);
 		} catch (error) {
+			// The service already shows the error toast (with the API message)
 			console.error('Erro ao atualizar status do movimento:', error);
 		}
 	};
@@ -704,12 +771,34 @@ const MovimentoBancarioTable: React.FC = () => {
 
 		try {
 			setIsSaving(true);
-			console.log(`🔄 Atualizando conta de ${historicoParaEditarConta.idMovimentos.length} movimentos para conta ${novaContaId}`);
 
-			const resultado = await atualizarContaMovimentosOFX(historicoParaEditarConta.idMovimentos, novaContaId);
+			const resultado = await atualizarContaMovimentosOFX(
+				historicoParaEditarConta.idMovimentos,
+				novaContaId,
+				historicoParaEditarConta.id,
+			);
 
-			console.log(`✅ ${resultado.atualizados} movimentos atualizados com sucesso`);
-			toast.success(` movimentos atualizados para a nova conta!`);
+			toast.success(`${resultado.atualizados} movimento(s) movido(s) para a nova conta.`);
+			if (resultado.duplicados > 0) {
+				const exemplos = resultado.movimentosDuplicados
+					.slice(0, 5)
+					.map((d) => `${formatarDataISO(d.dtMovimento)} ${d.historico} ${formatarMoeda(Number(d.valor))}`)
+					.join('; ');
+				toast.warning(
+					`${resultado.duplicados} lançamento(s) já existiam na conta destino e NÃO foram movidos (continuam na conta original, ` +
+						`verifique e exclua-os se forem duplicados): ${exemplos}${resultado.duplicados > 5 ? '; …' : ''}`,
+					{ autoClose: false },
+				);
+			}
+			if (resultado.historicoAtualizado) {
+				setHistoricoImportacoes((prev) =>
+					prev.map((h) =>
+						h.id === historicoParaEditarConta.id
+							? { ...h, idContaCorrente: novaContaId, idMovimentos: resultado.idMovimentosHistorico ?? h.idMovimentos }
+							: h,
+					),
+				);
+			}
 
 			// Fechar modal e limpar estados
 			setModalEditarContaIsOpen(false);
@@ -719,7 +808,11 @@ const MovimentoBancarioTable: React.FC = () => {
 			await fetchMovimentos(currentPage);
 		} catch (error) {
 			console.error('❌ Erro ao atualizar conta dos movimentos:', error);
-			toast.error('Erro ao atualizar conta dos movimentos');
+			toast.error(error instanceof Error && error.message ? error.message : 'Erro ao atualizar conta dos movimentos', {
+				autoClose: false,
+			});
+			// Part of the movements may have moved: show the current state
+			fetchMovimentos(currentPage).catch(() => undefined);
 		} finally {
 			setIsSaving(false);
 		}
@@ -799,7 +892,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
 		for (const movimentoAtualizado of movimentosParaSalvar) {
 			try {
-				movimentosAtualizados.push(await salvarMovimentoBancario(movimentoAtualizado));
+				movimentosAtualizados.push(await salvarMovimentoBancario(movimentoAtualizado, { silencioso: true }));
 			} catch (error) {
 				console.error(`Erro ao conciliar movimento ${movimentoAtualizado.id}:`, error);
 				erros.push({ id: movimentoAtualizado.id, mensagem: error instanceof Error ? error.message : String(error) });
@@ -862,7 +955,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			linhas.push(`Até: ${fmtData(dataFim)}`);
 		}
 
-		linhas.push(statusFiltro === 'pendentes' ? 'Status: apenas pendentes' : 'Status: mostrar todos');
+		linhas.push(statusFiltro === 'pendentes' ? 'Status: só pendentes' : 'Status: todos');
 
 		if (planosFiltroIds?.length) {
 			const nomes = planosFiltroIds.map((id) => planos.find((p) => p.id === id)?.descricao).filter(Boolean) as string[];
@@ -882,7 +975,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	}, [contaSelecionada, dataInicio, dataFim, statusFiltro, planosFiltroIds, centrosFiltroIds, planos, centrosDisponiveis]);
 
 	return (
-		<div>
+		<div className={movimentosSelecionados.length > 0 ? 'pb-32 sm:pb-24' : undefined}>
 			{/* Loading bloqueante para histórico */}
 			{isLoadingHistorico && (
 				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
@@ -936,22 +1029,22 @@ const MovimentoBancarioTable: React.FC = () => {
 										Transferir
 									</p>
 								</button>
-								<button onClick={() => setConfirmDeleteAllModalOpen(true)}>
-									<p className="font-bold text-sm rounded text-left text-red-600 mb-1 px-2 py-1 hover:bg-red-50">
-										<FontAwesomeIcon icon={faTrash} className="mr-2" />
-										Excluir Todos
-									</p>
-								</button>
 								<button onClick={exportarParaPDF} disabled={filteredMovimentos && filteredMovimentos.length <= 0}>
 									<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
 										<FontAwesomeIcon icon={faFilePdf} className="mr-2" />
-										Imprimir PDF
+										Exportar PDF
 									</p>
 								</button>
 								<button onClick={exportarParaExcel} disabled={filteredMovimentos && filteredMovimentos.length <= 0}>
 									<p className="font-bold text-sm rounded text-left text-gray-800 px-2 py-1 hover:bg-gray-100">
 										<FontAwesomeIcon icon={faFileExcel} className="mr-2" />
-										Imprimir Excel
+										Exportar Excel
+									</p>
+								</button>
+								<button onClick={() => setConfirmDeleteAllModalOpen(true)} className="border-t mt-1 pt-1">
+									<p className="font-bold text-sm rounded text-left text-red-600 px-2 py-1 hover:bg-red-50" title="Apaga todos os movimentos desta conta, de todos os períodos">
+										<FontAwesomeIcon icon={faTrash} className="mr-2" />
+										Excluir todos da conta
 									</p>
 								</button>
 							</div>
@@ -960,7 +1053,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				</div>
 				<div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-3 w-full">
 					<button
-						className="bg-gray-200 text-black font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-gray-300 text-sm sm:text-base"
+						className="bg-gray-200 text-black font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-gray-300 text-sm sm:text-base whitespace-nowrap"
 						onClick={() => setModalFiltroMovimentosIsOpen(true)}
 					>
 						<span className="hidden sm:inline">Pesquisar</span>
@@ -968,7 +1061,7 @@ const MovimentoBancarioTable: React.FC = () => {
 						<FontAwesomeIcon icon={faSearch} className="ml-2 sm:ml-3 font-bold" />
 					</button>
 					<button
-						className="bg-suport text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-400 text-sm sm:text-base"
+						className="bg-suport text-white font-bold px-4 py-2 flex justify-center items-center rounded hover:bg-orange-400 text-sm sm:text-base whitespace-nowrap"
 						onClick={() => openModal()}
 					>
 						<span className="hidden sm:inline">Lançar Manual</span>
@@ -977,16 +1070,19 @@ const MovimentoBancarioTable: React.FC = () => {
 					</button>
 					<div className="flex relative">
 						<button
-							className="bg-primary text-white font-bold px-4 py-2 flex items-center rounded-l hover:bg-orange-500 text-sm sm:text-base"
+							className="bg-primary text-white font-bold px-4 py-2 flex items-center rounded-l hover:bg-orange-500 text-sm sm:text-base whitespace-nowrap"
 							onClick={() => setModalImportOFXIsOpen(true)}
 						>
-							<span className="hidden sm:inline">Buscar OFX</span>
-							<span className="sm:hidden">OFX</span>
+							<span className="hidden sm:inline">Importar extrato (OFX)</span>
+							<span className="sm:hidden">Importar OFX</span>
 							<FontAwesomeIcon icon={faFileArchive} className="ml-2 sm:ml-3" />
 						</button>
 						<button
 							className="rounded-r-md font-bold text-white bg-primary border-l-2 border-gray-300 text-lg px-2 py-2 flex items-center"
 							onClick={() => setDropdownHistoricoAberto(!dropdownHistoricoAberto)}
+							aria-label="Últimas importações de extrato"
+							title="Últimas importações de extrato"
+							aria-expanded={dropdownHistoricoAberto}
 						>
 							<FontAwesomeIcon icon={faChevronDown} />
 						</button>
@@ -1000,7 +1096,7 @@ const MovimentoBancarioTable: React.FC = () => {
 										className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50"
 										title="Remove apenas o registro das importações; os movimentos continuam no sistema."
 									>
-										Limpar
+										Limpar lista
 									</button>
 								</div>
 								{historicoImportacoes.length === 0 ? (
@@ -1049,7 +1145,8 @@ const MovimentoBancarioTable: React.FC = () => {
 														setDropdownHistoricoAberto(false);
 													}}
 													className="flex-shrink-0 p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
-													title="Editar conta"
+													title="Mover os lançamentos desta importação para outra conta"
+													aria-label={`Mover os lançamentos de ${item.nomeArquivo} para outra conta`}
 												>
 													<FontAwesomeIcon icon={faPencil} size="sm" />
 												</button>
@@ -1063,12 +1160,39 @@ const MovimentoBancarioTable: React.FC = () => {
 				</div>
 			</div>
 			<div className="bg-gray-50 shadow-md rounded-lg border border-gray-200">
-				{isLoading ? (
+				{!contaSelecionada ? (
+					<div className="flex flex-col items-center justify-center gap-3 py-12 px-4 text-center">
+						<p className="text-gray-600 text-lg font-medium m-0">Selecione uma conta para ver os lançamentos.</p>
+						<button
+							className="bg-primary text-white font-bold px-4 py-2 rounded hover:bg-orange-500"
+							onClick={() => setModalContaIsOpen(true)}
+						>
+							Selecionar conta
+						</button>
+					</div>
+				) : isLoading ? (
 					<div className="flex justify-center items-center h-64">
 						<div className="loader"></div>
 					</div>
+				) : erroCarregamento ? (
+					<div className="flex flex-col items-center justify-center gap-3 py-12 px-4 text-center" role="alert">
+						<p className="text-red-700 text-lg font-medium m-0">Não foi possível carregar os lançamentos.</p>
+						<p className="text-sm text-gray-600 m-0 max-w-xl break-words">{erroCarregamento}</p>
+						<button
+							className="bg-primary text-white font-bold px-4 py-2 rounded hover:bg-orange-500"
+							onClick={() => fetchMovimentos(currentPage)}
+						>
+							Tentar novamente
+						</button>
+					</div>
 				) : (
 					<>
+						{/* Filtros aplicados (o período padrão é o mês atual e não aparecia em lugar nenhum) */}
+						{totalMovimentos > 0 && (
+							<div className="px-3 py-2 text-xs text-gray-600 border-b border-gray-200">
+								{linhasResumoFiltrosVazio.filter((l) => !l.startsWith('Conta:')).join(' · ')}
+							</div>
+						)}
 						{/* Tabela Desktop */}
 						<div className="hidden lg:block overflow-x-auto">
 							<table className="w-full border-collapse min-w-[900px]">
@@ -1082,11 +1206,14 @@ const MovimentoBancarioTable: React.FC = () => {
 												className="w-4 h-4"
 											/>
 										</th>
-										<th className="pl-5 p-2 text-left truncate min-w-[140px]">Data do Movimento</th>
+										<th className="pl-5 p-2 text-left truncate w-[110px] min-w-[110px]">Data</th>
 										<th className="p-2 text-left min-w-[200px]">Histórico</th>
 										<th className="p-2 text-center min-w-[180px]">Plano de Contas</th>
 										<th className="p-2 text-center min-w-[180px]">Centro de Custos</th>
 										<th className="p-2 text-center min-w-[120px]">Valor R$</th>
+										<th className="p-2 w-12">
+											<span className="sr-only">Ações</span>
+										</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -1094,7 +1221,7 @@ const MovimentoBancarioTable: React.FC = () => {
 										<tr>
 											<td colSpan={7} className="border-b p-0">
 												<div className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center">
-													<p className="text-gray-600 text-lg font-medium m-0">Nenhum movimento encontrado!</p>
+													<p className="text-gray-600 text-lg font-medium m-0">Nenhum movimento encontrado.</p>
 													<div className="text-xs sm:text-sm text-gray-500 max-w-2xl leading-relaxed">
 														{linhasResumoFiltrosVazio.map((linha, idx) => (
 															<p key={idx} className="m-0">
@@ -1117,7 +1244,7 @@ const MovimentoBancarioTable: React.FC = () => {
 														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== movBancario.tipoMovimento}
 													/>
 												</td>
-												<td className="pl-5 p-2 text-left truncate min-w-[140px]">{formatarData(movBancario.dtMovimento)}</td>
+												<td className="pl-5 p-2 text-left truncate min-w-[110px]">{formatarDataISO(movBancario.dtMovimento)}</td>
 												<td className="p-2 text-left min-w-[200px] max-w-[300px] truncate">
 													<span id={`tooltip-${movBancario.id}`}>{movBancario.historico}</span>
 													<Tooltip anchorId={`tooltip-${movBancario.id}`} place="top" content={movBancario.historico} />
@@ -1229,12 +1356,15 @@ const MovimentoBancarioTable: React.FC = () => {
 													<button
 														className="text-gray-700 hover:text-black px-2"
 														onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+														aria-label={`Ações do lançamento ${movBancario.historico ?? ''}`}
+														title="Ações do lançamento"
+														aria-expanded={menuAtivoId === movBancario.id}
 													>
 														<FontAwesomeIcon icon={faEllipsisV} />
 													</button>
 
 													{menuAtivoId === movBancario.id && (
-														<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm w-33 font-semibold">
+														<div className="absolute right-5 top-6 z-10 bg-white border rounded shadow-md text-sm min-w-[11rem] whitespace-nowrap font-semibold">
 															<button
 																className="w-full px-4 py-2 hover:bg-gray-100 text-left text-blue-600"
 																style={{ textWrap: 'nowrap' }}
@@ -1256,7 +1386,7 @@ const MovimentoBancarioTable: React.FC = () => {
 																		setMenuAtivoId(null);
 																	}}
 																>
-																	<FontAwesomeIcon icon={faUndo} className="mr-1" /> Limpar
+																	<FontAwesomeIcon icon={faUndo} className="mr-1" /> Limpar conciliação
 																</button>
 															)}
 															<button
@@ -1279,7 +1409,7 @@ const MovimentoBancarioTable: React.FC = () => {
 						<div className="lg:hidden">
 							{currentItems.length === 0 ? (
 								<div className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center">
-									<p className="text-gray-600 text-lg font-medium m-0">Nenhum movimento encontrado!</p>
+									<p className="text-gray-600 text-lg font-medium m-0">Nenhum movimento encontrado.</p>
 									<div className="text-xs sm:text-sm text-gray-500 max-w-2xl leading-relaxed">
 										{linhasResumoFiltrosVazio.map((linha, idx) => (
 											<p key={idx} className="m-0">
@@ -1303,23 +1433,30 @@ const MovimentoBancarioTable: React.FC = () => {
 														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== movBancario.tipoMovimento}
 													/>
 													<div className="flex-1">
-														<div className="text-sm font-medium text-gray-900">{formatarData(movBancario.dtMovimento)}</div>
+														<div className="text-sm font-medium text-gray-900">{formatarDataISO(movBancario.dtMovimento)}</div>
 														<div className="text-xs text-gray-500 mt-1">{movBancario.historico}</div>
 													</div>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="relative inline-flex items-center cursor-pointer">
-														<input
-															type="checkbox"
-															className="sr-only peer"
-															checked={movBancario.ideagro}
-															onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
-														/>
-														<div className="w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+													<label className="inline-flex items-center gap-1 cursor-pointer" title="Lançado no IdeAgri">
+														<span className="text-[10px] text-gray-500">IdeAgri</span>
+														<span className="relative inline-flex items-center">
+															<input
+																type="checkbox"
+																className="sr-only peer"
+																checked={movBancario.ideagro}
+																onChange={() => handleStatusChange(movBancario.id, !movBancario.ideagro)}
+																aria-label="Lançado no IdeAgri"
+															/>
+															<span className="block w-8 h-4 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all"></span>
+														</span>
 													</label>
 													<button
 														className="text-gray-700 hover:text-black p-1"
 														onClick={() => setMenuAtivoId(menuAtivoId === movBancario.id ? null : movBancario.id)}
+														aria-label={`Ações do lançamento ${movBancario.historico ?? ''}`}
+														title="Ações do lançamento"
+														aria-expanded={menuAtivoId === movBancario.id}
 													>
 														<FontAwesomeIcon icon={faEllipsisV} />
 													</button>
@@ -1462,7 +1599,7 @@ const MovimentoBancarioTable: React.FC = () => {
 																	}}
 																>
 																	<FontAwesomeIcon icon={faUndo} />
-																	Limpar
+																	Limpar conciliação
 																</button>
 															)}
 														<button
@@ -1544,11 +1681,11 @@ const MovimentoBancarioTable: React.FC = () => {
 					className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50"
 					style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}
 				>
-					<div className="container mx-auto flex justify-between items-center">
-						<span className="text-gray-600 font-semibold text-lg">{movimentosSelecionados.length} movimento(s) selecionado(s)</span>
+					<div className="container mx-auto flex flex-wrap justify-between items-center gap-2">
+						<span className="text-gray-600 font-semibold text-base sm:text-lg">{movimentosSelecionados.length} movimento(s) selecionado(s)</span>
 						<button
 							onClick={handleConciliarSelecionados}
-							className="bg-blue-600 text-white text-lg px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+							className="bg-blue-600 text-white text-base sm:text-lg px-4 sm:px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"
 						>
 							Conciliar {movimentosSelecionados.length} Movimento(s)
 						</button>
@@ -1585,7 +1722,12 @@ const MovimentoBancarioTable: React.FC = () => {
 				onConfirm={handleDeleteConfirm}
 				title="Atenção"
 				type="warn"
-				message="Tem certeza que deseja excluir este Movimento Bancário?"
+				message={(() => {
+					const m = movimentos.find((x) => x.id === deleteMovimentoId);
+					return m
+						? `Excluir o movimento de ${formatarDataISO(m.dtMovimento)} (${formatarMoeda(Number(m.valor))}) "${m.historico}"? Esta ação não pode ser desfeita.`
+						: 'Excluir este movimento? Esta ação não pode ser desfeita.';
+				})()}
 				confirmLabel="Excluir"
 				cancelLabel="Cancelar"
 			/>
@@ -1596,9 +1738,10 @@ const MovimentoBancarioTable: React.FC = () => {
 				onConfirm={handleDeleteAllConfirm}
 				title="⚠️ ATENÇÃO - EXCLUSÃO EM MASSA"
 				type="error"
-				message={`Tem CERTEZA ABSOLUTA que deseja excluir TODOS os movimentos bancários da conta "${contaSelecionada?.numConta} - ${contaSelecionada?.bancoNome}"?\n\nEsta ação é IRREVERSÍVEL e excluirá:\n• Todos os movimentos bancários\n• Todos os resultados relacionados\n• Todas as parcelas de financiamento associadas`}
+				message={`Tem CERTEZA ABSOLUTA que deseja excluir TODOS os movimentos bancários da conta "${contaSelecionada?.numConta} - ${contaSelecionada?.bancoNome}"?\n\nEsta ação é IRREVERSÍVEL e excluirá:\n• Todos os movimentos bancários\n• Todos os resultados relacionados\n\nAs parcelas de financiamento NÃO são excluídas: as pagas por esses lançamentos voltam a ficar em aberto.`}
 				confirmLabel="EXCLUIR TODOS"
 				cancelLabel="Cancelar"
+				textoConfirmacao="EXCLUIR"
 			/>
 
 			<DialogModal
@@ -1608,10 +1751,10 @@ const MovimentoBancarioTable: React.FC = () => {
 					setLimparConciliacaoMovimentoId(null);
 				}}
 				onConfirm={handleLimparConciliacaoConfirm}
-				title="Limpar"
+				title="Limpar conciliação"
 				type="warn"
-				message="Tem certeza que deseja limpar a conciliação deste movimento? O movimento ficará pendente novamente."
-				confirmLabel="Limpar"
+				message="Tirar o plano de contas e o centro de custos deste movimento? Ele volta a ficar pendente. O lançamento continua no extrato."
+				confirmLabel="Limpar conciliação"
 				cancelLabel="Cancelar"
 			/>
 
@@ -1621,27 +1764,20 @@ const MovimentoBancarioTable: React.FC = () => {
 				onConfirm={async () => {
 					if (deleteMovimentoId === null) return;
 					try {
-						const temParcelas = await verificarParcelasAssociadas(deleteMovimentoId);
-
-						if (temParcelas) {
-							const parcelas = await listarParcelaFinanciamentos();
-							for (const parcela of parcelas.filter((p) => p.idMovimentoBancario === deleteMovimentoId)) {
-								await excluirParcelaFinanciamento(parcela.id);
-							}
-						}
-
+						// The backend never deletes installments: in the same transaction it reopens the ones this
+						// movement paid and unlinks the ones it generated.
 						await excluirMovimentoBancario(deleteMovimentoId);
 
 						removerMovimentoDasListas(deleteMovimentoId);
 						setConfirmDeleteParcelaModalOpen(false);
 					} catch (error) {
 						console.error('Erro ao excluir movimento bancário:', error);
-						toast.error(error instanceof Error ? error.message : 'Falha na exclusão do movimento!');
+						toast.error(error instanceof Error ? error.message : 'Falha na exclusão do movimento.');
 					}
 				}}
 				title="Atenção"
 				type="warn"
-				message="Este movimento possui parcelas associadas. Se continuar, as parcelas também serão excluídas. Deseja continuar?"
+				message="Este movimento está vinculado a parcelas de financiamento. As parcelas NÃO serão excluídas: as parcelas pagas por este lançamento voltam a ficar em aberto. Deseja excluir o movimento?"
 				confirmLabel="Excluir"
 				cancelLabel="Cancelar"
 			/>
@@ -1650,7 +1786,7 @@ const MovimentoBancarioTable: React.FC = () => {
 
 			<Transferir isOpen={modalTransferirIsOpen} onClose={() => setModalTransferirIsOpen(false)} onTransferir={handleTransferir} />
 
-			<DetalhamentoMovimento isOpen={modalDetalheOpen} onClose={() => setModalDetalheOpen(false)} movimento={movimentoSelecionado} />
+			<DetalhamentoMovimento isOpen={modalDetalheOpen} onClose={() => setModalDetalheOpen(false)} movimento={movimentoSelecionado} planos={planos} centros={centrosDisponiveis} />
 
 			<ConciliarPlano
 				isOpen={modalConciliaIsOpen}
@@ -1686,7 +1822,7 @@ const MovimentoBancarioTable: React.FC = () => {
 				<div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 cursor-wait">
 					<div className="bg-white px-6 py-4 rounded shadow-md flex items-center gap-4">
 						<div className="loaderExcel border-4 border-orange-500 border-t-transparent rounded-full w-8 h-8 animate-spin"></div>
-						<span className="text-orange-500 font-semibold text-2xl">Exportando Excel</span>
+						<span className="text-orange-500 font-semibold text-2xl">Gerando {isExporting}…</span>
 					</div>
 				</div>
 			)}
@@ -1723,16 +1859,48 @@ const MovimentoBancarioTable: React.FC = () => {
 				cancelLabel="Cancelar"
 			/>
 
-			{/* Modal para editar conta do histórico OFX */}
+			{/* Modal para editar conta do histórico OFX: escolher o destino NÃO move nada; o movimento só acontece após confirmar */}
 			<SelectContaCorrente
 				isOpen={modalEditarContaIsOpen}
+				titulo="Mover a importação para qual conta?"
+				salvarComoContaAtual={false}
+				contaDestacadaId={historicoParaEditarConta?.idContaCorrente ?? null}
+				onClose={() => setModalEditarContaIsOpen(false)}
+				onSelect={(conta: ContaOpcao, contas) => {
+					if (historicoParaEditarConta?.idContaCorrente === conta.id) {
+						toast.info('Os lançamentos desta importação já estão nessa conta.');
+						return;
+					}
+					setMudancaContaPendente({
+						destino: conta,
+						origem: contas.find((c) => c.id === historicoParaEditarConta?.idContaCorrente),
+					});
+				}}
+			/>
+
+			<DialogModal
+				isOpen={mudancaContaPendente !== null}
 				onClose={() => {
-					setModalEditarContaIsOpen(false);
+					setMudancaContaPendente(null);
 					setHistoricoParaEditarConta(null);
 				}}
-				onSelect={(conta) => {
-					handleAtualizarContaHistorico(conta.id);
+				onConfirm={async () => {
+					if (mudancaContaPendente) await handleAtualizarContaHistorico(mudancaContaPendente.destino.id);
 				}}
+				title="Mover lançamentos de conta"
+				type="info"
+				message={(() => {
+					const nomeConta = (c?: ContaOpcao) => (c ? `${c.bancoNome ?? ''} ${c.numConta ?? ''} - ${c.responsavel ?? ''}`.trim() : '');
+					const qtd = historicoParaEditarConta?.idMovimentos?.length ?? 0;
+					const origem = nomeConta(mudancaContaPendente?.origem);
+					return (
+						`Mover os ${qtd} lançamentos de "${historicoParaEditarConta?.nomeArquivo ?? 'extrato'}"` +
+						`${origem ? ` da conta ${origem}` : ''} para ${nomeConta(mudancaContaPendente?.destino)}?\n\n` +
+						'Os que já existirem na conta de destino não serão movidos.'
+					);
+				})()}
+				confirmLabel="Mover lançamentos"
+				cancelLabel="Cancelar"
 			/>
 		</div>
 	);

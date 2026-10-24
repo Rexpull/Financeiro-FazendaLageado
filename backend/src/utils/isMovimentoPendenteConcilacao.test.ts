@@ -5,7 +5,7 @@ import {
 } from './isMovimentoPendenteConcilacao';
 
 describe('isMovimentoPendenteConcilacao', () => {
-	it('despesa (D) with plan but no cost center is NOT pending (Abr/2026 Fluxo inconsistency case)', () => {
+	it('despesa (D) with plan but no cost center IS pending (would vanish from the centre-based Dashboard/Fluxo)', () => {
 		expect(
 			isMovimentoPendenteConcilacao({
 				tipoMovimento: 'D',
@@ -15,7 +15,18 @@ describe('isMovimentoPendenteConcilacao', () => {
 				centroCustosList: [],
 				valor: 220528.38,
 			}),
+		).toBe(true);
+	});
+
+	it('despesa (D) with plan and cost center is not pending', () => {
+		expect(
+			isMovimentoPendenteConcilacao({ tipoMovimento: 'D', modalidadeMovimento: 'padrao', idPlanoContas: 50, idCentroCustos: 42, valor: -10 }),
 		).toBe(false);
+	});
+
+	it('legacy tipoMovimento NULL uses the sign of valor', () => {
+		expect(isMovimentoPendenteConcilacao({ tipoMovimento: null, valor: 100, idCentroCustos: 30 })).toBe(false);
+		expect(isMovimentoPendenteConcilacao({ tipoMovimento: null, valor: -100, idCentroCustos: 42 })).toBe(true);
 	});
 
 	it('despesa (D) without plan and without resultadoList IS pending', () => {
@@ -37,6 +48,7 @@ describe('isMovimentoPendenteConcilacao', () => {
 				modalidadeMovimento: 'padrao',
 				idPlanoContas: null,
 				resultadoList: [{ idPlanoContas: 10 }],
+				centroCustosList: [{ idCentroCustos: 42 }],
 			}),
 		).toBe(false);
 	});
@@ -98,7 +110,7 @@ describe('isMovimentoPendenteConcilacao', () => {
 describe('resumirPendentesConcilacao', () => {
 	it('returns quantity and absolute value for todos and pendentes', () => {
 		const resumo = resumirPendentesConcilacao([
-			{ tipoMovimento: 'D', idPlanoContas: 1, valor: -100 }, // classified
+			{ tipoMovimento: 'D', idPlanoContas: 1, idCentroCustos: 42, valor: -100 }, // classified
 			{ tipoMovimento: 'D', idPlanoContas: null, resultadoList: [], valor: -50.5 }, // pending
 			{ tipoMovimento: 'C', idCentroCustos: null, valor: 20 }, // pending
 		]);
@@ -106,7 +118,7 @@ describe('resumirPendentesConcilacao', () => {
 		expect(resumo.pendentes).toEqual({ quantidade: 2, valorTotal: 70.5 });
 	});
 
-	it('classified despesa without centro does not inflate pendentes (regression vs Fluxo)', () => {
+	it('despesa with plan but without centro counts as pending (it is missing from Dashboard/Fluxo)', () => {
 		const resumo = resumirPendentesConcilacao([
 			{
 				tipoMovimento: 'D',
@@ -115,8 +127,7 @@ describe('resumirPendentesConcilacao', () => {
 				valor: 220528.38,
 			},
 		]);
-		expect(resumo.pendentes.quantidade).toBe(0);
-		expect(resumo.pendentes.valorTotal).toBe(0);
-		expect(resumo.todos.valorTotal).toBe(220528.38);
+		expect(resumo.pendentes.quantidade).toBe(1);
+		expect(resumo.pendentes.valorTotal).toBe(220528.38);
 	});
 });

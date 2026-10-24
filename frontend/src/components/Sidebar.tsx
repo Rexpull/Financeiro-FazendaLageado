@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiUsers, FiDatabase, FiBarChart2, FiMenu, FiX, FiChevronDown, FiChevronRight  } from "react-icons/fi";
+import { FiDollarSign, FiDatabase, FiMenu, FiX, FiChevronDown, FiChevronRight } from "react-icons/fi";
 import {  RiBarChartFill, RiSettings3Fill} from "react-icons/ri";
 import { FaUserCircle } from "react-icons/fa";
 import { Link, useLocation, useNavigate  } from 'react-router-dom';
@@ -7,16 +7,18 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faDoorOpen, faSearch, faUserEdit, faFileAlt } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from "../pages/Login/AuthContext";
 import NotificacaoIcon from './NotificacaoIcon';
+import { filtrarRotasPesquisa, type RotaPesquisa } from './sidebarRotas';
 
 import logoFazenda from "../assets/img/logo-FazendaLageado.svg";
 import logoDefaultPerfil from "../assets/img/defaultPerfil-Man1.svg";
 
 const Sidebar = () => {
-  const [isOpen, setIsOpen] = useState(true);
+  // Mobile drawer starts closed (on desktop the sidebar is always visible via lg:translate-x-0)
+  const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredRoutes, setFilteredRoutes] = useState<{ path: string; label: string; }[]>([]);
+  const [filteredRoutes, setFilteredRoutes] = useState<RotaPesquisa[]>([]);
   const [menuAberto, setMenuAberto] = useState(false);
   const { user, logout } = useAuth(); // Obtém os dados do usuário e função de logout
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -32,23 +34,6 @@ const Sidebar = () => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const routes = [
-    { path: "/dashboard", label: "Dashboard" },
-    { path: "/cadastro/pessoa", label: "Pessoa" },
-    { path: "/cadastro/usuario", label: "Usuário" },
-    { path: "/cadastro/banco", label: "Banco" },
-    { path: "/cadastro/conta-corrente", label: "Conta Corrente" },
-    { path: "/cadastro/plano-de-contas", label: "Plano de Contas" },
-    { path: "/cadastro/centro-custos", label: "Centro de Custos" },
-    { path: "/financeiro/conciliacao-bancaria", label: "Conciliação Bancária" },
-    { path: "/financeiro/fluxo-de-caixa", label: "Fluxo de Caixa" },
-    { path: "/financeiro/financiamento", label: "Financiamento" },
-    { path: "/relatorios", label: "Relatórios" },
-    { path: "/parametros", label: "Parâmetros" },
-
-  ];
-
 
   const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({
     cadastros: false,
@@ -69,15 +54,20 @@ const Sidebar = () => {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (searchTerm) {
-      const filtered = routes.filter((route) =>
-        route.label.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredRoutes(filtered);
-    } else {
-      setFilteredRoutes([]);
-    }
+    setFilteredRoutes(filtrarRotasPesquisa(searchTerm));
   }, [searchTerm]);
+
+  // Close the mobile drawer after navigating
+  useEffect(() => {
+    setIsOpen(false);
+  }, [location.pathname]);
+
+  const teclaAlterna = (section: string) => (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpand(section);
+    }
+  };
 
   const toggleExpand = (section: string) => {
     setExpanded(prevState => ({
@@ -104,8 +94,8 @@ const Sidebar = () => {
       } lg:translate-x-0`} style={{ minHeight: '100vh', height:'100vh', maxHeight: '100vh'}}>
         {/* Logo */}
         <div className="flex items-center justify-between mt-1" style={{position: 'relative'}} >
-          <img src={logoFazenda} alt="Logo sidebFazenda Lageado"  className="logoSidebar" />
-          <button style={{position: 'absolute', top:'0', right: '0'}} className="lg:hidden" onClick={() => setIsOpen(false)}>
+          <img src={logoFazenda} alt="Fazenda Lageado"  className="logoSidebar" />
+          <button style={{position: 'absolute', top:'0', right: '0'}} className="lg:hidden" onClick={() => setIsOpen(false)} aria-label="Fechar menu" title="Fechar menu">
             <FiX size={24} />
           </button>
         </div>
@@ -136,6 +126,7 @@ const Sidebar = () => {
                   }}
                 >
                   {route.label}
+                  {route.secao && <span className="ml-1 text-xs text-gray-500">({route.secao})</span>}
                 </li>
               ))}
             </ul>
@@ -157,6 +148,10 @@ const Sidebar = () => {
               <div
               className={`flex items-center justify-between p-2 text-gray-800 hover:bg-gray-200 rounded-md sub-menu ${expanded.cadastros ? 'expanded' : ''}`}
               onClick={() => toggleExpand('cadastros')}
+              role="button"
+              tabIndex={0}
+              aria-expanded={expanded.cadastros}
+              onKeyDown={teclaAlterna('cadastros')}
               >
                 <span className="flex items-center gap-2 sub-menu-text"><FiDatabase /> Cadastros</span>
                 {expanded.cadastros ? <FiChevronDown /> : <FiChevronRight />}
@@ -202,8 +197,12 @@ const Sidebar = () => {
               <div
               className={`flex items-center justify-between p-2 text-gray-800 hover:bg-gray-200 rounded-md sub-menu ${expanded.financeiro ? 'expanded' : ''}`}
               onClick={() => toggleExpand('financeiro')}
+              role="button"
+              tabIndex={0}
+              aria-expanded={expanded.financeiro}
+              onKeyDown={teclaAlterna('financeiro')}
               >
-                <span className="flex items-center gap-2 sub-menu-text"><FiUsers /> Financeiro</span>
+                <span className="flex items-center gap-2 sub-menu-text"><FiDollarSign /> Financeiro</span>
                 {expanded.financeiro ? <FiChevronDown /> : <FiChevronRight />}
               </div>
               
@@ -226,6 +225,10 @@ const Sidebar = () => {
               <div
               className={`flex items-center justify-between p-2 text-gray-800 hover:bg-gray-200 rounded-md sub-menu ${expanded.relatorios ? 'expanded' : ''}`}
               onClick={() => toggleExpand('relatorios')}
+              role="button"
+              tabIndex={0}
+              aria-expanded={expanded.relatorios}
+              onKeyDown={teclaAlterna('relatorios')}
               >
                 <span className="flex items-center gap-2 sub-menu-text"><FontAwesomeIcon icon={faFileAlt} /> Relatórios</span>
                 {expanded.relatorios ? <FiChevronDown /> : <FiChevronRight />}
@@ -270,7 +273,7 @@ const Sidebar = () => {
       <div className="flex-1 p-4 lg:p-5 navBar-header lg:ml-64">
         <div className="flex justify-between items-center" style={{gap:'15px'}}>
           {/* Botão para abrir sidebar no mobile */}
-          <button className="lg:hidden" onClick={() => setIsOpen(true)}>
+          <button className="lg:hidden" onClick={() => setIsOpen(true)} aria-label="Abrir menu" title="Abrir menu">
             <FiMenu size={24} />
           </button>
           {/* Notificações e Usuário */}
@@ -279,11 +282,13 @@ const Sidebar = () => {
             <span>|</span>
 
             {/* Imagem do perfil que abre o menu */}
-            <img
-              src={ user?.foto_perfil ? user.foto_perfil : logoDefaultPerfil} // Exibe a foto do usuário ou a padrão
-              className="logoPerfil cursor-pointer rounded-full w-10 h-10 object-cover"
-              onClick={() => setMenuAberto(!menuAberto)}
-            />
+            <button type="button" onClick={() => setMenuAberto(!menuAberto)} aria-label="Menu do usuário" title="Menu do usuário" aria-expanded={menuAberto}>
+              <img
+                src={ user?.foto_perfil ? user.foto_perfil : logoDefaultPerfil} // Exibe a foto do usuário ou a padrão
+                alt=""
+                className="logoPerfil cursor-pointer rounded-full w-10 h-10 object-cover"
+              />
+            </button>
 
             {/* Dropdown do Menu de Perfil */}
             {menuAberto && (
@@ -302,7 +307,7 @@ const Sidebar = () => {
                   }}
                 >
                   <FontAwesomeIcon icon={faUserEdit} className='mr-2'/>
-                  Meu Perfil
+                  Usuários
                 </button>
                 <button
                   className="block w-full text-left px-4 py-2 border-t text-red-500 hover:bg-gray-100 " 

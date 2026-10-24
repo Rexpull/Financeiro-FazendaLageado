@@ -15,11 +15,7 @@ const root = ReactDOM.createRoot(document.getElementById("root")!);
 root.render(
   <React.StrictMode>
     <AppRoutes />
-    <ToastContainer 
-      position="bottom-right" 
-      pauseOnHover={false}  
-      autoClose={2000} 
-      hideProgressBar={false} 
-    />
+    {/* 5s and paused on hover/focus loss: long API error messages were gone before they could be read */}
+    <ToastContainer position="bottom-right" pauseOnHover pauseOnFocusLoss autoClose={5000} hideProgressBar={false} />
   </React.StrictMode>
 );

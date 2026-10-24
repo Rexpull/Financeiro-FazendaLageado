@@ -223,8 +223,14 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 			>
 				{/* 🔹 Cabeçalho */}
 				<div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
-					<h2 className="text-xl font-semibold text-gray-800">Buscar Arquivo OFX</h2>
-					<button disabled={loading || (novosMovimentos > 0 || existentesMovimentos > 0)} onClick={onClose} className="text-gray-500 hover:text-gray-700">
+					<h2 className="text-xl font-semibold text-gray-800">Importar extrato (OFX)</h2>
+					<button
+						disabled={loading || (novosMovimentos > 0 || existentesMovimentos > 0)}
+						onClick={onClose}
+						className="text-gray-500 hover:text-gray-700"
+						aria-label="Fechar"
+						title="Fechar"
+					>
 						<FontAwesomeIcon icon={faTimes} size="xl" />
 					</button>
 				</div>
@@ -243,12 +249,12 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 				</div>
 				{loading && totalImportado >= 0 && (
 				<div className="flex flex-col items-center justify-center mb-3 mt-4 gap-2 w-full px-6">
-					<span className="text-red-600 font-medium">
+					<span className="text-gray-700 font-medium">
 						Importando movimento {currentIndex} de {totalMovimentos}
 					</span>
 					<div className="w-full bg-gray-200 rounded-full h-4">
 						<div
-							className="bg-red-500 h-4 rounded-full transition-all duration-300"
+							className="bg-orange-500 h-4 rounded-full transition-all duration-300"
 							style={{ width: `${(currentIndex / totalMovimentos) * 100}%` }}
 						/>
 					</div>
@@ -280,7 +286,7 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 						{!loading && (totalImportado === 0) && (
 					<button
 						className={`text-white font-semibold px-5 py-2 rounded flex items-center gap-2 transition ${
-							selectedFile ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-300 cursor-not-allowed'
+							selectedFile ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300 cursor-not-allowed'
 						}`}
 						onClick={handleConfirmImport}
 						disabled={!selectedFile || loading}
@@ -292,7 +298,12 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 				</div>
 				
 			</Modal>
-			<SelectContaCorrente isOpen={modalContaIsOpen} onClose={() => setModalContaIsOpen(false)} onSelect={handleSelectConta} />
+			<SelectContaCorrente
+				isOpen={modalContaIsOpen}
+				onClose={() => setModalContaIsOpen(false)}
+				onSelect={handleSelectConta}
+				titulo="Em qual conta importar o extrato?"
+			/>
 			<ConciliacaoOFXModal
 				isOpen={modalConciliacaoIsOpen}
 				onClose={() => setModalConciliacaoIsOpen(false)}

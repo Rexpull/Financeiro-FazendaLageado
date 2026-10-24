@@ -104,25 +104,49 @@ export const listarMovimentosBancariosPaginado = async (
 	});
 	
 	const res = await fetch(`${API_URL}/api/movBancario/paginado?${params}`);
-	if (!res.ok) throw new Error(`Erro ao listar movimentos bancários paginados`);
+	if (!res.ok) throw new Error(await mensagemErroResposta(res, 'Erro ao listar os lançamentos'));
 	return res.json();
 };
+
+/** Filters of the Conciliação list besides conta/período/status (the exports must honor them too). */
+export interface FiltrosExtrasConciliacao {
+	planosIds?: number[];
+	centrosIds?: number[];
+	historicoContem?: string;
+	valorBusca?: string;
+}
+
+/** Query string of the exports: same parameter names/semantics as /api/movBancario/paginado. */
+function paramsExportacao(
+	contaId?: number,
+	dataInicio?: string,
+	dataFim?: string,
+	status?: string,
+	extras: FiltrosExtrasConciliacao = {}
+): URLSearchParams {
+	return new URLSearchParams({
+		...(contaId && { contaId: contaId.toString() }),
+		...(dataInicio && { dataInicio }),
+		...(dataFim && { dataFim }),
+		...(status && { status }),
+		...(extras.planosIds && extras.planosIds.length > 0 && { planosIds: extras.planosIds.join(',') }),
+		...(extras.centrosIds && extras.centrosIds.length > 0 && { centrosIds: extras.centrosIds.join(',') }),
+		...(extras.historicoContem && extras.historicoContem.trim() && { historicoContem: extras.historicoContem.trim() }),
+		...(extras.valorBusca && extras.valorBusca.trim() && { valorBusca: extras.valorBusca.trim() }),
+	});
+}
 
 export const exportarMovimentosBancariosExcel = async (
 	contaId?: number,
 	dataInicio?: string,
 	dataFim?: string,
-	status?: string
+	status?: string,
+	extras?: FiltrosExtrasConciliacao
 ): Promise<Blob> => {
-	const params = new URLSearchParams({
-		...(contaId && { contaId: contaId.toString() }),
-		...(dataInicio && { dataInicio }),
-		...(dataFim && { dataFim }),
-		...(status && { status })
-	});
+	const params = paramsExportacao(contaId, dataInicio, dataFim, status, extras);
 	
 	console.log('🌐 Service: Enviando requisição Excel para:', `${API_URL}/api/movBancario/export?${params}`);
-	console.log('🌐 Service: Parâmetros Excel enviados:', { contaId, dataInicio, dataFim, status });
+	console.log('🌐 Service: Parâmetros Excel enviados:', { contaId, dataInicio, dataFim, status, extras });
 	
 	const res = await fetch(`${API_URL}/api/movBancario/export?${params}`);
 	if (!res.ok) throw new Error(`Erro ao exportar movimentos bancários para Excel`);
@@ -133,24 +157,24 @@ export const exportarMovimentosBancariosPDF = async (
 	contaId?: number,
 	dataInicio?: string,
 	dataFim?: string,
-	status?: string
+	status?: string,
+	extras?: FiltrosExtrasConciliacao
 ): Promise<Blob> => {
-	const params = new URLSearchParams({
-		...(contaId && { contaId: contaId.toString() }),
-		...(dataInicio && { dataInicio }),
-		...(dataFim && { dataFim }),
-		...(status && { status })
-	});
+	const params = paramsExportacao(contaId, dataInicio, dataFim, status, extras);
 	
 	console.log('🌐 Service: Enviando requisição PDF para:', `${API_URL}/api/movBancario/export-pdf?${params}`);
-	console.log('🌐 Service: Parâmetros PDF enviados:', { contaId, dataInicio, dataFim, status });
+	console.log('🌐 Service: Parâmetros PDF enviados:', { contaId, dataInicio, dataFim, status, extras });
 	
 	const res = await fetch(`${API_URL}/api/movBancario/export-pdf?${params}`);
 	if (!res.ok) throw new Error(`Erro ao exportar movimentos bancários para PDF`);
 	return res.blob();
 };
 
-export const salvarMovimentoBancario = async (movimento: MovimentoBancarioEdicao): Promise<MovimentoBancario> => {
+/** `silencioso`: the caller shows its own message (batch classification, "Limpar conciliação"), so no per-call success toast. */
+export const salvarMovimentoBancario = async (
+	movimento: MovimentoBancarioEdicao,
+	opts: { silencioso?: boolean } = {},
+): Promise<MovimentoBancario> => {
 	try {
 		if (movimento.tipoMovimento === 'D' && movimento.valor > 0) {
 			movimento.valor = -Math.abs(movimento.valor);
@@ -234,7 +258,7 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancarioEdicao
 			
 			// O backend agora retorna o movimento completo com centroCustosList
 			const movimentoAtualizado = await res.json() as MovimentoBancario;
-			toast.success(`Movimento atualizado com sucesso!`);
+			if (!opts.silencioso) toast.success(`Movimento atualizado com sucesso!`);
 			return movimentoAtualizado;
 		} else {
 			// Se for uma criação (POST), enviar todos os campos necessários
@@ -257,9 +281,8 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancarioEdicao
 
 			if (!res.ok) throw new Error(await mensagemErroResposta(res, 'Erro ao criar movimento bancário'));
 			
-			const resultado = (await res.json()) as MovimentoBancario;
-			toast.success(`Movimento criado com sucesso!`);
-			return resultado;
+			// No success toast here: the caller (Lançamento Manual) confirms with the value and the date
+			return (await res.json()) as MovimentoBancario;
 		}
 	} catch (error) {
 		console.error('Erro ao salvar movimento bancário:', error);
@@ -384,7 +407,7 @@ export const salvarMovimentosOFX = async (
 
 export const buscarMovimentoBancarioById = async (id: number): Promise<MovimentoBancario> => {
 	const res = await fetch(`${API_URL}/api/movBancario/${id}`);
-	if (!res.ok) throw new Error(`Erro ao buscar movimento bancário id ${id}`);
+	if (!res.ok) throw new Error(await mensagemErroResposta(res, 'Não foi possível carregar o lançamento'));
 	return res.json();
 };
 
@@ -444,7 +467,7 @@ export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Prom
 			body: JSON.stringify({ ideagro }),
 		});
 
-		if (!res.ok) throw new Error('Erro ao atualizar status IdeAgro');
+		if (!res.ok) throw new Error(await mensagemErroResposta(res, 'Erro ao atualizar o status IdeAgri'));
 
 		const data = await res.json();
 
@@ -454,7 +477,7 @@ export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Prom
 
 		return data;
 	} catch (error) {
-		toast.error('Erro ao atualizar status da conta!');
+		toast.error(error instanceof Error && error.message ? error.message : 'Erro ao atualizar o status IdeAgri.');
 		throw error;
 	}
 };
@@ -556,25 +579,41 @@ export const buscarMovimentosPorIds = async (
 	}
 };
 
-export const atualizarContaMovimentosOFX = async (idMovimentos: number[], novaContaId: number): Promise<{ atualizados: number }> => {
+/** Same shape as backend ResultadoMudancaContaOFX (PATCH /api/movBancario/update-conta-ofx). */
+export interface ResultadoMudancaContaOFX {
+	atualizados: number;
+	jaNaConta: number;
+	naoEncontrados: number;
+	/** Lines the destination account already had: NOT moved (they stay in the original account). */
+	duplicados: number;
+	movimentosDuplicados: Array<{ id: number; idExistente: number; dtMovimento: string; historico: string; valor: number }>;
+	falhas: number;
+	detalhesFalhas: string[];
+	historicoAtualizado: boolean;
+	idMovimentosHistorico?: number[];
+}
+
+/**
+ * "Editar conta" of an OFX import. `idHistorico` makes the import history follow the new account.
+ * Throws with the API message when any movement failed (the others were moved; repeating finishes the job).
+ */
+export const atualizarContaMovimentosOFX = async (
+	idMovimentos: number[],
+	novaContaId: number,
+	idHistorico?: number | null,
+): Promise<ResultadoMudancaContaOFX> => {
 	try {
-		console.log(`🔄 Atualizando conta de ${idMovimentos.length} movimentos para conta ${novaContaId}`);
-		
 		const res = await fetch(`${API_URL}/api/movBancario/update-conta-ofx`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ idMovimentos, novaContaId }),
+			body: JSON.stringify({ idMovimentos, novaContaId, idHistorico: idHistorico ?? null }),
 		});
-		
+
 		if (!res.ok) {
-			const errorData = (await res.json()) as ErroApi;
-			throw new Error(errorData.error || 'Erro ao atualizar conta dos movimentos OFX');
+			throw new Error(await mensagemErroResposta(res, 'Erro ao atualizar conta dos movimentos OFX'));
 		}
-		
-		const resultado = await res.json() as { atualizados: number };
-		console.log(`✅ ${resultado.atualizados} movimentos atualizados com sucesso`);
-		
-		return resultado;
+
+		return (await res.json()) as ResultadoMudancaContaOFX;
 	} catch (error) {
 		console.error('❌ Erro ao atualizar conta dos movimentos OFX:', error);
 		throw error;

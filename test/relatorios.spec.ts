@@ -128,6 +128,8 @@ type ItemClassificado = {
 	planoDescricao?: string;
 	centroCustosDescricao?: string;
 	centroCustosTipo?: string | null;
+	semCentro?: boolean;
+	subtipoDespesa?: 'custeio' | 'investimento';
 };
 
 type GrupoCentro = {
@@ -169,24 +171,27 @@ describe('Relatórios com movimentos rateados (idPlanoContas NULL)', () => {
 			expect(m1.find((i) => i.idPlanoContas === 300)?.planoDescricao).toBe('Planos de saúde');
 			expect(soma(m1.filter((i) => i.centroCustosTipo === 'CUSTEIO').map((i) => i.valor))).toBe(7000);
 			expect(soma(m1.filter((i) => i.centroCustosTipo === 'INVESTIMENTO').map((i) => i.valor))).toBe(3000);
-			// pending movements are not classified
-			expect(itens.some((i) => i.id === 4 || i.id === 5)).toBe(false);
+			// pending movements (single rule) are not classified
+			const conciliados = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&status=conciliados`);
+			expect(conciliados.some((i) => i.id === 4 || i.id === 5)).toBe(false);
 		});
 
-		it('Excel: split expense counted, and an expense whose centre has no tipo goes to Investimento (same as UI)', async () => {
+		it('Excel: split expense counted; an expense without centre is pending ("sem centro"), never Investimento', async () => {
 			const itens = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}`);
 			const rows = await getSheetRows(`/api/relatorio/itens-classificados/excel?${PERIODO}`);
+			const header = rows.find((r) => r[0] === 'Data')!;
 			const total = rows.find((r) => r[0] === 'TOTAL')!;
-			const despesas = itens.filter((i) => i.tipoMovimento === 'D');
-			const custeio = soma(despesas.filter((i) => i.centroCustosTipo === 'CUSTEIO').map((i) => i.valor));
-			const invest = soma(despesas.filter((i) => i.centroCustosTipo !== 'CUSTEIO').map((i) => i.valor));
+			const despesas = itens.filter((i) => i.tipoMovimento === 'D' && !i.semCentro);
+			const custeio = soma(despesas.filter((i) => i.subtipoDespesa === 'custeio').map((i) => i.valor));
+			const invest = soma(despesas.filter((i) => i.subtipoDespesa === 'investimento').map((i) => i.valor));
 			expect(total[3]).toBe(custeio);
 			expect(total[4]).toBe(invest);
 			expect(custeio + invest).toBe(soma(despesas.map((i) => i.valor)));
 			expect(despesas.some((i) => i.id === 1)).toBe(true);
 			const linhaM10 = rows.find((r) => r[1] === 'M10 sem centro')!;
 			expect(linhaM10[3]).toBe('');
-			expect(linhaM10[4]).toBe(250);
+			expect(linhaM10[4]).toBe('');
+			expect(linhaM10[header.indexOf('Despesa sem centro (pendente)')]).toBe(250);
 		});
 	});
 
@@ -204,14 +209,15 @@ describe('Relatórios com movimentos rateados (idPlanoContas NULL)', () => {
 			expect(totalDespesas).toBeGreaterThanOrEqual(10500);
 		});
 
-		it('status=pendentes returns the unclassified movements (credits without centre included)', async () => {
+		it('status=pendentes returns the pending movements by the single rule (credits without centre included)', async () => {
 			const grupos = await getJson<GrupoCentro[]>(`/api/relatorio/centro-custos?${PERIODO}&status=pendentes`);
 			const ids = grupos.flatMap((g) => g.movimentos.map((m) => m.id)).sort((a, b) => a - b);
-			expect(ids).toEqual([4, 5]);
+			// debits without centre (M8 on the financing plan → financing block, M9, M10) are pending too; M7 (170) is out
+			expect(ids).toEqual([4, 5, 8, 9, 10]);
 			const receita = grupos.find((g) => g.centro.tipoReceitaDespesa === 'RECEITA')!;
 			const despesa = grupos.find((g) => g.centro.tipoReceitaDespesa === 'DESPESA')!;
 			expect(receita.total).toBe(150);
-			expect(despesa.total).toBe(300);
+			expect(despesa.total).toBe(620);
 		});
 
 		it('filtering by centroCustosId returns only that centre share', async () => {
@@ -220,10 +226,16 @@ describe('Relatórios com movimentos rateados (idPlanoContas NULL)', () => {
 			expect(soma(grupos.map((g) => g.total))).toBe(7000);
 		});
 
-		it('Excel: financing has its own column and Saldo operacional = Receitas − Despesas', async () => {
-			const grupos = await getJson<GrupoCentro[]>(`/api/relatorio/centro-custos?${PERIODO}`);
+		it('Excel: financing has its own column and Saldo operacional = Receitas − Despesas de custeio', async () => {
+			const grupos = (await getJson<GrupoCentro[]>(`/api/relatorio/centro-custos?${PERIODO}`)).filter(
+				(g) => !(g.centro as { semCentro?: boolean }).semCentro,
+			);
 			const receitas = soma(grupos.filter((g) => g.centro.tipoReceitaDespesa === 'RECEITA').map((g) => g.total));
-			const despesas = soma(grupos.filter((g) => g.centro.tipoReceitaDespesa === 'DESPESA').map((g) => g.total));
+			const custeio = soma(
+				grupos
+					.filter((g) => g.centro.tipoReceitaDespesa === 'DESPESA' && (g.centro as { subtipoDespesa?: string }).subtipoDespesa === 'custeio')
+					.map((g) => g.total),
+			);
 			expect(grupos.some((g) => g.centro.tipoReceitaDespesa === 'FINANCIAMENTO')).toBe(true);
 
 			const rows = await getSheetRows(`/api/relatorio/centro-custos/excel?${PERIODO}`);
@@ -237,7 +249,7 @@ describe('Relatórios com movimentos rateados (idPlanoContas NULL)', () => {
 			expect(finRow[1]).toBe('');
 			expect(finRow[colFin]).toBe(5000);
 			const saldo = rows.find((r) => String(r[0]).startsWith('Saldo operacional'))!;
-			expect(saldo[1]).toBe(soma([receitas, -despesas]));
+			expect(saldo[1]).toBe(soma([receitas, -custeio]));
 		});
 	});
 
@@ -247,8 +259,9 @@ describe('Relatórios com movimentos rateados (idPlanoContas NULL)', () => {
 		it('Pendentes do not include split (already classified) movements', async () => {
 			const pag = await getJson<Pagina>(`/api/movBancario/paginado?page=1&limit=50&status=pendentes`);
 			const ids = pag.movimentos.map((m) => m.id).sort((a, b) => a - b);
-			expect(ids).toEqual([4, 5]);
-			expect(pag.total).toBe(2);
+			// single rule: debits without cost centre (M7–M10) are pending; M1 (split) and M11 (financing with contract) are not
+			expect(ids).toEqual([4, 5, 7, 8, 9, 10]);
+			expect(pag.total).toBe(6);
 		});
 
 		it('planosIds and centrosIds filters match split movements', async () => {

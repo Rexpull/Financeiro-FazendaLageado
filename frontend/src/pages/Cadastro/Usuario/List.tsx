@@ -4,7 +4,10 @@ import { faSearch, faPlus, faEllipsisV, faTimes, faUser, faTrash, faEdit, faCale
 import { listarUsuarios, excluirUsuario, atualizarStatusUsuario, salvarUsuario } from "../../../services/usuarioService";
 import UsuarioModal from "./UsuarioModal";
 import DialogModal from "../../../components/DialogModal";
+import { formatarDataISO, hojeISO } from "../../../Utils/dataSemFuso";
 import { Usuario } from "../../../../../backend/src/models/Usuario";
+import { useAuth } from "../../Login/AuthContext";
+import { toast } from "react-toastify";
 import noData from "/frontend/src/assets/img/noData.svg"
 
 import defaultAvatar from "../../../assets/img/default-avatar.jpg";
@@ -30,6 +33,10 @@ const ListUsuario: React.FC = () => {
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [deleteUsuarioId, setDeleteUsuarioId] = useState<number | null>(null);
+  // Inactivating locks the person out: confirm first
+  const [usuarioParaInativar, setUsuarioParaInativar] = useState<Usuario | null>(null);
+  const { user } = useAuth();
+  const ehUsuarioLogado = (id: number) => user?.id === id;
 
   useEffect(() => {
     fetchUsuarios();
@@ -76,10 +83,6 @@ const ListUsuario: React.FC = () => {
     setSelectedFilter(filter);
   };
 
-  const formatarData = (data: string) => {
-    return new Date(data);
-  };
-
   const totalCount = usuarios.length;
   const activeCount = usuarios.filter((usuario) => usuario.ativo).length;
   const inactiveCount = usuarios.filter((usuario) => !usuario.ativo).length;
@@ -100,7 +103,7 @@ const ListUsuario: React.FC = () => {
   const openModal = (usuario?: Usuario) => {
     setUsuarioData(
       // the API doesn't return the password hash: start editing with an empty "new password"
-      usuario ? { ...usuario, senha: "" } : { id: 0, nome: "", usuario: "", email: "", senha: "", ativo: true, foto_perfil: "", dt_cadastro: new Date().toISOString() }
+      usuario ? { ...usuario, senha: "" } : { id: 0, nome: "", usuario: "", email: "", senha: "", ativo: true, foto_perfil: "", dt_cadastro: hojeISO() }
     );
     setModalIsOpen(true);
   };
@@ -111,10 +114,28 @@ const ListUsuario: React.FC = () => {
       setUsuarios((prev) => prev.map((usuario) => (usuario.id === id ? { ...usuario, ativo: novoStatus } : usuario)));
     } catch (error) {
       console.error("Erro ao atualizar status do usuário:", error);
+      // The service already shows the error toast
+      throw error;
     }
   };
 
+  const alternarStatus = (usuario: Usuario) => {
+    if (!usuario.ativo) {
+      handleStatusChange(usuario.id, true).catch(() => undefined);
+      return;
+    }
+    if (ehUsuarioLogado(usuario.id)) {
+      toast.error("Você não pode inativar o seu próprio usuário.");
+      return;
+    }
+    setUsuarioParaInativar(usuario);
+  };
+
   const handleDelete = (id: number) => {
+    if (ehUsuarioLogado(id)) {
+      toast.error("Você não pode excluir o seu próprio usuário.");
+      return;
+    }
     setDeleteUsuarioId(id);
     setConfirmModalOpen(true);
   };
@@ -127,6 +148,8 @@ const ListUsuario: React.FC = () => {
       setConfirmModalOpen(false);
     } catch (error) {
       console.error("Erro ao excluir usuário:", error);
+      // The service already shows the error toast; rethrow keeps the dialog open
+      throw error;
     }
   };
 
@@ -148,7 +171,8 @@ const ListUsuario: React.FC = () => {
         senha: usuarioData.senha,
         ativo: usuarioData.ativo,
         foto_perfil: usuarioData.foto_perfil,
-        dt_cadastro: usuarioData.dt_cadastro ? usuarioData.dt_cadastro : new Date().toISOString(),
+        // local calendar date ('YYYY-MM-DD'): toISOString() is UTC and gives tomorrow after 21:00 in Brazil
+        dt_cadastro: usuarioData.dt_cadastro ? usuarioData.dt_cadastro : hojeISO(),
     };
 
     try {
@@ -272,7 +296,7 @@ const ListUsuario: React.FC = () => {
               {/* 🔹 Status ativo (Switch) */}
               <div className="absolute top-3 left-3 flex items-center gap-2">
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={usuario.ativo} onChange={() => handleStatusChange(usuario.id, !usuario.ativo)} />
+                  <input type="checkbox" className="sr-only peer" checked={!!usuario.ativo} onChange={() => alternarStatus(usuario)} aria-label={usuario.ativo ? `Inativar ${usuario.nome}` : `Ativar ${usuario.nome}`} />
                   <div className="w-9 h-5 bg-gray-300 rounded-full peer peer-checked:bg-orange-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[1px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
                 </label>
                 <span className="text-xs font-semibold text-gray-600">{usuario.ativo ? "Ativo" : "Inativo"}</span>
@@ -280,11 +304,9 @@ const ListUsuario: React.FC = () => {
 
               {/* 🔹 Menu de ações */}
               <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => { menuRefs.current[usuario.id] = el; }}>
-                <FontAwesomeIcon
-                  icon={faEllipsisV}
-                  className="text-gray-600 w-8 mr-1 text-lg"
-                  onClick={() => setActiveMenu(activeMenu === usuario.id ? null : usuario.id)}
-                />
+                <button type="button" aria-label={`Ações de ${usuario.nome}`} title="Ações" onClick={() => setActiveMenu(activeMenu === usuario.id ? null : usuario.id)}>
+                  <FontAwesomeIcon icon={faEllipsisV} className="text-gray-600 w-8 mr-1 text-lg" />
+                </button>
                 {activeMenu === usuario.id && (
                   <div className="absolute right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10" onClick={(e) => e.stopPropagation()}>
                     <button className="block w-full text-left px-3 py-2 hover:bg-gray-100" onClick={(e) => {
@@ -322,7 +344,7 @@ const ListUsuario: React.FC = () => {
                     <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-red-400 py-1 px-2 font-bold bg-red-50 border rounded text-xs">
                       <FontAwesomeIcon icon={faCalendarDays} />
                        <span className="text-center">Cadastrado desde:</span>
-                       <span className="text-center">{formatarData(usuario.dt_cadastro).toLocaleDateString()}</span>
+                       <span className="text-center">{formatarDataISO(usuario.dt_cadastro)}</span>
                     </div>
                   </div> 
               </div>
@@ -342,7 +364,29 @@ const ListUsuario: React.FC = () => {
         />
       )}
 
-      <DialogModal isOpen={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} onConfirm={handleDeleteConfirm} title="Atenção" type="warn" message="Tem certeza que deseja excluir este usuário?" confirmLabel="Excluir" cancelLabel="Cancelar" />
+      <DialogModal
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        title="Excluir usuário"
+        type="warn"
+        message={`Excluir o usuário "${usuarios.find((u) => u.id === deleteUsuarioId)?.nome ?? ""}"? Esta ação não pode ser desfeita. Para só bloquear o acesso, use Inativar.`}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+      />
+
+      <DialogModal
+        isOpen={!!usuarioParaInativar}
+        onClose={() => setUsuarioParaInativar(null)}
+        onConfirm={async () => {
+          if (usuarioParaInativar) await handleStatusChange(usuarioParaInativar.id, false);
+        }}
+        title="Inativar usuário"
+        type="warn"
+        message={`Inativar "${usuarioParaInativar?.nome ?? ""}"? Ele não conseguirá mais entrar no sistema até ser ativado de novo.`}
+        confirmLabel="Inativar"
+        cancelLabel="Cancelar"
+      />
     </div>
   );
 };

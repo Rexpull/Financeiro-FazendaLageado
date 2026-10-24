@@ -27,7 +27,7 @@ export const listarHistoricoImportacoes = async (idUsuario: number): Promise<His
 		const res = await fetch(`${API_URL}/api/historico-importacao-ofx?idUsuario=${idUsuario}`);
 		
 		if (!res.ok) {
-			const errorData = await res.json();
+			const errorData = (await res.json()) as { error?: string };
 			throw new Error(errorData.error || 'Erro ao buscar histórico de importações');
 		}
 		
@@ -52,7 +52,7 @@ export const criarHistoricoImportacao = async (historico: HistoricoImportacaoOFX
 		});
 		
 		if (!res.ok) {
-			const errorData = await res.json();
+			const errorData = (await res.json()) as { error?: string };
 			throw new Error(errorData.error || 'Erro ao criar histórico de importação');
 		}
 		
@@ -75,7 +75,7 @@ export const limparHistoricoImportacoes = async (idUsuario: number): Promise<voi
 		});
 		
 		if (!res.ok) {
-			const errorData = await res.json();
+			const errorData = (await res.json()) as { error?: string };
 			throw new Error(errorData.error || 'Erro ao limpar histórico de importações');
 		}
 		
@@ -95,7 +95,7 @@ export const deletarHistoricoImportacao = async (id: number, idUsuario: number):
 		});
 		
 		if (!res.ok) {
-			const errorData = await res.json();
+			const errorData = (await res.json()) as { error?: string };
 			throw new Error(errorData.error || 'Erro ao deletar histórico de importação');
 		}
 		

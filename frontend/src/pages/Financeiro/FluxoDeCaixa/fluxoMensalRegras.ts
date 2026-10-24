@@ -35,6 +35,15 @@ export type LinhaFluxo = {
 export const CATEGORIA_CUSTEIO = '1000';
 export const CATEGORIA_INVESTIMENTO = '2000';
 
+/** First year offered in the Fluxo filter. */
+export const PRIMEIRO_ANO_FLUXO = 2024;
+
+/** Years of the Fluxo filter: from PRIMEIRO_ANO_FLUXO to next year (e.g. 2024…2027 in 2026). */
+export function anosFiltroFluxo(hoje: Date = new Date()): string[] {
+	const ultimo = Math.max(hoje.getFullYear() + 1, PRIMEIRO_ANO_FLUXO);
+	return Array.from({ length: ultimo - PRIMEIRO_ANO_FLUXO + 1 }, (_, i) => String(PRIMEIRO_ANO_FLUXO + i));
+}
+
 // No intermediate rounding: rateio values carry 3+ decimals and rounding per month makes the
 // annual total drift a cent from the Dashboard. Values are rounded only when displayed.
 const soma = (v: Valores) => Object.values(v).reduce((a, b) => a + (Number(b) || 0), 0);

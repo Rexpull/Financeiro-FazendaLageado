@@ -23,8 +23,8 @@ test.describe('Caixa OFX import', () => {
 			await page.locator('.grid').getByText('5848812752').click();
 		}
 
-		await page.getByRole('button', { name: /Buscar OFX/i }).click({ timeout: 15000 });
-		await expect(page.getByRole('heading', { name: /Buscar Arquivo OFX/i })).toBeVisible();
+		await page.getByRole('button', { name: /Importar extrato/i }).click({ timeout: 15000 });
+		await expect(page.getByRole('heading', { name: /Importar extrato \(OFX\)/i })).toBeVisible();
 
 		const fileInput = page.locator('input[type="file"][accept=".ofx"]');
 		await fileInput.setInputFiles(caixaOfxFixturePath());
@@ -32,11 +32,12 @@ test.describe('Caixa OFX import', () => {
 		await page.getByRole('button', { name: /^Importar$/i }).click();
 
 		// Select conta after parse (import starts only after explicit selection)
-		await expect(page.getByRole('heading', { name: /Selecione a Conta Corrente/i })).toBeVisible({
+		await expect(page.getByRole('heading', { name: /Em qual conta importar o extrato/i })).toBeVisible({
 			timeout: 15000,
 		});
-		const contaCards = page.locator('.ReactModal__Content .grid > div');
-		const targetConta = page.getByText('5848812752');
+		// Account cards are buttons (keyboard reachable)
+		const contaCards = page.locator('.ReactModal__Content .grid > button');
+		const targetConta = contaCards.filter({ hasText: '5848812752' }).first();
 		if (await targetConta.isVisible().catch(() => false)) {
 			await targetConta.click();
 		} else {

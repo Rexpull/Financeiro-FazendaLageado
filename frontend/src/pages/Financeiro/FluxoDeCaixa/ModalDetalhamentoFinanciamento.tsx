@@ -36,10 +36,11 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 		return 'bg-yellow-100 text-yellow-800';
 	};
 
-	const totalGeral = financiamentos.reduce(
-		(acc, fin) => acc + (fin.parcelas.length > 0 ? fin.parcelas.reduce((pAcc, p) => pAcc + p.valor, 0) : fin.valorTotal),
-		0
-	);
+	// Value of each contract that counts in this month (its parcelas listed here); the rows add up to the footer
+	const valorNoMes = (fin: FinanciamentoDetalhadoDTO) =>
+		fin.parcelas.length > 0 ? fin.parcelas.reduce((pAcc, p) => pAcc + p.valor, 0) : fin.valorTotal;
+	const totalGeral = financiamentos.reduce((acc, fin) => acc + valorNoMes(fin), 0);
+	const colunas = temTomador ? 6 : 5;
 
 	return (
 		<Modal
@@ -63,7 +64,10 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 							<th className="text-left px-3 py-2">Contrato</th>
 							<th className="text-left px-3 py-2">Banco / credor</th>
 							{temTomador && <th className="text-left px-3 py-2">Tomador</th>}
-							<th className="text-right px-3 py-2">Valor Total do Contrato</th>
+							<th className="text-right px-3 py-2">Valor do contrato</th>
+							<th className="text-right px-3 py-2" title="Soma das parcelas deste contrato que entram no mês">
+								No mês
+							</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -76,11 +80,12 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 									<td className="px-3 py-2 font-semibold text-primary">{fin.numeroContrato}</td>
 									<td className="px-3 py-2">{fin.credor}</td>
 									{temTomador && <td className="px-3 py-2">{fin.tomador || '—'}</td>}
-									<td className="px-3 py-2 text-right font-bold text-primary">{formatarMoeda(fin.valorTotal)}</td>
+									<td className="px-3 py-2 text-right text-gray-600 tabular-nums">{formatarMoeda(fin.valorTotal)}</td>
+									<td className="px-3 py-2 text-right font-bold text-primary tabular-nums">{formatarMoeda(valorNoMes(fin))}</td>
 								</tr>
 								{expandido[fin.id] && (
 									<tr className="bg-gray-50">
-										<td colSpan={temTomador ? 5 : 4} className="p-3">
+										<td colSpan={colunas} className="p-3">
 											<div className="border rounded-lg overflow-hidden">
 												<table className="w-full">
 													<thead className="bg-gray-200 text-gray-600 text-sm">
@@ -116,7 +121,7 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 				</table>
 			</div>
 			<div className="flex justify-end items-center px-6 py-4 border-t gap-3 mt-auto bg-gray-50 rounded-b-lg">
-				<div className="text-right text-lg font-bold text-primary">Total do Mês: {formatarMoeda(totalGeral)}</div>
+				<div className="text-right text-lg font-bold text-primary">Total do mês: R$ {formatarMoeda(totalGeral)}</div>
 				<button onClick={onClose} className="bg-gray-300 text-gray-700 font-bold px-5 py-2 rounded hover:bg-red-400 hover:text-white transition">
 					Fechar
 				</button>

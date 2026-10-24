@@ -3,6 +3,7 @@ import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes } from '@fortawesome/free-solid-svg-icons';
 import { formatarDataISO } from '../../../Utils/formatarData';
+import { brl } from '../../../Utils/formatos';
 
 Modal.setAppElement('#root');
 
@@ -100,44 +101,44 @@ const ModalDetalhamento: React.FC<Props> = ({ isOpen, onClose, movimentos, titul
 					className="w-full border px-3 py-2 rounded text-sm"
 				/>
 
-				{/* Tabela */}
-				{/* Tabela com scroll apenas no corpo */}
+				{/* One table (header and body used to be two tables, so the columns didn't line up); the header sticks while scrolling */}
 				<div className="border rounded">
-					<table className="w-full min-w-[600px]">
-						<thead className="bg-gray-100 text-gray-700">
-							<tr>
-								<th className="text-left px-3 py-2">Data</th>
-								<th className="text-left px-3 py-2">Descrição</th>
-								<th className="text-right px-3 py-2">Valor</th>
-							</tr>
-						</thead>
-					</table>
-					<div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+					<div className="overflow-auto" style={{ maxHeight: '340px' }}>
 						<table className="w-full min-w-[600px]">
+							<thead className="bg-gray-100 text-gray-700 sticky top-0 z-[1]">
+								<tr>
+									<th className="text-left px-3 py-2 w-28">Data</th>
+									<th className="text-left px-3 py-2">Descrição</th>
+									<th className="text-right px-3 py-2 w-40">Valor</th>
+								</tr>
+							</thead>
 							<tbody>
 								{movimentosFiltrados.map((mov, idx) => (
 									<tr key={`${mov.id}-${idx}`} className="border-b">
 										<td className="px-3 py-2 whitespace-nowrap">{formatarDataISO(mov.data)}</td>
 										<td className="px-3 py-2 text-left">{mov.descricao}</td>
-										<td className="px-3 py-2 text-right font-semibold" style={{ color: mov.valor < 0 ? 'red' : 'green' }}>
-											R$ {mov.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+										<td className="px-3 py-2 text-right font-semibold whitespace-nowrap tabular-nums" style={{ color: mov.valor < 0 ? 'red' : 'green' }}>
+											{brl(mov.valor)}
 										</td>
 									</tr>
 								))}
+								{movimentosFiltrados.length === 0 && (
+									<tr>
+										<td colSpan={3} className="px-3 py-6 text-center text-gray-500">
+											Nenhum movimento encontrado.
+										</td>
+									</tr>
+								)}
 							</tbody>
 						</table>
 					</div>
 					{/* Total da Conta visível fora do scroll */}
-					<div className="bg-gray-100 border-t px-3 py-2 text-right font-bold text-sm">
-						Total da Conta: R$ {totalConta.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-					</div>
+					<div className="bg-gray-100 border-t px-3 py-2 text-right font-bold text-sm tabular-nums">Total da conta: {brl(totalConta)}</div>
 				</div>
 			</div>
 
-			<div className="flex justify-end px-5 py-4 border-t gap-3 mt-3">
-				<div className="text-right text-sm font-bold mt-2">
-					Total Geral: R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-				</div>
+			<div className="flex flex-wrap justify-end items-center px-5 py-4 border-t gap-3 mt-3">
+				<div className="text-right text-sm font-bold tabular-nums">Total geral: {brl(totalGeral)}</div>
 				<button onClick={onClose} className="bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded hover:bg-gray-400">
 					Fechar
 				</button>

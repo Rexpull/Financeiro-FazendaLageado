@@ -5,6 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faTrash, faCheck, faTimes, faArrowLeft, faSearch } from '@fortawesome/free-solid-svg-icons';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { formatarMoeda } from '../../../../Utils/formataMoeda';
+import { pct } from '../../../../Utils/formatos';
 import { Resultado } from '../../../../../../backend/src/models/Resultado';
 import { toast } from 'react-toastify';
 import {
@@ -211,7 +212,7 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 		}
 		const soma = nums.reduce((a, b) => a + b, 0);
 		if (Math.abs(soma - 100) > TOLERANCIA_100) {
-			toast.error(`A soma dos percentuais deve ser 100% (atual: ${soma.toFixed(2)}%).`);
+			toast.error(`A soma dos percentuais deve ser 100% (atual: ${pct(soma, 2)}).`);
 			return;
 		}
 
@@ -262,7 +263,7 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 					Rateio de planos de contas - {movimento.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}
 					{isModoMultiplos && ` (${movimentosMultiplos?.length} movimentos)`}
 				</h2>
-				<button onClick={handleCancelar} className="text-gray-500 hover:text-gray-700">
+				<button onClick={handleCancelar} className="text-gray-500 hover:text-gray-700" aria-label="Fechar" title="Fechar">
 					<FontAwesomeIcon icon={faTimes} size="xl" />
 				</button>
 			</div>
@@ -373,9 +374,14 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 												formatarMoeda(r.valor || 0)
 											)}
 										</td>
-										<td className="p-2 text-center">{porcentagemRateio.toFixed(2)}%</td>
+										<td className="p-2 text-center">{pct(porcentagemRateio, 2)}</td>
 										<td className="p-2 text-right pr-4" style={{ width: '50px' }}>
-											<button onClick={() => removerRateio(idx)} className="text-red-500 hover:text-red-700">
+											<button
+												onClick={() => removerRateio(idx)}
+												className="text-red-500 hover:text-red-700"
+												aria-label={`Remover ${r.descricao} do rateio`}
+												title="Remover do rateio"
+											>
 												<FontAwesomeIcon icon={faTrash} />
 											</button>
 										</td>
@@ -407,7 +413,7 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 					<div className="flex flex-col gap-1">
 						<span>Porcentagem Total:</span>
 						<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>
-							{porcentagemTotalRateada.toFixed(2)}% / 100%
+							{pct(porcentagemTotalRateada, 2)} / 100%
 						</span>
 					</div>
 				</div>

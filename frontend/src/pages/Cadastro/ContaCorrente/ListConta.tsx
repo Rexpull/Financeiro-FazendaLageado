@@ -5,7 +5,7 @@ import { listarContas, salvarConta, atualizarStatusConta } from "../../../servic
 import { excluirContaCadastro } from "../../../services/excluirCadastroService";
 import ContaCorrenteModal from "./ContaCorrenteModal"; // Importando o Modal
 import DialogModal from "../../../components/DialogModal"
-import { ContaCorrente } from "../../../../../backend/src/models/ContaCorrente";
+import type { ContaCorrente } from "../../../services/contaCorrenteService";
 import noData from "/frontend/src/assets/img/noData.svg"
 
 // Importando as imagens dos bancos
@@ -363,13 +363,13 @@ const ListConta: React.FC = () => {
               {/* Logo do banco */}
               <div className="flex flex-col items-center mt-6 pointer-events-none">
                 <img 
-                    src={getBancoLogo(conta.bancoCodigo)}
+                    src={getBancoLogo(conta.bancoCodigo ?? "")}
                     alt={conta.bancoNome}
                     className="w-12 h-12 mb-2 object-contain"
                     onError={(e) => (e.currentTarget.src = defaultIcon)} 
                 />
 
-                <span className="text-lg font-bold">{conta.bancoNome.toUpperCase()}</span>
+                <span className="text-lg font-bold">{(conta.bancoNome ?? "").toUpperCase()}</span>
                 <p className="text-sm text-gray-600">{conta.agencia ? conta.agencia + " - "  : ""} {conta.responsavel}</p>
                 {/* Nome do tipo (Destaque) */}
                 <p className="text-sm font-semibold">
@@ -409,7 +409,11 @@ const ListConta: React.FC = () => {
         onConfirm={handleDeleteConfirm}
         title="Atenção"
         type="warn"
-        message="Tem certeza que deseja excluir esta conta?"
+        message={(() => {
+          const c = contas.find((x) => x.id === deleteContaId);
+          const nome = c ? [c.bancoNome, c.numConta || c.numCartao, c.responsavel].filter(Boolean).join(" · ") : "";
+          return `Excluir a conta "${nome}"? Esta ação não pode ser desfeita.`;
+        })()}
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />

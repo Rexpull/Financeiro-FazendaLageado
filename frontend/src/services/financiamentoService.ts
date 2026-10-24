@@ -1,5 +1,6 @@
 import { Financiamento } from "../../../backend/src/models/Financiamento";
 import { ParcelaFinanciamento } from "../../../backend/src/models/ParcelaFinanciamento";
+import { statusParcelaEmAberto } from "../pages/Financeiro/Financiamento/parcelaRegras";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -8,28 +9,9 @@ const validarStatusParcela = (parcela: ParcelaFinanciamento): ParcelaFinanciamen
 	if (parcela.status === 'Liquidado') {
 		return parcela;
 	}
-
-	// Verifica se a data de vencimento é menor que a data atual
-	const dataVencimento = new Date(parcela.dt_vencimento);
-	const dataAtual = new Date();
-	
-	// Ajusta as datas para comparar apenas dia/mês/ano
-	dataVencimento.setHours(0, 0, 0, 0);
-	dataAtual.setHours(0, 0, 0, 0);
-	
-	// Se a data de vencimento for menor que a data atual, marca como vencido
-	if (dataVencimento < dataAtual) {
-		return {
-			...parcela,
-			status: 'Vencido'
-		};
-	}
-
-	// Se não estiver vencido, mantém como aberto
-	return {
-		...parcela,
-		status: 'Aberto'
-	};
+	// Dia local lido do texto (new Date('AAAA-MM-DD') é meia-noite UTC: no Brasil vira o dia anterior
+	// e a parcela que vence hoje aparecia como Vencido)
+	return { ...parcela, status: statusParcelaEmAberto(parcela.dt_vencimento) };
 };
 
 export const listarFinanciamentos = async (): Promise<Financiamento[]> => {

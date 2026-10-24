@@ -7,6 +7,8 @@ import { listarCentroCustos, salvarCentroCustos, listarMovimentosPorCentroCustos
 import { excluirCentroCustosCadastro } from "../../../services/excluirCadastroService";
 import CentroCustosModal from "./CentroCustosModal";
 import { CentroCustos } from "../../../../../backend/src/models/CentroCustos";
+import { formatarDataISO } from "../../../Utils/formatarData";
+import { hojeISO } from "../../../Utils/dataSemFuso";
 
 Modal.setAppElement("#root");
 
@@ -69,12 +71,10 @@ const CentroCustosTable: React.FC = () => {
 
   const getMesAtual = () => {
     const hoje = new Date();
-    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-    
-    const inicio = primeiroDia.toISOString().split('T')[0];
-    const fim = ultimoDia.toISOString().split('T')[0];
-    
+    // Local calendar dates (toISOString() is UTC and can shift the day)
+    const inicio = hojeISO(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+    const fim = hojeISO(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0));
+
     return { inicio, fim };
   };
 
@@ -103,9 +103,8 @@ const CentroCustosTable: React.FC = () => {
     });
   };
 
-  const formatarData = (data: string) => {
-    return new Date(data).toLocaleDateString('pt-BR');
-  };
+  // dd/mm/aaaa from the 'YYYY-MM-DD…' text: new Date(iso).toLocaleDateString() shows the previous day in UTC−3
+  const formatarData = (data: string) => formatarDataISO(data);
 
   useEffect(() => {
     fetchCentroCustos();
@@ -238,7 +237,7 @@ const CentroCustosTable: React.FC = () => {
             }`}
             onClick={() => setActiveTab('cadastro')}
           >
-            CADASTRO
+            Cadastro
           </button>
           <button
             className={`px-3 sm:px-4 py-2 font-bold text-xs sm:text-sm text-nowrap whitespace-nowrap ${
@@ -246,7 +245,7 @@ const CentroCustosTable: React.FC = () => {
             }`}
             onClick={() => setActiveTab('movimentos')}
           >
-            MOVIMENTOS POR CENTRO DE CUSTOS
+            Movimentos por centro de custos
           </button>
         </div>
 
@@ -403,12 +402,16 @@ const CentroCustosTable: React.FC = () => {
                           <button
                             className="bg-blue-500 text-white px-3 py-1 rounded mr-2 hover:bg-blue-700"
                             onClick={() => openModal(centro)}
+                            aria-label={`Editar ${centro.descricao}`}
+                            title="Editar"
                           >
                             <FontAwesomeIcon icon={faPencil} />
                           </button>
                           <button
                             className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700"
                             onClick={() => handleDelete(centro.id)}
+                            aria-label={`Excluir ${centro.descricao}`}
+                            title="Excluir"
                           >
                             <FontAwesomeIcon icon={faTrash} />
                           </button>
@@ -518,11 +521,24 @@ const CentroCustosTable: React.FC = () => {
                               <tr key={mov.id} className="bg-gray-50 border-b">
                                 <td className="p-2 pl-8 text-sm" colSpan={4}>
                                   <div className="flex flex-col gap-1">
-                                    <span className="font-medium">{mov.historico}</span>
+                                    <span className="font-medium">
+                                      {mov.historico}
+                                      {mov.pendente && (
+                                        <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold uppercase" title="Pendente de conciliação">
+                                          Pendente
+                                        </span>
+                                      )}
+                                    </span>
                                     <div className="flex gap-3 text-xs text-gray-500">
                                       <span>{formatarData(mov.data)}</span>
                                       <span>•</span>
                                       <span>{mov.contaBancaria}</span>
+                                      {typeof mov.valor === 'number' && (
+                                        <>
+                                          <span>•</span>
+                                          <span className={mov.valor < 0 ? 'text-red-600' : 'text-green-600'}>{formatarMoeda(mov.valor)}</span>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                 </td>
@@ -589,7 +605,7 @@ const CentroCustosTable: React.FC = () => {
         onConfirm={handleDeleteConfirm}
         title="Atenção"
         type="warn"
-        message="Tem certeza que deseja excluir este centro de custos?"
+        message={`Excluir o centro de custos "${centroCustos.find((c) => c.id === deleteCentroCustosId)?.descricao ?? ""}"? Esta ação não pode ser desfeita.`}
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />

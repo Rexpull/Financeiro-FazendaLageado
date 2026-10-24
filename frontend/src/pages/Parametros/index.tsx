@@ -110,7 +110,7 @@ const ParametroPage = () => {
 
     return (
         <div>
-            <BreadCrumb grupo="Cadastro" pagina="Parâmetros" />
+            <BreadCrumb pagina="Parâmetros" />
             <div className="flex flex-col justify-between items-start gap-5 mb-4">
                 {/* 🔹 Transferência entre Contas */}
                 <div className="flex flex-col gap-5 w-full">
@@ -192,7 +192,7 @@ const ParametroPage = () => {
 
                     <div ref={estornosRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Plano de Contas Estornos/duplicidades (ex.: TED devolvida)
+                            Plano de Contas — Estornos/duplicidades (ex.: TED devolvida)
                         </label>
                         <div className="relative">
                             <input
@@ -233,7 +233,7 @@ const ParametroPage = () => {
                 <div className="flex flex-col gap-5 w-full">
                     <div ref={entradaFinanRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Plano de Contas Entradas de Financiamentos <span className="text-red-500">*</span>
+                            Plano de Contas — Entradas de financiamentos <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
                             <input
@@ -272,7 +272,7 @@ const ParametroPage = () => {
                 <div className="flex flex-col gap-5 w-full">
                     <div ref={pagamentoFinanRef} className="relative">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Plano de Contas Pagamentos de Financiamentos <span className="text-red-500">*</span>
+                            Plano de Contas — Pagamentos de financiamentos <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
                             <input

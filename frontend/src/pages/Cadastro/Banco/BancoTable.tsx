@@ -281,7 +281,7 @@ const BancoTable: React.FC = () => {
         onConfirm={handleDeleteConfirm}
         title="Atenção"
         type="warn"
-        message="Tem certeza que deseja excluir este banco?"
+        message={`Excluir o banco "${bancos.find((b) => b.id === deleteBancoId)?.nome ?? ""}"? Esta ação não pode ser desfeita.`}
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
       />

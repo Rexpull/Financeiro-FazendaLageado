@@ -67,14 +67,23 @@ export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento):
 	return { ...parcelaAtualizada, id: id as number };
 };
 
-export const verificarParcelasAssociadas = async (idMovimentoBancario: number) => {
+async function mensagemDaApi(res: Response, padrao: string): Promise<string> {
+	const body = (await res.json().catch(() => null)) as { error?: unknown; message?: unknown; details?: unknown } | null;
+	const detalhe = [body?.error, body?.message, body?.details].find((v) => typeof v === "string" && v.trim());
+	return (detalhe as string | undefined) ?? `${padrao} (HTTP ${res.status})`;
+}
+
+/** True when parcelas are linked to the movement. Throws when the check itself fails (never "no parcelas" by accident). */
+export const verificarParcelasAssociadas = async (idMovimentoBancario: number): Promise<boolean> => {
 	const res = await fetch(`${API_URL}/api/parcelaFinanciamento/${idMovimentoBancario}`);
-	const parcelas: ParcelaFinanciamento[] = await res.json();
-	return parcelas.length > 0; 
+	if (!res.ok) throw new Error(await mensagemDaApi(res, "Erro ao verificar as parcelas vinculadas ao movimento"));
+	const parcelas = (await res.json()) as ParcelaFinanciamento[];
+	return Array.isArray(parcelas) && parcelas.length > 0;
 };
 
+/** The API refuses (409) liquidated/linked parcelas with a Portuguese message, surfaced here. */
 export const excluirParcelaFinanciamento = async (id: number): Promise<void> => {
 	const res = await fetch(`${API_URL}/api/parcelaFinanciamento/${id}`, { method: "DELETE" });
-	if (!res.ok) throw new Error("Erro ao excluir Parcela do Financiamento");
+	if (!res.ok) throw new Error(await mensagemDaApi(res, "Erro ao excluir Parcela do Financiamento"));
 };
 

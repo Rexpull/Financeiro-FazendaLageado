@@ -20,13 +20,6 @@ export class SessionRepository {
     await this.db.prepare("UPDATE usuario SET token = ? WHERE id = ?").bind(token, id).run();
 }
 
-  // Obtém um usuário baseado no token
-  async getByToken(token: string): Promise<UserContext | null> {
-    const stmt = await this.db.prepare("SELECT * FROM usuario WHERE token = ?");
-    const { results } = await stmt.bind(token).all<UserContext>();
-    return results.length ? results[0] : null;
-}
-
   // Obtém o usuário pelo ID (NOVO MÉTODO)
   async getById(id: number): Promise<UserContext | null> {
     const stmt = await this.db.prepare("SELECT * FROM usuario WHERE id = ?");

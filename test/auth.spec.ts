@@ -1,19 +1,25 @@
 // Auth/security tests: route guard (exigeAutenticacao), login (inactive users, JWT lifetime),
 // user endpoints never exposing senha/token, and password update on PUT /api/usuario/:id.
-// The vitest workers pool runs without JWT_SECRET, so the guard is exercised directly with a fake env.
+// The vitest workers pool runs without JWT_SECRET (and with AUTH_DESATIVADA_TESTES='1', see vitest.config.mts),
+// so the guard is exercised directly with explicit fake envs.
 import { env, SELF, createExecutionContext } from 'cloudflare:test';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { SignJWT, decodeJwt } from 'jose';
 import schemaSql from './fixtures/schema.sql?raw';
 import {
+	CACHE_USUARIO_TTL_MS,
 	exigeAutenticacao,
 	extrairBearer,
 	isBcryptHash,
 	isRotaPublica,
+	limparCacheUsuarios,
 	semCredenciais,
 	usuarioAtivo,
+	usuarioContinuaAtivo,
 	verificarToken,
+	MSG_FALHA_VALIDAR_SESSAO,
+	MSG_SEM_CONFIG_AUTH,
 	MSG_SESSAO_INVALIDA,
 } from '../backend/src/utils/authGuard';
 import { prepararSenha } from '../backend/src/repositories/UsuarioRepository';
@@ -49,8 +55,8 @@ async function seedUsuarios() {
 		.run();
 }
 
-async function tokenAssinado(opts: { secret?: string; exp?: string | number; alg?: string } = {}) {
-	return new SignJWT({ id: 1, email: 'ana@fazenda.test' })
+async function tokenAssinado(opts: { secret?: string; exp?: string | number; alg?: string; claims?: Record<string, unknown> } = {}) {
+	return new SignJWT(opts.claims ?? { id: 1, email: 'ana@fazenda.test' })
 		.setProtectedHeader({ alg: opts.alg ?? 'HS256' })
 		.setIssuedAt()
 		.setExpirationTime(opts.exp ?? '12h')
@@ -115,7 +121,14 @@ describe('auth helpers', () => {
 });
 
 describe('exigeAutenticacao (route guard)', () => {
-	const envComSegredo = { JWT_SECRET: SECRET };
+	const envComSegredo = { JWT_SECRET: SECRET, DB: db };
+	const comToken = (token: string, path = '/api/usuario') => req(path, { headers: { Authorization: `Bearer ${token}` } });
+
+	beforeAll(async () => {
+		await applySchema();
+		await seedUsuarios();
+	});
+	beforeEach(() => limparCacheUsuarios());
 
 	it('returns 401 JSON with CORS headers when there is no token', async () => {
 		const res = await exigeAutenticacao(req('/api/usuario'), envComSegredo);
@@ -141,7 +154,7 @@ describe('exigeAutenticacao (route guard)', () => {
 		}
 	});
 
-	it('lets a request with a valid token through (any method / route)', async () => {
+	it('lets a valid token of an active user through (any method / route), even when usuario.token holds another token', async () => {
 		const token = await tokenAssinado();
 		for (const [method, path] of [
 			['GET', '/api/usuario'],
@@ -160,9 +173,79 @@ describe('exigeAutenticacao (route guard)', () => {
 		expect(await exigeAutenticacao(req('/api/auth/session'), envComSegredo)).toBeNull();
 	});
 
-	it('is not enforced when JWT_SECRET is missing (test pool / local dev)', async () => {
-		expect(await exigeAutenticacao(req('/api/usuario'), {})).toBeNull();
-		expect(await exigeAutenticacao(req('/api/usuario'), undefined)).toBeNull();
+	it('fails closed (503 JSON + CORS) when JWT_SECRET or the DB binding is missing', async () => {
+		const envsSemConfig = [{}, undefined, { DB: db }, { JWT_SECRET: SECRET }, { AUTH_DESATIVADA_TESTES: 'true' }, { AUTH_DESATIVADA_TESTES: '0' }];
+		for (const envSemConfig of envsSemConfig) {
+			const res = await exigeAutenticacao(req('/api/usuario'), envSemConfig);
+			expect(res?.status, JSON.stringify(envSemConfig)).toBe(503);
+			expect(res!.headers.get('Access-Control-Allow-Origin')).toBe('*');
+			expect(await res!.json()).toEqual({ error: MSG_SEM_CONFIG_AUTH });
+		}
+		// public routes stay reachable so the login can report its own error
+		expect(await exigeAutenticacao(req('/api/auth/login', { method: 'POST' }), {})).toBeNull();
+	});
+
+	it("is skipped only with AUTH_DESATIVADA_TESTES === '1' and no JWT_SECRET (vitest pool)", async () => {
+		expect(await exigeAutenticacao(req('/api/usuario'), { AUTH_DESATIVADA_TESTES: '1' })).toBeNull();
+		// with the secret configured the flag changes nothing
+		const res = await exigeAutenticacao(req('/api/usuario'), { ...envComSegredo, AUTH_DESATIVADA_TESTES: '1' });
+		expect(res?.status).toBe(401);
+	});
+
+	it('returns 401 for a valid token of an inactive, deleted or unidentified user', async () => {
+		const tokens = [
+			await tokenAssinado({ claims: { id: 2, email: 'ivo@fazenda.test' } }), // ativo = 0
+			await tokenAssinado({ claims: { id: 999, email: 'apagado@fazenda.test' } }),
+			await tokenAssinado({ claims: { email: 'ana@fazenda.test' } }),
+			await tokenAssinado({ claims: { id: 'abc' } }),
+		];
+		for (const token of tokens) {
+			const res = await exigeAutenticacao(comToken(token), envComSegredo);
+			expect(res?.status).toBe(401);
+			expect(await res!.json()).toEqual({ error: MSG_SESSAO_INVALIDA });
+		}
+	});
+
+	it('a deactivated or deleted user loses access once the per-isolate cache expires', async () => {
+		const token = await tokenAssinado();
+		expect(await exigeAutenticacao(comToken(token), envComSegredo)).toBeNull();
+
+		await db.prepare('UPDATE usuario SET ativo = 0 WHERE id = 1').run();
+		limparCacheUsuarios(); // simulates the TTL running out
+		expect((await exigeAutenticacao(comToken(token), envComSegredo))?.status).toBe(401);
+
+		await db.prepare('UPDATE usuario SET ativo = 1 WHERE id = 1').run();
+		limparCacheUsuarios();
+		expect(await exigeAutenticacao(comToken(token), envComSegredo)).toBeNull();
+
+		await db.prepare('DELETE FROM usuario WHERE id = 1').run();
+		limparCacheUsuarios();
+		expect((await exigeAutenticacao(comToken(token), envComSegredo))?.status).toBe(401);
+	});
+
+	it('usuarioContinuaAtivo caches the answer for CACHE_USUARIO_TTL_MS (<= 1 min) per user id', async () => {
+		expect(CACHE_USUARIO_TTL_MS).toBeLessThanOrEqual(60_000);
+		await db.prepare("INSERT INTO usuario (id, nome, usuario, email, senha, ativo) VALUES (3, 'Cacau', 'cacau', 'cacau@fazenda.test', 'x', 1), (4, 'Dito', 'dito', 'dito@fazenda.test', 'x', 0)").run();
+		const t0 = 1_000_000;
+		expect(await usuarioContinuaAtivo(db, 3, t0)).toBe(true);
+		expect(await usuarioContinuaAtivo(db, 4, t0)).toBe(false);
+
+		await db.prepare('UPDATE usuario SET ativo = CASE id WHEN 3 THEN 0 ELSE 1 END WHERE id IN (3, 4)').run();
+		expect(await usuarioContinuaAtivo(db, 3, t0 + CACHE_USUARIO_TTL_MS - 1)).toBe(true); // still cached
+		expect(await usuarioContinuaAtivo(db, 4, t0 + CACHE_USUARIO_TTL_MS - 1)).toBe(false);
+		expect(await usuarioContinuaAtivo(db, 3, t0 + CACHE_USUARIO_TTL_MS)).toBe(false); // re-read
+		expect(await usuarioContinuaAtivo(db, 4, t0 + CACHE_USUARIO_TTL_MS)).toBe(true);
+	});
+
+	it('answers 503 (not 401, so the front does not log out) when the user lookup fails', async () => {
+		const dbQuebrado = {
+			prepare() {
+				throw new Error('D1 indisponível');
+			},
+		} as unknown as D1Database;
+		const res = await exigeAutenticacao(comToken(await tokenAssinado()), { JWT_SECRET: SECRET, DB: dbQuebrado });
+		expect(res?.status).toBe(503);
+		expect(await res!.json()).toEqual({ error: MSG_FALHA_VALIDAR_SESSAO });
 	});
 
 	it('verificarToken accepts only HS256 tokens signed with the secret', async () => {
@@ -194,6 +277,7 @@ describe('login', () => {
 			body: JSON.stringify({ email: 'ivo', senha: 'errada' }),
 		});
 		expect(res.status).toBe(401);
+		await res.text();
 	});
 
 	it('rejects a wrong password and an unknown user with 401', async () => {
@@ -208,6 +292,7 @@ describe('login', () => {
 				body: JSON.stringify(body),
 			});
 			expect(res.status).toBe(401);
+			await res.text();
 		}
 	});
 
@@ -221,9 +306,10 @@ describe('login', () => {
 		const claims = decodeJwt(result.token);
 		expect(claims.exp! - claims.iat!).toBe(12 * 60 * 60);
 
+		limparCacheUsuarios();
 		const passou = await exigeAutenticacao(
 			req('/api/usuario', { headers: { Authorization: `Bearer ${result.token}` } }),
-			{ JWT_SECRET: SECRET },
+			{ JWT_SECRET: SECRET, DB: db },
 		);
 		expect(passou).toBeNull();
 
@@ -231,6 +317,11 @@ describe('login', () => {
 		expect(sessao).toMatchObject({ id: 1, email: 'ana@fazenda.test' });
 		expect(sessao).not.toHaveProperty('senha');
 		expect(sessao).not.toHaveProperty('token');
+
+		// A newer login (e.g. on another device) keeps this session valid.
+		const outroAparelho = await controller.login('ana@fazenda.test', 'senhaAna1', { JWT_SECRET: SECRET });
+		expect(outroAparelho.ok).toBe(true);
+		expect(await controller.verifySession(result.token, { JWT_SECRET: SECRET })).toMatchObject({ id: 1 });
 
 		// After the user is deactivated the session check fails.
 		await db.prepare('UPDATE usuario SET ativo = 0 WHERE id = 1').run();
@@ -278,6 +369,7 @@ describe('/api/usuario', () => {
 			body: JSON.stringify({ nome: 'Ana Ativa', usuario: 'ana', email: 'ana@fazenda.test', ativo: true, senha: novoHash }),
 		});
 		expect(res.status).toBe(200);
+		await res.text();
 
 		const controller = new AuthController(new SessionRepository(db));
 		expect((await controller.login('ana', 'senhaAna1', { JWT_SECRET: SECRET })).ok).toBe(false);
@@ -293,6 +385,7 @@ describe('/api/usuario', () => {
 				body: JSON.stringify({ nome: 'Ivo Renomeado', usuario: 'ivo', email: 'ivo@fazenda.test', ativo: false, ...extra }),
 			});
 			expect(res.status).toBe(200);
+			await res.text();
 		}
 		const depois = await db.prepare('SELECT nome, senha FROM usuario WHERE id = 2').first<{ nome: string; senha: string }>();
 		expect(depois!.nome).toBe('Ivo Renomeado');
@@ -306,6 +399,7 @@ describe('/api/usuario', () => {
 			body: JSON.stringify({ nome: 'Sem Senha', usuario: 'sem', email: 'sem@fazenda.test', ativo: true }),
 		});
 		expect(semSenha.status).toBe(400);
+		await semSenha.text();
 
 		const comSenha = await SELF.fetch(`${BASE}/api/usuario`, {
 			method: 'POST',
@@ -326,6 +420,7 @@ describe('worker fetch with JWT_SECRET set (production-like)', () => {
 		await applySchema();
 		await seedUsuarios();
 	});
+	beforeEach(() => limparCacheUsuarios());
 
 	it('blocks data routes without a token, including user creation', async () => {
 		for (const [method, path] of [
@@ -337,9 +432,13 @@ describe('worker fetch with JWT_SECRET set (production-like)', () => {
 		]) {
 			const res = await call(path, { method });
 			expect(res.status, `${method} ${path}`).toBe(401);
+			await res.text();
 			expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
 		}
-		expect((await call('/api/usuario', { method: 'OPTIONS' })).status).toBe(204);
+		const preflight = await call('/api/usuario', { method: 'OPTIONS' });
+		expect(preflight.status).toBe(204);
+		expect(preflight.headers.get('Access-Control-Max-Age')).toBe('86400');
+		expect(preflight.headers.get('Access-Control-Allow-Headers')).toContain('Authorization');
 	});
 
 	it('login -> token -> authorized call works end to end', async () => {
@@ -354,11 +453,38 @@ describe('worker fetch with JWT_SECRET set (production-like)', () => {
 
 		const lista = await call('/api/usuario', { headers: { Authorization: `Bearer ${token}` } });
 		expect(lista.status).toBe(200);
+		await lista.text();
 
 		const sessao = await call('/api/auth/session', { headers: { Authorization: `Bearer ${token}` } });
 		expect(sessao.status).toBe(200);
 		const corpo = (await sessao.json()) as Record<string, unknown>;
 		expect(corpo).not.toHaveProperty('senha');
 		expect(corpo).not.toHaveProperty('token');
+
+		// A second login (another device) replaces usuario.token; the first token keeps working on the API.
+		const segundoLogin = await call('/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ email: 'ana', senha: 'senhaAna1' }),
+		});
+		expect(segundoLogin.status).toBe(200);
+		await segundoLogin.text();
+		const comPrimeiroToken = await call('/api/usuario', { headers: { Authorization: `Bearer ${token}` } });
+		expect(comPrimeiroToken.status).toBe(200);
+		await comPrimeiroToken.text();
+
+		// Deactivating the user cuts API access (after the cache window) even with an unexpired token.
+		await db.prepare('UPDATE usuario SET ativo = 0 WHERE id = 1').run();
+		limparCacheUsuarios();
+		const bloqueado = await call('/api/usuario', { headers: { Authorization: `Bearer ${token}` } });
+		expect(bloqueado.status).toBe(401);
+		expect(await bloqueado.json()).toEqual({ error: MSG_SESSAO_INVALIDA });
+	});
+
+	it('without JWT_SECRET and without AUTH_DESATIVADA_TESTES the worker fails closed with 503', async () => {
+		const envSemAuth = { ...(env as object), JWT_SECRET: undefined, AUTH_DESATIVADA_TESTES: undefined };
+		const res = await worker.fetch(new Request(`${BASE}/api/usuario`), envSemAuth, createExecutionContext());
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({ error: MSG_SEM_CONFIG_AUTH });
 	});
 });

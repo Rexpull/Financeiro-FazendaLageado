@@ -10,7 +10,7 @@ import { listarContas } from '../../../services/contaCorrenteService';
 import { listarPlanoContas } from '../../../services/planoContasService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
 import ConciliarPlano from './Modals/ConciliarPlano';
-import { formatarData, formatarDataSemHora } from '../../../Utils/formatarData';
+import { formatarDataSemHora } from '../../../Utils/formatarData';
 import { toast } from 'react-toastify';
 import MultiSelectDropdown from '../../../components/MultiSelectDropdown';
 import { listarCentroCustos } from '../../../services/centroCustosService';
@@ -252,8 +252,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 			const descricaoMatch = filtroDescricao === '' || m.historico.toLowerCase().includes(filtroDescricao.toLowerCase());
 			const valorMatch = filtroValor === '' || formatarMoeda(m.valor, 2).includes(filtroValor);
 			const dataMatch =
-				(!filtroDataInicio || new Date(m.dtMovimento) >= new Date(filtroDataInicio)) &&
-				(!filtroDataFim || new Date(m.dtMovimento) <= new Date(filtroDataFim));
+				(!filtroDataInicio || String(m.dtMovimento).slice(0, 10) >= filtroDataInicio) &&
+				(!filtroDataFim || String(m.dtMovimento).slice(0, 10) <= filtroDataFim);
 
 			// Movimentos rateados têm idPlanoContas/idCentroCustos NULL: considerar também as listas
 			const planoMatch = movimentoTemAlgumPlano(
@@ -505,7 +505,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 				{/* Cabeçalho */}
 				<div className="flex justify-between items-center bg-gray-50 px-4 py-3 rounded-t-lg border-b">
 					<h2 className="text-xl font-semibold text-gray-800">Conciliação de Movimentos OFX - {movimentosSendoConciliados.length}</h2>
-					<button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+					<button onClick={onClose} className="text-gray-500 hover:text-gray-700" aria-label="Fechar" title="Fechar">
 						<FontAwesomeIcon icon={faTimes} size="xl" />
 					</button>
 				</div>
@@ -623,7 +623,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 								/>
 								<div
 									className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
-										status === 'todos' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+										status === 'todos' ? 'bg-orange-600 border-orange-600' : 'border-gray-400'
 									}`}
 									style={{ padding: '0.60rem' }}
 								>
@@ -652,7 +652,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 								/>
 								<div
 									className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${
-										status === 'pendentes' ? 'bg-red-500 border-red-500' : 'border-gray-400'
+										status === 'pendentes' ? 'bg-orange-600 border-orange-600' : 'border-gray-400'
 									}`}
 									style={{ padding: '0.60rem' }}
 								>
@@ -840,7 +840,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 														disabled={tipoMovimentoSelecionado !== null && tipoMovimentoSelecionado !== mov.tipoMovimento}
 													/>
 												</td>
-												<td className="p-2 text-left min-w-[140px]">{formatarData(mov.dtMovimento)}</td>
+												<td className="p-2 text-left min-w-[110px]">{formatarDataSemHora(mov.dtMovimento)}</td>
 												<td className="p-2 text-left min-w-[200px] max-w-[300px] truncate" title={mov.historico}>
 													{mov.historico}
 												</td>
@@ -952,11 +952,11 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 						className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50"
 						style={{ boxShadow: '0px -2px 10px 0px rgba(0, 0, 0, 0.1)' }}
 					>
-						<div className="container mx-auto flex justify-between items-center">
-							<span className="text-gray-600 font-semibold text-lg">{movimentosSelecionados.length} movimento(s) selecionado(s)</span>
+						<div className="container mx-auto flex flex-wrap justify-between items-center gap-2">
+							<span className="text-gray-600 font-semibold text-base sm:text-lg">{movimentosSelecionados.length} movimento(s) selecionado(s)</span>
 							<button
 								onClick={handleConciliarSelecionados}
-								className="bg-blue-600 text-white text-lg px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+								className="bg-blue-600 text-white text-base sm:text-lg px-4 sm:px-6 py-2 font-semibold rounded-lg hover:bg-blue-700 transition-colors"
 							>
 								Conciliar {movimentosSelecionados.length} Movimento(s)
 							</button>
@@ -966,7 +966,7 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 
 				{/* Rodapé */}
 				<div className="p-4 flex justify-end border-t">
-					<button className="bg-red-500 text-white font-semibold px-5 py-2 rounded hover:bg-red-600" onClick={onClose}>
+					<button className="bg-gray-500 text-white font-semibold px-5 py-2 rounded hover:bg-gray-700" onClick={onClose}>
 						Fechar
 					</button>
 				</div>

@@ -5,6 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheck, faTimes, faArrowLeft, faEquals } from '@fortawesome/free-solid-svg-icons';
 import { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { formatarMoeda } from '../../../../Utils/formataMoeda';
+import { pct } from '../../../../Utils/formatos';
 import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
 import { toast } from 'react-toastify';
 import {
@@ -62,7 +63,8 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		return centrosDisponiveis
 			.filter((centro) => {
 				const matchTipoMovimento =
-					movimento.tipoMovimento === 'C' ? centro.tipoReceitaDespesa === 'RECEITA' : centro.tipoReceitaDespesa === 'DESPESA';
+					(movimento.tipoMovimento === 'C' ? centro.tipoReceitaDespesa === 'RECEITA' : centro.tipoReceitaDespesa === 'DESPESA') ||
+					isPercentualPreenchido(draftPct[String(centro.id)] ?? '');
 				const matchTipo = !isDespesa || filtroTipo === 'TODOS' || centro.tipo === filtroTipo;
 				const matchBusca = !busca || centro.descricao.toLowerCase().includes(busca);
 				return matchTipoMovimento && matchTipo && matchBusca;
@@ -74,7 +76,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 				}
 				return a.descricao.localeCompare(b.descricao, 'pt-BR');
 			});
-	}, [centrosDisponiveis, movimento.tipoMovimento, isDespesa, filtroTipo, filtroDescricao]);
+	}, [centrosDisponiveis, movimento.tipoMovimento, isDespesa, filtroTipo, filtroDescricao, draftPct]);
 
 	const centrosById = useMemo(() => {
 		const map = new Map<number, CentroCustos>();
@@ -107,18 +109,19 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		if (rateios.length > 0) {
 			// Prefer parent draft (includes lote % stored in valor, and single-movement monetary drafts)
 			for (const r of rateios) {
-				if (!(r.valor > 0)) continue;
+				const valor = Math.abs(Number(r.valor) || 0);
+				if (!(valor > 0)) continue;
 				if (isModoMultiplos) {
-					next[String(r.idCentro)] = String(r.valor);
+					next[String(r.idCentro)] = String(valor);
 				} else if (valorTotalAbsoluto > 0) {
-					const pct = (r.valor / valorTotalAbsoluto) * 100;
-					next[String(r.idCentro)] = (Math.round(pct * 100) / 100).toString();
+					const percentual = (valor / valorTotalAbsoluto) * 100;
+					next[String(r.idCentro)] = (Math.round(percentual * 100) / 100).toString();
 				}
 			}
 		} else if (!isModoMultiplos && (movimento.centroCustosList ?? []).length > 0 && valorTotalAbsoluto > 0) {
 			for (const c of movimento.centroCustosList ?? []) {
-				const pct = (c.valor / valorTotalAbsoluto) * 100;
-				if (pct > 0) next[String(c.idCentroCustos)] = (Math.round(pct * 100) / 100).toString();
+				const percentual = (Math.abs(Number(c.valor) || 0) / valorTotalAbsoluto) * 100;
+				if (percentual > 0) next[String(c.idCentroCustos)] = (Math.round(percentual * 100) / 100).toString();
 			}
 		}
 		setDraftPct(next);
@@ -148,7 +151,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 		}
 		if (excede100Porcento(draftPct, String(idCentro), cleanValue)) {
 			const restante = Math.max(0, 100 - somarPercentuaisPreenchidos({ ...draftPct, [String(idCentro)]: '' }));
-			toast.warning(`O rateio não pode passar de 100%. Disponível para este centro: ${restante.toFixed(2)}%.`);
+			toast.warning(`O rateio não pode passar de 100%. Disponível para este centro: ${pct(restante, 2)}.`);
 			return;
 		}
 		setDraftPct((prev) => ({ ...prev, [String(idCentro)]: cleanValue }));
@@ -203,7 +206,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 					Rateio de centros de custos - {movimento.tipoMovimento === 'C' ? 'Receita' : 'Despesa'}
 					{isModoMultiplos && ` (${movimentosMultiplos?.length} movimentos)`}
 				</h2>
-				<button onClick={handleCancelar} className="text-gray-500 hover:text-gray-700">
+				<button onClick={handleCancelar} className="text-gray-500 hover:text-gray-700" aria-label="Fechar" title="Fechar">
 					<FontAwesomeIcon icon={faTimes} size="xl" />
 				</button>
 			</div>
@@ -320,7 +323,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 					<div className="flex flex-col gap-1">
 						<span>Porcentagem preenchida:</span>
 						<span className={podeConfirmar ? 'text-green-600' : 'text-orange-500'}>
-							{porcentagemTotalRateada.toFixed(2)}% / 100%
+							{pct(porcentagemTotalRateada, 2)} / 100%
 							{filledCount > 0 && (
 								<span className="text-gray-500 font-normal ml-1">
 									({filledCount} centro{filledCount !== 1 ? 's' : ''})

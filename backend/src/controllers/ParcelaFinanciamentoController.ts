@@ -1,5 +1,6 @@
 import { ParcelaFinanciamentoRepository } from "../repositories/ParcelaFinanciamentoRepository";
 import { ParcelaFinanciamento } from "../models/ParcelaFinanciamento";
+import { erroExclusao } from "../utils/verificarUsoRegistro";
 
 export class ParcelaFinanciamentoController {
 	private repository: ParcelaFinanciamentoRepository;
@@ -75,8 +76,20 @@ export class ParcelaFinanciamentoController {
 			}
 
 			if (method === "DELETE" && pathname.startsWith("/api/parcelaFinanciamento/")) {
-				const id = parseInt(pathname.split("/")[3]);
-				await this.repository.deleteById(id);
+				const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+				const raw = pathname.split("/")[3] ?? "";
+				if (!/^\d+$/.test(raw)) {
+					return new Response(JSON.stringify({ error: "ID da parcela inválido" }), { status: 400, headers: jsonHeaders });
+				}
+				const id = parseInt(raw, 10);
+				try {
+					await this.repository.deleteById(id);
+				} catch (error) {
+					// In use (liquidated / linked / referenced by Resultado) → 409 with a Portuguese message
+					console.error(`Erro ao excluir parcela ${id}:`, error);
+					const { status, message } = erroExclusao(error, "a parcela");
+					return new Response(JSON.stringify({ error: message }), { status, headers: jsonHeaders });
+				}
 				return new Response(JSON.stringify({ message: "Parcela excluída com sucesso!" }), {
 					status: 200,
 					headers: corsHeaders,

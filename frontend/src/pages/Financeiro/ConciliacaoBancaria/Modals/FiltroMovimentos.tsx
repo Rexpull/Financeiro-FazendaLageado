@@ -177,7 +177,7 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
       {/* 🔹 Cabeçalho */}
       <div className="flex justify-between items-center bg-red-50 px-4 py-3 rounded-t-lg border-b">
         <h2 className="text-xl font-semibold text-gray-800">Filtros da Conciliação Bancária</h2>
-        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-700" aria-label="Fechar" title="Fechar">
           <FontAwesomeIcon icon={faTimes} size="xl" />
         </button>
       </div>
@@ -189,7 +189,7 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
         <div className="flex items-center justify-center gap-6 mb-4 mt-2">
           <label className={`flex items-center gap-2 cursor-pointer transition-all ${status === "todos" ? "" : "text-gray-500"}`}>
             <input type="radio" name="status" value="todos" checked={status === "todos"} onChange={() => setStatus("todos")} className="hidden" />
-            <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "todos" ? "bg-red-500 border-red-500" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
+            <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "todos" ? "bg-orange-600 border-orange-600" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
               {status === "todos" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck}/></span>}
             </div>
             <span>Mostrar todos</span>
@@ -197,7 +197,7 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
 
           <label className={`flex items-center gap-2 cursor-pointer transition-all ${status === "pendentes" ? "" : "text-gray-500"}`}>
             <input type="radio" name="status" value="pendentes" checked={status === "pendentes"} onChange={() => setStatus("pendentes")} className="hidden" />
-            <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "pendentes" ? "bg-red-500 border-red-500" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
+            <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "pendentes" ? "bg-orange-600 border-orange-600" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
               {status === "pendentes" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck}/></span>}
             </div>
             <span>Pendentes de conciliação</span>
@@ -292,7 +292,7 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
           </button>
           <button
             className={`text-white font-semibold px-5 py-2 rounded flex items-center gap-2 transition ${
-              dataInicio && dataFim ? "bg-red-500 hover:bg-red-600" : "bg-gray-300 cursor-not-allowed"
+              dataInicio && dataFim ? "bg-primary hover:bg-orange-500" : "bg-gray-300 cursor-not-allowed"
             }`}
             onClick={buscarMovimentos}
             disabled={!!erroData || !dataInicio || !dataFim}

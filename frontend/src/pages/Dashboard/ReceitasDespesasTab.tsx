@@ -25,6 +25,7 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import * as XLSX from 'xlsx';
 import ComparativoReceitasDespesasChart from './ComparativoReceitasDespesasChart';
+import { brlCompacto, pct as formatPct } from '../../Utils/formatos';
 
 const Chart = lazy(() => import("react-apexcharts"));
 
@@ -34,20 +35,6 @@ const formatCurrency = (value: number) => {
     currency: "BRL",
   }).format(value);
 };
-
-/** Short labels for horizontal bar value axis (bottom) — avoids overlap on large totals */
-function formatAxisCurrencyShort(n: number): string {
-  if (!Number.isFinite(n)) return "";
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000) {
-    return `${sign}${(abs / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} Mi`;
-  }
-  if (abs >= 100_000) {
-    return `${sign}${(abs / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil`;
-  }
-  return formatCurrency(n);
-}
 
 const truncateCat = (s: string, max = 36) =>
   s.length <= max ? s : `${s.slice(0, max - 1)}…`;
@@ -111,12 +98,12 @@ function buildHorizontalCompositionOptions(opts: {
       textAnchor: 'start' as const,
       formatter: (_v: number, ctx: any) => {
         const pct = percentSeries[ctx?.dataPointIndex] ?? 0;
-        // Tiny slices (e.g. bank fees ~R$ 82) read as 0.0% — show currency instead
+        // Tiny slices (e.g. bank fees ~R$ 82) read as 0,0% — show currency instead
         if (pct < 0.05) {
           const v = Math.abs(valueSeries[ctx?.dataPointIndex] ?? 0);
           return formatCurrency(v);
         }
-        return `${pct.toFixed(1)}%`;
+        return formatPct(pct);
       },
       style: { fontSize: '13px', fontWeight: 600, colors: ['#424242'] },
     },
@@ -132,23 +119,24 @@ function buildHorizontalCompositionOptions(opts: {
         const v = Math.abs(valueSeries[i] ?? 0);
         const pct = percentSeries[i] ?? 0;
         const cat = categories[i] ?? '';
-        return `<div style="padding:10px;line-height:1.5"><div style="max-width:320px">${cat}</div><strong>${formatCurrency(v)}</strong> <span style="opacity:.8">(${pct.toFixed(1)}%)</span></div>`;
+        return `<div style="padding:10px;line-height:1.5"><div style="max-width:320px">${cat}</div><strong>${formatCurrency(v)}</strong> <span style="opacity:.8">(${formatPct(pct)})</span></div>`;
       },
     },
     grid: {
       padding: { left: 4, right: 72, top: 4, bottom: 8 },
       xaxis: { lines: { show: true } },
     },
-    // Horizontal bars: numerical scale along the horizontal (reading) axis
+    // Horizontal bars: numerical scale along the horizontal (reading) axis.
+    // Short money ("R$ 1,5 mi") and no trim: trimmed labels read "1,5..." / "R$ 0...".
     xaxis: {
       categories,
       labels: {
-        formatter: (val: string | number) => formatAxisCurrencyShort(Number(val)),
+        formatter: (val: string | number) => brlCompacto(Number(val)),
         style: { fontSize: '12px' },
         rotate: 0,
         rotateAlways: false,
         hideOverlappingLabels: true,
-        trim: true,
+        trim: false,
       },
       tickAmount: 4,
       axisTicks: { show: true },
@@ -227,13 +215,18 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
   const despesasOperacionaisMes = despesasOperacionaisPeriodo;
   const totalInvestimentosMes = totalInvestimentosPeriodo;
   const totalDespesasConsolidadasMes = totalDespesasConsolidadasPeriodo;
+  // Same names and rules as the Fluxo de Caixa / Relatório de Centro de Custos:
+  // (A) Saldo operacional = R − custeio; (C) Saldo após investimentos = R − custeio − investimento = R − D
+  const saldoOperacionalMes = totalReceitasMes - despesasOperacionaisMes;
   const saldoMes = totalReceitasMes - totalDespesasConsolidadasMes;
   const pctInvestSobreReceita =
     totalReceitasMes > 0 ? (totalInvestimentosMes / totalReceitasMes) * 100 : null;
   const pctDespesasSobreReceita =
     totalReceitasMes > 0 ? (totalDespesasConsolidadasMes / totalReceitasMes) * 100 : null;
-  const pctAproveitamento =
+  // Lucratividade = C ÷ R (same name as the Fluxo de Caixa column)
+  const pctLucratividade =
     totalReceitasMes > 0 ? (saldoMes / totalReceitasMes) * 100 : null;
+  const rotuloPeriodo = mesSelecionado ? `${mesSelecionado}/${anoSelecionado}` : `Ano ${anoSelecionado}`;
 
   const exportReceitasDespesasExcel = () => {
     const totalRec = Math.max(totalReceitasMes, 1e-9);
@@ -286,11 +279,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
             <Typography variant="h5" fontWeight="bold" color="success.main" sx={{ fontSize: { xs: '1.35rem', md: '1.5rem' } }}>
               {formatCurrency(totalReceitasMes)}
             </Typography>
-            {pctInvestSobreReceita != null && (
-              <Typography variant="caption" color="info.main" sx={{ fontSize: '0.8rem', display: 'block', mt: 0.5, fontWeight: 600 }}>
-                Invest. sobre receita: {pctInvestSobreReceita.toFixed(1)}% ({formatCurrency(totalInvestimentosMes)})
-              </Typography>
-            )}
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem', display: 'block', mt: 0.5 }}>
+              {rotuloPeriodo} · por centro de custos
+            </Typography>
           </Box>
           <TrendingUpIcon color="success" sx={{ fontSize: 48 }} />
         </Paper>
@@ -307,17 +298,35 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         >
           <SavingsIcon sx={{ fontSize: 52, color: saldoMes >= 0 ? '#4caf50' : '#f44336' }} />
           <Box>
-            <Typography variant="subtitle2" sx={{ fontSize: '1rem', fontWeight: 700 }}>Saldo</Typography>
+            <Typography
+              variant="subtitle2"
+              sx={{ fontSize: '1rem', fontWeight: 700 }}
+              title="Receitas menos todas as despesas (custeio e investimentos). Financiamentos ficam de fora."
+            >
+              (C) Saldo após investimentos
+            </Typography>
             <Typography variant="h4" fontWeight="bold" color={saldoMes >= 0 ? 'success.main' : 'error.main'} sx={{ fontSize: { xs: '1.6rem', md: '2rem' }, lineHeight: 1.2 }}>
               {formatCurrency(saldoMes)}
             </Typography>
-            {pctAproveitamento != null && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontSize: '0.85rem', display: 'block', mt: 0.5 }}
+              title="Receitas menos despesas operacionais (custeio)"
+            >
+              (A) Saldo operacional:{' '}
+              <Box component="strong" sx={{ color: saldoOperacionalMes >= 0 ? 'success.main' : 'error.main' }}>
+                {formatCurrency(saldoOperacionalMes)}
+              </Box>
+            </Typography>
+            {pctLucratividade != null && (
               <Typography
                 variant="caption"
-                sx={{ fontSize: '0.85rem', display: 'block', mt: 0.5, fontWeight: 600 }}
+                sx={{ fontSize: '0.85rem', display: 'block', mt: 0.25, fontWeight: 600 }}
                 color={saldoMes >= 0 ? 'success.main' : 'error.main'}
+                title="(C) Saldo após investimentos ÷ receitas"
               >
-                {pctAproveitamento.toFixed(1)}% de aproveitamento
+                Lucratividade: {formatPct(pctLucratividade)}
               </Typography>
             )}
           </Box>
@@ -333,7 +342,8 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
             </Typography>
             {pctDespesasSobreReceita != null && (
               <Typography variant="caption" color="error.main" sx={{ fontSize: '0.8rem', display: 'block', mt: 0.25, fontWeight: 600 }}>
-                {pctDespesasSobreReceita.toFixed(1)}% sobre receita
+                {formatPct(pctDespesasSobreReceita)} da receita
+                {pctInvestSobreReceita != null && ` (investimentos: ${formatPct(pctInvestSobreReceita)})`}
               </Typography>
             )}
           </Box>
@@ -365,7 +375,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                 {mesSelecionado ? `Total de ${mesSelecionado}/${anoSelecionado}` : `Total Anual de ${anoSelecionado}`}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, fontSize: '0.8rem' }}>
-                Composição por centro de custos (mesmo critério do Fluxo)
+                Composição por centro de custos
               </Typography>
             </Box>
             <Box
@@ -680,8 +690,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                         />
                       );
                     }
-                    const concFoot = ordenado.filter((r) => r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
-                    const semFoot = ordenado.filter((r) => !r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
+                    const totalClassificado = ordenado.reduce((s, r) => s + r.valorAbs, 0);
                     return (
                       <>
                         <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -704,13 +713,13 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                           >
                             <TableHead>
                               <TableRow>
-                                <TableCell sx={{ fontWeight: 700, width: 48 }}>Ranking</TableCell>
+                                <TableCell sx={{ fontWeight: 700, width: 40 }}>#</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 700, width: 64 }}>
                                   %
                                 </TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 700, minWidth: 100 }}>
-                                  Valor
+                                  Receitas
                                 </TableCell>
                               </TableRow>
                             </TableHead>
@@ -730,7 +739,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                     {item.descricao}
                                   </TableCell>
                                   <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                                    {totalBasePct > 0 ? ((item.valorAbs / totalBasePct) * 100).toFixed(1) : '0.0'}%
+                                    {formatPct(totalBasePct > 0 ? (item.valorAbs / totalBasePct) * 100 : 0)}
                                   </TableCell>
                                   <TableCell align="right" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'success.main' }}>
                                     {formatCurrency(item.valorAbs)}
@@ -758,7 +767,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                               color="text.secondary"
                               sx={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
                             >
-                              <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot + semFoot)}</span>
+                              <span title="Soma dos valores classificados por centro de custos no período"><strong className="text-green-600">Total classificado:</strong> {formatCurrency(totalClassificado)}</span>
                               <span className="text-gray-500">|</span>
                               <span title="Lançamentos do período ainda sem centro de custos (pendentes na conciliação)">
                                 <strong className="text-orange-500">Sem centro de custos:</strong> {formatCurrency(semCentro.receitas)}
@@ -788,8 +797,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                 : '',
                         }))
                         .sort((a, b) => b.valorAbs - a.valorAbs);
-                      const concFoot = ordenado.filter((r) => r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
-                      const semFoot = ordenado.filter((r) => !r.conciliado).reduce((s, r) => s + r.valorAbs, 0);
+                      const totalClassificado = ordenado.reduce((s, r) => s + r.valorAbs, 0);
                       return (
                         <>
                           <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -812,13 +820,13 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                             >
                               <TableHead>
                                 <TableRow>
-                                  <TableCell sx={{ fontWeight: 700, width: 48 }}>Ranking</TableCell>
+                                  <TableCell sx={{ fontWeight: 700, width: 40 }}>#</TableCell>
                                   <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
                                   <TableCell align="right" sx={{ fontWeight: 700, width: 64 }}>
                                     %
                                   </TableCell>
                                   <TableCell align="right" sx={{ fontWeight: 700, minWidth: 100 }}>
-                                    Valor
+                                    Despesas
                                   </TableCell>
                                 </TableRow>
                               </TableHead>
@@ -837,16 +845,16 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                     >
                                       {item.descricao}
                                       {item.subtipo && (
-                                        <Box component="span" sx={{ ml: 0.75, color: 'text.secondary', fontSize: '0.68rem' }}>
-                                          · {item.subtipo}
+                                        <Box component="span" sx={{ color: 'text.secondary', fontSize: '0.68rem' }}>
+                                          {` · ${item.subtipo}`}
                                         </Box>
                                       )}
                                     </TableCell>
                                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                                      {item.pct.toFixed(1)}%
+                                      {formatPct(item.pct)}
                                     </TableCell>
                                     <TableCell align="right" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'error.main' }}>
-                                      {formatCurrency(-item.valorAbs)}
+                                      {formatCurrency(item.valorAbs)}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -871,7 +879,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                 color="text.secondary"
                                 sx={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
                               >
-                                <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot + semFoot)}</span>
+                                <span title="Soma dos valores classificados por centro de custos no período"><strong className="text-green-600">Total classificado:</strong> {formatCurrency(totalClassificado)}</span>
                                 <span className="text-gray-500">|</span>
                                 <span title="Lançamentos do período ainda sem centro de custos (pendentes na conciliação)">
                                   <strong className="text-orange-500">Sem centro de custos:</strong> {formatCurrency(semCentro.despesas)}
@@ -886,8 +894,8 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                       <NoData
                         message={
                           mesSelecionado
-                            ? `Nenhuma despesa agrupada para ${mesSelecionado}/${anoSelecionado}.`
-                            : `Nenhuma despesa agrupada para ${anoSelecionado}.`
+                            ? `Nenhuma despesa classificada em ${mesSelecionado}/${anoSelecionado}.`
+                            : `Nenhuma despesa classificada em ${anoSelecionado}.`
                         }
                       />
                     )}
