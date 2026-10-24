@@ -1,4 +1,5 @@
 import { D1Database } from "@cloudflare/workers-types";
+import { resumoSaldoDevedor, type FinanciamentoRow, type ParcelaRow, type ResumoSaldoDevedorMes } from "../utils/saldoDevedor";
 
 export interface DashboardTotais {
   receitas: number;
@@ -1445,6 +1446,17 @@ export class DashboardRepository {
   }
 
   // Novo método: Contratos novos por mês/ano
+  /** Saldo devedor mês a mês (parcelas não liquidadas), quitados e créditos novos — ver utils/saldoDevedor. */
+  async getResumoSaldoDevedor(ano: number): Promise<ResumoSaldoDevedorMes[]> {
+    const [fin, parc] = await Promise.all([
+      this.db.prepare(`SELECT id, dataContrato, valor FROM Financiamento`).all<FinanciamentoRow>(),
+      this.db
+        .prepare(`SELECT idFinanciamento, valor, status, dt_vencimento, dt_liquidacao FROM parcelaFinanciamento`)
+        .all<ParcelaRow>(),
+    ]);
+    return resumoSaldoDevedor(ano, fin.results ?? [], parc.results ?? []);
+  }
+
   async getContratosNovos(ano?: number, mes?: number): Promise<{
     labels: string[],
     valores: number[],

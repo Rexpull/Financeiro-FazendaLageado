@@ -179,6 +179,9 @@ export class DashboardController {
           case "contratos-novos":
             data = await this.repository.getContratosNovos(ano, mes);
             break;
+          case "saldo-devedor":
+            data = await this.repository.getResumoSaldoDevedor(ano ?? new Date().getFullYear());
+            break;
           default:
             return new Response(JSON.stringify({ error: "Tipo de filtro inválido" }), {
               status: 400,

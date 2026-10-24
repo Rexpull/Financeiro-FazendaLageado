@@ -15,13 +15,15 @@ import {
   Tab,
   Tooltip,
 } from "@mui/material";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { alpha } from "@mui/material/styles";
 import BreadCrumb from "../../components/BreadCrumb";
-import { getDashboardData, DashboardData, getParcelasAVencer, getContratosLiquidados, getContratosNovos, ParcelasAVencer, ContratosLiquidados, ContratosNovos } from "../../services/dashboardService";
+import { getDashboardData, DashboardData, getResumoSaldoDevedor, ResumoSaldoDevedorMes } from "../../services/dashboardService";
 import { getContasCorrentes } from '../../services/contaCorrenteService';
 import ReceitasDespesasTab from './ReceitasDespesasTab';
 import FinanciamentosTab from './FinanciamentosTab';
+import ComparativoReceitasDespesasChart from './ComparativoReceitasDespesasChart';
+import { totaisPorCentros } from './totaisPorCentros';
+import { saldoDevedorPeriodo } from './saldoDevedorPeriodo';
 
 const Dashboard = () => {
   const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
@@ -32,11 +34,8 @@ const Dashboard = () => {
   const [bancoSelecionado, setBancoSelecionado] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [activeDashboardTab, setActiveDashboardTab] = useState<'receitas-despesas' | 'financiamentos' | 'resultado'>('receitas-despesas');
-  const [activeTab, setActiveTab] = useState<'parcelas-vencer' | 'contratos-liquidados' | 'contratos-novos'>('parcelas-vencer');
   const [tipoDetalhamento, setTipoDetalhamento] = useState<'receitas' | 'despesas'>('despesas');
-  const [parcelasAVencer, setParcelasAVencer] = useState<ParcelasAVencer | null>(null);
-  const [contratosLiquidados, setContratosLiquidados] = useState<ContratosLiquidados | null>(null);
-  const [contratosNovos, setContratosNovos] = useState<ContratosNovos | null>(null);
+  const [resumoSaldoDevedor, setResumoSaldoDevedor] = useState<ResumoSaldoDevedorMes[] | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     totaisAno: {
       receitas: 0,
@@ -144,28 +143,18 @@ const Dashboard = () => {
     fetchData();
   }, [anoSelecionado, mesSelecionado, contasSelecionadas, contasReady]);
 
-  // Carregar dados de financiamentos para comparativos (inclusive na aba Receitas/Despesas)
+  // Saldo devedor mês a mês (tela Financiamentos e quadro de financiamentos do Resultado consolidado)
   useEffect(() => {
-    const fetchFiltrosRapidos = async () => {
-      try {
-        const mesIdx = mesSelecionado ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mesSelecionado) : -1;
-        const mesParam = mesIdx >= 0 ? mesIdx + 1 : undefined;
-
-        const [parcelasData, liquidadosData, novosData] = await Promise.all([
-          getParcelasAVencer(anoSelecionado, mesParam),
-          getContratosLiquidados(anoSelecionado, mesParam),
-          getContratosNovos(anoSelecionado, mesParam),
-        ]);
-        setParcelasAVencer(parcelasData);
-        setContratosLiquidados(liquidadosData);
-        setContratosNovos(novosData);
-      } catch (err) {
-        console.error('Erro ao carregar filtros rápidos:', err);
-      }
-    };
-
-    fetchFiltrosRapidos();
-  }, [anoSelecionado, mesSelecionado]);
+    let ativo = true;
+    setResumoSaldoDevedor(null);
+    getResumoSaldoDevedor(anoSelecionado)
+      .then((r) => { if (ativo) setResumoSaldoDevedor(r); })
+      .catch((err) => {
+        console.error('Erro ao carregar saldo devedor:', err);
+        if (ativo) setResumoSaldoDevedor([]);
+      });
+    return () => { ativo = false; };
+  }, [anoSelecionado]);
 
   // Filtros inteligentes
   const bancosDisponiveis: any[] = [];
@@ -206,9 +195,6 @@ const Dashboard = () => {
     return null;
   }
 
-  const receitasAno = dashboardData.totaisAno.receitas;
-  const despesasMagnitudeAno = Math.abs(dashboardData.totaisAno.despesas);
-  const saldoOperacionalAno = receitasAno - despesasMagnitudeAno;
 
   return (
     <div style={{width: '100%'}}>
@@ -281,168 +267,100 @@ const Dashboard = () => {
 
         {activeDashboardTab === 'financiamentos' && (
           <FinanciamentosTab
-            dashboardData={dashboardData}
             anoSelecionado={anoSelecionado}
             mesSelecionado={mesSelecionado}
-            activeTab={activeTab}
-            parcelasAVencer={parcelasAVencer}
-            contratosLiquidados={contratosLiquidados}
-            contratosNovos={contratosNovos}
-            onActiveTabChange={setActiveTab}
+            resumo={resumoSaldoDevedor}
           />
         )}
 
-        {activeDashboardTab === 'resultado' && (
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: 'text.primary' }}>
-              Resultado consolidado — {anoSelecionado}
-            </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2.5 }}>
-              <Paper
-                elevation={0}
-                sx={(theme) => ({
-                  p: 2.5,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderLeft: '4px solid',
-                  borderLeftColor: 'success.main',
-                  bgcolor: alpha(theme.palette.success.main, 0.08),
-                  transition: 'box-shadow 0.2s',
-                  '&:hover': { boxShadow: 2 },
-                })}
-              >
-                <Typography variant="overline" sx={{ color: 'success.dark', fontWeight: 600, letterSpacing: 0.8 }}>
-                  Receitas (ano)
-                </Typography>
-                <Typography variant="h5" fontWeight="bold" color="success.dark" sx={{ mt: 0.5 }}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.receitas)}
-                </Typography>
-              </Paper>
-              <Paper
-                elevation={0}
-                sx={(theme) => ({
-                  p: 2.5,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderLeft: '4px solid',
-                  borderLeftColor: 'error.main',
-                  bgcolor: alpha(theme.palette.error.main, 0.08),
-                  transition: 'box-shadow 0.2s',
-                  '&:hover': { boxShadow: 2 },
-                })}
-              >
-                <Typography variant="overline" sx={{ color: 'error.dark', fontWeight: 600, letterSpacing: 0.8 }}>
-                  Despesas (ano)
-                </Typography>
-                <Typography variant="h5" fontWeight="bold" color="error.dark" sx={{ mt: 0.5 }}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(despesasMagnitudeAno)}
-                </Typography>
-              </Paper>
-              <Paper
-                elevation={0}
-                sx={(theme) => ({
-                  p: 2.5,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderLeft: '4px solid',
-                  borderLeftColor: saldoOperacionalAno >= 0 ? 'success.main' : 'error.main',
-                  bgcolor: saldoOperacionalAno >= 0 ? alpha(theme.palette.success.main, 0.08) : alpha(theme.palette.error.main, 0.08),
-                  transition: 'box-shadow 0.2s',
-                  '&:hover': { boxShadow: 2 },
-                })}
-              >
-                <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.8 }}>
-                  Saldo operação (R − D)
-                </Typography>
-                <Typography variant="h5" fontWeight="bold" color={saldoOperacionalAno >= 0 ? 'success.dark' : 'error.dark'} sx={{ mt: 0.5 }}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoOperacionalAno)}
-                </Typography>
-              </Paper>
-              <Paper
-                elevation={0}
-                sx={(theme) => ({
-                  p: 2.5,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderLeft: '4px solid',
-                  borderLeftColor: 'info.main',
-                  bgcolor: alpha(theme.palette.info.main, 0.08),
-                  transition: 'box-shadow 0.2s',
-                  '&:hover': { boxShadow: 2 },
-                })}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                  <Typography variant="overline" sx={{ color: 'info.dark', fontWeight: 600, letterSpacing: 0.8 }}>
-                    Financiamentos (ano)
-                  </Typography>
-                  <Tooltip
-                    title={
-                      'Contratos com data neste ano. "Contratado" é o valor cadastrado do financiamento. ' +
-                      '"Liquidado" e "Em aberto" somam parcelas; podem ultrapassar o contratado se o cronograma incluir juros.'
-                    }
-                    arrow
-                  >
-                    <InfoOutlinedIcon sx={{ fontSize: '1rem', color: 'text.secondary', cursor: 'help', verticalAlign: 'middle' }} />
-                  </Tooltip>
-                </Box>
-                <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5 }}>
-                    <Typography variant="body2" color="text.secondary">Contratado</Typography>
-                    <Typography variant="subtitle1" fontWeight="600" color="info.dark">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalFinanciado)}
-                    </Typography>
+        {activeDashboardTab === 'resultado' && (() => {
+          // Acumulado do ano: centros de custo (custeio = operacionais; investimento inclui aplicações financeiras)
+          const t = totaisPorCentros(dashboardData.receitasDespesasAno ?? dashboardData.receitasDespesas);
+          const saldoOperacional = t.receitas - t.custeio;
+          const saldoFinanceiro = t.receitas - t.despesas;
+          const fin = saldoDevedorPeriodo(resumoSaldoDevedor ?? [], -1);
+          const brl = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+          const cardSx = (cor: 'success' | 'error' | 'info' | 'warning') => (theme: any) => ({
+            p: 2.5,
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderLeft: '4px solid',
+            borderLeftColor: `${cor}.main`,
+            bgcolor: alpha(theme.palette[cor].main, 0.08),
+          });
+          const Linha = ({ rotulo, valor, cor, forte }: { rotulo: string; valor: string; cor: string; forte?: boolean }) => (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="body2" color="text.secondary" fontWeight={forte ? 700 : 400}>{rotulo}</Typography>
+              <Typography variant={forte ? 'h6' : 'subtitle1'} fontWeight={forte ? 'bold' : 600} color={cor}>{valor}</Typography>
+            </Box>
+          );
+          return (
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: 'text.primary' }}>
+                Resultado consolidado — acumulado de {anoSelecionado}
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 2.5 }}>
+                <Paper elevation={0} sx={cardSx('success')}>
+                  <Typography variant="subtitle2" sx={{ color: 'success.dark', fontWeight: 700 }}>Receitas</Typography>
+                  <Typography variant="h5" fontWeight="bold" color="success.dark" sx={{ mt: 0.5 }}>{brl(t.receitas)}</Typography>
+                </Paper>
+
+                <Paper elevation={0} sx={cardSx('error')}>
+                  <Typography variant="subtitle2" sx={{ color: 'error.dark', fontWeight: 700, mb: 1.25 }}>Despesas</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                    <Linha rotulo="Operacionais (custeio)" valor={brl(t.custeio)} cor="error.dark" />
+                    <Linha rotulo="Investimentos e aplicações financeiras" valor={brl(t.investimento)} cor="warning.dark" />
+                    <Box sx={{ pt: 0.75, borderTop: '1px solid', borderColor: 'divider' }}>
+                      <Linha rotulo="Total" valor={brl(t.despesas)} cor="error.dark" forte />
+                    </Box>
                   </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5 }}>
-                    <Typography variant="body2" color="text.secondary">Liquidado</Typography>
-                    <Typography variant="subtitle1" fontWeight="600" color="success.dark">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalQuitado)}
-                    </Typography>
+                </Paper>
+
+                <Paper elevation={0} sx={cardSx(saldoFinanceiro >= 0 ? 'success' : 'error')}>
+                  <Typography variant="subtitle2" sx={{ color: 'text.primary', fontWeight: 700, mb: 1.25 }}>Saldo</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                    <Tooltip arrow title="Receitas menos despesas operacionais: capacidade da atividade de gerar recursos para sustentar suas operações.">
+                      <Box><Linha rotulo="Operacional" valor={brl(saldoOperacional)} cor={saldoOperacional >= 0 ? 'success.dark' : 'error.dark'} /></Box>
+                    </Tooltip>
+                    <Tooltip arrow title="Receitas menos todas as despesas, incluindo investimentos e aplicações financeiras. Financiamentos ficam de fora (tela própria).">
+                      <Box sx={{ pt: 0.75, borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Linha rotulo="Financeiro" valor={brl(saldoFinanceiro)} cor={saldoFinanceiro >= 0 ? 'success.dark' : 'error.dark'} forte />
+                      </Box>
+                    </Tooltip>
                   </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 0.5, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="body2" fontWeight="600" color="text.primary">Em aberto</Typography>
-                    <Typography variant="h6" fontWeight="bold" color="info.dark">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}
-                    </Typography>
-                  </Box>
-                </Box>
+                </Paper>
+
+                <Paper elevation={0} sx={cardSx('info')}>
+                  <Typography variant="subtitle2" sx={{ color: 'info.dark', fontWeight: 700, mb: 1.25 }}>Financiamentos</Typography>
+                  {fin ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                      <Linha rotulo="Créditos novos" valor={brl(fin.creditosNovos)} cor="info.dark" />
+                      <Linha rotulo="Amortizações e liquidações" valor={brl(fin.quitados)} cor="success.dark" />
+                      {fin.contratosNovos > 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          {fin.contratosNovos} contrato(s) novo(s), valor contratado {brl(fin.valorContratadoNovos)}
+                        </Typography>
+                      )}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">Carregando…</Typography>
+                  )}
+                </Paper>
+              </Box>
+
+              {/* Acumulado do ano por centros de custo (mesma regra da tela Receitas e Despesas) */}
+              <Paper elevation={0} sx={{ p: 2, mt: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                <ComparativoReceitasDespesasChart
+                  title={`Comparativo Acumulado (${anoSelecionado})`}
+                  categoria={`Ano ${anoSelecionado}`}
+                  totais={t}
+                  height={320}
+                />
               </Paper>
             </Box>
-            <Paper
-              elevation={0}
-              sx={(theme) => ({
-                p: 3,
-                mt: 3,
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: 'divider',
-                bgcolor: theme.palette.mode === 'light' ? alpha(theme.palette.grey[500], 0.06) : alpha(theme.palette.grey[500], 0.12),
-              })}
-            >
-              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.primary' }}>
-                Resumo
-              </Typography>
-              <Typography variant="body1" sx={{ lineHeight: 1.7, color: 'text.secondary' }}>
-                Resultado operacional (receitas menos despesas) no ano:{' '}
-                <Box component="span" fontWeight="bold" color={saldoOperacionalAno >= 0 ? 'success.dark' : 'error.dark'}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoOperacionalAno)}
-                </Box>
-                . Financiamentos:{' '}
-                <Box component="span" fontWeight="bold" color="text.primary">
-                  {dashboardData.totaisAno.financiamentos.contratosAtivos} contrato(s) ativo(s)
-                </Box>
-                , valor em aberto{' '}
-                <Box component="span" fontWeight="bold" color="info.dark">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardData.totaisAno.financiamentos.totalEmAberto)}
-                </Box>
-                .
-              </Typography>
-            </Paper>
-          </Box>
-        )}
+          );
+        })()}
       </Box>
     </div>
   );

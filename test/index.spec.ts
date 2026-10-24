@@ -20,7 +20,7 @@ async function applySchema() {
 async function seed() {
 	await db.prepare(`INSERT INTO banco (id, nome, codigo) VALUES (1, 'Banco Teste', '001')`).run();
 	await db
-		.prepare(`INSERT INTO contaCorrente (id, tipo, idBanco, responsavel) VALUES (24, 'contaCorrente', 1, 'Teste')`)
+		.prepare(`INSERT INTO contaCorrente (id, tipo, idBanco, responsavel) VALUES (24, 'contaCorrente', 1, 'BB GFS')`)
 		.run();
 	await db
 		.prepare(
@@ -187,6 +187,16 @@ describe('OFX batch import keeps rateio (multi centro de custos)', () => {
 		expect(mov.resultadoList.map((r) => r.idPlanoContas)).toEqual([mov.idPlanoContas]);
 	});
 
+	it('Fluxo detail labels each account only by its name', async () => {
+		await importarComRateio();
+		const params = new URLSearchParams({ planoId: '42', mes: '9', tipo: 'despesas', ano: '2026', tipoAgrupamento: 'centros', contas: '24' });
+		const res = await SELF.fetch(`${BASE}/api/fluxoCaixa/detalhar?${params}`);
+		expect(res.status).toBe(200);
+		const rows = (await res.json()) as Array<{ conta: string; valor: number }>;
+		expect(rows.length).toBeGreaterThan(0);
+		expect(new Set(rows.map((r) => r.conta))).toEqual(new Set(['BB GFS']));
+	});
+
 	it('valor correction on re-import rescales rateio instead of deleting it', async () => {
 		const { id: idMov } = await importarComRateio();
 		// Same FITID + day, corrected valor (parser fix scenario)
@@ -249,5 +259,34 @@ describe('cron validarParcelasVencidas', () => {
 			{ id: 3, status: 'Liquidado', dt_liquidacao: '2020-02-10' },
 			{ id: 4, status: 'Vencido', dt_liquidacao: null },
 		]);
+	});
+});
+
+describe('dashboard saldo devedor', () => {
+	beforeAll(async () => {
+		await applySchema();
+	});
+
+	it('returns 12 months where saldo final = inicial − quitados + novos', async () => {
+		await db
+			.prepare(
+				`INSERT INTO Financiamento (id, responsavel, dataContrato, valor, numeroContrato) VALUES
+				 (1, 'GJN', '2025-06-06', 1000, 'A'), (2, 'JPT', '2026-10-15', 5000, 'B')`,
+			)
+			.run();
+		await db
+			.prepare(
+				`INSERT INTO parcelaFinanciamento (idFinanciamento, valor, status, numParcela, dt_vencimento, dt_liquidacao) VALUES
+				 (1, 300, 'Liquidado', 1, '2026-10-15', '2026-10-14'),
+				 (1, 450, 'Aberto', 2, '2027-06-15', NULL),
+				 (2, 3000, 'Aberto', 1, '2027-10-15', NULL)`,
+			)
+			.run();
+		const res = await SELF.fetch(`${BASE}/api/dashboard/financiamentos?tipo=saldo-devedor&ano=2026`);
+		expect(res.status).toBe(200);
+		const meses = (await res.json()) as Array<{ mes: number; saldoInicial: number; quitados: number; creditosNovos: number; saldoFinal: number }>;
+		expect(meses).toHaveLength(12);
+		const out = meses[9];
+		expect(out).toMatchObject({ saldoInicial: 750, quitados: 300, creditosNovos: 3000, saldoFinal: 3450 });
 	});
 });

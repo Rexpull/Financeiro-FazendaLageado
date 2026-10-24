@@ -1,16 +1,24 @@
-import React, { use, useState } from "react";
+import React, { useState } from "react";
 import { useAuth } from "./AuthContext";
-import artLogin from "../../assets/img/loginArt.svg"
 import logoFazenda from "../../assets/img/logo-FazendaLageado.svg";
-import dashedGreen from "../../assets/img/dashedArt-green.svg"
-import bgGrass from  "../../assets/img/loginBg-grass.jpg"
-import footerBg from "../../assets/img/footer-bg.webp"
-import { log } from "console";
+import bgPasto from "../../assets/img/loginBg-grass.jpg";
+
+// Palette taken from the farm's logo: pasture green, field green, straw yellow.
+const COR = {
+  pasto: "#1E4D2B",
+  campo: "#3F7D3A",
+  campoEscuro: "#33682F",
+  palha: "#E2B23A",
+  terra: "#2A2622",
+  texto2: "#5B6158",
+  linha: "#D5DACF",
+};
 
 const Login: React.FC = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -20,109 +28,142 @@ const Login: React.FC = () => {
     setErro("");
 
     const success = await login(email, senha);
-    
-    if (!success) {      
-      setErro("Usuário/E-mail ou senha inválidos");
+
+    if (!success) {
+      setErro("Usuário ou senha incorretos. Confira os dados e tente de novo.");
     }
     setIsLoading(false);
   };
 
   return (
-    <div className="container-login" style={{ height: "100vh", position: "relative" }}>
-      {/* Background de montanhas fixo */}
-      <img src={footerBg} alt="Patos Valley" width={240} height={72} style={{ height: "45vh" }} className="absolute bottom-0 w-full mx-auto" />
+    <div className="login-v3 min-h-screen w-full flex flex-col md:flex-row bg-white" style={{ color: COR.terra }}>
+      <style>{`
+        .login-v3 { font-family: "Nunito Sans", system-ui, sans-serif; }
+        .login-v3 .slab { font-family: "Zilla Slab", Georgia, serif; }
+        .login-v3 .campo {
+          width: 100%; height: 48px; padding: 0 14px; border-radius: 8px;
+          border: 1px solid ${COR.linha}; background: #fff; color: ${COR.terra};
+          font-size: 16px; outline: none; transition: border-color .15s, box-shadow .15s;
+        }
+        .login-v3 .campo::placeholder { color: #9AA096; }
+        .login-v3 .campo:focus { border-color: ${COR.campo}; box-shadow: 0 0 0 3px ${COR.palha}66; }
+        .login-v3 .entrar {
+          height: 48px; width: 100%; border-radius: 8px; border: 0; cursor: pointer;
+          background: ${COR.campo}; color: #fff; font-weight: 700; font-size: 16px;
+          transition: background-color .15s;
+        }
+        .login-v3 .entrar:hover:not(:disabled) { background: ${COR.campoEscuro}; }
+        .login-v3 .entrar:focus-visible, .login-v3 .olho:focus-visible { outline: 3px solid ${COR.palha}; outline-offset: 2px; }
+        .login-v3 .entrar:disabled { opacity: .7; cursor: progress; }
+        @media (prefers-reduced-motion: reduce) { .login-v3 * { transition: none !important; animation: none !important; } }
+      `}</style>
 
+      {/* Pasture photo: the one memorable element. Short band on mobile, full height on desktop. */}
+      <section
+        className="relative h-44 md:h-auto md:min-h-screen md:w-[56%] overflow-hidden"
+        style={{ backgroundImage: `url(${bgPasto})`, backgroundSize: "cover", backgroundPosition: "center 70%" }}
+        aria-hidden="true"
+      >
+        <div
+          className="absolute inset-0"
+          style={{ background: `linear-gradient(180deg, rgba(30,77,43,0) 20%, rgba(30,77,43,.55) 60%, ${COR.pasto} 100%)` }}
+        />
+        <div className="absolute left-0 right-0 bottom-0 px-6 pb-5 md:px-14 md:pb-14">
+          <div className="hidden md:block mb-5" style={{ width: 56, height: 4, background: COR.palha, borderRadius: 2 }} />
+          <h1 className="slab text-white leading-[0.95] font-semibold text-[34px] md:text-[64px]" style={{ letterSpacing: "-0.01em" }}>
+            Financeiro
+            <br className="hidden md:block" /> Lageado
+          </h1>
+          <p className="hidden md:block mt-4 max-w-md text-[17px] leading-relaxed" style={{ color: "rgba(255,255,255,.88)" }}>
+            Conciliação bancária, fluxo de caixa e financiamentos da fazenda em um só lugar.
+          </p>
+        </div>
+      </section>
 
-      <div className="content-login" style={{ maxHeight: "750px", position: "relative", zIndex: 1 }}>
-        <div className="login-container-image" style={{ height: "100%" }}>
-          <div className="login-div" style={{ height: "100%", width: "100%", borderRadius: "25px 0 0 25px" }}>
-            <div className="login-image-child" style={{ position: "relative", pointerEvents: 'none' }}>
-              <div className="background-image" loading="lazy"></div> 
-              <img src={artLogin} style={{ width: "65%", float: "left", zIndex: 2 }} className="LogoBg" />
-              <div className="spanBg" style={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column", paddingTop: "30px" }}>
-                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column" }}>
-                  <span className="font-nun spanBgTitle text-center" style={{ zIndex: 2, fontWeight: 700, fontSize: "45px", color: "antiquewhite" }}>Financeiro Lageado</span>
-                  <span className="font-nun spanBgSubTitle" style={{ zIndex: 2, fontWeight: 400, fontSize: "25px", color: "antiquewhite" }}>Mais gestão para seu negócio</span>
+      {/* Sign-in form */}
+      <main className="flex-1 flex flex-col px-6 py-10 md:px-16">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-[380px]">
+            <img src={logoFazenda} alt="Fazenda Lageado — Pecuária leiteira" className="w-44 md:w-52 mb-10 select-none" draggable={false} />
+
+            <h2 className="slab text-[30px] font-semibold leading-tight">Entrar</h2>
+            <p className="mt-1 mb-8 text-[15px]" style={{ color: COR.texto2 }}>
+              Use o usuário ou e-mail cadastrado no sistema.
+            </p>
+
+            <form onSubmit={handleLogin} noValidate={false} className="flex flex-col gap-5">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="login-usuario" className="text-[14px] font-bold">
+                  Usuário ou e-mail
+                </label>
+                <input
+                  id="login-usuario"
+                  type="text"
+                  autoComplete="username"
+                  className="campo"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="login-senha" className="text-[14px] font-bold">
+                  Senha
+                </label>
+                <div className="relative">
+                  <input
+                    id="login-senha"
+                    type={mostrarSenha ? "text" : "password"}
+                    autoComplete="current-password"
+                    className="campo"
+                    style={{ paddingRight: 84 }}
+                    value={senha}
+                    onChange={(e) => setSenha(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="olho absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded text-[13px] font-bold"
+                    style={{ color: COR.campo, background: "transparent" }}
+                    onClick={() => setMostrarSenha((v) => !v)}
+                    aria-pressed={mostrarSenha}
+                    aria-controls="login-senha"
+                  >
+                    {mostrarSenha ? "Ocultar" : "Mostrar"}
+                  </button>
                 </div>
               </div>
-              <div className="area">
-                <ul className="circles">
-                  <li></li>
-                  <li></li>
-                  <li></li>
-                  <li></li>
-                  <li></li>
-                </ul>
-              </div>
-            </div>
+
+              {erro && (
+                <p
+                  role="alert"
+                  className="text-[14px] rounded-lg px-3 py-2.5"
+                  style={{ color: "#8A1C1C", background: "#FCEDEC", border: "1px solid #F3C9C6" }}
+                >
+                  {erro}
+                </p>
+              )}
+
+              <button type="submit" className="entrar mt-1" disabled={isLoading}>
+                {isLoading ? (
+                  <span className="inline-flex items-center justify-center gap-3">
+                    <span className="animate-spin h-4 w-4 rounded-full border-2 border-white border-t-transparent" />
+                    Entrando…
+                  </span>
+                ) : (
+                  "Entrar"
+                )}
+              </button>
+            </form>
           </div>
         </div>
-        <div id="page-container" className="fade in" style={{ position: "relative", overflowY: "hidden" }}>
-          <div style={{ position: "absolute", top: 0, right: 0, borderRadius: "0 20px 0 0", overflow: "hidden" }}>
-            <img src={dashedGreen} alt="Bolha Verde" style={{ pointerEvents: "none", width: "100px", transform: "translate(5px, -5px)" }} className="bubbleRed" />
-          </div>
-          <img src={dashedGreen} alt="Bolha Verde" style={{ pointerEvents: "none", position: "absolute", bottom: "-5%", left: "-11%", width: "23%", float: "right" }} />
-          <div className="login-container-info">
-            <div className="login login-v2 animated flipInX" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px", marginBottom: "55px" }} data-pageload-addclass="animated flipInX">
-              <div className="login-header">
-                <div className="brand" style={{ display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
-                  <img src={logoFazenda} style={{ width: "70%", float: "left", pointerEvents: 'none' }} className="logoFullMetre" />
-                  <span className="font-nun" style={{ marginTop: "20px", fontWeight: 700, fontSize: "40px", color: "#222222" }}>Login da sua conta</span>
-                  <span className="font-nun" style={{ marginBottom: "15px", fontWeight: 400, fontSize: "18px", color: "#525252" }}>Que bom te ver por aqui, seja bem vindo!</span>
-                </div>
-              </div>
-              <div className="login-content">
-                <form onSubmit={handleLogin} className="w-full">
-                  <div className="form-group" style={{ display: "flex", flexDirection: "column", cursor: "text", marginBottom: "15px" }}>
-                    <span className="span-form">Usuário / E-mail</span>
-                    <input
-                      type="text"
-                      placeholder="Usuário ou E-mail"
-                      className="ui-inputfield ui-inputtext ui-widget ui-state-default ui-corner-all form-control form-login input-lg"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group" style={{ display: "flex", flexDirection: "column", cursor: "text" }}>
-                    <span className="span-form">Senha</span>
-                    <input
-                      type="password"
-                      placeholder="Senha"
-                      className="ui-inputfield ui-inputtext ui-widget ui-state-default ui-corner-all form-control form-login input-lg"
-                      value={senha}
-                      onChange={(e) => setSenha(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="login-buttons">
-                    <button type="submit" className={`btn btn-login btn-success btn-block btn-lg text-center ${isLoading ? "opacity-50 cursor-not-allowed" : "hover:bg-red-600"}`} id="btnEntrar" disabled={isLoading}>
-                      {!isLoading ? (
-                        <span>Entrar</span>
-                      ) : (
-                        <div style={{    display: 'flex',
-                              width: '100%',
-                              justifyContent: 'center',
-                              gap: '15px',
-                              alignItems: 'center',
-                              opacity: '0.5',}}>
-                          <div className="animate-spin h-4 w-4 border-t-2 border-white border-solid rounded-full"></div>
-                          <span>Entrando...</span>
-                        </div>
-                      )} 
-                    </button>
-                  </div>
-                  {erro.includes("E-mail ou senha inválidos") && (
-                    <div className="alert alert-danger font-nun" style={{ marginTop: "15px", alignSelf: "center", justifyContent: "center" }}>
-                    <strong style={{ color: "#ff4646" }}>Ops... Falha na autenticação, tente novamente</strong>
-                  </div>
-                  )}
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+
+        <p className="mt-10 text-[13px] text-center md:text-left" style={{ color: COR.texto2 }}>
+          Fazenda Lageado, pecuária leiteira
+        </p>
+      </main>
     </div>
   );
 };

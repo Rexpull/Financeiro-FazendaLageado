@@ -24,6 +24,7 @@ import SavingsIcon from '@mui/icons-material/Savings';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import * as XLSX from 'xlsx';
+import ComparativoReceitasDespesasChart from './ComparativoReceitasDespesasChart';
 
 const Chart = lazy(() => import("react-apexcharts"));
 
@@ -163,6 +164,8 @@ function buildHorizontalCompositionOptions(opts: {
   };
 }
 
+const CARD_SX = { border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } } as const;
+
 const NoData = ({ icon, message }: { icon?: React.ReactNode, message: string }) => (
   <Box sx={{ textAlign: 'center', py: 6, color: 'grey.500' }}>
     {icon || <InsertChartOutlinedIcon sx={{ fontSize: 60, color: 'grey.400' }} />}
@@ -203,18 +206,6 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
     (item) => item.subtipoDespesa === 'investimento'
   );
 
-  const yearRd = dashboardData?.receitasDespesasAno ?? dashboardData?.receitasDespesas;
-  const receitasAnoCentros = withoutOutrosRows(yearRd?.receitasAgrupadoPorCentros ?? []);
-  const despesasAnoAgrupado = withoutOutrosRows(
-    (yearRd?.agrupadoPor ?? []).filter((item) => item.tipoMovimento === 'D')
-  );
-  const despesasAnoCusteio = despesasAnoAgrupado.filter(
-    (item) => item.subtipoDespesa === 'custeio'
-  );
-  const despesasAnoInvest = despesasAnoAgrupado.filter(
-    (item) => item.subtipoDespesa === 'investimento'
-  );
-
   const totalReceitasPeriodo = receitasPorCentros.reduce(
     (s, r) => s + Math.abs(Number(r.valor) || 0),
     0
@@ -228,14 +219,6 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
     0
   );
   const totalDespesasConsolidadasPeriodo = despesasOperacionaisPeriodo + totalInvestimentosPeriodo;
-
-  const totalReceitasAno = receitasAnoCentros.reduce(
-    (s, r) => s + Math.abs(Number(r.valor) || 0),
-    0
-  );
-  const totalDespesasConsolidadasAno =
-    despesasAnoCusteio.reduce((s, r) => s + Math.abs(Number(r.valor) || 0), 0) +
-    despesasAnoInvest.reduce((s, r) => s + Math.abs(Number(r.valor) || 0), 0);
 
   const totalReceitasMes = totalReceitasPeriodo;
   const despesasOperacionaisMes = despesasOperacionaisPeriodo;
@@ -292,13 +275,13 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
 
   return (
     <>
-      {/* Cards de Totais */}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" }, gap: 2, mb: 4 }}>
-        <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
+      {/* Cards do período: Receitas | Saldo (destaque, ao centro) | Despesas. Acumulados do ano ficam no Resultado consolidado. */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1.15fr 1fr" }, gap: 2, mb: 4, alignItems: 'stretch' }}>
+        <Paper elevation={3} sx={CARD_SX}>
           <Box>
             <Typography variant="subtitle2" sx={{ fontSize: '0.95rem' }}>Receitas</Typography>
-            <Typography variant="h5" fontWeight="bold" color="success.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', fontSize: { xs: '1.35rem', md: '1.5rem' }}}>
-              {formatCurrency(totalReceitasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '13px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno)})</span></Typography>
+            <Typography variant="h5" fontWeight="bold" color="success.main" sx={{ fontSize: { xs: '1.35rem', md: '1.5rem' } }}>
+              {formatCurrency(totalReceitasMes)}
             </Typography>
             {pctInvestSobreReceita != null && (
               <Typography variant="caption" color="info.main" sx={{ fontSize: '0.8rem', display: 'block', mt: 0.5, fontWeight: 600 }}>
@@ -308,11 +291,39 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
           </Box>
           <TrendingUpIcon color="success" sx={{ fontSize: 48 }} />
         </Paper>
-        <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
+        <Paper
+          elevation={3}
+          sx={{
+            ...CARD_SX,
+            border: '2px solid',
+            borderColor: saldoMes >= 0 ? 'success.light' : 'error.light',
+            justifyContent: 'center',
+            gap: 2,
+            textAlign: 'center',
+          }}
+        >
+          <SavingsIcon sx={{ fontSize: 52, color: saldoMes >= 0 ? '#4caf50' : '#f44336' }} />
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontSize: '1rem', fontWeight: 700 }}>Saldo</Typography>
+            <Typography variant="h4" fontWeight="bold" color={saldoMes >= 0 ? 'success.main' : 'error.main'} sx={{ fontSize: { xs: '1.6rem', md: '2rem' }, lineHeight: 1.2 }}>
+              {formatCurrency(saldoMes)}
+            </Typography>
+            {pctAproveitamento != null && (
+              <Typography
+                variant="caption"
+                sx={{ fontSize: '0.85rem', display: 'block', mt: 0.5, fontWeight: 600 }}
+                color={saldoMes >= 0 ? 'success.main' : 'error.main'}
+              >
+                {pctAproveitamento.toFixed(1)}% de aproveitamento
+              </Typography>
+            )}
+          </Box>
+        </Paper>
+        <Paper elevation={3} sx={CARD_SX}>
           <Box>
             <Typography variant="subtitle2" sx={{ fontSize: '0.95rem' }}>Despesas</Typography>
-            <Typography variant="h5" fontWeight="bold" color="error.main" sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', fontSize: { xs: '1.35rem', md: '1.5rem' }}}>
-              {formatCurrency(totalDespesasConsolidadasMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '13px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalDespesasConsolidadasAno)})</span></Typography>
+            <Typography variant="h5" fontWeight="bold" color="error.main" sx={{ fontSize: { xs: '1.35rem', md: '1.5rem' } }}>
+              {formatCurrency(totalDespesasConsolidadasMes)}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem', display: 'block', mt: 0.25 }}>
               Custeio: {formatCurrency(despesasOperacionaisMes)} | Invest.: {formatCurrency(totalInvestimentosMes)}
@@ -324,24 +335,6 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
             )}
           </Box>
           <TrendingDownIcon color="error" sx={{ fontSize: 48 }} />
-        </Paper>
-        <Paper elevation={3} sx={{ border: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, py: 1.5, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', transition: 'box-shadow 0.2s', '&:hover': { boxShadow: '0 4px 24px rgba(0,0,0,0.10)' } }}>
-          <Box>
-            <Typography variant="subtitle2" sx={{ fontSize: '0.95rem' }}>Saldo</Typography>
-            <Typography variant="h5" fontWeight="bold" color={saldoMes >= 0 ? 'success.main' : 'error.main'} sx={{display: 'flex', flexDirection: 'column', alignItems: 'start', fontSize: { xs: '1.35rem', md: '1.5rem' }}}>
-              {formatCurrency(saldoMes)} <Typography variant="caption" color="text.secondary"> <span style={{fontSize: '13px', marginLeft: '4px'}}> (Anual: {formatCurrency(totalReceitasAno - totalDespesasConsolidadasAno)})</span></Typography>
-            </Typography>
-            {pctAproveitamento != null && (
-              <Typography
-                variant="caption"
-                sx={{ fontSize: '0.8rem', display: 'block', mt: 0.5, fontWeight: 600 }}
-                color={saldoMes >= 0 ? 'success.main' : 'error.main'}
-              >
-                {pctAproveitamento.toFixed(1)}% de aproveitamento
-              </Typography>
-            )}
-          </Box>
-          <SavingsIcon sx={{ fontSize: 48, color: saldoMes >= 0 ? '#4caf50' : '#f44336' }} />
         </Paper>
       </Box>
 
@@ -589,7 +582,7 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
       <Box sx={{ mt: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', mb: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            Análise de Receitas e Despesas - {anoSelecionado}
+            Análise de Receitas e Despesas - {mesSelecionado ? `${mesSelecionado}/${anoSelecionado}` : anoSelecionado}
           </Typography>
           <Button
             variant="outlined"
@@ -604,52 +597,17 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
         <Divider sx={{ mb: 2, bgcolor: 'grey.200', height: 2, border: 'none' }} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 2 }}>
           <Paper sx={{ p: 2, minHeight: 350 }}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, height: '100%' }}>
-              {[
-                {
-                  title: mesSelecionado ? `Comparativo Mensal (${mesSelecionado}/${anoSelecionado})` : `Comparativo do mês atual`,
-                  categoria: mesSelecionado || 'Mês',
-                  receitas: totalReceitasMes,
-                  despesas: totalDespesasConsolidadasMes,
-                },
-                {
-                  title: `Comparativo Acumulado (${anoSelecionado})`,
-                  categoria: `Ano ${anoSelecionado}`,
-                  receitas: totalReceitasAno,
-                  despesas: totalDespesasConsolidadasAno,
-                },
-              ].map((bloco) => (
-                <Box key={bloco.title} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.5 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
-                    {bloco.title}
-                  </Typography>
-                  <Suspense fallback={<CircularProgress />}>
-                    <Chart
-                      options={{
-                        chart: { type: 'bar', toolbar: { show: false } },
-                        plotOptions: { bar: { horizontal: false, columnWidth: '48%', borderRadius: 4 } },
-                        xaxis: { categories: [bloco.categoria] },
-                        yaxis: {
-                          title: { text: 'Valor (R$)' },
-                          labels: { formatter: (val: number) => formatCurrency(val) },
-                        },
-                        dataLabels: { enabled: false },
-                        tooltip: { y: { formatter: (val: number) => formatCurrency(val) } },
-                        colors: ['#4caf50', '#f44336'],
-                        legend: { position: 'top' },
-                      }}
-                      series={[
-                        { name: 'Receitas', data: [bloco.receitas] },
-                        { name: 'Despesas (custeio + investimento)', data: [bloco.despesas] },
-                      ]}
-                      type="bar"
-                      height={300}
-                      width="100%"
-                    />
-                  </Suspense>
-                </Box>
-              ))}
-            </Box>
+            <ComparativoReceitasDespesasChart
+              title={mesSelecionado ? `Comparativo Mensal (${mesSelecionado}/${anoSelecionado})` : `Comparativo do ano (${anoSelecionado})`}
+              categoria={mesSelecionado || `Ano ${anoSelecionado}`}
+              totais={{
+                receitas: totalReceitasMes,
+                custeio: despesasOperacionaisMes,
+                investimento: totalInvestimentosMes,
+                despesas: totalDespesasConsolidadasMes,
+                saldo: saldoMes,
+              }}
+            />
           </Paper>
           <TableContainer
             component={Paper}

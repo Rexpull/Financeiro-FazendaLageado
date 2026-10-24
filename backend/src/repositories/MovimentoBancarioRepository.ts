@@ -270,9 +270,8 @@ export class MovimentoBancarioRepository {
 			.all();
 
 		return results.map((row: any) => {
-			const contaFormatada = `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'} - ${
-				row.responsavel || 'Responsável'
-			}`;
+			// Fluxo detail tabs show only the account name (e.g. "BB GFS"); bank + number as fallback
+			const contaFormatada = row.responsavel || `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'}`;
 			return {
 				id: row.id,
 				data: row.dt_vencimento || row.dtMovimento,
@@ -355,9 +354,8 @@ export class MovimentoBancarioRepository {
 		const { results } = await this.db.prepare(sql).bind(...params).all();
 
 		return results.map((row: any) => {
-			const contaFormatada = `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'} - ${
-				row.responsavel || 'Responsável'
-			}`;
+			// Fluxo detail tabs show only the account name (e.g. "BB GFS"); bank + number as fallback
+			const contaFormatada = row.responsavel || `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'}`;
 			return {
 				id: row.id,
 				data: row.dtMovimento,

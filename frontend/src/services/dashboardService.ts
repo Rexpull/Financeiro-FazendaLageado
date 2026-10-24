@@ -326,3 +326,25 @@ export const getContratosNovos = async (ano?: number, mes?: number): Promise<Con
     throw error;
   }
 }; 
+export interface ResumoSaldoDevedorMes {
+  mes: number; // 1..12
+  saldoInicial: number;
+  quitados: number;
+  creditosNovos: number;
+  valorContratadoNovos: number;
+  contratosNovos: number;
+  saldoFinal: number;
+}
+
+/** Saldo devedor mês a mês: saldo inicial, quitados, créditos novos e saldo final (parcelas não liquidadas). */
+export const getResumoSaldoDevedor = async (ano: number): Promise<ResumoSaldoDevedorMes[]> => {
+  const API_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_URL) ? (import.meta as any).env.VITE_API_URL : '';
+  const params = new URLSearchParams({ tipo: 'saldo-devedor', ano: String(ano) });
+  const url = API_URL ? `${API_URL}/api/dashboard/financiamentos?${params.toString()}` : `/api/dashboard/financiamentos?${params.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errorData: any = await res.json().catch(() => ({}));
+    throw new Error(errorData?.error || 'Erro ao buscar saldo devedor');
+  }
+  return await res.json();
+};
