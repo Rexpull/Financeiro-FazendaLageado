@@ -1,10 +1,38 @@
 import { Financiamento } from "../models/Financiamento";
 import { ParcelaFinanciamento } from "../models/ParcelaFinanciamento";
+import { garantirSemUso, plural } from "../utils/verificarUsoRegistro";
+
+// PRAGMA/ALTER check runs at most once per worker instance (not on every request).
+let colunasVerificadas: Promise<void> | null = null;
+
+function mapParcela(p: Record<string, unknown>): ParcelaFinanciamento {
+	return {
+		id: p.id as number,
+		idMovimentoBancario: p.idMovimentoBancario as number | null,
+		idFinanciamento: p.idFinanciamento as number,
+		valor: p.valor as number,
+		status: p.status as 'Aberto' | 'Vencido' | 'Liquidado',
+		numParcela: p.numParcela as number,
+		dt_lancamento: p.dt_lancamento as string,
+		dt_vencimento: p.dt_vencimento as string,
+		dt_liquidacao: p.dt_liquidacao as string | null
+	} as ParcelaFinanciamento;
+}
 
 export class FinanciamentoRepository {
 	constructor(private db: D1Database) {}
 
-	private async ensureColumnsExist(): Promise<void> {
+	private ensureColumnsExist(): Promise<void> {
+		if (!colunasVerificadas) {
+			colunasVerificadas = this.verificarColunas().catch((error) => {
+				colunasVerificadas = null; // allow a retry on the next call
+				throw error;
+			});
+		}
+		return colunasVerificadas.catch(() => undefined);
+	}
+
+	private async verificarColunas(): Promise<void> {
 		try {
 			// Verificar se as colunas modalidade e nomeModalidadeParticular existem
 			const { results } = await this.db.prepare(`
@@ -32,46 +60,36 @@ export class FinanciamentoRepository {
 			}
 		} catch (error) {
 			console.error('❌ Erro ao verificar/criar colunas do Financiamento:', error);
-			// Não lançar erro para não quebrar a aplicação se as colunas já existirem
+			// ensureColumnsExist swallows it (does not break the request) and retries on the next call
+			throw error;
 		}
 	}
 
 	async getAll(): Promise<Financiamento[]> {
 		try {
 			await this.ensureColumnsExist();
-			const { results } = await this.db.prepare(`
-				SELECT f.*, 
-					(SELECT COUNT(*) FROM parcelaFinanciamento WHERE idFinanciamento = f.id) as totalParcelas
-				FROM Financiamento f
-			`).all();
+			// 2 queries in one round trip (was 1 + one per contract).
+			const [financiamentos, parcelas] = await this.db.batch([
+				this.db.prepare(`SELECT * FROM Financiamento`),
+				this.db.prepare(`SELECT * FROM parcelaFinanciamento ORDER BY idFinanciamento, numParcela`),
+			]);
 
-			const financiamentos = await Promise.all(results.map(async (result) => {
-				const parcelas = await this.db.prepare(`
-					SELECT * FROM parcelaFinanciamento 
-					WHERE idFinanciamento = ?
-					ORDER BY numParcela
-				`).bind(result.id).all();
+			const parcelasPorFinanciamento = new Map<number, ParcelaFinanciamento[]>();
+			for (const row of parcelas.results as Record<string, unknown>[]) {
+				const parcela = mapParcela(row);
+				const lista = parcelasPorFinanciamento.get(parcela.idFinanciamento);
+				if (lista) lista.push(parcela);
+				else parcelasPorFinanciamento.set(parcela.idFinanciamento, [parcela]);
+			}
 
-				const parcelasList = parcelas.results.map(p => ({
-					id: p.id as number,
-					idMovimentoBancario: p.idMovimentoBancario as number | null,
-					idFinanciamento: p.idFinanciamento as number,
-					valor: p.valor as number,
-					status: p.status as 'Aberto' | 'Vencido' | 'Liquidado',
-					numParcela: p.numParcela as number,
-					dt_lancamento: p.dt_lancamento as string,
-					dt_vencimento: p.dt_vencimento as string,
-					dt_liquidacao: p.dt_liquidacao as string | null
-				}));
-
+			return (financiamentos.results as Record<string, unknown>[]).map((result) => {
+				const parcelasList = parcelasPorFinanciamento.get(result.id as number) ?? [];
 				return {
 					...result,
 					parcelasList,
-					totalParcelas: result.totalParcelas
-				} as Financiamento;
-			}));
-
-			return financiamentos;
+					totalParcelas: parcelasList.length
+				} as unknown as Financiamento;
+			});
 		} catch (error) {
 			console.error("Erro ao buscar todos os financiamentos:", error);
 			throw new Error("Erro ao buscar financiamentos");
@@ -84,12 +102,12 @@ export class FinanciamentoRepository {
 			const result = await this.db.prepare(`SELECT * FROM Financiamento WHERE id = ?`).bind(id).first();
 			if (!result) return null;
 
-			const parcelasResult = await this.db.prepare(`SELECT * FROM parcelaFinanciamento WHERE idFinanciamento = ?`).bind(id).all();
+			const parcelasResult = await this.db.prepare(`SELECT * FROM parcelaFinanciamento WHERE idFinanciamento = ? ORDER BY numParcela`).bind(id).all();
 
 			return {
 				...result,
-				parcelasList: parcelasResult.results as ParcelaFinanciamento[]
-			} as Financiamento;
+				parcelasList: parcelasResult.results as unknown as ParcelaFinanciamento[]
+			} as unknown as Financiamento;
 		} catch (error) {
 			console.error(`Erro ao buscar financiamento ${id}:`, error);
 			throw new Error("Erro ao buscar financiamento");
@@ -260,14 +278,47 @@ export class FinanciamentoRepository {
 		}
 	}
 
+	/** Throws RegistroEmUsoError when bank movements/resultados are linked to the contract or its parcelas. */
+	async assertPodeExcluir(id: number): Promise<void> {
+		await garantirSemUso(
+			this.db,
+			[
+				{
+					// distinct existing movements linked to the contract itself, its parcelas, or their Resultado rows
+					sql: `SELECT COUNT(*) AS n FROM (
+						SELECT mb.id FROM MovimentoBancario mb WHERE mb.idFinanciamento = ?
+						UNION
+						SELECT mb.id FROM parcelaFinanciamento p JOIN MovimentoBancario mb ON mb.id = p.idMovimentoBancario
+						WHERE p.idFinanciamento = ?
+						UNION
+						SELECT mb.id FROM Resultado r
+						JOIN parcelaFinanciamento p ON p.id = r.idParcelaFinanciamento
+						JOIN MovimentoBancario mb ON mb.id = r.idMovimentoBancario
+						WHERE p.idFinanciamento = ?
+					)`,
+					binds: [id, id, id],
+					rotulo: (n) => plural(n, 'lançamento bancário vinculado', 'lançamentos bancários vinculados'),
+				},
+				{
+					sql: `SELECT COUNT(*) AS n FROM Resultado r
+						JOIN parcelaFinanciamento p ON p.id = r.idParcelaFinanciamento
+						WHERE p.idFinanciamento = ? AND r.idMovimentoBancario IS NULL`,
+					binds: [id],
+					rotulo: (n) => plural(n, 'lançamento de resultado vinculado às parcelas', 'lançamentos de resultado vinculados às parcelas'),
+				},
+			],
+			'Este financiamento tem',
+			'Desvincule-os antes de excluir.',
+		);
+	}
+
+	/** Deletes the contract and its parcelas atomically; refuses (409) when movements are linked. */
 	async deleteById(id: number): Promise<void> {
-		try {
-			await this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idFinanciamento = ?`).bind(id).run();
-			await this.db.prepare(`DELETE FROM Financiamento WHERE id = ?`).bind(id).run();
-		} catch (error) {
-			console.error(`Erro ao excluir financiamento ${id}:`, error);
-			throw new Error("Erro ao excluir financiamento");
-		}
+		await this.assertPodeExcluir(id);
+		await this.db.batch([
+			this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idFinanciamento = ?`).bind(id),
+			this.db.prepare(`DELETE FROM Financiamento WHERE id = ?`).bind(id),
+		]);
 	}
 
 	async getFinanciamentosPorMes(ano: number) {

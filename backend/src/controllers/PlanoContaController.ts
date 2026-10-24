@@ -1,5 +1,6 @@
 import { PlanoContaRepository } from "../repositories/PlanoContaRepository";
 import { PlanoConta } from "../models/PlanoConta";
+import { erroExclusao } from "../utils/verificarUsoRegistro";
 
 export class PlanoContaController {
     private planoRepository: PlanoContaRepository;
@@ -47,7 +48,7 @@ export class PlanoContaController {
                 } catch (error) {
                     const errorMessage = (error as Error).message;
 
-                    if (errorMessage.includes("UNIQUE constraint failed: plano_contas.descricao")) {
+                    if (errorMessage.includes("UNIQUE constraint failed: plano_contas.descricao") || errorMessage.includes("Já existe um plano de contas com esta descrição")) {
                         return new Response(JSON.stringify({ error: "Já existe um plano de contas com esta descrição." }), { status: 400, headers: corsHeaders });
                     }
                 
@@ -66,17 +67,30 @@ export class PlanoContaController {
                         return new Response(JSON.stringify({ error: "ID inválido!" }), { status: 400, headers: corsHeaders });
                     }
                 
-                    if (!body.descricao || !body.tipo) {
-                        return new Response(JSON.stringify({ error: "Campos obrigatórios não preenchidos!" }), { status: 400, headers: corsHeaders });
+                    const nivel = Number(body?.nivel);
+                    if (
+                        !body ||
+                        !body.descricao ||
+                        !body.tipo ||
+                        !body.hierarquia ||
+                        !Number.isInteger(nivel) ||
+                        nivel < 1 ||
+                        (nivel > 1 && (body.idReferente === undefined || body.idReferente === null))
+                    ) {
+                        return new Response(JSON.stringify({ error: "Campos obrigatórios não preenchidos! (descrição, tipo, nível, hierarquia e plano referente para níveis acima de 1)" }), { status: 400, headers: corsHeaders });
+                    }
+
+                    if (!(await this.planoRepository.getById(id))) {
+                        return new Response(JSON.stringify({ error: "Plano de contas não encontrado." }), { status: 404, headers: corsHeaders });
                     }
                 
-                    await this.planoRepository.update(id, body);
+                    await this.planoRepository.update(id, { ...body, nivel, idReferente: body.idReferente ?? null });
                     return new Response(JSON.stringify({ message: "Plano de contas atualizado com sucesso!" }), { status: 200, headers: corsHeaders });
                 
                 } catch (error) {
                     const errorMessage = (error as Error).message;
                 
-                    if (errorMessage.includes("UNIQUE constraint failed: plano_contas.descricao")) {
+                    if (errorMessage.includes("UNIQUE constraint failed: plano_contas.descricao") || errorMessage.includes("Já existe um plano de contas com esta descrição")) {
                         console.error("❌ Já existe um plano de contas com esta descrição.");
                         return new Response(JSON.stringify({ error: "Já existe um plano de contas com esta descrição." }), { status: 400, headers: corsHeaders });
                     }
@@ -131,8 +145,10 @@ export class PlanoContaController {
                         headers: corsHeaders,
                     });
                 } catch (error) {
-                    return new Response(JSON.stringify({ error: (error as Error).message }), {
-                        status: 400,
+                    console.error("❌ Erro ao excluir plano de contas:", error);
+                    const { status, message } = erroExclusao(error, "o plano de contas");
+                    return new Response(JSON.stringify({ error: message }), {
+                        status,
                         headers: corsHeaders,
                     });
                 }

@@ -253,14 +253,6 @@ function agruparDuplicadosPorFITIDMesmoDia(movimentos: MovimentoTemporario[]): M
 		grupos[k].push(m);
 	}
 
-	// FITID genérico (ex.: 000000): mantém cada lançamento individual
-	movimentos
-		.filter((m) => isFitidGenerico(m.identificadorOfx))
-		.forEach((m) => {
-			const k = `__solo__${m.identificadorOfx}|${m.dtMovimento}|${m.valor}|${m.historico}`;
-			grupos[k] = [m];
-		});
-
 	const saida: MovimentoTemporario[] = [];
 	Object.entries(grupos).forEach(([k, lista]) => {
 		if (lista.length === 1) {
@@ -285,7 +277,98 @@ function agruparDuplicadosPorFITIDMesmoDia(movimentos: MovimentoTemporario[]): M
 		saida.push(base);
 	});
 
+	// FITID genérico (ex.: 000000): mantém cada lançamento individual — inclusive linhas
+	// idênticas repetidas (mesmo dia/valor/histórico), que antes eram sobrescritas no mapa.
+	saida.push(...movimentos.filter((m) => isFitidGenerico(m.identificadorOfx)));
+
 	return saida;
+}
+
+/**
+ * Garante identificadores únicos dentro do mesmo arquivo: a primeira ocorrência mantém o
+ * formato original (compatível com linhas já importadas) e as repetições seguintes recebem
+ * `|#2`, `|#3`… (ex.: FITID genérico do Santander, mesmo dia e mesmo valor).
+ */
+export function desambiguarIdentificadoresRepetidos(identificadores: string[]): string[] {
+	const ocorrencias = new Map<string, number>();
+	const usados = new Set(identificadores);
+	return identificadores.map((id) => {
+		const n = (ocorrencias.get(id) ?? 0) + 1;
+		ocorrencias.set(id, n);
+		if (n === 1) return id;
+		let sufixo = n;
+		let candidato = `${id}|#${sufixo}`;
+		while (usados.has(candidato)) {
+			sufixo += 1;
+			candidato = `${id}|#${sufixo}`;
+		}
+		usados.add(candidato);
+		ocorrencias.set(id, sufixo);
+		return candidato;
+	});
+}
+
+/** Rótulos de charset do header OFX 1.x / declaração XML do OFX 2.x → rótulo do TextDecoder. */
+function charsetDeclarado(headerAscii: string): string | null {
+	const xmlEncoding = headerAscii.match(/<\?xml[^>]*\bencoding\s*=\s*["']([^"']+)["']/i)?.[1]?.trim().toLowerCase();
+	if (xmlEncoding) {
+		if (/^utf-?8$/.test(xmlEncoding)) return 'utf-8';
+		if (/^(windows-?1252|cp1252|1252)$/.test(xmlEncoding)) return 'windows-1252';
+		if (/^(iso-?8859-?1|latin-?1|8859-1)$/.test(xmlEncoding)) return 'windows-1252';
+		if (/^(us-?ascii|ascii)$/.test(xmlEncoding)) return null;
+		return xmlEncoding;
+	}
+
+	const encoding = headerAscii.match(/^\s*ENCODING\s*:\s*([^\r\n]+)/im)?.[1]?.trim().toUpperCase();
+	const charset = headerAscii.match(/^\s*CHARSET\s*:\s*([^\r\n]+)/im)?.[1]?.trim().toUpperCase();
+
+	if (encoding && /^UTF-?8$/.test(encoding)) return 'utf-8';
+	if (charset) {
+		if (/^(WINDOWS-?)?1252$/.test(charset) || charset === 'CP1252') return 'windows-1252';
+		// ISO-8859-1: o TextDecoder (WHATWG) já mapeia latin1 para windows-1252
+		if (/^(ISO-?)?8859-?1$/.test(charset) || charset === 'LATIN1') return 'windows-1252';
+		if (/^UTF-?8$/.test(charset)) return 'utf-8';
+	}
+	return null;
+}
+
+function decodificar(bytes: Uint8Array, label: string, fatal = false): string {
+	return new TextDecoder(label, { fatal }).decode(bytes);
+}
+
+function tentarUtf8(bytes: Uint8Array): string | null {
+	try {
+		return decodificar(bytes, 'utf-8', true);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Decodifica o conteúdo bruto do OFX respeitando o charset declarado no header
+ * (CHARSET:1252 / ENCODING:UTF-8 / <?xml encoding="..."?>). Sem declaração, tenta UTF-8
+ * estrito e cai para windows-1252 (padrão dos bancos brasileiros).
+ */
+export function decodeOfxBytes(input: ArrayBuffer | Uint8Array): string {
+	const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+	// header é ASCII: latin1 nunca falha e preserva as posições
+	const headerAscii = decodificar(bytes.subarray(0, 2048), 'windows-1252');
+	const declarado = charsetDeclarado(headerAscii);
+	const temNaoAscii = bytes.some((b) => b > 0x7f);
+	if (!temNaoAscii) return decodificar(bytes, 'utf-8');
+
+	if (declarado && declarado !== 'utf-8' && declarado !== 'windows-1252') {
+		try {
+			return decodificar(bytes, declarado);
+		} catch {
+			// rótulo desconhecido pelo TextDecoder: segue o fallback padrão
+		}
+	}
+
+	// UTF-8 estrito primeiro, mesmo quando o header diz 1252: bytes 1252 com acento
+	// praticamente nunca formam UTF-8 válido, então sucesso aqui indica arquivo UTF-8
+	// rotulado errado. Declarado UTF-8 com bytes inválidos (ou 1252 de fato) → windows-1252.
+	return tentarUtf8(bytes) ?? decodificar(bytes, 'windows-1252');
 }
 
 export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX } {
@@ -366,14 +449,14 @@ export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBanc
 
 	const trnTypeByIdentificadorOfx = new Map<string, string | undefined>();
 
-	const movimentos: MovimentoBancario[] = movimentosProcessados.map((mov) => {
-		const identificadorImportacao = buildIdentificadorImportacao(
-			mov.identificadorOfx,
-			mov.dtMovimento,
-			mov.valor,
-			mov.refNum,
-			mov.checkNum,
-		);
+	const identificadores = desambiguarIdentificadoresRepetidos(
+		movimentosProcessados.map((mov) =>
+			buildIdentificadorImportacao(mov.identificadorOfx, mov.dtMovimento, mov.valor, mov.refNum, mov.checkNum),
+		),
+	);
+
+	const movimentos: MovimentoBancario[] = movimentosProcessados.map((mov, idx) => {
+		const identificadorImportacao = identificadores[idx];
 		trnTypeByIdentificadorOfx.set(identificadorImportacao, mov.trnType);
 
 		return {
@@ -413,17 +496,32 @@ export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBanc
 	return { movimentos, totalizadores };
 }
 
-export const parseOFXFile = (file: File): Promise<{ movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX }> => {
+function lerArquivoComoArrayBuffer(file: File): Promise<ArrayBuffer> {
+	if (typeof file.arrayBuffer === 'function') {
+		return file.arrayBuffer();
+	}
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
 		reader.onload = (event) => {
-			if (!event.target?.result) {
+			const result = event.target?.result;
+			if (!result || typeof result === 'string') {
 				reject('Erro ao ler o arquivo.');
 				return;
 			}
-			resolve(parseOFXContent(event.target.result as string));
+			resolve(result);
 		};
 		reader.onerror = () => reject('Erro ao processar o arquivo OFX.');
-		reader.readAsText(file);
+		reader.readAsArrayBuffer(file);
 	});
+}
+
+export const parseOFXFile = async (file: File): Promise<{ movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX }> => {
+	let buffer: ArrayBuffer;
+	try {
+		buffer = await lerArquivoComoArrayBuffer(file);
+	} catch (error) {
+		throw typeof error === 'string' ? error : 'Erro ao processar o arquivo OFX.';
+	}
+	if (!buffer.byteLength) throw 'Erro ao ler o arquivo.';
+	return parseOFXContent(decodeOfxBytes(buffer));
 };

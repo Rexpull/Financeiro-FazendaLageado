@@ -1,5 +1,14 @@
 import { CentroCustosRepository } from "../repositories/CentroCustosRepository";
 
+/** Input validation failure: the controller answers 400 with this message. */
+export class CentroCustosValidacaoError extends Error {
+  readonly status = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = "CentroCustosValidacaoError";
+  }
+}
+
 export class CentroCustosService {
   private centroCustosRepository: CentroCustosRepository;
 
@@ -16,23 +25,23 @@ export class CentroCustosService {
   }
 
   async criarCentroCustos(descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA') {
-    if (!descricao) throw new Error("Descrição é obrigatória");
+    if (!descricao || !String(descricao).trim()) throw new CentroCustosValidacaoError("Descrição é obrigatória");
     if (tipoReceitaDespesa && tipoReceitaDespesa !== 'RECEITA' && tipoReceitaDespesa !== 'DESPESA') {
-      throw new Error("tipoReceitaDespesa deve ser 'RECEITA' ou 'DESPESA'");
+      throw new CentroCustosValidacaoError("tipoReceitaDespesa deve ser 'RECEITA' ou 'DESPESA'");
     }
     if (tipoReceitaDespesa === 'DESPESA' && tipo && tipo !== 'CUSTEIO' && tipo !== 'INVESTIMENTO') {
-      throw new Error("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO' quando tipoReceitaDespesa for 'DESPESA'");
+      throw new CentroCustosValidacaoError("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO' quando tipoReceitaDespesa for 'DESPESA'");
     }
     return await this.centroCustosRepository.create(descricao, tipo, tipoReceitaDespesa);
   }
 
   async atualizarCentroCustos(id: number, descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA') {
-    if (!descricao) throw new Error("Descrição é obrigatória");
+    if (!descricao || !String(descricao).trim()) throw new CentroCustosValidacaoError("Descrição é obrigatória");
     if (tipoReceitaDespesa && tipoReceitaDespesa !== 'RECEITA' && tipoReceitaDespesa !== 'DESPESA') {
-      throw new Error("tipoReceitaDespesa deve ser 'RECEITA' ou 'DESPESA'");
+      throw new CentroCustosValidacaoError("tipoReceitaDespesa deve ser 'RECEITA' ou 'DESPESA'");
     }
     if (tipoReceitaDespesa === 'DESPESA' && tipo && tipo !== 'CUSTEIO' && tipo !== 'INVESTIMENTO') {
-      throw new Error("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO' quando tipoReceitaDespesa for 'DESPESA'");
+      throw new CentroCustosValidacaoError("Tipo deve ser 'CUSTEIO' ou 'INVESTIMENTO' quando tipoReceitaDespesa for 'DESPESA'");
     }
     await this.centroCustosRepository.update(id, descricao, tipo, tipoReceitaDespesa);
   }

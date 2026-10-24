@@ -1,5 +1,6 @@
 import { PessoaRepository } from "../repositories/PessoaRepository";
 import { Pessoa } from "../models/Pessoa";
+import { erroExclusao } from "../utils/verificarUsoRegistro";
 
 export class PessoaController {
     private pessoaRepository: PessoaRepository;
@@ -30,10 +31,16 @@ export class PessoaController {
             }
 
             
-            if (req.method === "GET" && pathname.startsWith("/pessoa/")) {
-                const id = parseInt(pathname.split("/")[2]);
-                const pessoa = await this.pessoaRepository.getById(id);
-                return pessoa ? Response.json(pessoa) : new Response("Pessoa não encontrada", { status: 404 });
+            if (method === "GET" && pathname.startsWith("/api/pessoa/")) {
+                const raw = pathname.split("/")[3] ?? "";
+                const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+                if (!/^\d+$/.test(raw)) {
+                    return new Response(JSON.stringify({ error: "ID inválido!" }), { status: 400, headers: jsonHeaders });
+                }
+                const pessoa = await this.pessoaRepository.getById(parseInt(raw, 10));
+                return pessoa
+                    ? new Response(JSON.stringify(pessoa), { headers: jsonHeaders })
+                    : new Response(JSON.stringify({ error: "Pessoa não encontrada" }), { status: 404, headers: jsonHeaders });
             }
 
             if (method === "POST" && pathname === "/api/pessoa") {
@@ -51,7 +58,19 @@ export class PessoaController {
 
             if (method === "DELETE" && pathname.startsWith("/api/pessoa/")) {
                 const id = parseInt(pathname.split("/")[3]);
-                await this.pessoaRepository.deleteById(id);
+                if (!id || isNaN(id)) {
+                    return new Response(JSON.stringify({ error: "ID inválido!" }), { status: 400, headers: corsHeaders });
+                }
+                try {
+                    await this.pessoaRepository.deleteById(id);
+                } catch (error) {
+                    console.error("❌ Erro ao excluir pessoa:", error);
+                    const { status, message } = erroExclusao(error, "a pessoa");
+                    return new Response(JSON.stringify({ error: message }), {
+                        status,
+                        headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    });
+                }
                 return new Response(JSON.stringify({ message: "Pessoa excluída com sucesso!" }), { status: 200, headers: corsHeaders });
             }
 

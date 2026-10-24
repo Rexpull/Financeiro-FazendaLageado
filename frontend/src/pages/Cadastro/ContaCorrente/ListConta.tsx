@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef  } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSearch, faPlus, faEllipsisV, faUniversity, faChevronCircleDown, faChevronDown, faEdit, faTrash } from "@fortawesome/free-solid-svg-icons";
-import { listarContas, salvarConta, excluirConta, atualizarStatusConta  } from "../../../services/contaCorrenteService";
+import { listarContas, salvarConta, atualizarStatusConta } from "../../../services/contaCorrenteService";
+import { excluirContaCadastro } from "../../../services/excluirCadastroService";
 import ContaCorrenteModal from "./ContaCorrenteModal"; // Importando o Modal
 import DialogModal from "../../../components/DialogModal"
 import { ContaCorrente } from "../../../../../backend/src/models/ContaCorrente";
@@ -154,11 +155,12 @@ const ListConta: React.FC = () => {
   const handleDeleteConfirm = async () => {
     if (deleteContaId === null) return;
     try {
-      await excluirConta(deleteContaId);
+      await excluirContaCadastro(deleteContaId); // toasts the API message (409 when in use)
       setContas((prev) => prev.filter((conta) => conta.id !== deleteContaId));
       setConfirmModalOpen(false);
     } catch (error) {
       console.error("Erro ao excluir conta:", error);
+      setConfirmModalOpen(false);
     }
   };
   // Fechar modal
@@ -320,7 +322,7 @@ const ListConta: React.FC = () => {
 
 
                {/* 🔹 Menu de ações */}
-               <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => (menuRefs.current[conta.id] = el)}>
+               <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => { menuRefs.current[conta.id] = el; }}>
                   <FontAwesomeIcon
                     icon={faEllipsisV}
                     className="text-gray-600 w-8 mr-1 text-lg"

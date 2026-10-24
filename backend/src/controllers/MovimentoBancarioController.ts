@@ -11,6 +11,7 @@ import { ParametroRepository } from '../repositories/ParametroRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 import { excluirMovimentoReceitasDespesasFluxo, PlanosFinanciamentoParametros } from '../utils/isMovimentoFinanciamento';
 import { calcularSaldoFinalFluxo } from '../utils/fluxoSaldoFinal';
+import { TransferenciaInvalidaError, validarTransferencia } from '../utils/transferencia';
 
 export class MovimentoBancarioController {
 	private movBancarioRepository: MovimentoBancarioRepository;
@@ -388,7 +389,12 @@ export class MovimentoBancarioController {
 					console.log('📥 Criando novo movimento:', JSON.stringify(body, null, 2));
 
 					if (body.identificadorOfx) {
-						const existente = await this.movBancarioRepository.getByIdentificadorOfx(body.identificadorOfx);
+						// Duplicate check scoped by conta: the same identificador in another conta is another movement
+						const idConta = Number(body.idContaCorrente);
+						const existente =
+							Number.isInteger(idConta) && idConta > 0
+								? await this.movBancarioRepository.getByIdentificadorOfxAndConta(body.identificadorOfx, idConta)
+								: await this.movBancarioRepository.getByIdentificadorOfx(body.identificadorOfx);
 						if (existente) {
 							console.warn('⚠️ Movimento duplicado detectado pelo identificador_ofx:', body.identificadorOfx);
 
@@ -1599,10 +1605,27 @@ export class MovimentoBancarioController {
 					const resultado = await this.movBancarioRepository.deleteAllByContaCorrente(idContaCorrenteNumero);
 					console.log(`✅ Exclusão em massa concluída: ${resultado.excluidos} movimentos excluídos`);
 
+					if (resultado.falhas > 0) {
+						return new Response(
+							JSON.stringify({
+								error: `Exclusão em massa incompleta: ${resultado.falhas} movimento(s) não puderam ser excluídos (${resultado.excluidos} excluído(s)).`,
+								message: `Exclusão em massa incompleta: ${resultado.excluidos} excluído(s), ${resultado.falhas} falha(s).`,
+								excluidos: resultado.excluidos,
+								falhas: resultado.falhas,
+								detalhesFalhas: resultado.detalhesFalhas,
+							}),
+							{
+								status: 500,
+								headers: corsHeaders,
+							},
+						);
+					}
+
 					return new Response(
 						JSON.stringify({
 							message: `Exclusão em massa concluída! ${resultado.excluidos} movimentos foram excluídos.`,
 							excluidos: resultado.excluidos,
+							falhas: 0,
 						}),
 						{
 							status: 200,
@@ -1684,7 +1707,8 @@ export class MovimentoBancarioController {
 				if (
 					!body.contaOrigemId ||
 					!body.contaDestinoId ||
-					!body.valor ||
+					body.valor === undefined ||
+					body.valor === null ||
 					!body.data ||
 					!body.descricao ||
 					!body.idUsuario ||
@@ -1693,14 +1717,26 @@ export class MovimentoBancarioController {
 				) {
 					console.warn('⚠️ Dados incompletos para transferência', body);
 
-					return new Response(JSON.stringify({ error: 'Dados incompletos para transferência.' }), {
+					return new Response(
+						JSON.stringify({ error: 'Dados incompletos para transferência.', message: 'Dados incompletos para transferência.' }),
+						{
+							status: 400,
+							headers: corsHeaders,
+						},
+					);
+				}
+
+				// valor > 0 e origem ≠ destino
+				const erroValidacao = validarTransferencia(body);
+				if (erroValidacao) {
+					return new Response(JSON.stringify({ error: erroValidacao, message: erroValidacao }), {
 						status: 400,
 						headers: corsHeaders,
 					});
 				}
 
 				try {
-					await this.movBancarioRepository.transfer({
+					const { idSaida, idEntrada } = await this.movBancarioRepository.transfer({
 						contaOrigemId: body.contaOrigemId!,
 						contaOrigemDescricao: body.contaOrigemDescricao!,
 						contaDestinoId: body.contaDestinoId!,
@@ -1712,13 +1748,20 @@ export class MovimentoBancarioController {
 					});
 					console.log('✅ Transferência realizada com sucesso');
 
-					return new Response(JSON.stringify({ message: 'Transferência realizada com sucesso!' }), {
+					return new Response(JSON.stringify({ message: 'Transferência realizada com sucesso!', idSaida, idEntrada }), {
 						status: 201,
 						headers: corsHeaders,
 					});
 				} catch (error) {
 					const message = (error as Error).message;
 					const stack = (error as Error).stack;
+
+					if (error instanceof TransferenciaInvalidaError) {
+						return new Response(JSON.stringify({ error: message, message }), {
+							status: 400,
+							headers: corsHeaders,
+						});
+					}
 
 					console.error('🔥 Erro na transferência:', message, stack);
 

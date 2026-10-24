@@ -1,5 +1,6 @@
 import { ContaCorrenteRepository } from "../repositories/ContaCorrenteRepository";
 import { ContaCorrente } from "../models/ContaCorrente";
+import { erroExclusao } from "../utils/verificarUsoRegistro";
 
 export class ContaCorrenteController {
     private contaRepository: ContaCorrenteRepository;
@@ -127,7 +128,16 @@ export class ContaCorrenteController {
                     });
                 }
 
-                await this.contaRepository.deleteById(id);
+                try {
+                    await this.contaRepository.deleteById(id);
+                } catch (error) {
+                    console.error("❌ Erro ao excluir conta:", error);
+                    const { status, message } = erroExclusao(error, "a conta");
+                    return new Response(JSON.stringify({ error: message }), {
+                        status,
+                        headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    });
+                }
                 return new Response(JSON.stringify({ message: "Conta excluída com sucesso!" }), {
                     status: 200,
                     headers: corsHeaders,

@@ -1,14 +1,23 @@
 import { CentroCustos } from "../models/CentroCustos";
+import { garantirSemUso, plural } from "../utils/verificarUsoRegistro";
+
+// Table check runs lazily, awaited, at most once per worker instance (retried only if it failed).
+let tabelaVerificada: Promise<boolean> | null = null;
 
 export class CentroCustosRepository {
   private db: D1Database;
 
   constructor(db: D1Database) {
     this.db = db;
-    this.ensureTableExists();
   }
 
-  private async ensureTableExists(): Promise<void> {
+  private async ready(): Promise<void> {
+    if (!tabelaVerificada) tabelaVerificada = this.ensureTableExists();
+    const ok = await tabelaVerificada;
+    if (!ok) tabelaVerificada = null;
+  }
+
+  private async ensureTableExists(): Promise<boolean> {
     try {
       // Verificar se a tabela existe
       const { results } = await this.db.prepare(`
@@ -35,13 +44,16 @@ export class CentroCustosRepository {
 
         console.log('✅ Tabela CentroCustos criada com sucesso');
       } 
+      return true;
     } catch (error) {
       console.error('❌ Erro ao verificar/criar tabela CentroCustos:', error);
+      return false;
     }
   }
 
 
   async getAll(): Promise<CentroCustos[]> {
+    await this.ready();
     const { results } = await this.db.prepare(`
       SELECT * FROM CentroCustos 
       ORDER BY 
@@ -58,6 +70,7 @@ export class CentroCustosRepository {
   }
 
   async getById(id: number): Promise<CentroCustos | null> {
+    await this.ready();
     const { results } = await this.db.prepare("SELECT * FROM CentroCustos WHERE id = ?").bind(id).all();
     if (results.length === 0) return null;
     const result = results[0] as any;
@@ -70,6 +83,7 @@ export class CentroCustosRepository {
   }
 
   async create(descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA'): Promise<CentroCustos> {
+    await this.ready();
     // Se for Receita e não tiver tipo definido, usar CUSTEIO como padrão
     const tipoFinal = tipo || (tipoReceitaDespesa === 'RECEITA' ? 'CUSTEIO' : null);
     const result = await this.db.prepare(`
@@ -81,6 +95,7 @@ export class CentroCustosRepository {
   }
 
   async update(id: number, descricao: string, tipo?: 'CUSTEIO' | 'INVESTIMENTO', tipoReceitaDespesa?: 'RECEITA' | 'DESPESA'): Promise<void> {
+    await this.ready();
     // Se for Receita e não tiver tipo definido, usar CUSTEIO como padrão
     const tipoFinal = tipo || (tipoReceitaDespesa === 'RECEITA' ? 'CUSTEIO' : null);
     await this.db.prepare(`
@@ -91,6 +106,19 @@ export class CentroCustosRepository {
   }
 
   async delete(id: number): Promise<void> {
+    await this.ready();
+    await garantirSemUso(this.db, [
+      {
+        // distinct movements using this centro directly or through the rateio table
+        sql: `SELECT COUNT(*) AS n FROM (
+                SELECT id FROM MovimentoBancario WHERE idCentroCustos = ?
+                UNION
+                SELECT idMovimentoBancario FROM MovimentoCentroCustos WHERE idCentroCustos = ?
+              )`,
+        binds: [id, id],
+        rotulo: (n) => plural(n, "lançamento bancário", "lançamentos bancários"),
+      },
+    ], "Não é possível excluir este centro de custos. Ele está em uso em:");
     await this.db.prepare("DELETE FROM CentroCustos WHERE id = ?").bind(id).run();
   }
 }

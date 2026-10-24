@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CurrencyInput from 'react-currency-input-field';
-import { Financiamento, ParcelaFinanciamento } from '../../../../../backend/src/models';
+import { Financiamento } from '../../../../../backend/src/models/Financiamento';
+import { ParcelaFinanciamento } from '../../../../../backend/src/models/ParcelaFinanciamento';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGear, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
 import Modal from 'react-modal';
@@ -12,6 +13,8 @@ import {
 } from '../../../services/financiamentoParcelasService';
 
 import { Banco } from '../../../../../backend/src/models/Banco';
+import { gerarDatasVencimento, dividirValorEmParcelas } from '../../../Utils/parcelamento';
+import { hojeISO } from '../../../Utils/dataSemFuso';
 import { Pessoa } from '../../../../../backend/src/models/Pessoa';
 
 interface Props {
@@ -27,7 +30,13 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 	const [tipoParcelamento, setTipoParcelamento] = useState<'mensal' | 'anual'>('mensal');
 	const [dataVencimentoInicial, setDataVencimentoInicial] = useState('');
 	const [form, setForm] = useState<
-		Partial<Financiamento & { valor?: string; taxaJurosAnual?: string; totalJuros?: string }>
+		Partial<
+			Omit<Financiamento, 'valor' | 'taxaJurosAnual' | 'totalJuros'> & {
+				valor?: string;
+				taxaJurosAnual?: string;
+				totalJuros?: string;
+			}
+		>
 	>({
 		parcelasList: [],
 	});
@@ -66,8 +75,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 				}
 			} else {
 				originalParcelIdsRef.current = [];
-				const hoje = new Date();
-				setDataVencimentoInicial(hoje.toISOString().split('T')[0]);
+				setDataVencimentoInicial(hojeISO());
 				setForm({
 					parcelasList: [],
 					taxaJurosAnual: '',
@@ -89,12 +97,12 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 			// Se o valor for uma string com vírgula, converter para número
 			if (typeof value === 'string') {
 				const valorNumerico = parseFloat(value.replace(/\./g, '').replace(',', '.'));
-				updatedParcelas[index][field] = isNaN(valorNumerico) ? 0 : valorNumerico;
+				updatedParcelas[index].valor = isNaN(valorNumerico) ? 0 : valorNumerico;
 			} else {
-				updatedParcelas[index][field] = Number(value) || 0;
+				updatedParcelas[index].valor = Number(value) || 0;
 			}
 		} else {
-			updatedParcelas[index][field] = value;
+			(updatedParcelas[index] as unknown as Record<string, unknown>)[field] = value;
 		}
 		handleInputChange('parcelasList', updatedParcelas);
 	};
@@ -131,7 +139,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 			toast.error('Informe a data da primeira parcela.');
 			return;
 		}
-		if (!form.valor || form.valor <= 0) {
+		if (!form.valor) {
 			toast.error('Valor total do financiamento inválido.');
 			return;
 		}
@@ -159,32 +167,25 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 			valorTotal = valorContrato;
 		}
 
-		// Calcula o valor base da parcela e o resto da divisão
-		const valorBaseParcela = Math.floor((valorTotal * 100) / numParcelas) / 100;
-		const resto = valorTotal - (valorBaseParcela * (numParcelas - 1));
-
-		const dataInicial = new Date(dataVencimentoInicial);
+		// Valores com o resíduo de arredondamento na última parcela; vencimentos por aritmética de
+		// calendário em texto (sem fuso): 31/01 -> 28/02 -> 31/03, nenhum mês pulado.
+		const valores = dividirValorEmParcelas(valorTotal, numParcelas);
+		const vencimentos = gerarDatasVencimento(
+			dataVencimentoInicial.slice(0, 10),
+			numParcelas,
+			tipoParcelamento === 'mensal' ? 1 : 12,
+		);
+		const dataLancamento = hojeISO();
 
 		for (let i = 0; i < numParcelas; i++) {
-			const vencimento = new Date(dataInicial);
-
-			if (tipoParcelamento === 'mensal') {
-				vencimento.setMonth(vencimento.getMonth() + i);
-			} else {
-				vencimento.setFullYear(vencimento.getFullYear() + i);
-			}
-
-			// Se for a última parcela, usa o valor com o resto
-			const valorParcela = i === numParcelas - 1 ? resto : valorBaseParcela;
-
 			parcelas.push({
 				id: 0,
 				idFinanciamento: 0,
 				status: 'Aberto',
 				numParcela: i + 1,
-				valor: parseFloat(valorParcela.toFixed(2)),
-				dt_vencimento: vencimento.toISOString().split('T')[0],
-				dt_lancamento: new Date().toISOString().split('T')[0],
+				valor: valores[i],
+				dt_vencimento: vencimentos[i],
+				dt_lancamento: dataLancamento,
 				dt_liquidacao: null,
 			});
 		}
@@ -244,7 +245,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 
 				const savedParcelIds = new Set<number>();
 				if (form.parcelasList) {
-					for (const parcela of form.parcelasList) {
+					for (const parcela of form.parcelasList ?? []) {
 						const saved = await salvarParcelaFinanciamento({
 							...parcela,
 							idFinanciamento: financiamentoData.id,
@@ -271,7 +272,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 				const parcelasSalvas: ParcelaFinanciamento[] = [];
 				console.log(`🔄 Processando ${form.parcelasList?.length || 0} parcelas para financiamento ID ${id}`);
 				
-				for (const parcela of form.parcelasList) {
+				for (const parcela of form.parcelasList ?? []) {
 					try {
 						console.log(`💾 Salvando parcela ${parcela.numParcela}:`, {
 							valorOriginal: parcela.valor,
@@ -301,7 +302,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 			onClose();
 		} catch (error) {
 			console.error('Erro ao salvar financiamento:', error);
-			toast.error('Erro ao salvar financiamento. Tente novamente.');
+			toast.error(error instanceof Error && error.message ? error.message : 'Erro ao salvar financiamento. Tente novamente.');
 		} finally {
 			setIsLoading(false);
 		}

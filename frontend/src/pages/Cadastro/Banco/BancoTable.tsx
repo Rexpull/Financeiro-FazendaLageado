@@ -3,7 +3,8 @@ import Modal from "react-modal";
 import DialogModal from "../../../components/DialogModal"
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
-import { listarBancos, salvarBanco, excluirBanco } from "../../../services/bancoService";
+import { listarBancos, salvarBanco } from "../../../services/bancoService";
+import { excluirBancoCadastro } from "../../../services/excluirCadastroService";
 import BancoModal from "./BancoModal";
 import { Banco } from "../../../../../backend/src/models/Banco";
 import noData from "/frontend/src/assets/img/noData.svg"
@@ -120,11 +121,12 @@ const BancoTable: React.FC = () => {
    const handleDeleteConfirm = async () => {
     if (deleteBancoId === null) return;
     try {
-      await excluirBanco(deleteBancoId);
+      await excluirBancoCadastro(deleteBancoId); // toasts the API message (409 when in use)
       setBancos((prev) => prev.filter((banco) => banco.id !== deleteBancoId));
       setConfirmModalOpen(false);
     } catch (error) {
       console.error("Erro ao excluir banco:", error);
+      setConfirmModalOpen(false);
     }
   };
 

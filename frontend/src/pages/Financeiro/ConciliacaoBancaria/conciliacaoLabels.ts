@@ -38,6 +38,28 @@ export const idCentroCustosEfetivo = (mov: MovimentoBancario): number | undefine
 	return mov.idCentroCustos ?? undefined;
 };
 
+/** Todos os planos do movimento: idPlanoContas e/ou linhas do rateio (resultadoList). */
+export const idsPlanosDoMovimento = (mov: MovimentoBancario): number[] => {
+	const ids = (mov.resultadoList ?? []).map((r) => r.idPlanoContas);
+	if (mov.idPlanoContas != null) ids.push(mov.idPlanoContas);
+	return ids;
+};
+
+/** Todos os centros do movimento: idCentroCustos e/ou linhas do rateio (centroCustosList). */
+export const idsCentrosDoMovimento = (mov: MovimentoBancario): number[] => {
+	const ids = (mov.centroCustosList ?? []).map((c) => c.idCentroCustos);
+	if (mov.idCentroCustos != null) ids.push(mov.idCentroCustos);
+	return ids;
+};
+
+/** Filtro por plano: casa também movimentos rateados (idPlanoContas NULL + resultadoList). */
+export const movimentoTemAlgumPlano = (mov: MovimentoBancario, idsPlanos: number[]): boolean =>
+	idsPlanos.length === 0 || idsPlanosDoMovimento(mov).some((id) => idsPlanos.includes(id));
+
+/** Filtro por centro: casa também movimentos rateados (idCentroCustos NULL + centroCustosList). */
+export const movimentoTemAlgumCentro = (mov: MovimentoBancario, idsCentros: number[]): boolean =>
+	idsCentros.length === 0 || idsCentrosDoMovimento(mov).some((id) => idsCentros.includes(id));
+
 /** Plan column — no financial effect (transferencia mode: intra-company transfers, applications, reversals) */
 export function textoPlanoTransferencia(mov: MovimentoBancario, planos: PlanoConta[]): string {
 	const rl = mov.resultadoList ?? [];

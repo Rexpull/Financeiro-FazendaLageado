@@ -40,8 +40,10 @@ import {
 	buscarMovimentoBancarioById,
 	buscarMovimentosPorIds,
 	atualizarContaMovimentosOFX,
+	MovimentoBancarioEdicao,
 } from '../../../services/movimentoBancarioService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
+import { DadosConciliacao, montarMovimentoConciliacaoIndividual, montarMovimentoConciliacaoLote } from './conciliacaoPayload';
 import {
 	excluirParcelaFinanciamento,
 	listarParcelaFinanciamentos,
@@ -232,6 +234,23 @@ const MovimentoBancarioTable: React.FC = () => {
 			setModalContaIsOpen(true);
 		}
 	}, [contaSelecionada]);
+
+	// Filtro, conta ou página mudou: limpa a seleção para "Conciliar N" nunca agir sobre linhas ocultas
+	useEffect(() => {
+		setMovimentosSelecionados([]);
+		setTipoMovimentoSelecionado(null);
+	}, [
+		contaSelecionada,
+		dataInicio,
+		dataFim,
+		statusFiltro,
+		itemsPerPage,
+		planosFiltroIds,
+		centrosFiltroIds,
+		historicoContem,
+		valorBusca,
+		currentPage,
+	]);
 
 	const handleSelectConta = (conta: any) => {
 		setContaSelecionada(conta);
@@ -514,14 +533,27 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
+	/** A tabela renderiza filteredMovimentos: remover das duas listas (e da seleção) após excluir. */
+	const removerMovimentoDasListas = (id: number) => {
+		setMovimentos((prev) => prev.filter((movimento) => movimento.id !== id));
+		setFilteredMovimentos((prev) => prev.filter((movimento) => movimento.id !== id));
+		setMovimentosSelecionados((prev) => {
+			const next = prev.filter((m) => m.id !== id);
+			if (next.length === 0) setTipoMovimentoSelecionado(null);
+			return next;
+		});
+		setTotalMovimentos((prev) => Math.max(0, prev - 1));
+	};
+
 	const handleDeleteConfirm = async () => {
 		if (deleteMovimentoId === null) return;
 		try {
 			await excluirMovimentoBancario(deleteMovimentoId);
-			setMovimentos((prev) => prev.filter((movimento) => movimento.id !== deleteMovimentoId));
+			removerMovimentoDasListas(deleteMovimentoId);
 			setConfirmModalOpen(false);
 		} catch (error) {
 			console.error('Erro ao excluir movimento bancário:', error);
+			toast.error(error instanceof Error ? error.message : 'Falha na exclusão do movimento!');
 		}
 	};
 
@@ -575,7 +607,7 @@ const MovimentoBancarioTable: React.FC = () => {
 			const movimentoCompleto = await buscarMovimentoBancarioById(limparConciliacaoMovimentoId);
 
 			// Limpar todos os campos de conciliação
-			const movimentoLimpo: MovimentoBancario = {
+			const movimentoLimpo: MovimentoBancarioEdicao = {
 				...movimentoCompleto,
 				idPlanoContas: null,
 				idCentroCustos: null,
@@ -588,6 +620,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				resultadoList: [],
 				centroCustosList: undefined,
 				modalidadeMovimento: 'padrao',
+				// Also clears plan/centre rateios (their ids are already null, so nulls alone change nothing)
+				limparConciliacao: true,
 			};
 
 			await salvarMovimentoBancario(movimentoLimpo);
@@ -628,63 +662,16 @@ const MovimentoBancarioTable: React.FC = () => {
 		setFilteredMovimentos(novaLista);
 	};
 
-	const handleConcilia = async (data: any) => {
+	/** Lança erro em caso de falha: o ConciliarPlano mantém o modal aberto e mostra o toast. */
+	const handleConcilia = async (data: DadosConciliacao) => {
+		if (!movimentoParaConciliar) return;
+		// Armazenar a página atual em uma constante
+		const paginaAtual = currentPage;
+
+		const movimentoAtualizado = montarMovimentoConciliacaoIndividual(movimentoParaConciliar, data);
+		const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
+
 		try {
-			// Armazenar a página atual em uma constante
-			const paginaAtual = currentPage;
-
-			const movimentoAtualizado: MovimentoBancario = {
-				...movimentoParaConciliar!,
-				idPlanoContas: data.idPlanoContas,
-				modalidadeMovimento: data.modalidadeMovimento,
-				idPessoa: data.idPessoa ?? null,
-				idCentroCustos: data.idCentroCustos ?? null,
-			};
-
-			// Use the plan split chosen in the modal ([] = single plano via idPlanoContas);
-			// never resend the movement's previous resultadoList, or the old plano is recreated.
-			if (data.resultadoList !== undefined) {
-				movimentoAtualizado.resultadoList = data.resultadoList;
-			}
-
-			// Incluir centroCustosList se presente
-			if (data.centroCustosList !== undefined) {
-				movimentoAtualizado.centroCustosList = data.centroCustosList;
-			}
-
-			if (data.modalidadeMovimento === 'padrao') {
-				movimentoAtualizado.idBanco = undefined;
-				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = undefined;
-				movimentoAtualizado.idFinanciamento = undefined;
-			}
-
-			if (data.modalidadeMovimento === 'financiamento') {
-				movimentoAtualizado.idBanco = data.idBanco ?? undefined;
-				movimentoAtualizado.idPessoa = data.idPessoa ?? null;
-				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? undefined;
-				movimentoAtualizado.parcelado = data.parcelado ?? false;
-				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? undefined;
-				movimentoAtualizado.idCentroCustos = data.idCentroCustos ?? undefined;
-				// Marcar como conciliado quando há financiamento associado
-				if (data.idFinanciamento) {
-					movimentoAtualizado.ideagro = true;
-				}
-			}
-
-			if (data.modalidadeMovimento === 'transferencia') {
-				movimentoAtualizado.idBanco = undefined;
-				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = undefined;
-				movimentoAtualizado.idFinanciamento = undefined;
-				movimentoAtualizado.idCentroCustos = undefined;
-				movimentoAtualizado.resultadoList = [];
-				// Limpar centroCustosList em transferências
-				movimentoAtualizado.centroCustosList = undefined;
-			}
-
-			const movimentoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
-
 			// Atualizar apenas a lista principal de movimentos
 			setMovimentos((prevMovimentos) => prevMovimentos.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
 
@@ -707,7 +694,8 @@ const MovimentoBancarioTable: React.FC = () => {
 			setMovimentos((prev) => prev.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
 			setFilteredMovimentos((prev) => prev.map((mov) => (mov.id === movimentoSalvo.id ? movimentoSalvo : mov)));
 		} catch (error) {
-			console.error('❌ Erro ao conciliar movimento:', error);
+			// Salvo com sucesso; só a atualização da tela falhou
+			console.error('❌ Erro ao atualizar a lista após conciliar:', error);
 		}
 	};
 
@@ -796,95 +784,57 @@ const MovimentoBancarioTable: React.FC = () => {
 		}
 	};
 
-	const handleConciliaMultiplos = async (data: any) => {
-		try {
-			const movimentosAtualizados: MovimentoBancario[] = [];
-			const erros: number[] = [];
+	/**
+	 * ConciliarPlano envia um array com o movimento já montado para cada linha do lote
+	 * (inclusive rateios por % convertidos em R$). Um objeto `dados` (legado) é aplicado a cada
+	 * movimento do lote. Lança erro se algum falhar: o modal continua aberto (salvar de novo é idempotente).
+	 */
+	const handleConciliaMultiplos = async (data: MovimentoBancarioEdicao[] | DadosConciliacao) => {
+		const movimentosParaSalvar: MovimentoBancarioEdicao[] = Array.isArray(data)
+			? data
+			: movimentosConciliacaoModal.map((mov) => montarMovimentoConciliacaoLote(mov, data));
 
-			// Verificar se data é um array de movimentos (quando há rateio por porcentagem)
-			const movimentosParaProcessar = Array.isArray(data) ? data : movimentosConciliacaoModal;
+		const movimentosAtualizados: MovimentoBancario[] = [];
+		const erros: { id: number; mensagem: string }[] = [];
 
-			console.log('🔍 DEBUG - handleConciliaMultiplos:');
-			console.log('  - data é array?', Array.isArray(data));
-			console.log('  - movimentosParaProcessar:', movimentosParaProcessar);
-
-			for (const movimento of movimentosParaProcessar) {
-				try {
-					let movimentoAtualizado: MovimentoBancario;
-
-					if (Array.isArray(data)) {
-						// Se data é um array, os movimentos já vêm preparados com resultadoList e centroCustosList
-						console.log('  - Movimento (array):', movimento.id, 'centroCustosList:', movimento.centroCustosList);
-						movimentoAtualizado = movimento as MovimentoBancario;
-					} else {
-						// Se data é um objeto simples, construir o movimento
-						movimentoAtualizado = {
-							...movimento,
-							modalidadeMovimento: data.modalidadeMovimento,
-							idPlanoContas: data.idPlanoContas || undefined,
-							idPessoa: data.idPessoa || null,
-							idBanco: data.idBanco || undefined,
-							numeroDocumento: data.numeroDocumento || undefined,
-							parcelado: data.parcelado || false,
-							idFinanciamento: data.idFinanciamento || undefined,
-							idUsuario: movimento.idUsuario || undefined,
-							idCentroCustos: data.idCentroCustos || undefined,
-						};
-
-						// Single plano chosen for the batch: drop each movement's previous plan split
-						if (data.idPlanoContas) {
-							movimentoAtualizado.resultadoList = [];
-						}
-
-						// Incluir centroCustosList se presente
-						if (data.centroCustosList !== undefined) {
-							movimentoAtualizado.centroCustosList = data.centroCustosList;
-						}
-					}
-
-					console.log(
-						'  - movimentoAtualizado antes de salvar:',
-						movimentoAtualizado.id,
-						'centroCustosList:',
-						movimentoAtualizado.centroCustosList,
-					);
-					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
-					movimentosAtualizados.push(resultadoSalvo);
-				} catch (error) {
-					console.error(`Erro ao conciliar movimento ${movimento.id}:`, error);
-					erros.push(movimento.id);
-				}
+		for (const movimentoAtualizado of movimentosParaSalvar) {
+			try {
+				movimentosAtualizados.push(await salvarMovimentoBancario(movimentoAtualizado));
+			} catch (error) {
+				console.error(`Erro ao conciliar movimento ${movimentoAtualizado.id}:`, error);
+				erros.push({ id: movimentoAtualizado.id, mensagem: error instanceof Error ? error.message : String(error) });
 			}
-
-			// Remove da seleção os movimentos que foram conciliados neste fluxo
-			const idsProcessados = movimentosParaProcessar.map((m) => m.id);
-			setMovimentosSelecionados((prev) => {
-				const next = prev.filter((m) => !idsProcessados.includes(m.id));
-				if (next.length === 0) {
-					setTipoMovimentoSelecionado(null);
-				}
-				return next;
-			});
-
-			// Fecha o modal
-			setMovimentoParaConciliar(null);
-			setMovimentosConciliacaoModal([]);
-			setModalConciliaIsOpen(false);
-
-			// Recarrega a página atual
-			await fetchMovimentos(currentPage);
-
-			// Exibe mensagens de feedback
-			if (erros.length > 0) {
-				toast.error(`Erro ao conciliar ${erros.length} movimento(s).`);
-			}
-			if (movimentosAtualizados.length > 0) {
-				toast.success(`${movimentosAtualizados.length} movimento(s) conciliado(s) com sucesso!`);
-			}
-		} catch (error) {
-			console.error('Erro ao conciliar movimentos:', error);
-			toast.error('Erro ao conciliar movimentos.');
 		}
+
+		// Remove da seleção os movimentos salvos com sucesso
+		const idsSalvos = movimentosAtualizados.map((m) => m.id);
+		setMovimentosSelecionados((prev) => {
+			const next = prev.filter((m) => !idsSalvos.includes(m.id));
+			if (next.length === 0) {
+				setTipoMovimentoSelecionado(null);
+			}
+			return next;
+		});
+
+		if (movimentosAtualizados.length > 0) {
+			toast.success(`${movimentosAtualizados.length} movimento(s) conciliado(s) com sucesso!`);
+			try {
+				await fetchMovimentos(currentPage);
+			} catch (error) {
+				console.error('❌ Erro ao recarregar a lista após conciliar:', error);
+			}
+		}
+
+		if (erros.length > 0) {
+			throw new Error(
+				`Erro ao conciliar ${erros.length} de ${movimentosParaSalvar.length} movimento(s): ${erros[0].mensagem}`
+			);
+		}
+
+		// Fecha o modal só quando todos foram salvos
+		setMovimentoParaConciliar(null);
+		setMovimentosConciliacaoModal([]);
+		setModalConciliaIsOpen(false);
 	};
 
 	const currentItems = filteredMovimentos;
@@ -1669,7 +1619,8 @@ const MovimentoBancarioTable: React.FC = () => {
 				isOpen={confirmDeleteParcelaModalOpen}
 				onClose={() => setConfirmDeleteParcelaModalOpen(false)}
 				onConfirm={async () => {
-					if (deleteMovimentoId !== null) {
+					if (deleteMovimentoId === null) return;
+					try {
 						const temParcelas = await verificarParcelasAssociadas(deleteMovimentoId);
 
 						if (temParcelas) {
@@ -1681,8 +1632,11 @@ const MovimentoBancarioTable: React.FC = () => {
 
 						await excluirMovimentoBancario(deleteMovimentoId);
 
-						setMovimentos((prev) => prev.filter((movimento) => movimento.id !== deleteMovimentoId));
+						removerMovimentoDasListas(deleteMovimentoId);
 						setConfirmDeleteParcelaModalOpen(false);
+					} catch (error) {
+						console.error('Erro ao excluir movimento bancário:', error);
+						toast.error(error instanceof Error ? error.message : 'Falha na exclusão do movimento!');
 					}
 				}}
 				title="Atenção"

@@ -1,4 +1,5 @@
-import { CentroCustosService } from "../services/CentroCustosService";
+import { CentroCustosService, CentroCustosValidacaoError } from "../services/CentroCustosService";
+import { RegistroEmUsoError, isForeignKeyError } from "../utils/verificarUsoRegistro";
 
 export class CentroCustosController {
   private centroCustosService: CentroCustosService;
@@ -35,6 +36,12 @@ export class CentroCustosController {
 
       if (req.method === "GET" && pathname.startsWith("/api/centro-custos/")) {
         const id = parseInt(pathname.split("/")[3]);
+        if (isNaN(id)) {
+          return new Response(JSON.stringify({ error: "ID inválido" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
         const centroCustos = await this.centroCustosService.buscarCentroCustos(id);
         return centroCustos 
           ? new Response(JSON.stringify(centroCustos), { 
@@ -90,10 +97,29 @@ export class CentroCustosController {
       });
     } catch (error: any) {
       console.error("❌ Erro no CentroCustosController:", error);
-      return new Response(error.message, { 
-        status: 500, 
-        headers: corsHeaders 
-      });
+      const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+      if (error instanceof CentroCustosValidacaoError) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: jsonHeaders });
+      }
+      if (error instanceof RegistroEmUsoError) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 409, headers: jsonHeaders });
+      }
+      if (isForeignKeyError(error)) {
+        return new Response(
+          JSON.stringify({ error: "Não é possível excluir este centro de custos: há registros vinculados." }),
+          { status: 409, headers: jsonHeaders },
+        );
+      }
+      if (error instanceof Error && /UNIQUE constraint failed/i.test(error.message)) {
+        return new Response(
+          JSON.stringify({ error: "Já existe um centro de custos com esta descrição e tipo." }),
+          { status: 409, headers: jsonHeaders },
+        );
+      }
+      return new Response(
+        JSON.stringify({ error: "Erro no servidor", details: error instanceof Error ? error.message : String(error) }),
+        { status: 500, headers: jsonHeaders },
+      );
     }
   }
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef  } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSearch, faPlus, faEllipsisV, faUniversity, faTimes, faUser, faQuestionCircle, faUserCheck, faUsers, faPencil, faEdit, faDeleteLeft, faTrash } from "@fortawesome/free-solid-svg-icons";
-import { listarPessoas, excluirPessoa, salvarPessoa, atualizarStatusPessoa } from "../../../services/pessoaService";
+import { listarPessoas, salvarPessoa, atualizarStatusPessoa } from "../../../services/pessoaService";
+import { excluirPessoaCadastro } from "../../../services/excluirCadastroService";
 import PessoaModal from "./PessoaModal";
 import DialogModal from "../../../components/DialogModal"
 import noData from "/frontend/src/assets/img/noData.svg"
@@ -100,11 +101,12 @@ const ListConta: React.FC = () => {
   const handleDeleteConfirm = async () => {
     if (deletePessoaId  === null) return;
     try {
-      await excluirPessoa(deletePessoaId );
+      await excluirPessoaCadastro(deletePessoaId); // toasts the API message (409 when in use)
       setPessoas((prev) => prev.filter((pessoa) => pessoa.id !== deletePessoaId ));
       setConfirmModalOpen(false);
     } catch (error) {
       console.error("Erro ao excluir conta:", error);
+      setConfirmModalOpen(false);
     }
   };
   // Fechar modal
@@ -328,7 +330,7 @@ const ListConta: React.FC = () => {
 
 
           {/* 🔹 Menu de ações */}
-               <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => (menuRefs.current[pessoa.id] = el)}>
+               <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => { menuRefs.current[pessoa.id] = el; }}>
                   <FontAwesomeIcon
                     icon={faEllipsisV}
                     className="text-gray-600 w-8 mr-1 text-lg"

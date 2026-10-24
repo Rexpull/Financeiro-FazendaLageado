@@ -1,4 +1,5 @@
 import { ContaCorrente } from "../models/ContaCorrente";
+import { garantirSemUso, plural } from "../utils/verificarUsoRegistro";
 
 export class ContaCorrenteRepository {
     private db: D1Database;
@@ -61,6 +62,18 @@ export class ContaCorrenteRepository {
     }
 
     async deleteById(id: number): Promise<void> {
+        await garantirSemUso(this.db, [
+            {
+                sql: `SELECT COUNT(*) AS n FROM MovimentoBancario WHERE idContaCorrente = ?`,
+                binds: [id],
+                rotulo: (n) => plural(n, "lançamento bancário", "lançamentos bancários"),
+            },
+            {
+                sql: `SELECT COUNT(*) AS n FROM Resultado WHERE idContaCorrente = ?`,
+                binds: [id],
+                rotulo: (n) => plural(n, "lançamento de resultado (rateio)", "lançamentos de resultado (rateio)"),
+            },
+        ], "Não é possível excluir esta conta. Ela está em uso em:", "Inative a conta em vez de excluí-la.");
         await this.db.prepare(`
             DELETE FROM contaCorrente WHERE id = ?
         `).bind(id).run();

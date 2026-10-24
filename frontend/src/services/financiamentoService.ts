@@ -1,6 +1,5 @@
 import { Financiamento } from "../../../backend/src/models/Financiamento";
 import { ParcelaFinanciamento } from "../../../backend/src/models/ParcelaFinanciamento";
-import { excluirParcelaFinanciamento } from "./financiamentoParcelasService";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -34,7 +33,6 @@ const validarStatusParcela = (parcela: ParcelaFinanciamento): ParcelaFinanciamen
 };
 
 export const listarFinanciamentos = async (): Promise<Financiamento[]> => {
-  console.log('LISTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAR');
 	const res = await fetch(`${API_URL}/api/financiamento`);
 	if (!res.ok) throw new Error("Erro ao listar financiamentos");
 	return res.json();
@@ -62,7 +60,7 @@ export const salvarFinanciamento = async (financiamento: Financiamento): Promise
     });
 
     if (!res.ok) {
-      const errorData = await res.json().catch(() => null);
+      const errorData = (await res.json().catch(() => null)) as { details?: string; error?: string } | null;
       console.error("Erro na resposta:", {
         status: res.status,
         statusText: res.statusText,
@@ -71,8 +69,8 @@ export const salvarFinanciamento = async (financiamento: Financiamento): Promise
       throw new Error(errorData?.details || errorData?.error || "Erro ao salvar financiamento");
     }
 
-    const data = await res.json();
-    return { id: data.id || financiamento.id };
+    const data = (await res.json()) as { id?: number };
+    return { id: data.id || (financiamento.id as number) };
   } catch (error) {
     console.error("Erro ao salvar financiamento:", error);
     throw error;
@@ -80,32 +78,11 @@ export const salvarFinanciamento = async (financiamento: Financiamento): Promise
 };
 
 export const excluirFinanciamento = async (id: number): Promise<void> => {
-  try {
-    // Primeiro, buscar o financiamento para obter suas parcelas
-    const res = await fetch(`${API_URL}/api/financiamento/${id}`);
-    if (!res.ok) throw new Error("Erro ao buscar financiamento");
-    
-    const financiamento: Financiamento = await res.json();
-    
-    // Excluir todas as parcelas associadas
-    if (financiamento.parcelasList && financiamento.parcelasList.length > 0) {
-      await Promise.all(
-        financiamento.parcelasList.map(parcela => 
-          excluirParcelaFinanciamento(parcela.id)
-        )
-      );
-    }
-
-    // Depois excluir o financiamento
-    const deleteRes = await fetch(`${API_URL}/api/financiamento/${id}`, { 
-      method: "DELETE" 
-    });
-    
-    if (!deleteRes.ok) {
-      throw new Error("Erro ao excluir financiamento");
-    }
-  } catch (error) {
-    console.error("Erro ao excluir financiamento:", error);
-    throw error;
+  // The API deletes the contract and its parcelas atomically and answers 409 (with a message)
+  // when bank movements are linked to it.
+  const res = await fetch(`${API_URL}/api/financiamento/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string; details?: string } | null;
+    throw new Error(data?.error || data?.details || "Erro ao excluir financiamento");
   }
 };

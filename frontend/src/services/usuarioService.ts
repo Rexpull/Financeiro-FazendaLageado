@@ -18,17 +18,17 @@ export const listarUsuarios = async (): Promise<Usuario[]> => {
 export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
     const { senha, ...rest } = usuario;
 
-    const usuarioValido = {
+    // The API never returns the stored hash, so `senha` is only filled when the user typed a new one.
+    // On edit without a new password it is omitted and the backend keeps the current hash.
+    const usuarioValido: Partial<Usuario> = {
         ...rest,
-        senha: await bcrypt.hash(usuario.senha, 10),
+        ...(senha ? { senha: await bcrypt.hash(senha, 10) } : {}),
         ativo: usuario.ativo ?? true,
         cpf_cnpj: usuario.cpf_cnpj ?? "",
         telefone: usuario.telefone ?? "",
         foto_perfil: usuario.foto_perfil ?? "",
         dt_cadastro: usuario.dt_cadastro ?? new Date().toISOString().split("T")[0],
     };
-
-    console.log("📤 Enviando para API:", usuarioValido);
 
     const method = usuario.id ? "PUT" : "POST";
     const url = usuario.id ? `${API_URL}/api/usuario/${usuario.id}` : `${API_URL}/api/usuario`;
@@ -40,14 +40,15 @@ export const salvarUsuario = async (usuario: Usuario): Promise<Usuario> => {
             body: JSON.stringify(usuarioValido),
         });
 
-        const data = await res.json(); // Converte resposta para JSON
+        const data = (await res.json()) as { id?: number; message?: string; error?: string }; // Converte resposta para JSON
 
         if (!res.ok) {
             throw new Error(data.error || "Erro desconhecido ao salvar usuário.");
         }
 
         toast.success(data.message || (usuario.id ? "Usuário atualizado com sucesso!" : "Usuário cadastrado com sucesso!"));
-        return { ...usuarioValido, id: data.id };
+        const { senha: _hash, ...salvo } = usuarioValido;
+        return { ...salvo, id: data.id ?? usuario.id } as Usuario;
     } catch (error: any) {
         console.error("❌ Erro ao salvar usuário:", error);
 

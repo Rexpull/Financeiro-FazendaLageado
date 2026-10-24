@@ -1,7 +1,14 @@
 import bcrypt from "bcryptjs";
 import { SessionRepository } from "../repositories/SessionRepository";
 import { UserContext } from "../models/UserContext";
-import { SignJWT, jwtVerify } from "jose";
+import { SignJWT } from "jose";
+import { JWT_ALG, JWT_EXPIRACAO, chaveJwt, usuarioAtivo, verificarToken } from "../utils/authGuard";
+
+export const MSG_USUARIO_INATIVO = "Usuário inativo. Fale com o administrador.";
+
+export type LoginResult =
+  | { ok: true; token: string; user: { id: number; nome: string; email: string; usuario?: string; foto_perfil?: string } }
+  | { ok: false; motivo: "credenciais" | "inativo" };
 
 export class AuthController {
   private sessionRepository: SessionRepository;
@@ -11,36 +18,42 @@ export class AuthController {
   }
 
   // 🔹 Login e criação de sessão
-  async login(identificador: string, senha: string, env: { JWT_SECRET: string }) {
+  async login(identificador: string | undefined, senha: string | undefined, env: { JWT_SECRET?: string }): Promise<LoginResult> {
     console.log("🔍 Tentativa de login para:", identificador);
-    console.log("JWT_SECRET:", env.JWT_SECRET);
+
+    if (!identificador || !senha) return { ok: false, motivo: "credenciais" };
 
     // 🔹 Busca pelo email ou nome de usuário
     const userContext = await this.sessionRepository.getByEmailOrUsuario(identificador);
-    if (!userContext) {
+    if (!userContext || !userContext.senha) {
       console.log("❌ Usuário não encontrado:", identificador);
-      return null;
+      return { ok: false, motivo: "credenciais" };
     }
-
-    console.log("🔑 Senha armazenada no banco:", userContext.senha);
 
     // 🔹 Comparação da senha digitada com a senha armazenada (bcrypt)
     const senhaValida = await bcrypt.compare(senha, userContext.senha);
-    console.log("🔐 Resultado da comparação:", senhaValida);
-
     if (!senhaValida) {
       console.log("❌ Senha incorreta para:", identificador);
-      return null;
+      return { ok: false, motivo: "credenciais" };
     }
 
-    // 🔹 Converte a chave JWT para TextEncoder
-    const secretKey = new TextEncoder().encode(env.JWT_SECRET);
+    // Checked after the password so account status isn't revealed to someone guessing.
+    if (!usuarioAtivo(userContext.ativo)) {
+      console.log("⛔ Usuário inativo tentou entrar:", identificador);
+      return { ok: false, motivo: "inativo" };
+    }
+
+    if (!env.JWT_SECRET) {
+      // HMAC needs a non-empty key: fail clearly instead of signing with an empty secret.
+      throw new Error("JWT_SECRET não configurado no worker");
+    }
 
     // 🔹 Gera o token JWT
     const token = await new SignJWT({ id: userContext.id, email: userContext.email })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime("2h")
-      .sign(secretKey);
+      .setProtectedHeader({ alg: JWT_ALG })
+      .setIssuedAt()
+      .setExpirationTime(JWT_EXPIRACAO)
+      .sign(chaveJwt(env.JWT_SECRET));
 
     console.log("✅ Login bem-sucedido:", identificador);
 
@@ -48,26 +61,28 @@ export class AuthController {
     await this.sessionRepository.updateSession(userContext.id, token);
 
     // 🔹 Retorna apenas os dados necessários para o front
-    return { 
-      token, 
+    return {
+      ok: true,
+      token,
       user: {
         id: userContext.id,
         nome: userContext.nome,
         email: userContext.email,
-        usuario: userContext.usuario, // Agora retornamos o nome de usuário também
-        foto_perfil: userContext.foto_perfil
-      }
+        usuario: userContext.usuario,
+        foto_perfil: userContext.foto_perfil,
+      },
     };
   }
 
-  // 🔹 Verifica sessão baseada no token
-  async verifySession(token: string, env: { JWT_SECRET: string }): Promise<UserContext | null> {
-    try {
-      const secretKey = new TextEncoder().encode(env.JWT_SECRET);
-      const { payload } = await jwtVerify(token, secretKey);
-      return await this.sessionRepository.getByToken(token);
-    } catch {
-      return null;
-    }
+  // 🔹 Verifica sessão baseada no token (JWT válido + token ainda registrado + usuário ativo)
+  async verifySession(token: string, env: { JWT_SECRET?: string }): Promise<Omit<UserContext, "senha" | "token"> | null> {
+    const payload = await verificarToken(token, env.JWT_SECRET ?? "");
+    if (!payload) return null;
+
+    const user = await this.sessionRepository.getByToken(token);
+    if (!user || !usuarioAtivo(user.ativo)) return null;
+
+    const { senha: _senha, token: _token, ...publico } = user;
+    return publico;
   }
 }

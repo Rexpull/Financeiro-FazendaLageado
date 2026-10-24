@@ -10,6 +10,47 @@ function ensureNumericValor(valor: unknown): number {
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+/** Campos que o frontend pode LIMPAR no PUT parcial enviando `null`. */
+type CampoLimpavel =
+	| 'idPlanoContas'
+	| 'idCentroCustos'
+	| 'idFinanciamento'
+	| 'idBanco'
+	| 'idPessoa'
+	| 'numeroDocumento'
+	| 'descricao'
+	| 'idUsuario'
+	| 'resultadoList'
+	| 'centroCustosList';
+
+/** MovimentoBancario aceito no salvar: igual ao modelo, mas com `null` = limpar o campo. */
+export type MovimentoBancarioEdicao = Omit<MovimentoBancario, CampoLimpavel> & {
+	[K in CampoLimpavel]?: MovimentoBancario[K] | null;
+};
+
+type ErroApi = { error?: string; message?: string; details?: string };
+
+/** Monta a mensagem de erro a partir do corpo da resposta (error/message/details), quando houver. */
+async function mensagemErroResposta(res: Response, padrao: string): Promise<string> {
+	try {
+		const body = (await res.json()) as { error?: unknown; message?: unknown; details?: unknown };
+		const detalhe = [body?.error, body?.message, body?.details].find((v) => typeof v === 'string' && v.trim());
+		if (detalhe) return `${padrao}: ${detalhe as string}`;
+	} catch {
+		// corpo vazio ou não-JSON
+	}
+	return `${padrao} (HTTP ${res.status})`;
+}
+
+/**
+ * Corpo do PUT parcial: descarta apenas `undefined` (campo ausente = backend mantém o valor).
+ * `null` é preservado de propósito — é como o frontend pede para LIMPAR um campo
+ * (ex.: idCentroCustos/idFinanciamento/idBanco/numeroDocumento ao trocar a modalidade).
+ */
+export function montarCorpoPutParcial<T extends object>(campos: T): Partial<T> {
+	return Object.fromEntries(Object.entries(campos).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 export const listarMovimentosBancarios = async (): Promise<MovimentoBancario[]> => {
 	const res = await fetch(`${API_URL}/api/movBancario`);
 	if (!res.ok) throw new Error(`Erro ao listar movimentos bancários`);
@@ -109,7 +150,7 @@ export const exportarMovimentosBancariosPDF = async (
 	return res.blob();
 };
 
-export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Promise<MovimentoBancario> => {
+export const salvarMovimentoBancario = async (movimento: MovimentoBancarioEdicao): Promise<MovimentoBancario> => {
 	try {
 		if (movimento.tipoMovimento === 'D' && movimento.valor > 0) {
 			movimento.valor = -Math.abs(movimento.valor);
@@ -121,7 +162,7 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 			const movimentoAtual = await buscarMovimentoBancarioById(movimento.id);
 			
 			// Criar objeto apenas com os campos alterados
-			const camposAlterados: Partial<MovimentoBancario> = {
+			const camposAlterados: Partial<MovimentoBancarioEdicao> = {
 				id: movimento.id,
 				dtMovimento: movimento.dtMovimento,
 				historico: movimento.historico,
@@ -171,14 +212,15 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 				camposAlterados.resultadoList = movimento.resultadoList;
 			}
 			// Incluir centroCustosList se presente (não é um campo da tabela, mas precisa ser processado)
+			if (movimento.limparConciliacao) {
+				camposAlterados.limparConciliacao = true;
+			}
 			if (movimento.centroCustosList !== undefined) {
 				camposAlterados.centroCustosList = movimento.centroCustosList;
 			}
 
-			// Limpar valores undefined antes de enviar
-			const movimentoLimpo = Object.fromEntries(
-				Object.entries(camposAlterados).filter(([_, value]) => value !== undefined)
-			) as MovimentoBancario;
+			// Remove só undefined (campo não enviado); null segue no corpo para limpar o campo
+			const movimentoLimpo = montarCorpoPutParcial(camposAlterados);
 
 			console.log('🔧 Campos alterados para atualização:', movimentoLimpo);
 
@@ -188,7 +230,7 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 				body: JSON.stringify(movimentoLimpo),
 			});
 
-			if (!res.ok) throw new Error('Erro ao atualizar movimento bancário');
+			if (!res.ok) throw new Error(await mensagemErroResposta(res, 'Erro ao atualizar movimento bancário'));
 			
 			// O backend agora retorna o movimento completo com centroCustosList
 			const movimentoAtualizado = await res.json() as MovimentoBancario;
@@ -196,9 +238,7 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 			return movimentoAtualizado;
 		} else {
 			// Se for uma criação (POST), enviar todos os campos necessários
-			const movimentoLimpo = Object.fromEntries(
-				Object.entries(movimento).filter(([_, value]) => value !== undefined)
-			) as MovimentoBancario;
+			const movimentoLimpo = montarCorpoPutParcial(movimento) as MovimentoBancarioEdicao;
 
 			// Garantir valores padrão para campos obrigatórios
 			movimentoLimpo.dtMovimento = movimentoLimpo.dtMovimento || new Date().toISOString();
@@ -215,9 +255,9 @@ export const salvarMovimentoBancario = async (movimento: MovimentoBancario): Pro
 				body: JSON.stringify(movimentoLimpo),
 			});
 
-			if (!res.ok) throw new Error('Erro ao criar movimento bancário');
+			if (!res.ok) throw new Error(await mensagemErroResposta(res, 'Erro ao criar movimento bancário'));
 			
-			const resultado = await res.json();
+			const resultado = (await res.json()) as MovimentoBancario;
 			toast.success(`Movimento criado com sucesso!`);
 			return resultado;
 		}
@@ -252,7 +292,7 @@ export const salvarMovimentosOFX = async (
 					mov.valor = -Math.abs(mov.valor);
 				}
 
-				const movComConta: MovimentoBancario = {
+				const movComConta: MovimentoBancarioEdicao = {
 					...mov,
 					idContaCorrente,
 					saldo: mov.saldo ?? 0,
@@ -274,9 +314,7 @@ export const salvarMovimentosOFX = async (
 				};
 
 				// Remover campos undefined e garantir valores válidos
-				const movLimpo = Object.fromEntries(
-					Object.entries(movComConta).filter(([_, value]) => value !== undefined)
-				) as MovimentoBancario;
+				const movLimpo = montarCorpoPutParcial(movComConta) as MovimentoBancarioEdicao;
 
 				// Garantir que campos obrigatórios tenham valores válidos
 				movLimpo.dtMovimento = movLimpo.dtMovimento || new Date().toISOString();
@@ -301,10 +339,16 @@ export const salvarMovimentosOFX = async (
 				throw new Error(`Erro ao processar lote: ${response.status}`);
 			}
 
-			const batchResult = await response.json();
+			const batchResult = (await response.json()) as {
+				movimentos?: MovimentoBancario[];
+				novos?: number;
+				existentes?: number;
+				erros?: number;
+				detalhesErros?: unknown[];
+			};
 			console.log(`✅ Lote processado:`, batchResult);
 
-			if (batchResult.erros > 0 && batchResult.detalhesErros?.length) {
+			if ((batchResult.erros ?? 0) > 0 && batchResult.detalhesErros?.length) {
 				console.error('❌ Falhas no lote OFX:', batchResult.detalhesErros);
 				toast.error(`${batchResult.erros} movimento(s) não salvos. Verifique o console.`);
 			}
@@ -344,14 +388,11 @@ export const buscarMovimentoBancarioById = async (id: number): Promise<Movimento
 	return res.json();
 };
 
+/** Lança erro em caso de falha (o chamador decide o toast e só remove a linha no sucesso). */
 export const excluirMovimentoBancario = async (id: number): Promise<void> => {
-	try {
-		const res = await fetch(`${API_URL}/api/movBancario/${id}`, { method: 'DELETE' });
-		if (!res.ok) throw new Error('Erro ao excluir movimento bancário');
-		toast.success('Movimento excluido com sucesso!');
-	} catch (error) {
-		toast.error(`Falha na exclusão do movimento!`);
-	}
+	const res = await fetch(`${API_URL}/api/movBancario/${id}`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await mensagemErroResposta(res, 'Falha na exclusão do movimento'));
+	toast.success('Movimento excluido com sucesso!');
 };
 
 export const excluirTodosMovimentosBancarios = async (idContaCorrente: number): Promise<{ excluidos: number }> => {
@@ -366,12 +407,12 @@ export const excluirTodosMovimentosBancarios = async (idContaCorrente: number): 
 		console.log(`📡 Resposta recebida:`, res.status, res.statusText);
 		
 		if (!res.ok) {
-			const errorData = await res.json();
+			const errorData = (await res.json()) as ErroApi;
 			console.error(`❌ Erro na resposta:`, errorData);
 			throw new Error(errorData.error || 'Erro ao excluir movimentos em massa');
 		}
 		
-		const result = await res.json();
+		const result = (await res.json()) as { message: string; excluidos: number };
 		console.log(`✅ Resultado da exclusão:`, result);
 		toast.success(result.message);
 		return { excluidos: result.excluidos };
@@ -389,10 +430,10 @@ export const zerarDadosParaTestes = async (contasIds: number[], ano?: number): P
 	if (ano != null && !isNaN(ano)) params.set('ano', String(ano));
 	const res = await fetch(`${API_URL}/api/movBancario/reset-teste?${params.toString()}`, { method: 'DELETE' });
 	if (!res.ok) {
-		const err = await res.json().catch(() => ({}));
+		const err = (await res.json().catch(() => ({}))) as ErroApi;
 		throw new Error(err.details || err.error || 'Erro ao zerar dados para testes');
 	}
-	return res.json();
+	return (await res.json()) as { excluidos: number };
 };
 
 export const atualizarStatusIdeagro = async (id: number, ideagro: boolean): Promise<any> => {
@@ -437,7 +478,7 @@ export const transferirMovimentoBancario = async (payload: {
 	if (res.ok) toast.success('Transferência realizada com sucesso!');
 
 	if (!res.ok) {
-		const errorData = await res.json().catch(() => ({}));
+		const errorData = (await res.json().catch(() => ({}))) as ErroApi;
 		console.error('Erro Backend Transfer:', errorData);
 		toast.error(errorData.message || 'Erro ao realizar transferência!');
 		throw new Error(errorData.message || 'Erro ao realizar transferência bancária');
@@ -485,7 +526,7 @@ export const buscarMovimentosPorIds = async (
 				});
 
 				if (!res.ok) {
-					const errorData = await res.json().catch(() => ({}));
+					const errorData = (await res.json().catch(() => ({}))) as ErroApi;
 					throw new Error(errorData.message || `Erro ao buscar lote ${numeroLote}`);
 				}
 
@@ -526,7 +567,7 @@ export const atualizarContaMovimentosOFX = async (idMovimentos: number[], novaCo
 		});
 		
 		if (!res.ok) {
-			const errorData = await res.json();
+			const errorData = (await res.json()) as ErroApi;
 			throw new Error(errorData.error || 'Erro ao atualizar conta dos movimentos OFX');
 		}
 		

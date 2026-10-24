@@ -3,7 +3,6 @@ import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faSave, faCamera, faKey, faCheck, faCheckCircle } from "@fortawesome/free-solid-svg-icons";
 import { Usuario } from "../../../../../backend/src/models/Usuario";
-import { enviarEmail } from "../../../services/EmailService"; // Implemente esta função
 import { FaRegCheckCircle } from "react-icons/fa";
 import defaultAvatar from "../../../assets/img/default-avatar.jpg";
 
@@ -48,7 +47,8 @@ const UsuarioModal: React.FC<UsuarioModalProps> = ({
       newErrors.email = "E-mail inválido!";
     }
 
-    if (!usuarioData.senha) newErrors.senha = "Senha é obrigatória!";
+    // Existing users keep their current password unless a new one is set (the API doesn't return the hash).
+    if (!usuarioData.id && !usuarioData.senha) newErrors.senha = "Senha é obrigatória!";
 
     console.log("erros: " + newErrors.length);
 
@@ -128,7 +128,7 @@ const formatarTelefone = (value: string) => {
         return; // Não permite mais de 14 dígitos
       }
   
-      handleInputChange(e); // Chama a função original para atualizar o estado
+      handleInputChange(e as React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>); // Chama a função original para atualizar o estado
     };
     
 
@@ -202,13 +202,13 @@ const formatarTelefone = (value: string) => {
 
           </div>
           <div >
-            <label className="block text-sm font-medium mb-3">Senha {usuarioData.senha && (<FontAwesomeIcon icon={faCheck} className="text-green-700 ml-2" />)}</label>
+            <label className="block text-sm font-medium mb-3">Senha {(usuarioData.id || usuarioData.senha) && (<FontAwesomeIcon icon={faCheck} className="text-green-700 ml-2" />)}</label>
             <button
               className="text-blue-500 text-md underline flex items-center "
               onClick={() => setModalSenhaAberto(true)}
             >
               <FontAwesomeIcon icon={faKey} className="mr-2" />
-              {usuarioData.senha ? "Editar Senha existente" : "Criar nova Senha"}
+              {usuarioData.id ? (usuarioData.senha ? "Nova senha definida (salve para aplicar)" : "Editar Senha existente") : usuarioData.senha ? "Senha definida" : "Criar nova Senha"}
             </button>
             {errors.senha && <p className="text-red-500 text-xs">{errors.senha}</p>}
 

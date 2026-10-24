@@ -36,6 +36,8 @@ import { toast } from 'react-toastify';
 import { ParcelaFinanciamento } from '../../../../../../backend/src/models/ParcelaFinanciamento';
 import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinanciamentoService';
 import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
+import type { MovimentoBancarioEdicao } from '../../../../services/movimentoBancarioService';
+import { DadosConciliacao, montarMovimentosLote } from '../conciliacaoPayload';
 
 Modal.setAppElement('#root');
 
@@ -90,7 +92,9 @@ interface ConciliaPlanoContasModalProps {
 	onClose: () => void;
 	movimento: MovimentoBancario;
 	planos: PlanoConta[];
-	handleConcilia: (data: any) => void;
+	/** Deve lançar erro em caso de falha (o modal fica aberto e mostra o erro). */
+	handleConcilia: (data: DadosConciliacao) => Promise<void> | void;
+	/** Movimentos do lote; > 1 = conciliação em lote. Ao abrir pela linha, passar só o movimento clicado. */
 	movimentosSelecionados?: MovimentoBancario[];
 	/** When opening from a table "Múltiplos" cell, open the matching rateio editor */
 	abrirRateioInicial?: 'centros' | 'planos' | null;
@@ -106,7 +110,12 @@ interface FormData {
 	idFinanciamento: number | null;
 }
 
-const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onConciliaMultiplos?: (data: any) => void }> = ({
+const ConciliaPlanoContasModal: React.FC<
+	ConciliaPlanoContasModalProps & {
+		/** Recebe um movimento já montado por item do lote; deve lançar erro em caso de falha. */
+		onConciliaMultiplos?: (movimentos: MovimentoBancarioEdicao[]) => Promise<void> | void;
+	}
+> = ({
 	isOpen,
 	onClose,
 	movimento,
@@ -408,8 +417,17 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		}
 	}, [centroCustos, movimento?.idCentroCustos, isOpen]);
 
+	// Hidratação do rateio a partir do movimento: só no modo individual (no lote o movimento é o
+	// 1º selecionado e seus valores em R$ não valem para os demais).
 	useEffect(() => {
-		if (planos.length > 0 && movimento?.resultadoList && movimento.resultadoList.length > 1 && isOpen && modalInicializado.current) {
+		if (
+			planos.length > 0 &&
+			movimentosSelecionados.length <= 1 &&
+			movimento?.resultadoList &&
+			movimento.resultadoList.length > 1 &&
+			isOpen &&
+			modalInicializado.current
+		) {
 			const convertidos = movimento.resultadoList.map((r) => {
 				const plano = planos.find((p) => p.id === r.idPlanoContas);
 				return {
@@ -420,11 +438,12 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			});
 			setRateiosPlanos(convertidos);
 		}
-	}, [planos, movimento?.resultadoList, isOpen, modalInicializado.current]);
+	}, [planos, movimento?.resultadoList, isOpen, modalInicializado.current, movimentosSelecionados.length]);
 
 	useEffect(() => {
 		if (
 			centroCustos.length > 0 &&
+			movimentosSelecionados.length <= 1 &&
 			movimento?.centroCustosList &&
 			movimento.centroCustosList.length > 1 &&
 			isOpen &&
@@ -440,7 +459,7 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			});
 			setRateiosCentros(convertidos);
 		}
-	}, [centroCustos, movimento?.centroCustosList, isOpen, modalInicializado.current]);
+	}, [centroCustos, movimento?.centroCustosList, isOpen, modalInicializado.current, movimentosSelecionados.length]);
 
 	// Sync transferencia subtype when reopening a movement already reconciled (sem efeito tab)
 	useEffect(() => {
@@ -594,7 +613,9 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			const matchNivel = plano.nivel === 3;
 			// Para despesas, filtrar também por tipo (custeio/investimento) se um tipo foi selecionado
 			const matchTipo = !isDespesa || !tipoPlanoSelecionado || plano.tipo?.toLowerCase() === tipoPlanoSelecionado.toLowerCase();
-			return matchSearch && matchHierarquia && matchNivel && matchTipo;
+			// Plano inativo não é oferecido para nova seleção (o nome do já associado continua exibido via `planos`)
+			const matchAtivo = !plano.inativo;
+			return matchSearch && matchHierarquia && matchNivel && matchTipo && matchAtivo;
 		})
 		.slice(0, 50);
 
@@ -775,15 +796,13 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		}
 	};
 
+	// Data do movimento (OFX grava 'YYYY-MM-DDT00:00:00Z'): lê dd/mm/aaaa do próprio texto,
+	// sem conversão de fuso (senão 13/04 00:00Z vira "12/04 21:00" no Brasil) — igual à tabela
 	const formatarData = (data: string) => {
-		return new Date(data).toLocaleString('pt-BR', {
-			day: '2-digit',
-			month: '2-digit',
-			year: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit',
-		});
+		const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(data ?? ''));
+		if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+		const d = new Date(data);
+		return Number.isNaN(d.getTime()) ? '-' : d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 	};
 
 	const formatarMoeda = (valor: number) => {
@@ -812,7 +831,8 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 		return matchesSearch;
 	});
 
-	const handleSalvar = () => {
+	const handleSalvar = async () => {
+		if (isSaving) return;
 		if (!validarFormulario()) return;
 
 		setIsSaving(true);
@@ -902,152 +922,24 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			}
 
 			if (movimentosSelecionados.length > 1 && onConciliaMultiplos) {
-				// Verificar se há rateio por porcentagem (centros e/ou planos)
-				const temRateioCentrosPorcentagem = rateiosCentrosPorcentagem.length > 0;
-				const temRateioPlanosPorcentagem = rateiosPlanosPorcentagem.length > 0;
-
-				if (temRateioCentrosPorcentagem || temRateioPlanosPorcentagem) {
-					// Calcular valores para cada movimento individualmente
-					const movimentosComRateio = movimentosSelecionados.map((mov) => {
-						const valorAbsoluto = Math.abs(mov.valor);
-						const tipoMov = mov.tipoMovimento ?? 'C';
-
-						// Calcular planos (plano único ou rateio por porcentagem)
-						let resultadoList: Resultado[] = [];
-						if (temRateioPlanosPorcentagem) {
-							// Aplicar porcentagens de planos
-							resultadoList = rateiosPlanosPorcentagem.map((rp) => {
-								const valorCalculado = (rp.porcentagem / 100) * valorAbsoluto;
-								return {
-									idPlanoContas: rp.idPlano,
-									valor: valorCalculado,
-									tipo: tipoMov,
-									idContaCorrente: mov.idContaCorrente,
-									dtMovimento: mov.dtMovimento,
-								};
-							});
-						} else if (formData.idPlanoContas) {
-							// Plano único
-							resultadoList = [
-								{
-									idPlanoContas: formData.idPlanoContas,
-									valor: valorAbsoluto,
-									tipo: tipoMov,
-									idContaCorrente: mov.idContaCorrente,
-									dtMovimento: mov.dtMovimento,
-								},
-							];
-						}
-
-						// Calcular centros
-						// O backend adiciona idMovimentoBancario, então não precisamos aqui
-						let centroCustosList: Omit<MovimentoCentroCustos, 'idMovimentoBancario'>[] = [];
-						if (temRateioCentrosPorcentagem) {
-							// Aplicar porcentagens de centros
-							centroCustosList = rateiosCentrosPorcentagem.map((rc) => {
-								const valorCalculado = (rc.porcentagem / 100) * valorAbsoluto;
-								return {
-									idCentroCustos: rc.idCentro,
-									valor: valorCalculado,
-								};
-							});
-						} else if (formData.idCentroCustos) {
-							// Centro único
-							centroCustosList = [
-								{
-									idCentroCustos: formData.idCentroCustos,
-									valor: valorAbsoluto,
-								},
-							];
-						}
-
-						// Gerar todas as combinações (plano x centro) quando há rateio de ambos por porcentagem
-						// Quando há rateio de planos e centros, cada combinação recebe (porcentagem_plano * porcentagem_centro) do valor total
-
-						if (temRateioPlanosPorcentagem && temRateioCentrosPorcentagem && resultadoList.length > 0 && centroCustosList.length > 0) {
-							// Calcular porcentagens dos planos e centros
-							const porcentagensPlanos = resultadoList.map((r) => ({
-								idPlano: r.idPlanoContas,
-								porcentagem: (r.valor / valorAbsoluto) * 100,
-							}));
-
-							const porcentagensCentros = centroCustosList.map((c) => ({
-								idCentro: c.idCentroCustos,
-								porcentagem: (c.valor / valorAbsoluto) * 100,
-							}));
-
-							// Gerar combinações e agrupar
-							const resultadosPorPlano = new Map<number, number>();
-							const centrosPorCentro = new Map<number, number>();
-
-							for (const planoPorc of porcentagensPlanos) {
-								for (const centroPorc of porcentagensCentros) {
-									// Porcentagem da combinação = porcentagem_plano * porcentagem_centro / 100
-									const porcentagemCombinacao = (planoPorc.porcentagem * centroPorc.porcentagem) / 100;
-									const valorCombinacao = (porcentagemCombinacao / 100) * valorAbsoluto;
-
-									// Acumular valores por plano
-									const valorAtualPlano = resultadosPorPlano.get(planoPorc.idPlano) || 0;
-									resultadosPorPlano.set(planoPorc.idPlano, valorAtualPlano + valorCombinacao);
-
-									// Acumular valores por centro
-									const valorAtualCentro = centrosPorCentro.get(centroPorc.idCentro) || 0;
-									centrosPorCentro.set(centroPorc.idCentro, valorAtualCentro + valorCombinacao);
-								}
-							}
-
-							// Converter Maps para arrays
-							resultadoList = Array.from(resultadosPorPlano.entries()).map(([planoId, valor]) => ({
-								idPlanoContas: planoId,
-								valor,
-								tipo: tipoMov,
-								idContaCorrente: mov.idContaCorrente,
-								dtMovimento: mov.dtMovimento,
-							}));
-
-							centroCustosList = Array.from(centrosPorCentro.entries()).map(([centroId, valor]) => ({
-								idCentroCustos: centroId,
-								valor,
-							})) as Omit<MovimentoCentroCustos, 'idMovimentoBancario'>[];
-						}
-
-						// Remover centroCustosList de dados se existir, pois já foi calculado acima
-						const { centroCustosList: _, ...dadosSemCentros } = dados as any;
-
-						const movimentoComRateio: MovimentoBancario = {
-							...mov,
-							...dadosSemCentros,
-							resultadoList,
-							centroCustosList,
-						} as MovimentoBancario;
-
-						if (movimentoComRateio.resultadoList?.length === 1) {
-							movimentoComRateio.idPlanoContas = movimentoComRateio.resultadoList[0].idPlanoContas;
-							movimentoComRateio.resultadoList = [];
-						}
-						if (movimentoComRateio.centroCustosList?.length === 1) {
-							movimentoComRateio.idCentroCustos = movimentoComRateio.centroCustosList[0].idCentroCustos;
-							movimentoComRateio.centroCustosList = undefined;
-						}
-
-						return movimentoComRateio;
-					});
-
-					// Chamar onConciliaMultiplos com os movimentos calculados
-					onConciliaMultiplos(movimentosComRateio);
-				} else {
-					// Sem rateio por porcentagem, usar comportamento normal
-					onConciliaMultiplos(dados);
-				}
+				// Lote: um payload por movimento. Rateios por % viram R$ de cada movimento,
+				// arredondados a centavos com o resíduo na última linha (soma = valor do movimento).
+				const movimentosLote = montarMovimentosLote(
+					movimentosSelecionados,
+					dados as DadosConciliacao,
+					rateiosPlanosPorcentagem,
+					rateiosCentrosPorcentagem
+				);
+				await onConciliaMultiplos(movimentosLote);
 			} else {
-				handleConcilia(dados);
+				await handleConcilia(dados as DadosConciliacao);
 			}
-			// Fechar modal automaticamente após conciliação bem-sucedida
-			setTimeout(() => {
-				onClose();
-			}, 100);
+			// Fecha só depois que o salvamento terminou com sucesso
+			onClose();
 		} catch (error) {
 			console.error('Erro ao salvar movimento:', error);
+			// Modal continua aberto para o usuário tentar de novo
+			toast.error(error instanceof Error && error.message ? error.message : 'Erro ao salvar a conciliação.');
 		} finally {
 			setIsSaving(false);
 		}
@@ -1073,14 +965,24 @@ const ConciliaPlanoContasModal: React.FC<ConciliaPlanoContasModalProps & { onCon
 			// Atualizar o movimento bancário na mesma rotina da tela de conciliação
 			// (evita exigir uma segunda etapa de "Associar" depois da liquidação da parcela).
 			if (financiamentoSelecionado?.id != null) {
-				handleConcilia({
-					modalidadeMovimento: 'financiamento',
-					idFinanciamento: financiamentoSelecionado.id,
-					idPlanoContas: null,
-					idCentroCustos: null,
-					centroCustosList: undefined,
-					resultadoList: [],
-				});
+				try {
+					await handleConcilia({
+						modalidadeMovimento: 'financiamento',
+						idFinanciamento: financiamentoSelecionado.id,
+						idPlanoContas: null,
+						idCentroCustos: null,
+						centroCustosList: undefined,
+						resultadoList: [],
+					});
+				} catch (error) {
+					// A parcela já foi liquidada; avisar que o movimento não foi atualizado
+					console.error('Erro ao atualizar o movimento após liquidar a parcela:', error);
+					toast.error(
+						`Parcela liquidada, mas o movimento não foi atualizado: ${
+							error instanceof Error ? error.message : 'erro desconhecido'
+						}. Use "Associar" para tentar de novo.`
+					);
+				}
 			}
 
 			// Atualiza a lista de parcelas do financiamento selecionado

@@ -6,6 +6,7 @@ import { listarParcelaFinanciamentos } from "../../../../services/financiamentoP
 import Modal from "react-modal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes } from "@fortawesome/free-solid-svg-icons";
+import { formatarDataISO } from "../../../../Utils/dataSemFuso";
 
 interface DetalhamentoMovimentoModalProps {
   isOpen: boolean;
@@ -21,20 +22,28 @@ const DetalhamentoMovimentoModal: React.FC<DetalhamentoMovimentoModalProps> = ({
   const [parcelas, setParcelas] = useState<ParcelaFinanciamento[]>([]);
 
   useEffect(() => {
+    let cancelado = false;
     const fetchParcelas = async () => {
+      setParcelas([]);
       if (movimento && movimento.id && movimento.modalidadeMovimento === "financiamento") {
         try {
-          const data = await listarParcelaFinanciamentos(movimento.id);
-          setParcelas(data);
+          // Only this movement's contract (or, without a contract, the parcelas it paid) — never all of them.
+          const data = await listarParcelaFinanciamentos(
+            movimento.idFinanciamento
+              ? { idFinanciamento: movimento.idFinanciamento }
+              : { idMovimentoBancario: movimento.id },
+          );
+          if (!cancelado) setParcelas(data);
         } catch (error) {
           console.error("Erro ao buscar parcelas:", error);
         }
-      } else {
-        setParcelas([]);
       }
     };
 
     fetchParcelas();
+    return () => {
+      cancelado = true;
+    };
   }, [movimento]);
 
   if (!movimento) return null;
@@ -117,7 +126,7 @@ const DetalhamentoMovimentoModal: React.FC<DetalhamentoMovimentoModalProps> = ({
                     <tr key={parcela.id} className="hover:bg-gray-50">
                         <td className="p-2 border text-center">{parcela.numParcela}</td>
                         <td className="p-2 border text-center">
-                        {new Date(parcela.dt_vencimento).toLocaleDateString("pt-BR")}
+                        {formatarDataISO(parcela.dt_vencimento)}
                         </td>
                         <td className="p-2 border text-center">R$ {parcela.valor.toFixed(2)}</td>
                     </tr>

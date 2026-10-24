@@ -3,7 +3,8 @@ import Modal from "react-modal";
 import DialogModal from "../../../components/DialogModal"
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faPlus, faChevronLeft, faChevronRight, faTrash, faPencil, faChevronDown, faFilter } from '@fortawesome/free-solid-svg-icons';
-import { listarCentroCustos, salvarCentroCustos, excluirCentroCustos, listarMovimentosPorCentroCustos } from "../../../services/centroCustosService";
+import { listarCentroCustos, salvarCentroCustos, listarMovimentosPorCentroCustos } from "../../../services/centroCustosService";
+import { excluirCentroCustosCadastro } from "../../../services/excluirCadastroService";
 import CentroCustosModal from "./CentroCustosModal";
 import { CentroCustos } from "../../../../../backend/src/models/CentroCustos";
 
@@ -179,11 +180,12 @@ const CentroCustosTable: React.FC = () => {
   const handleDeleteConfirm = async () => {
     if (deleteCentroCustosId === null) return;
     try {
-      await excluirCentroCustos(deleteCentroCustosId);
+      await excluirCentroCustosCadastro(deleteCentroCustosId); // toasts the API message (409 when in use)
       setCentroCustos((prev) => prev.filter((centro) => centro.id !== deleteCentroCustosId));
       setConfirmModalOpen(false);
     } catch (error) {
       console.error("Erro ao excluir centro de custos:", error);
+      setConfirmModalOpen(false);
     }
   };
 

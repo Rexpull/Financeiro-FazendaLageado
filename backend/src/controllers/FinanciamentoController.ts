@@ -1,5 +1,11 @@
 import { FinanciamentoRepository } from "../repositories/FinanciamentoRepository";
 import { Financiamento } from "../models/Financiamento";
+import { erroExclusao } from "../utils/verificarUsoRegistro";
+
+function parseId(pathname: string): number | null {
+	const raw = pathname.split("/")[3] ?? "";
+	return /^\d+$/.test(raw) ? parseInt(raw, 10) : null;
+}
 
 export class FinanciamentoController {
 	constructor(private repository: FinanciamentoRepository) {}
@@ -25,10 +31,18 @@ export class FinanciamentoController {
 				return new Response(JSON.stringify(data), { headers: corsHeaders });
 			}
 
+			const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+			const idInvalido = () =>
+				new Response(JSON.stringify({ error: "ID inválido" }), { status: 400, headers: jsonHeaders });
+
 			if (method === "GET" && pathname.startsWith("/api/financiamento/")) {
-				const id = parseInt(pathname.split("/")[3]);
+				const id = parseId(pathname);
+				if (id === null) return idInvalido();
 				const data = await this.repository.getById(id);
-				return new Response(JSON.stringify(data), { headers: corsHeaders });
+				if (!data) {
+					return new Response(JSON.stringify({ error: "Financiamento não encontrado" }), { status: 404, headers: jsonHeaders });
+				}
+				return new Response(JSON.stringify(data), { headers: jsonHeaders });
 			}
 
 			if (method === "POST" && pathname === "/api/financiamento") {
@@ -72,7 +86,8 @@ export class FinanciamentoController {
 			}
 
 			if (method === "PUT" && pathname.startsWith("/api/financiamento/")) {
-				const id = parseInt(pathname.split("/")[3]);
+				const id = parseId(pathname);
+				if (id === null) return idInvalido();
 				const body: Financiamento = await req.json();
 				await this.repository.update(id, body);
 				return new Response(JSON.stringify({ message: "Atualizado com sucesso" }), { 
@@ -81,11 +96,16 @@ export class FinanciamentoController {
 			}
 
 			if (method === "DELETE" && pathname.startsWith("/api/financiamento/")) {
-				const id = parseInt(pathname.split("/")[3]);
-				await this.repository.deleteById(id);
-				return new Response(JSON.stringify({ message: "Financiamento removido" }), { 
-					headers: { ...corsHeaders, "Content-Type": "application/json" } 
-				});
+				const id = parseId(pathname);
+				if (id === null) return idInvalido();
+				try {
+					await this.repository.deleteById(id);
+				} catch (error) {
+					console.error(`Erro ao excluir financiamento ${id}:`, error);
+					const { status, message } = erroExclusao(error, "o financiamento");
+					return new Response(JSON.stringify({ error: message }), { status, headers: jsonHeaders });
+				}
+				return new Response(JSON.stringify({ message: "Financiamento removido" }), { headers: jsonHeaders });
 			}
 
 			return new Response(

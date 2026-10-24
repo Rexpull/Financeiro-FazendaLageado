@@ -4,7 +4,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheck, faEquals, faMinus, faSearch, faSort, faSortDown, faSortUp, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { formatarMoeda } from '../../../Utils/formataMoeda';
 import { getBancoLogo } from '../../../Utils/bancoUtils';
-import { buscarMovimentoBancarioById, salvarMovimentoBancario } from '../../../services/movimentoBancarioService';
+import { salvarMovimentoBancario, MovimentoBancarioEdicao } from '../../../services/movimentoBancarioService';
+import { DadosConciliacao, montarMovimentoConciliacaoIndividual, montarMovimentoConciliacaoLote } from './conciliacaoPayload';
 import { listarContas } from '../../../services/contaCorrenteService';
 import { listarPlanoContas } from '../../../services/planoContasService';
 import { MovimentoBancario } from '../../../../../backend/src/models/MovimentoBancario';
@@ -22,6 +23,8 @@ import {
 	isFinanciamentoSemContratoVinculado,
 	isFinanciamentoVinculadoContrato,
 	isPlanoRateioMultiplo,
+	movimentoTemAlgumCentro,
+	movimentoTemAlgumPlano,
 	TEXTO_COLUNA_UNICA_FINANCIAMENTO,
 	TEXTO_FINANCIAMENTO_SEM_CONTRATO,
 	textoCentroOrdenacaoOFX,
@@ -74,6 +77,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 	const [filtroDataFim, setFiltroDataFim] = useState('');
 	const [dropdownAberto, setDropdownAberto] = useState(false);
 	const [movimentosSelecionados, setMovimentosSelecionados] = useState<MovimentoBancario[]>([]);
+	/** Lista efetiva no modal de conciliação: só o movimento clicado ao abrir pela linha; os selecionados só pelo botão "Conciliar N". */
+	const [movimentosConciliacaoModal, setMovimentosConciliacaoModal] = useState<MovimentoBancario[]>([]);
 	const [tipoMovimentoSelecionado, setTipoMovimentoSelecionado] = useState<'C' | 'D' | null>(null);
 	const [planosDisponiveis, setPlanosDisponiveis] = useState<PlanoConta[]>([]);
 	const [centrosDisponiveis, setCentrosDisponiveis] = useState<CentroCustos[]>([]);
@@ -210,8 +215,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 	}, [isOpen, idContaCorrenteExtrato, movimentos, totalizadores.dtInicialExtrato, totalizadores.dtFinalExtrato]);
 
 	useEffect(() => {
-		const handleClickFora = (event) => {
-			if (!event.target.closest('.dropdown-filtros')) {
+		const handleClickFora = (event: MouseEvent) => {
+			if (!(event.target as HTMLElement | null)?.closest('.dropdown-filtros')) {
 				setDropdownAberto(false);
 			}
 		};
@@ -250,8 +255,15 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 				(!filtroDataInicio || new Date(m.dtMovimento) >= new Date(filtroDataInicio)) &&
 				(!filtroDataFim || new Date(m.dtMovimento) <= new Date(filtroDataFim));
 
-			const planoMatch = planosSelecionados.length === 0 || planosSelecionados.some((p) => p.id === m.idPlanoContas);
-			const centroMatch = centrosSelecionados.length === 0 || centrosSelecionados.some((c) => c.id === m.idCentroCustos);
+			// Movimentos rateados têm idPlanoContas/idCentroCustos NULL: considerar também as listas
+			const planoMatch = movimentoTemAlgumPlano(
+				m,
+				planosSelecionados.map((p) => p.id),
+			);
+			const centroMatch = movimentoTemAlgumCentro(
+				m,
+				centrosSelecionados.map((c) => c.id),
+			);
 
 			return descricaoMatch && valorMatch && dataMatch && planoMatch && centroMatch;
 		});
@@ -266,6 +278,12 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 		planosSelecionados,
 		centrosSelecionados,
 	]);
+
+	// Filtro mudou: limpa a seleção para "Conciliar N" nunca agir sobre linhas ocultas
+	useEffect(() => {
+		setMovimentosSelecionados([]);
+		setTipoMovimentoSelecionado(null);
+	}, [status, filtroDescricao, filtroValor, filtroDataInicio, filtroDataFim, planosSelecionados, centrosSelecionados]);
 
 	const textoPlanoOrdenacao = (mov: MovimentoBancario) => textoPlanoOrdenacaoOFX(mov, planos);
 
@@ -323,6 +341,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 	) => {
 		try {
 			setMovimentoParaConciliar(movimento);
+			// Aberto pela linha: concilia só este movimento, mesmo com outros checkboxes marcados
+			setMovimentosConciliacaoModal([movimento]);
 			setAbrirRateioInicial(opts?.abrirRateio ?? null);
 			console.log('Movimento para conciliar:', movimento);
 			setTimeout(() => {
@@ -333,88 +353,44 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 		}
 	};
 
-	const handleConcilia = async (data: any) => {
-		try {
-			console.log('data:', data);
-			const movimentoAtualizado: MovimentoBancario = {
-				...movimentoParaConciliar!,
-				idPlanoContas: data.idPlanoContas,
-				modalidadeMovimento: data.modalidadeMovimento,
-				idPessoa: data.idPessoa ?? null,
-				idCentroCustos: data.idCentroCustos ?? null,
-			};
+	/** Aplica na lista local os campos devolvidos pelo backend após salvar. */
+	const mesclarSalvos = (lista: MovimentoBancario[], salvos: MovimentoBancario[]) =>
+		lista
+			.map((mov) => {
+				const atualizado = salvos.find((m) => m.id === mov.id || m.identificadorOfx === mov.identificadorOfx);
+				if (!atualizado) return mov;
+				return {
+					...mov,
+					idPlanoContas: atualizado.idPlanoContas,
+					modalidadeMovimento: atualizado.modalidadeMovimento,
+					idPessoa: atualizado.idPessoa,
+					idBanco: atualizado.idBanco,
+					parcelado: atualizado.parcelado,
+					numeroDocumento: atualizado.numeroDocumento,
+					idFinanciamento: atualizado.idFinanciamento,
+					idCentroCustos: atualizado.idCentroCustos,
+					centroCustosList: atualizado.centroCustosList,
+					resultadoList: atualizado.resultadoList || [],
+					ideagro: atualizado.ideagro ?? mov.ideagro,
+				};
+			})
+			.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());
 
-			// Use the plan split chosen in the modal ([] = single plano via idPlanoContas);
-			// never resend the movement's previous resultadoList, or the old plano is recreated.
-			if (data.resultadoList !== undefined) {
-				movimentoAtualizado.resultadoList = data.resultadoList;
-			}
+	const fecharModalConcilia = () => {
+		setMovimentoParaConciliar(null);
+		setMovimentosConciliacaoModal([]);
+		setAbrirRateioInicial(null);
+		setModalConciliaIsOpen(false);
+	};
 
-			// Incluir centroCustosList se presente
-			if (data.centroCustosList !== undefined) {
-				movimentoAtualizado.centroCustosList = data.centroCustosList;
-			}
+	/** Lança erro em caso de falha: o ConciliarPlano mantém o modal aberto e mostra o toast. */
+	const handleConcilia = async (data: DadosConciliacao) => {
+		if (!movimentoParaConciliar) return;
+		const movimentoAtualizado = montarMovimentoConciliacaoIndividual(movimentoParaConciliar, data);
+		const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
 
-			if (data.modalidadeMovimento === 'padrao') {
-				movimentoAtualizado.idBanco = undefined;
-				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = undefined;
-				movimentoAtualizado.idFinanciamento = undefined;
-			}
-
-			if (data.modalidadeMovimento === 'financiamento') {
-				movimentoAtualizado.idBanco = data.idBanco ?? undefined;
-				movimentoAtualizado.idPessoa = data.idPessoa ?? null;
-				movimentoAtualizado.numeroDocumento = data.numeroDocumento ?? undefined;
-				movimentoAtualizado.parcelado = data.parcelado ?? false;
-				movimentoAtualizado.idFinanciamento = data.idFinanciamento ?? undefined;
-				movimentoAtualizado.idCentroCustos = data.idCentroCustos ?? undefined;
-				// Marcar como conciliado quando há financiamento associado
-				if (data.idFinanciamento) {
-					movimentoAtualizado.ideagro = true;
-				}
-			}
-
-			if (data.modalidadeMovimento === 'transferencia') {
-				movimentoAtualizado.idBanco = undefined;
-				movimentoAtualizado.parcelado = false;
-				movimentoAtualizado.numeroDocumento = undefined;
-				movimentoAtualizado.idFinanciamento = undefined;
-				movimentoAtualizado.idCentroCustos = undefined;
-				movimentoAtualizado.resultadoList = [];
-				movimentoAtualizado.centroCustosList = undefined;
-			}
-
-			console.log('Movimento atualizado:', movimentoAtualizado);
-			const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
-
-			// Atualizar apenas o movimento específico na lista
-			const novaLista = movimentosSendoConciliados.map((m) => {
-				if (m.id === movimentoAtualizado.id || m.identificadorOfx === movimentoAtualizado.identificadorOfx) {
-					return {
-						...m,
-						idPlanoContas: resultadoSalvo.idPlanoContas,
-						modalidadeMovimento: resultadoSalvo.modalidadeMovimento,
-						idPessoa: resultadoSalvo.idPessoa,
-						idBanco: resultadoSalvo.idBanco,
-						parcelado: resultadoSalvo.parcelado,
-						numeroDocumento: resultadoSalvo.numeroDocumento,
-						idFinanciamento: resultadoSalvo.idFinanciamento,
-						idCentroCustos: resultadoSalvo.idCentroCustos,
-						centroCustosList: resultadoSalvo.centroCustosList,
-						resultadoList: resultadoSalvo.resultadoList || [],
-					};
-				}
-				return m;
-			});
-
-			novaLista.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime());
-			setMovimentosSendoConciliados(novaLista);
-			setMovimentoParaConciliar(null);
-			setModalConciliaIsOpen(false);
-		} catch (error) {
-			console.error('Erro ao conciliar movimento:', error);
-		}
+		setMovimentosSendoConciliados((prev) => mesclarSalvos(prev, [resultadoSalvo]));
+		fecharModalConcilia();
 	};
 
 	const handleSelecionarMovimento = (movimento: MovimentoBancario) => {
@@ -471,109 +447,49 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 	const handleConciliarSelecionados = () => {
 		if (movimentosSelecionados.length > 0) {
 			setMovimentoParaConciliar(movimentosSelecionados[0]);
+			setMovimentosConciliacaoModal(movimentosSelecionados);
+			setAbrirRateioInicial(null);
 			setModalConciliaIsOpen(true);
 		}
 	};
 
-	const handleConciliaMultiplos = async (data: any) => {
-		try {
-			const movimentosAtualizados: MovimentoBancario[] = [];
-			const erros: number[] = [];
+	/**
+	 * ConciliarPlano envia um array com o movimento já montado para cada linha do lote
+	 * (inclusive rateios por % convertidos em R$). Um objeto `dados` (legado) é aplicado a cada
+	 * movimento do lote. Lança erro se algum falhar: o modal continua aberto (salvar de novo é idempotente).
+	 */
+	const handleConciliaMultiplos = async (data: MovimentoBancarioEdicao[] | DadosConciliacao) => {
+		const movimentosParaSalvar: MovimentoBancarioEdicao[] = Array.isArray(data)
+			? data
+			: movimentosConciliacaoModal.map((mov) => montarMovimentoConciliacaoLote(mov, data));
 
-			// Com rateio por %, ConciliarPlano envia um array: um movimento completo por linha (resultadoList + centroCustosList).
-			// Sem rateio %, envia um único objeto `dados` e iteramos movimentosSelecionados (igual TableMain).
-			const movimentosParaProcessar = Array.isArray(data) ? data : movimentosSelecionados;
+		const movimentosAtualizados: MovimentoBancario[] = [];
+		const erros: { id: number; mensagem: string }[] = [];
 
-			for (const movimento of movimentosParaProcessar) {
-				try {
-					let movimentoAtualizado: MovimentoBancario;
-
-					if (Array.isArray(data)) {
-						movimentoAtualizado = movimento as MovimentoBancario;
-					} else {
-						movimentoAtualizado = {
-							...movimento,
-							modalidadeMovimento: data.modalidadeMovimento,
-							idPlanoContas: data.idPlanoContas || undefined,
-							idPessoa: data.idPessoa ?? null,
-							idBanco: data.idBanco || undefined,
-							numeroDocumento: data.numeroDocumento || undefined,
-							parcelado: data.parcelado || false,
-							idFinanciamento: data.idFinanciamento || undefined,
-							idUsuario: movimento.idUsuario || undefined,
-							idCentroCustos: data.idCentroCustos ?? null,
-						};
-						// Single plano chosen for the batch: drop each movement's previous plan split
-						if (data.idPlanoContas) {
-							movimentoAtualizado.resultadoList = [];
-						}
-						if (data.centroCustosList !== undefined) {
-							movimentoAtualizado.centroCustosList = data.centroCustosList;
-						}
-						if (data.modalidadeMovimento === 'transferencia') {
-							movimentoAtualizado.idBanco = undefined;
-							movimentoAtualizado.parcelado = false;
-							movimentoAtualizado.numeroDocumento = undefined;
-							movimentoAtualizado.idFinanciamento = undefined;
-							movimentoAtualizado.idCentroCustos = undefined;
-							movimentoAtualizado.resultadoList = [];
-							movimentoAtualizado.centroCustosList = undefined;
-						}
-					}
-
-					const resultadoSalvo = await salvarMovimentoBancario(movimentoAtualizado);
-					movimentosAtualizados.push(resultadoSalvo);
-				} catch (error) {
-					console.error(`Erro ao conciliar movimento ${movimento.id}:`, error);
-					erros.push(movimento.id);
-				}
+		for (const movimentoAtualizado of movimentosParaSalvar) {
+			try {
+				movimentosAtualizados.push(await salvarMovimentoBancario(movimentoAtualizado));
+			} catch (error) {
+				console.error(`Erro ao conciliar movimento ${movimentoAtualizado.id}:`, error);
+				erros.push({ id: movimentoAtualizado.id, mensagem: error instanceof Error ? error.message : String(error) });
 			}
-
-			// Atualiza a lista de movimentos apenas com os campos alterados
-			const movimentosAtualizadosList = movimentosSendoConciliados.map((mov) => {
-				const atualizado = movimentosAtualizados.find((m) => m.id === mov.id || m.identificadorOfx === mov.identificadorOfx);
-
-				if (atualizado) {
-					return {
-						...mov,
-						idPlanoContas: atualizado.idPlanoContas,
-						modalidadeMovimento: atualizado.modalidadeMovimento,
-						idPessoa: atualizado.idPessoa,
-						idBanco: atualizado.idBanco,
-						numeroDocumento: atualizado.numeroDocumento,
-						parcelado: atualizado.parcelado,
-						idFinanciamento: atualizado.idFinanciamento,
-						idCentroCustos: atualizado.idCentroCustos,
-						centroCustosList: atualizado.centroCustosList,
-						resultadoList: atualizado.resultadoList || [],
-					};
-				}
-				return mov;
-			});
-
-			setMovimentosSendoConciliados(
-				movimentosAtualizadosList.sort((a, b) => new Date(a.dtMovimento).getTime() - new Date(b.dtMovimento).getTime()),
-			);
-
-			// Limpa a seleção
-			setMovimentosSelecionados([]);
-			setTipoMovimentoSelecionado(null);
-
-			// Fecha o modal
-			setMovimentoParaConciliar(null);
-			setModalConciliaIsOpen(false);
-
-			// Exibe mensagens de feedback
-			if (erros.length > 0) {
-				toast.error(`Erro ao conciliar ${erros.length} movimento(s). Verifique o console para mais detalhes.`);
-			}
-			if (movimentosAtualizados.length > 0) {
-				toast.success(`${movimentosAtualizados.length} movimento(s) conciliado(s) com sucesso!`);
-			}
-		} catch (error) {
-			console.error('Erro ao conciliar movimentos:', error);
-			toast.error('Erro ao conciliar movimentos. Verifique o console para mais detalhes.');
 		}
+
+		if (movimentosAtualizados.length > 0) {
+			setMovimentosSendoConciliados((prev) => mesclarSalvos(prev, movimentosAtualizados));
+			toast.success(`${movimentosAtualizados.length} movimento(s) conciliado(s) com sucesso!`);
+		}
+
+		if (erros.length > 0) {
+			throw new Error(
+				`Erro ao conciliar ${erros.length} de ${movimentosParaSalvar.length} movimento(s): ${erros[0].mensagem}`
+			);
+		}
+
+		// Limpa a seleção e fecha o modal só quando todos foram salvos
+		setMovimentosSelecionados([]);
+		setTipoMovimentoSelecionado(null);
+		fecharModalConcilia();
 	};
 
 	return (
@@ -1060,14 +976,11 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 			{movimentoParaConciliar && (
 				<ConciliarPlano
 					isOpen={!!movimentoParaConciliar}
-					onClose={() => {
-						setMovimentoParaConciliar(null);
-						setAbrirRateioInicial(null);
-					}}
+					onClose={fecharModalConcilia}
 					movimento={movimentoParaConciliar}
 					planos={planos}
 					handleConcilia={handleConcilia}
-					movimentosSelecionados={movimentosSelecionados}
+					movimentosSelecionados={movimentosConciliacaoModal}
 					onConciliaMultiplos={handleConciliaMultiplos}
 					abrirRateioInicial={abrirRateioInicial}
 				/>

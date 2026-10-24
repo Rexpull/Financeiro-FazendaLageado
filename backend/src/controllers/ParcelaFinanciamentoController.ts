@@ -31,6 +31,22 @@ export class ParcelaFinanciamentoController {
 				});
 			}
 
+			// Parcelas de um contrato: /api/parcelaFinanciamento/financiamento/:idFinanciamento
+			if (method === "GET" && pathname.startsWith("/api/parcelaFinanciamento/financiamento/")) {
+				const raw = pathname.split("/")[4] ?? "";
+				if (!/^\d+$/.test(raw)) {
+					return new Response(JSON.stringify({ error: "ID do financiamento inválido" }), {
+						status: 400,
+						headers: { ...corsHeaders, "Content-Type": "application/json" },
+					});
+				}
+				const parcelas = await this.repository.getByIdFinanciamento(parseInt(raw, 10));
+				return new Response(JSON.stringify(parcelas), {
+					headers: { ...corsHeaders, "Content-Type": "application/json" },
+				});
+			}
+
+			// Parcelas vinculadas a um movimento bancário: /api/parcelaFinanciamento/:idMovimentoBancario
 			if (method === "GET" && pathname.startsWith("/api/parcelaFinanciamento/")) {
 				const idMovimentoBancario = parseInt(pathname.split("/")[3]);
 				const parcelas = await this.repository.getByIdMovimentoBancario(idMovimentoBancario);

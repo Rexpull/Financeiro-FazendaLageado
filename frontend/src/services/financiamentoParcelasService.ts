@@ -2,8 +2,17 @@ import { ParcelaFinanciamento } from "../../../backend/src/models/ParcelaFinanci
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-export const listarParcelaFinanciamentos = async (): Promise<ParcelaFinanciamento[]> => {
-	const res = await fetch(`${API_URL}/api/parcelaFinanciamento`);
+/**
+ * Without arguments lists every parcela. With `filtro`, lists only the parcelas of one contract
+ * (`idFinanciamento`) or the ones linked to one bank movement (`idMovimentoBancario`).
+ */
+export const listarParcelaFinanciamentos = async (
+	filtro?: { idFinanciamento?: number | null; idMovimentoBancario?: number | null },
+): Promise<ParcelaFinanciamento[]> => {
+	let url = `${API_URL}/api/parcelaFinanciamento`;
+	if (filtro?.idFinanciamento) url += `/financiamento/${filtro.idFinanciamento}`;
+	else if (filtro?.idMovimentoBancario) url += `/${filtro.idMovimentoBancario}`;
+	const res = await fetch(url);
 	if (!res.ok) throw new Error(`Erro ao listar parcelas do financiamento`);
 	return res.json();
 };
@@ -15,9 +24,10 @@ export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento):
 
 	// Converter valor para número, tratando strings com vírgula
 	let valorConvertido: number;
-	if (typeof parcela.valor === 'string') {
+	const valorBruto: unknown = parcela.valor;
+	if (typeof valorBruto === 'string') {
 		// Remove pontos e substitui vírgula por ponto
-		valorConvertido = parseFloat(parcela.valor.replace(/\./g, '').replace(',', '.'));
+		valorConvertido = parseFloat(valorBruto.replace(/\./g, '').replace(',', '.'));
 	} else {
 		valorConvertido = Number(parcela.valor);
 	}
@@ -47,7 +57,7 @@ export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento):
 	});
 
 	if (!res.ok) {
-		const errorData = await res.json().catch(() => null);
+		const errorData = (await res.json().catch(() => null)) as { details?: string; error?: string } | null;
 		console.error(`❌ Erro ao salvar parcela ${parcela.numParcela}:`, errorData);
 		throw new Error(errorData?.details || errorData?.error || "Erro ao salvar Parcela do Financiamento");
 	}

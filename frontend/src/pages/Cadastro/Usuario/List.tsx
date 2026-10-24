@@ -99,7 +99,8 @@ const ListUsuario: React.FC = () => {
 
   const openModal = (usuario?: Usuario) => {
     setUsuarioData(
-      usuario || { id: 0, nome: "", usuario: "", email: "", senha: "", ativo: true, foto_perfil: "", dt_cadastro: new Date().toISOString() }
+      // the API doesn't return the password hash: start editing with an empty "new password"
+      usuario ? { ...usuario, senha: "" } : { id: 0, nome: "", usuario: "", email: "", senha: "", ativo: true, foto_perfil: "", dt_cadastro: new Date().toISOString() }
     );
     setModalIsOpen(true);
   };
@@ -278,7 +279,7 @@ const ListUsuario: React.FC = () => {
               </div>
 
               {/* 🔹 Menu de ações */}
-              <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => (menuRefs.current[usuario.id] = el)}>
+              <div className="absolute top-3 right-0 cursor-pointer" ref={(el) => { menuRefs.current[usuario.id] = el; }}>
                 <FontAwesomeIcon
                   icon={faEllipsisV}
                   className="text-gray-600 w-8 mr-1 text-lg"

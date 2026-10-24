@@ -10,6 +10,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFileExcel, faFilePdf, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { toast } from 'react-toastify';
 import { getBancoLogo } from '../../Utils/bancoUtils';
+import { formatarDataISO } from '../../Utils/formatarData';
 
 type OrdenarPor = 'data' | 'plano';
 
@@ -133,12 +134,13 @@ const RelatorioItensClassificados: React.FC = () => {
 
 	const formatarMoeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
+	// Rateio: the backend emits one row per plan × centre with the same movement id → key must not be only item.id
 	const renderLinhaItem = (item: RelatorioItensClassificadosItem, idx: number) => (
 		<tr
-			key={item.id}
+			key={`${item.id}-${item.idPlanoContas ?? ''}-${idx}`}
 			className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}
 		>
-			<td className="px-2 py-2 whitespace-nowrap text-xs text-gray-800">{new Date(item.dtMovimento).toLocaleDateString('pt-BR')}</td>
+			<td className="px-2 py-2 whitespace-nowrap text-xs text-gray-800">{formatarDataISO(item.dtMovimento)}</td>
 			<td className="px-2 py-2 text-xs truncate text-gray-800" title={item.historico}>{item.historico}</td>
 			<td className="px-2 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
 				{item.tipoMovimento === 'C' ? <span className="text-emerald-700">{formatarMoeda(item.valor)}</span> : <span className="text-gray-400">-</span>}

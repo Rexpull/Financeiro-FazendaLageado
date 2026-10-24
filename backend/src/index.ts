@@ -13,6 +13,7 @@ import { handleRequest as handleCentroCustosRequest } from "./routes/handleCentr
 import { handleRequest as handleRelatorioFinanciamentosRequest } from "./routes/handleRelatorioFinanciamentos";
 import { handleRequest as handleCaixaRequest } from "./routes/handleCaixa";
 import scheduler from "./workers/scheduler";
+import { exigeAutenticacao } from "./utils/authGuard";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,6 +29,10 @@ export default {
     if (req.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
+
+    // Every route except login and session check requires a valid Bearer JWT.
+    const negado = await exigeAutenticacao(req, env);
+    if (negado) return negado;
 
     switch (true) {
       case pathname.startsWith("/api/bancos"):

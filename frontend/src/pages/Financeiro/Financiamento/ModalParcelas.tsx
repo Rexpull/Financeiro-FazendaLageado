@@ -12,7 +12,9 @@ import {
 import Modal from 'react-modal';
 import { toast } from 'react-toastify';
 import { formatarMoeda } from '../../../Utils/formataMoeda';
-import { Financiamento, ParcelaFinanciamento } from '../../../../../backend/src/models';
+import { formatarDataISO, hojeISO } from '../../../Utils/dataSemFuso';
+import { Financiamento } from '../../../../../backend/src/models/Financiamento';
+import { ParcelaFinanciamento } from '../../../../../backend/src/models/ParcelaFinanciamento';
 import DialogModal from '../../../components/DialogModal';
 import { NumericFormat } from 'react-number-format';
 import { salvarParcelaFinanciamento, excluirParcelaFinanciamento } from '../../../services/parcelaFinanciamentoService';
@@ -97,7 +99,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 		return banco?.nome || 'Banco não encontrado';
 	};
 
-	const getPessoaNome = (idPessoa: number | null) => {
+	const getPessoaNome = (idPessoa: number | null | undefined) => {
 		const pessoa = pessoas.find((p) => p.id === idPessoa);
 		return pessoa?.nome || 'Pessoa não encontrada';
 	};
@@ -109,8 +111,8 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 			status: 'Aberto',
 			numParcela: parcelas.length + 1,
 			valor: 0,
-			dt_vencimento: new Date().toISOString().split('T')[0],
-			dt_lancamento: new Date().toISOString().split('T')[0],
+			dt_vencimento: hojeISO(),
+			dt_lancamento: hojeISO(),
 			dt_liquidacao: null,
 			idMovimentoBancario: null // Adicionando campo obrigatório
 		};
@@ -122,7 +124,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 		setShowDeleteConfirmModal(true);
 	};
 
-	const handleDeleteConfirm = () => {
+	const handleDeleteConfirm = async () => {
 		if (selectedParcela) {
 			if (selectedParcela.id && selectedParcela.id > 0) { // Verifica se é uma parcela existente (não temporária)
 				setParcelasToDelete([...parcelasToDelete, selectedParcela.id]);
@@ -248,7 +250,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 		try {
 			const parcelaAtualizada = {
 				...selectedParcela,
-				status: 'Liquidado',
+				status: 'Liquidado' as const,
 				dt_liquidacao: liquidationDate,
 			};
 
@@ -272,7 +274,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 		try {
 			const parcelaAtualizada = {
 				...parcela,
-				status: 'Aberto',
+				status: 'Aberto' as const,
 				dt_liquidacao: null,
 			};
 
@@ -308,8 +310,8 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 			});
 
 			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.message || 'Erro ao excluir parcela');
+				const error = (await response.json().catch(() => null)) as { message?: string } | null;
+				throw new Error(error?.message || 'Erro ao excluir parcela');
 			}
 
 			setParcelas(parcelas.filter(p => p.id !== id));
@@ -377,7 +379,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 							<div>
 								<p className="text-sm text-gray-600">Data do Contrato</p>
 								<p className="font-semibold">
-									{new Date(financiamento.dataContrato).toLocaleDateString()}
+									{formatarDataISO(financiamento.dataContrato)}
 								</p>
 							</div>
 							<div>
@@ -479,7 +481,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 										<td className="p-2">
 											{parcela.status === 'Liquidado' ? (
 												<span className="text-sm text-gray-600">
-													{new Date(parcela.dt_liquidacao!).toLocaleDateString()}
+													{formatarDataISO(parcela.dt_liquidacao)}
 												</span>
 											) : (
 												<span className="text-sm text-gray-400">-</span>
@@ -499,7 +501,7 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 													<button
 														onClick={() => {
 															setSelectedParcela(parcela);
-															setLiquidationDate(new Date().toISOString().split('T')[0]);
+															setLiquidationDate(hojeISO());
 															setLiquidationModalOpen(true);
 														}}
 														className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 text-sm rounded-md flex items-center gap-2 transition-colors"

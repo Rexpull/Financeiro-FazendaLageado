@@ -206,6 +206,9 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
     (item) => item.subtipoDespesa === 'investimento'
   );
 
+  // "Sem conciliar" used to compare a value with itself (always zero); show what is really pending
+  const semCentro = dashboardData?.receitasDespesas?.semCentroCustos ?? { receitas: 0, despesas: 0 };
+
   const totalReceitasPeriodo = receitasPorCentros.reduce(
     (s, r) => s + Math.abs(Number(r.valor) || 0),
     0
@@ -755,9 +758,11 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                               color="text.secondary"
                               sx={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
                             >
-                              <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
+                              <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot + semFoot)}</span>
                               <span className="text-gray-500">|</span>
-                              <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
+                              <span title="Lançamentos do período ainda sem centro de custos (pendentes na conciliação)">
+                                <strong className="text-orange-500">Sem centro de custos:</strong> {formatCurrency(semCentro.receitas)}
+                              </span>
                             </Typography>
                           </Box>
                         )}
@@ -866,9 +871,11 @@ const ReceitasDespesasTab: React.FC<ReceitasDespesasTabProps> = ({
                                 color="text.secondary"
                                 sx={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
                               >
-                                <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot)}</span>
+                                <span><strong className="text-green-500">Conciliado:</strong> {formatCurrency(concFoot + semFoot)}</span>
                                 <span className="text-gray-500">|</span>
-                                <span><strong className="text-orange-500">Sem Conciliar:</strong> {formatCurrency(semFoot)}</span>
+                                <span title="Lançamentos do período ainda sem centro de custos (pendentes na conciliação)">
+                                  <strong className="text-orange-500">Sem centro de custos:</strong> {formatCurrency(semCentro.despesas)}
+                                </span>
                               </Typography>
                             </Box>
                           )}

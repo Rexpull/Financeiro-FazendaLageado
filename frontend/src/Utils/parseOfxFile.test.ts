@@ -7,6 +7,8 @@ import {
   parseOFXFile,
   extractSantanderBoletoPayee,
   isSantanderIof,
+  decodeOfxBytes,
+  desambiguarIdentificadoresRepetidos,
 } from "./parseOfxFile";
 import {
   OFX_CAIXA_MARCO,
@@ -16,6 +18,11 @@ import {
   OFX_SANTANDER_MARCO,
   OFX_FITID_GENERIC_OTHER_BANK,
   OFX_BRADESCO_GJN,
+  OFX_CP1252_BYTES,
+  OFX_XML_CP1252_BYTES,
+  OFX_SANTANDER_LINHAS_REPETIDAS,
+  OFX_FITID_GENERIC_LINHAS_IDENTICAS,
+  toSingleByte,
 } from "./parseOfxFile.fixtures";
 
 const BRADESCO_FULL_FIXTURE = path.join(
@@ -355,19 +362,7 @@ describe("parseOFXFile", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reads File via FileReader and parses content", async () => {
-    class MockFileReader {
-      result: string | null = null;
-      onload: ((ev: { target: { result: string } }) => void) | null = null;
-      onerror: (() => void) | null = null;
-      readAsText() {
-        queueMicrotask(() => {
-          this.onload?.({ target: { result: OFX_CAIXA_MARCO } });
-        });
-      }
-    }
-    vi.stubGlobal("FileReader", MockFileReader);
-
+  it("reads File bytes and parses content", async () => {
     const file = new File([OFX_CAIXA_MARCO], "caixa.ofx", {
       type: "application/octet-stream",
     });
@@ -376,5 +371,127 @@ describe("parseOFXFile", () => {
     expect(movimentos).toHaveLength(2);
     const consorcio = movimentos.find((m) => m.historico === "CONSORCIO");
     expect(consorcio?.valor).toBe(-1061.52);
+  });
+
+  it("decodes a windows-1252 file (CHARSET:1252) instead of reading it as UTF-8", async () => {
+    const file = new File([OFX_CP1252_BYTES], "bradesco.ofx", {
+      type: "application/octet-stream",
+    });
+    const { movimentos } = await parseOFXFile(file);
+
+    expect(movimentos.map((m) => m.historico)).toEqual([
+      "DÉB. TARIFA PACOTE",
+      "DEPÓSITO EM DINHEIRO",
+    ]);
+    expect(movimentos.some((m) => m.historico.includes("�"))).toBe(false);
+  });
+
+  it("falls back to FileReader.readAsArrayBuffer when File.arrayBuffer is unavailable", async () => {
+    class MockFileReader {
+      onload: ((ev: { target: { result: ArrayBuffer } }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      readAsArrayBuffer() {
+        queueMicrotask(() => {
+          this.onload?.({ target: { result: OFX_CP1252_BYTES.slice().buffer } });
+        });
+      }
+    }
+    vi.stubGlobal("FileReader", MockFileReader);
+
+    const fakeFile = { name: "x.ofx" } as unknown as File;
+    const { movimentos } = await parseOFXFile(fakeFile);
+    expect(movimentos[0].historico).toBe("DÉB. TARIFA PACOTE");
+  });
+});
+
+describe("decodeOfxBytes", () => {
+  it("uses windows-1252 when header declares CHARSET:1252", () => {
+    const text = decodeOfxBytes(OFX_CP1252_BYTES);
+    expect(text).toContain("DÉB. TARIFA PACOTE");
+    expect(text).toContain("DEPÓSITO BLOQUEADO");
+    expect(text).not.toContain("�");
+  });
+
+  it("honours <?xml encoding=\"windows-1252\"?> on OFX 2.x", () => {
+    const text = decodeOfxBytes(OFX_XML_CP1252_BYTES);
+    expect(text).toContain("DÉBITO TARIFA");
+  });
+
+  it("keeps UTF-8 content intact (declared or not)", () => {
+    const utf8 = new TextEncoder().encode(
+      "OFXHEADER:100\nENCODING:UTF-8\nCHARSET:NONE\n\n<OFX><MEMO>DÉB. AÇÚCAR</MEMO></OFX>"
+    );
+    expect(decodeOfxBytes(utf8)).toContain("DÉB. AÇÚCAR");
+
+    const semHeader = new TextEncoder().encode("<OFX><MEMO>DEPÓSITO</MEMO></OFX>");
+    expect(decodeOfxBytes(semHeader)).toContain("DEPÓSITO");
+  });
+
+  it("falls back to windows-1252 when there is no header and bytes are not valid UTF-8", () => {
+    const bytes = toSingleByte(`<OFX><MEMO>DEP${String.fromCharCode(0xd3)}SITO</MEMO></OFX>`);
+    expect(decodeOfxBytes(bytes)).toContain("DEPÓSITO");
+  });
+
+  it("handles a mislabeled file (header 1252 but UTF-8 bytes) without mojibake", () => {
+    const bytes = new TextEncoder().encode(
+      "OFXHEADER:100\nENCODING:USASCII\nCHARSET:1252\n\n<OFX><MEMO>DÉB.</MEMO></OFX>"
+    );
+    expect(decodeOfxBytes(bytes)).toContain("DÉB.");
+  });
+});
+
+describe("windows-1252 OFX content", () => {
+  it("filters DEPÓSITO BLOQUEADO and keeps accents in historico", () => {
+    const { movimentos, totalizadores } = parseOFXContent(decodeOfxBytes(OFX_CP1252_BYTES));
+
+    expect(movimentos).toHaveLength(2);
+    expect(movimentos.some((m) => /BLOQUEADO/.test(m.historico))).toBe(false);
+    expect(movimentos.some((m) => m.valor === 9000)).toBe(false);
+    expect(movimentos[0].historico).toBe("DÉB. TARIFA PACOTE");
+    expect(totalizadores.receitas).toBe(300);
+  });
+});
+
+describe("identificadorOfx for repeated lines in the same file", () => {
+  it("keeps the first occurrence unchanged and suffixes the following with |#2, |#3", () => {
+    const { movimentos } = parseOFXContent(OFX_SANTANDER_LINHAS_REPETIDAS);
+
+    expect(movimentos).toHaveLength(4);
+    const ids = movimentos.map((m) => m.identificadorOfx);
+    expect(ids).toEqual([
+      "000000|2026-03-10T00:00:00.000Z|-500.00",
+      "000000|2026-03-10T00:00:00.000Z|-500.00|#2",
+      "000000|2026-03-10T00:00:00.000Z|-500.00|#3",
+      "000000|2026-03-11T00:00:00.000Z|-500.00",
+    ]);
+    expect(new Set(ids).size).toBe(4);
+    expect(movimentos.map((m) => m.numeroDocumento)).toEqual(ids);
+  });
+
+  it("keeps identical generic-FITID lines on other banks as separate movements", () => {
+    const { movimentos } = parseOFXContent(OFX_FITID_GENERIC_LINHAS_IDENTICAS);
+
+    expect(movimentos).toHaveLength(2);
+    expect(movimentos.map((m) => m.identificadorOfx)).toEqual([
+      "000000|2026-01-10T00:00:00.000Z|-100.00",
+      "000000|2026-01-10T00:00:00.000Z|-100.00|#2",
+    ]);
+  });
+
+  it("does not change identifiers when there are no repetitions", () => {
+    const { movimentos } = parseOFXContent(OFX_CAIXA_MARCO);
+    expect(movimentos.every((m) => !m.identificadorOfx.includes("|#"))).toBe(true);
+    const consorcio = movimentos.find((m) => m.historico === "CONSORCIO");
+    expect(consorcio?.identificadorOfx).toBe("374751|2026-03-10T00:00:00.000Z|-1061.52|374751");
+  });
+
+  it("desambiguarIdentificadoresRepetidos avoids clashing with an existing suffixed id", () => {
+    expect(desambiguarIdentificadoresRepetidos(["a", "b", "a", "a|#2", "a"])).toEqual([
+      "a",
+      "b",
+      "a|#3",
+      "a|#2",
+      "a|#4",
+    ]);
   });
 });

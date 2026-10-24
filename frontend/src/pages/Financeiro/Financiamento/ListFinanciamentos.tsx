@@ -26,6 +26,7 @@ import { financiamentoTemParcelasVencidas } from '../../../Utils/financiamentoPa
 import { salvarFinanciamento, listarFinanciamentos, excluirFinanciamento } from '../../../services/financiamentoService';
 import { salvarParcelaFinanciamento } from '../../../services/financiamentoParcelasService';
 import { toast } from 'react-toastify';
+import { formatarDataISO, hojeISO } from '../../../Utils/dataSemFuso';
 import { listarBancos } from '../../../services/bancoService';
 import { listarPessoas } from '../../../services/pessoaService';
 import { Banco } from '../../../../../backend/src/models/Banco';
@@ -166,7 +167,9 @@ const ListFinanciamentos: React.FC = () => {
 			toast.success('Financiamento excluído com sucesso!');
 		} catch (error) {
 			console.error('Erro ao excluir financiamento:', error);
-			toast.error('Erro ao excluir financiamento');
+			setConfirmModalOpen(false);
+			// shows the API message, e.g. "Este financiamento tem 3 lançamentos bancários vinculados. ..."
+			toast.error(error instanceof Error && error.message ? error.message : 'Erro ao excluir financiamento');
 		}
 	};
 
@@ -179,7 +182,7 @@ const ListFinanciamentos: React.FC = () => {
 		return banco?.nome || 'Banco não encontrado';
 	};
 
-	const getPessoaNome = (idPessoa: number | null) => {
+	const getPessoaNome = (idPessoa: number | null | undefined) => {
 		const pessoa = pessoas.find((p) => p.id === idPessoa);
 		return pessoa?.nome || 'Pessoa não encontrada';
 	};
@@ -266,7 +269,7 @@ const ListFinanciamentos: React.FC = () => {
 		try {
 			const parcelaAtualizada = {
 				...selectedParcela,
-				status: 'Liquidado',
+				status: 'Liquidado' as const,
 				dt_liquidacao: liquidationDate,
 			};
 
@@ -306,7 +309,7 @@ const ListFinanciamentos: React.FC = () => {
 		try {
 			const parcelaAtualizada = {
 				...parcelaToEstornar,
-				status: 'Aberto',
+				status: 'Aberto' as const,
 				dt_liquidacao: null,
 			};
 
@@ -430,7 +433,7 @@ const ListFinanciamentos: React.FC = () => {
 											{fin.parcelasList?.map((parcela) => (
 												<tr key={parcela.id} className="border-t">
 													<td className="p-2">{parcela.numParcela}</td>
-													<td className="p-2">{new Date(parcela.dt_vencimento).toLocaleDateString()}</td>
+													<td className="p-2">{formatarDataISO(parcela.dt_vencimento)}</td>
 													<td className="p-2">R$ {formatarMoeda(parcela.valor)}</td>
 													<td className="p-2">
 														<span
@@ -448,7 +451,7 @@ const ListFinanciamentos: React.FC = () => {
 													<td className="p-2">
 														{parcela.status === 'Liquidado' ? (
 															<span className="text-sm text-gray-600">
-																{new Date(parcela.dt_liquidacao!).toLocaleDateString()}
+																{formatarDataISO(parcela.dt_liquidacao)}
 															</span>
 														) : (
 															<span className="text-sm text-gray-400">-</span>
@@ -468,7 +471,7 @@ const ListFinanciamentos: React.FC = () => {
 																<button
 																	onClick={() => {
 																		setSelectedParcela(parcela);
-																		setLiquidationDate(new Date().toISOString().split('T')[0]);
+																		setLiquidationDate(hojeISO());
 																		setLiquidationModalOpen(true);
 																	}}
 																	className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 text-sm rounded-md flex items-center gap-2 transition-colors"
@@ -591,7 +594,7 @@ const ListFinanciamentos: React.FC = () => {
 														{fin.parcelasList?.map((parcela) => (
 															<tr key={parcela.id} className="border-t">
 																<td className="p-2">{parcela.numParcela}</td>
-																<td className="p-2">{new Date(parcela.dt_vencimento).toLocaleDateString()}</td>
+																<td className="p-2">{formatarDataISO(parcela.dt_vencimento)}</td>
 																<td className="p-2">R$ {formatarMoeda(parcela.valor)}</td>
 																<td className="p-2">
 																	<span
@@ -609,7 +612,7 @@ const ListFinanciamentos: React.FC = () => {
 																<td className="p-2">
 																	{parcela.status === 'Liquidado' ? (
 																		<span className="text-sm text-gray-600">
-																			{new Date(parcela.dt_liquidacao!).toLocaleDateString()}
+																			{formatarDataISO(parcela.dt_liquidacao)}
 																		</span>
 																	) : (
 																		<span className="text-sm text-gray-400">-</span>
@@ -629,7 +632,7 @@ const ListFinanciamentos: React.FC = () => {
 																			<button
 																				onClick={() => {
 																					setSelectedParcela(parcela);
-																					setLiquidationDate(new Date().toISOString().split('T')[0]);
+																					setLiquidationDate(hojeISO());
 																					setLiquidationModalOpen(true);
 																				}}
 																				className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 text-sm rounded-md flex items-center gap-2 transition-colors"
@@ -778,7 +781,7 @@ const ListFinanciamentos: React.FC = () => {
 							{filtered.map((fin) => (
 								<div key={fin.id} className="bg-white relative border rounded-lg pb-0 p-4 shadow-md hover:bg-gray-50 transition">
 									{/* Menu de ações */}
-									<div className="absolute top-3 right-0 cursor-pointer" ref={(el) => (menuRefs.current[fin.id] = el)}>
+									<div className="absolute top-3 right-0 cursor-pointer" ref={(el) => { menuRefs.current[fin.id] = el; }}>
 										<FontAwesomeIcon
 											icon={faEllipsisV}
 											className="text-gray-600 w-8 mr-1 text-lg"
@@ -861,9 +864,7 @@ const ListFinanciamentos: React.FC = () => {
 											<span className="text-gray-600">Período:</span>
 											<span className="font-semibold">
 												{fin.parcelasList && fin.parcelasList.length > 0
-													? `${new Date(fin.parcelasList[0].dt_vencimento).toLocaleDateString()} à ${new Date(
-															fin.parcelasList[fin.parcelasList.length - 1].dt_vencimento
-												  ).toLocaleDateString()}`
+													? `${formatarDataISO(fin.parcelasList[0].dt_vencimento)} à ${formatarDataISO(fin.parcelasList[fin.parcelasList.length - 1].dt_vencimento)}`
 													: 'Sem parcelas'}
 											</span>
 										</div>
@@ -921,7 +922,7 @@ const ListFinanciamentos: React.FC = () => {
 									{financiamentosCompletos.map((fin) => (
 										<div key={fin.id} className="bg-white relative border rounded-lg pb-0 p-4 shadow-md hover:bg-gray-50 transition">
 											{/* Menu de ações */}
-											<div className="absolute top-3 right-0 cursor-pointer" ref={(el) => (menuRefs.current[fin.id] = el)}>
+											<div className="absolute top-3 right-0 cursor-pointer" ref={(el) => { menuRefs.current[fin.id] = el; }}>
 												<FontAwesomeIcon
 													icon={faEllipsisV}
 													className="text-gray-600 w-8 mr-1 text-lg"
@@ -994,9 +995,7 @@ const ListFinanciamentos: React.FC = () => {
 													<span className="text-gray-600">Período:</span>
 													<span className="font-semibold">
 														{fin.parcelasList && fin.parcelasList.length > 0
-															? `${new Date(fin.parcelasList[0].dt_vencimento).toLocaleDateString()} à ${new Date(
-																	fin.parcelasList[fin.parcelasList.length - 1].dt_vencimento
-															  ).toLocaleDateString()}`
+															? `${formatarDataISO(fin.parcelasList[0].dt_vencimento)} à ${formatarDataISO(fin.parcelasList[fin.parcelasList.length - 1].dt_vencimento)}`
 															: 'Sem parcelas'}
 													</span>
 												</div>
@@ -1067,7 +1066,7 @@ const ListFinanciamentos: React.FC = () => {
 				onConfirm={handleDeleteConfirm}
 				title="Atenção"
 				type="warn"
-				message="Tem certeza que deseja excluir este financiamento?"
+				message="Tem certeza que deseja excluir este financiamento? Todas as parcelas dele também serão excluídas."
 				confirmLabel="Excluir"
 				cancelLabel="Cancelar"
 			/>

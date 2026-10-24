@@ -100,6 +100,8 @@ export interface DashboardData {
     }>;
     totalConciliado?: number;
     totalSemConciliar?: number;
+    /** Movements of the period still without a cost centre (pending conciliation) */
+    semCentroCustos?: { receitas: number; despesas: number };
     totalReceitas?: number;
     totalDespesas?: number;
   };

@@ -15,6 +15,8 @@ import { Financiamento } from "../../../../../../backend/src/models/Financiament
 import { CentroCustos } from "../../../../../../backend/src/models/CentroCustos";
 import { MovimentoCentroCustos } from "../../../../../../backend/src/models/MovimentoCentroCustos";
 import ModalRateioCentroCustos from "./ModalRateioCentroCustos";
+import { dividirValorEmParcelas, gerarDatasVencimento } from "../../../../Utils/parcelamento";
+import { hojeISO } from "../../../../Utils/dataSemFuso";
 
 Modal.setAppElement("#root");
 
@@ -30,8 +32,8 @@ const getInitialFormState = () => ({
   descricao: "",
   transfOrigem: null as null,
   transfDestino: null as null,
-  pessoaSelecionada: null as null,
-  bancoSelecionado: null as null,
+  pessoaSelecionada: null as string | null,
+  bancoSelecionado: null as string | null,
   idContaCorrente: getContaFromStorage()?.id || 0,
   historico: "",
   ideagro: false,
@@ -128,7 +130,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         if (!cache.pessoas) cache.pessoas = await listarPessoas();
         if (!cache.centros) cache.centros = await listarCentroCustos();
 
-        setParametros(cache.parametros);
+        setParametros(cache.parametros!);
         setPlanos(cache.planos);
         setCentros(cache.centros);
         setBancos(cache.bancos);
@@ -167,16 +169,20 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   }, [isOpen]);
 
 	const gerarParcelas = () => {
-    if (!parcelado || parseFloat(formData.valor.replace(",", ".")) <= 0) {
+    // formData.valor is undefined when the currency field is cleared: parse defensively.
+    const valorTotal = parseFloat(String(formData.valor ?? "").replace(",", ".")) || 0;
+    if (!parcelado || valorTotal <= 0 || numParcelas < 1) {
       setParcelas([]);
       return;
     }
 
-    const valorParcela = (parseFloat(formData.valor.replace(",", ".")) / numParcelas).toFixed(2);
-    const novasParcelas = Array.from({ length: numParcelas }, (_, i) => ({
+    // residual on the last installment (R$ 100 em 3 = 33,33 + 33,33 + 33,34)
+    const valores = dividirValorEmParcelas(valorTotal, numParcelas);
+    const vencimentos = gerarDatasVencimento(hojeISO(), numParcelas);
+    const novasParcelas = valores.map((valor, i) => ({
       numParcela: i + 1,
-      dt_vencimento: new Date(new Date().setMonth(new Date().getMonth() + i)).toISOString().slice(0, 10),
-      valor: valorParcela,
+      dt_vencimento: vencimentos[i],
+      valor: valor.toFixed(2),
     }));
 
     setParcelas(novasParcelas);
@@ -239,7 +245,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
       if (!formData.idFinanciamento) newErrors.idFinanciamento = "Selecione um financiamento!";
     }
     if (modalidadeMovimento === "padrao") {
-      const valorNum = parseFloat(formData.valor.replace(",", ".")) || 0;
+      const valorNum = parseFloat(String(formData.valor ?? "").replace(",", ".")) || 0;
       if (rateiosCentros.length > 0) {
         const somaCentros = rateiosCentros.reduce((s, r) => s + r.valor, 0);
         if (Math.abs(somaCentros - Math.abs(valorNum)) > 0.01) {
@@ -330,18 +336,6 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     setFormData((prev) => ({ ...prev, idPlanoContas: plano.id.toString() }));
     setShowSuggestions(false);
   };
-
-  useEffect(() => {
-    if (parcelado && parseFloat(formData.valor.replace(",", ".")) > 0) {
-      const valorParcela = (parseFloat(formData.valor.replace(",", ".")) / numParcelas).toFixed(2);
-      const novasParcelas = Array.from({ length: numParcelas }, (_, i) => ({
-        numParcela: i + 1,
-        dt_vencimento: new Date(new Date().setMonth(new Date().getMonth() + i)).toISOString().slice(0, 10),
-        valor: valorParcela,
-      }));
-      setParcelas(novasParcelas);
-    }
-  }, [parcelado, numParcelas, formData.valor]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -499,7 +493,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
                   {financiamentosFiltrados.map(f => (
                     <li
                       key={f.id}
-                      className={`p-2 cursor-pointer hover:bg-orange-100 ${financiamentoSelecionado?.id === f.id ? 'bg-orange-200' : ''}`}
+                      className="p-2 cursor-pointer hover:bg-orange-100"
                       onClick={() => {
                         setFinanciamentoSelecionado(f);
                         setFormData(prev => ({ ...prev, idFinanciamento: f.id }));

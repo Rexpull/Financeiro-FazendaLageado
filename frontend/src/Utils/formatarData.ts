@@ -24,3 +24,14 @@ export const calcularDataAnteriorFimDia = (data: string) => {
   d.setHours(23, 59, 59, 999);
   return d.toISOString();
 };
+
+/**
+ * dd/mm/aaaa read straight from the 'YYYY-MM-DD...' text (no Date/timezone conversion), so
+ * '2026-10-13T00:00:00.000Z' never shows as 12/10 in Brazil (UTC−3). Falls back to the UTC date.
+ */
+export const formatarDataISO = (data?: string | null) => {
+	if (!data) return '';
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(data));
+	if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+	return formatarDataSemHora(String(data));
+};

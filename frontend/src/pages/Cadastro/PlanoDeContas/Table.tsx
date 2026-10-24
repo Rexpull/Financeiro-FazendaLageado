@@ -18,7 +18,8 @@ import {
 
 import { faMinus, faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 
-import { listarPlanoContas, salvarPlanoConta, excluirPlanoConta, atualizarStatusConta } from '../../../services/planoContasService';
+import { listarPlanoContas, salvarPlanoConta, atualizarStatusConta } from '../../../services/planoContasService';
+import { excluirPlanoContaCadastro } from '../../../services/excluirCadastroService';
 import { PlanoConta } from '../../../../../backend/src/models/PlanoConta';
 
 const PlanoContasTable: React.FC = () => {
@@ -180,11 +181,12 @@ const PlanoContasTable: React.FC = () => {
 	const handleDeleteConfirm = async () => {
 		if (deletePlanoId === null) return;
 		try {
-			await excluirPlanoConta(deletePlanoId);
+			await excluirPlanoContaCadastro(deletePlanoId); // toasts the API message (409 when in use)
 			setPlanos((prev) => prev.filter((plano) => plano.id !== deletePlanoId));
 			setConfirmModalOpen(false);
 		} catch (error) {
 			console.error('Erro ao excluir plano de contas:', error);
+			setConfirmModalOpen(false);
 		}
 	};
 

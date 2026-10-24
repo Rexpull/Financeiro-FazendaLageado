@@ -9,8 +9,21 @@ import {
 	parseOfxIdentificadorParts,
 } from '../utils/coerceMonetaryValue';
 import { isMovimentoFinanciamento } from '../utils/isMovimentoFinanciamento';
-import { shouldReuseOfxMovimento } from '../utils/ofxIdentificadorMatch';
+import {
+	chaveFitidDia,
+	contaSuffixRange,
+	escolherIdentificadorParaConta,
+	selecionarCandidatoFallbackOfx,
+	shouldReuseOfxMovimento,
+	stripContaSuffix,
+} from '../utils/ofxIdentificadorMatch';
 import { reescalarRateio } from '../utils/rateioOfxCorrecao';
+import {
+	TransferenciaInvalidaError,
+	identificadoresTransferencia,
+	parsePlanoTransferencia,
+	validarTransferencia,
+} from '../utils/transferencia';
 import * as XLSX from 'xlsx';
 
 export class MovimentoBancarioRepository {
@@ -70,14 +83,40 @@ export class MovimentoBancarioRepository {
 	}
 
 	/**
-	 * Re-import OFX: same FITID + day + account, but valor/identificador corrected after parser fix.
+	 * Re-import OFX: the SAME bank line (same FITID + day + account + historico + checkNum)
+	 * whose valor/identificador changed after a parser fix. Never used for generic FITIDs,
+	 * `|#N` repeated lines, FITID+day repeated in the batch, or rows already matched by
+	 * another line of the batch; any ambiguity returns null (imported as new).
 	 */
 	async findByOfxFitidDayConta(
 		identificadorOfx: string,
-		idContaCorrente: number
+		idContaCorrente: number,
+		opts: {
+			historico?: string | null;
+			valor?: number;
+			idsJaUsados?: Set<number>;
+			identificadoresDoLote?: Set<string>;
+			fitidDiaRepetidoNoLote?: boolean;
+		} = {},
 	): Promise<MovimentoBancario | null> {
 		const parsed = parseOfxIdentificadorParts(identificadorOfx);
 		if (!parsed) return null;
+
+		const incoming = {
+			identificadorOfx,
+			historico: opts.historico,
+			valor: Number(opts.valor ?? parsed.valor),
+		};
+		// Cheap pre-check (generic FITID, |#N, repeated in batch) before hitting the DB
+		if (
+			!selecionarCandidatoFallbackOfx({
+				incoming,
+				candidatos: [{ id: -1, identificadorOfx, historico: opts.historico, valor: incoming.valor }],
+				fitidDiaRepetidoNoLote: opts.fitidDiaRepetidoNoLote,
+			})
+		) {
+			return null;
+		}
 
 		const day = parsed.dtIso.substring(0, 10);
 		const { results } = await this.db
@@ -92,29 +131,19 @@ export class MovimentoBancarioRepository {
 				AND substr(identificador_ofx, 1, instr(identificador_ofx, '|') - 1) = ?
 				AND substr(identificador_ofx, instr(identificador_ofx, '|') + 1, 10) = ?
 				ORDER BY id ASC
-				LIMIT 2
 			`,
 			)
 			.bind(idContaCorrente, parsed.fitid, day)
 			.all();
 
-		if (results.length === 0) return null;
-		if (results.length === 1) {
-			return this.mapRowToMovimento(results[0] as Record<string, unknown>);
-		}
-
-		if (parsed.checkNum) {
-			const match = results.find((row) =>
-				String((row as Record<string, unknown>).identificador_ofx ?? '').includes(
-					`|${parsed.checkNum}`
-				)
-			);
-			if (match) {
-				return this.mapRowToMovimento(match as Record<string, unknown>);
-			}
-		}
-
-		return this.mapRowToMovimento(results[0] as Record<string, unknown>);
+		const candidatos = (results as Record<string, unknown>[]).map((row) => this.mapRowToMovimento(row));
+		return selecionarCandidatoFallbackOfx({
+			incoming,
+			candidatos: candidatos.map((c) => ({ ...c, id: c.id, identificadorOfx: c.identificadorOfx ?? '' })),
+			idsJaUsados: opts.idsJaUsados,
+			identificadoresDoLote: opts.identificadoresDoLote,
+			fitidDiaRepetidoNoLote: opts.fitidDiaRepetidoNoLote,
+		});
 	}
 
 	/**
@@ -196,6 +225,10 @@ export class MovimentoBancarioRepository {
       AND CAST(strftime('%m', mb.dtMovimento) AS INTEGER) = ?`;
 
 		if (tipo === 'receitas' || tipo === 'despesas' || tipo === 'investimentos') {
+			// Same rules as the Fluxo cell (POST /api/fluxoCaixa, planos mode): no transfers, no financing
+			// (idFinanciamento / modalidade / Parametros financing plans), nothing touching children of plan 170,
+			// and only modalidade 'padrao' not parcelado (the others go to "Pendentes" there).
+			const mbExcl = this.sqlExcludeMbPlanoContas('mb', await this.getIdsPlanosExclusaoFluxo());
 			sql = `
 				SELECT
 					mb.id,
@@ -213,11 +246,13 @@ export class MovimentoBancarioRepository {
 				WHERE r.idPlanoContas = ?
 				${dateSql}
 				${contasSql}
-				AND mb.idFinanciamento IS NULL
-				AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))
+				AND (mb.idFinanciamento IS NULL OR mb.idFinanciamento <= 0)
+				AND mb.modalidadeMovimento = 'padrao'
+				AND COALESCE(mb.parcelado, 0) != 1
+				${mbExcl.sql}
 				ORDER BY mb.dtMovimento ASC
 			`;
-			params = [planoId, anoUsar, mesNumero, ...contas];
+			params = [planoId, anoUsar, mesNumero, ...contas, ...mbExcl.bind];
 		} else if (tipo === 'pendentesSelecao') {
 			sql = `
 				SELECT
@@ -370,42 +405,19 @@ export class MovimentoBancarioRepository {
 		const { results } = await this.db
 			.prepare(
 				`
-			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro, numero_Documento, descricao, transf_origem, transf_destino, identificador_ofx, criado_em, atualizado_em, idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
+			SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
+				numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
+				criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
+				idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 			FROM MovimentoBancario
 		`,
 			)
 			.all();
 
-		const movimentos = await Promise.all(
-			results.map(async (result) => {
-				const resultadoList = await this.resultadoRepo.getByMovimento(result.id as number);
-				return {
-					id: result.id as number,
-					dtMovimento: result.dtMovimento as string,
-					historico: result.historico as string,
-					idPlanoContas: result.idPlanoContas as number,
-					idContaCorrente: result.idContaCorrente as number,
-					valor: result.valor as number,
-					saldo: result.saldo as number,
-					ideagro: result.ideagro as boolean,
-					numeroDocumento: result.numeroDocumento as string,
-					descricao: result.descricao as string,
-					transfOrigem: result.transfOrigem as number | null,
-					transfDestino: result.transfDestino as number | null,
-					identificadorOfx: result.identificadorOfx as string,
-					criadoEm: result.criadoEm as string,
-					atualizadoEm: result.atualizadoEm as string,
-					idBanco: result.idBanco as number,
-					idPessoa: result.idPessoa as number,
-					parcelado: result.parcelado === 1,
-					idFinanciamento: result.idFinanciamento as number | undefined,
-					idCentroCustos: result.idCentroCustos as number | undefined,
-					resultadoList: resultadoList,
-				};
-			}),
+		const resultadosMap = await this.resultadoRepo.getByMovimentos(results.map((r) => r.id as number));
+		return (results as Record<string, unknown>[]).map((result) =>
+			this.mapRowToMovimento(result, { resultadoList: resultadosMap.get(result.id as number) ?? [] }),
 		);
-
-		return movimentos;
 	}
 
 	async getAllFiltrado(ano: string, contas: number[]): Promise<MovimentoBancario[]> {
@@ -504,6 +516,20 @@ export class MovimentoBancarioRepository {
 
 		console.log(`🔄 Processando lote de ${movimentos.length} movimentos`);
 
+		// Batch context for the OFX fallback (per conta): bare identificadores of every line,
+		// FITID+day keys repeated in the batch, and rows already matched by a previous line.
+		const identificadoresPorConta = new Map<number, Set<string>>();
+		const contagemFitidDia = new Map<string, number>();
+		for (const m of movimentos) {
+			const conta = Number(m?.idContaCorrente);
+			if (!m?.identificadorOfx || !conta) continue;
+			if (!identificadoresPorConta.has(conta)) identificadoresPorConta.set(conta, new Set());
+			identificadoresPorConta.get(conta)!.add(stripContaSuffix(m.identificadorOfx));
+			const chave = chaveFitidDia(m.identificadorOfx, conta);
+			if (chave) contagemFitidDia.set(chave, (contagemFitidDia.get(chave) ?? 0) + 1);
+		}
+		const idsJaUsados = new Set<number>();
+
 		for (const movimento of movimentos) {
 			try {
 				const mov = this.normalizeIncomingMovimento(movimento);
@@ -526,23 +552,33 @@ export class MovimentoBancarioRepository {
 						movimentoExistente = byIdentificador;
 					}
 					if (!movimentoExistente) {
+						const chave = chaveFitidDia(mov.identificadorOfx, Number(mov.idContaCorrente));
 						movimentoExistente = await this.findByOfxFitidDayConta(
 							mov.identificadorOfx,
 							mov.idContaCorrente,
+							{
+								historico: mov.historico,
+								valor: mov.valor,
+								idsJaUsados,
+								identificadoresDoLote: identificadoresPorConta.get(Number(mov.idContaCorrente)),
+								fitidDiaRepetidoNoLote: chave ? (contagemFitidDia.get(chave) ?? 0) > 1 : false,
+							},
 						);
 					}
 				}
 
 				if (movimentoExistente) {
+					idsJaUsados.add(movimentoExistente.id!);
 					// Lookups above return the bare row; load the rateio lists (Resultado + centros)
 					// so the screen keeps showing multi-centro classifications and update() preserves them.
 					movimentoExistente = (await this.getById(movimentoExistente.id!)) ?? movimentoExistente;
 
 					const valorDiverge =
 						Math.abs(Number(movimentoExistente.valor) - mov.valor) > 0.001;
+					// A row stored with a conta suffix (`|@c<id>`) is the same identificador
 					const identificadorDiverge =
 						mov.identificadorOfx &&
-						movimentoExistente.identificadorOfx !== mov.identificadorOfx;
+						stripContaSuffix(movimentoExistente.identificadorOfx ?? '') !== stripContaSuffix(mov.identificadorOfx);
 
 					if (valorDiverge || identificadorDiverge) {
 						console.log(
@@ -571,6 +607,7 @@ export class MovimentoBancarioRepository {
 
 				// Criar novo movimento
 				const idMov = await this.create(mov);
+				idsJaUsados.add(idMov);
 				console.log(`✅ Novo movimento criado: ID ${idMov}`);
 
 				// Buscar o movimento completo criado
@@ -594,19 +631,55 @@ export class MovimentoBancarioRepository {
 		return { movimentos: movimentosProcessados, novos, existentes, erros, detalhesErros };
 	}
 
+	/** Drops rateio lines without a valid centro (MovimentoCentroCustos.idCentroCustos is NOT NULL). */
+	private sanitizeCentroCustosList(
+		list: MovimentoBancario['centroCustosList'],
+	): NonNullable<MovimentoBancario['centroCustosList']> {
+		return (list ?? []).filter((c) => {
+			const id = Number(c?.idCentroCustos);
+			return Number.isInteger(id) && id > 0;
+		});
+	}
+
+	/**
+	 * identificador_ofx is UNIQUE globally but OFX dedupe is per conta: when the same
+	 * identificador already exists in ANOTHER conta, store it with a `|@c<idConta>` suffix.
+	 */
+	private async resolveIdentificadorOfxParaConta(
+		identificadorOfx: string,
+		idContaCorrente: number | null | undefined,
+		excludeId?: number,
+	): Promise<string> {
+		const conta = Number(idContaCorrente);
+		if (!identificadorOfx || !Number.isInteger(conta) || conta <= 0) return identificadorOfx;
+		const base = stripContaSuffix(identificadorOfx);
+		const range = contaSuffixRange(base);
+		const { results } = await this.db
+			.prepare(
+				`SELECT id, identificador_ofx, idContaCorrente FROM MovimentoBancario
+				 WHERE identificador_ofx = ? OR (identificador_ofx >= ? AND identificador_ofx < ?)`,
+			)
+			.bind(base, range.from, range.to)
+			.all<{ id: number; identificador_ofx: string; idContaCorrente: number }>();
+		const ocupados = results
+			.filter((r) => excludeId === undefined || Number(r.id) !== Number(excludeId))
+			.map((r) => ({ identificadorOfx: r.identificador_ofx, idContaCorrente: Number(r.idContaCorrente) }));
+		return escolherIdentificadorParaConta(base, conta, ocupados);
+	}
+
 	private resolveIdCentroCustosForInsert(movimento: MovimentoBancario): number | null {
-		const list = movimento.centroCustosList;
-		if (list && list.length > 1) {
+		const list = this.sanitizeCentroCustosList(movimento.centroCustosList);
+		if (list.length > 1) {
 			return null;
 		}
-		if (list && list.length === 1) {
+		if (list.length === 1) {
 			return list[0].idCentroCustos ?? null;
 		}
 		return movimento.idCentroCustos ?? null;
 	}
 
 	private async persistCentroCustosOnCreate(idMov: number, movimento: MovimentoBancario, valorAbs: number): Promise<void> {
-		let centroCustosList = movimento.centroCustosList;
+		let centroCustosList = this.sanitizeCentroCustosList(movimento.centroCustosList);
 
 		if ((!centroCustosList || centroCustosList.length === 0) && movimento.idCentroCustos) {
 			centroCustosList = [
@@ -668,6 +741,9 @@ export class MovimentoBancarioRepository {
 		} = normalized;
 
 		const idCentroCustosInsert = this.resolveIdCentroCustosForInsert(normalized);
+		const identificadorOfxFinal = identificadorOfx
+			? await this.resolveIdentificadorOfxParaConta(identificadorOfx, idContaCorrente)
+			: identificadorOfx;
 
 		// Tratar valores undefined antes de fazer o bind
 		const bindValues = [
@@ -682,7 +758,7 @@ export class MovimentoBancarioRepository {
 			descricao || null,
 			transfOrigem || null,
 			transfDestino || null,
-			identificadorOfx || null,
+			identificadorOfxFinal || null,
 			idUsuario || null,
 			tipoMovimento || null,
 			modalidadeMovimento || null,
@@ -791,7 +867,12 @@ export class MovimentoBancarioRepository {
 		if (movimento.transfDestino !== undefined && movimento.transfDestino !== movimentoAtual.transfDestino) {
 			camposAlterados.transfDestino = movimento.transfDestino;
 		}
-		if (movimento.identificadorOfx !== undefined && movimento.identificadorOfx !== movimentoAtual.identificadorOfx) {
+		// A conta-suffixed identificador (`|@c<id>`) is the same identificador as its bare form
+		if (
+			typeof movimento.identificadorOfx === 'string' &&
+			movimento.identificadorOfx !== '' &&
+			stripContaSuffix(movimento.identificadorOfx) !== stripContaSuffix(movimentoAtual.identificadorOfx ?? '')
+		) {
 			camposAlterados.identificadorOfx = movimento.identificadorOfx;
 		}
 		if (movimento.tipoMovimento !== undefined && movimento.tipoMovimento !== movimentoAtual.tipoMovimento) {
@@ -827,7 +908,7 @@ export class MovimentoBancarioRepository {
 		console.log('🔍 Tem centroCustosList para processar?', temCentroCustosList);
 
 		// Se não há campos para alterar E não há resultadoList E não há centroCustosList, retornar
-		if (Object.keys(camposAlterados).length === 0 && !temResultadoList && !temCentroCustosList) {
+		if (Object.keys(camposAlterados).length === 0 && !temResultadoList && !temCentroCustosList && !movimento.limparConciliacao) {
 			console.log('ℹ️ Nenhum campo foi alterado e não há resultadoList nem centroCustosList para processar');
 			return;
 		}
@@ -882,7 +963,14 @@ export class MovimentoBancarioRepository {
 		}
 		if (camposAlterados.identificadorOfx !== undefined) {
 			setClauses.push('identificador_ofx = ?');
-			bindValues.push(camposAlterados.identificadorOfx);
+			// Same identificador already stored in another conta → `|@c<idConta>` suffix (UNIQUE is global)
+			bindValues.push(
+				await this.resolveIdentificadorOfxParaConta(
+					camposAlterados.identificadorOfx,
+					camposAlterados.idContaCorrente ?? movimentoAtual.idContaCorrente,
+					id,
+				),
+			);
 		}
 		if (camposAlterados.tipoMovimento !== undefined) {
 			setClauses.push('tipoMovimento = ?');
@@ -937,6 +1025,32 @@ export class MovimentoBancarioRepository {
 			console.log('ℹ️ Nenhum campo da tabela para atualizar, apenas processando resultadoList');
 		}
 
+		// Default Resultado/MCC rows follow the values persisted by THIS update (new valor/date/conta).
+		const valorFinal =
+			camposAlterados.valor !== undefined ? coerceMonetaryValue(camposAlterados.valor) : Number(movimentoAtual.valor);
+		const valorAbsFinal = Math.abs(valorFinal);
+		const tipoFinal =
+			camposAlterados.tipoMovimento ||
+			(camposAlterados.valor !== undefined ? undefined : movimentoAtual.tipoMovimento) ||
+			(valorFinal >= 0 ? 'C' : 'D');
+		const dtMovimentoFinal = camposAlterados.dtMovimento ?? movimentoAtual.dtMovimento;
+		const idContaCorrenteFinal = camposAlterados.idContaCorrente ?? movimentoAtual.idContaCorrente;
+
+		// "Limpar conciliação": drop every plan/centre split. An empty resultadoList can't express this
+		// (ConciliarPlano sends [] for "single plan via idPlanoContas"), and when the movement had a
+		// rateio its idPlanoContas/idCentroCustos are already NULL, so "changed to null" never fires.
+		if (movimento.limparConciliacao) {
+			await this.db.batch([
+				this.db.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario = ?`).bind(id),
+				this.db.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario = ?`).bind(id),
+				this.db
+					.prepare(`UPDATE MovimentoBancario SET idPlanoContas = NULL, idCentroCustos = NULL, atualizado_em = datetime('now') WHERE id = ?`)
+					.bind(id),
+			]);
+			console.log('🧹 Conciliação limpa (planos e centros removidos)');
+			return;
+		}
+
 		// Only rebuild Resultado when the classification was sent or the plano changed;
 		// a partial PUT (e.g. only historico) must not wipe the existing Resultado rows.
 		const reprocessarResultados = !!temResultadoList || camposAlterados.idPlanoContas !== undefined;
@@ -955,17 +1069,17 @@ export class MovimentoBancarioRepository {
 		if (!resultadoList || resultadoList.length === 0) {
 			console.log('⚠️ Nenhum resultadoList fornecido, verificando se precisa criar resultado padrão...');
 			if (camposAlterados.idPlanoContas) {
-				const tipo = camposAlterados.tipoMovimento || movimentoAtual.tipoMovimento || (movimentoAtual.valor >= 0 ? 'C' : 'D');
-				const valorAbs = Math.abs(movimentoAtual.valor);
+				const tipo = tipoFinal;
+				const valorAbs = valorAbsFinal;
 
 				console.log('⚠️ Nenhum resultado informado. Criando resultado padrão com:');
 				console.log(`📌 Plano: ${camposAlterados.idPlanoContas}, Valor: ${valorAbs}, Tipo: ${tipo}`);
 
 				resultadoList = [
 					{
-						dtMovimento: movimentoAtual.dtMovimento,
+						dtMovimento: dtMovimentoFinal,
 						idPlanoContas: camposAlterados.idPlanoContas,
-						idContaCorrente: movimentoAtual.idContaCorrente,
+						idContaCorrente: idContaCorrenteFinal,
 						idMovimentoBancario: id,
 						valor: valorAbs,
 						tipo,
@@ -1009,52 +1123,46 @@ export class MovimentoBancarioRepository {
 			console.log('✅ Movimento atualizado com sucesso');
 			return;
 		}
-		console.log('🧹 Limpando centros de custos antigos...');
-		await this.movimentoCentroCustosRepo.deleteByMovimento(id);
-
-		let centroCustosList: { idMovimentoBancario: number; idCentroCustos: number; valor: number }[] | undefined =
-			movimento.centroCustosList as any;
-		console.log('🔍 Processando centroCustosList:', JSON.stringify(centroCustosList, null, 2));
-
-		// Quando idCentroCustos é atualizado, a lista deve acompanhar (um único item com esse centro).
-		// Assim evitamos que centroCustosList fique desatualizado quando o usuário só altera o centro único.
-		if (camposAlterados.idCentroCustos !== undefined) {
-			console.log('📌 idCentroCustos alterado: alinhando centroCustosList com um único item');
-			centroCustosList = [
-				{
-					idMovimentoBancario: id,
-					idCentroCustos: camposAlterados.idCentroCustos,
-					valor: Math.abs(movimentoAtual.valor),
-				},
-			];
-		} else if (!centroCustosList || centroCustosList.length === 0) {
-			console.log('⚠️ Nenhum centroCustosList fornecido, verificando se precisa criar centro padrão...');
-			if (movimentoAtual.idCentroCustos) {
-				console.log('⚠️ Mantendo centro atual na lista (um único item)...');
-				centroCustosList = [
-					{
-						idMovimentoBancario: id,
-						idCentroCustos: movimentoAtual.idCentroCustos,
-						valor: Math.abs(movimentoAtual.valor),
-					},
-				];
-			}
+		// Rules: a sent non-empty centroCustosList always wins; otherwise idCentroCustos changed to a
+		// centre → one line with it; changed to null (no list) → no centre. Never insert a null centre.
+		let centroCustosList: { idCentroCustos: number; valor: number }[];
+		if (temCentroCustosList) {
+			console.log('✅ centroCustosList fornecido, ele prevalece sobre idCentroCustos');
+			centroCustosList = this.sanitizeCentroCustosList(movimento.centroCustosList).map((c) => ({
+				idCentroCustos: Number(c.idCentroCustos),
+				valor: c.valor ?? valorAbsFinal,
+			}));
+		} else if (camposAlterados.idCentroCustos) {
+			console.log('📌 idCentroCustos alterado sem lista: um único item com o novo centro');
+			centroCustosList = [{ idCentroCustos: Number(camposAlterados.idCentroCustos), valor: valorAbsFinal }];
 		} else {
-			console.log('✅ centroCustosList fornecido (rateio), processando múltiplos centros...');
+			console.log('🧹 idCentroCustos removido sem lista: limpando centros de custos');
+			centroCustosList = [];
 		}
 
-		if (centroCustosList?.length) {
-			console.log(`📝 Criando ${centroCustosList.length} centros de custos:`);
-			centroCustosList.forEach((c: any, index: number) => {
-				console.log(`  ${index + 1}. Centro: ${c.idCentroCustos}, Valor: ${c.valor}`);
-			});
-			for (const centro of centroCustosList) {
-				await this.movimentoCentroCustosRepo.criar({ ...centro, idMovimentoBancario: id });
-			}
-			console.log('✅ Centros de custos criados com sucesso');
-		} else {
-			console.log('⚠️ Nenhum centro de custos para processar');
+		// MB.idCentroCustos mirrors MCC: one line → that centre; none or rateio (>1) → NULL
+		const centroSincronizado = centroCustosList.length === 1 ? centroCustosList[0].idCentroCustos : null;
+		const statements: D1PreparedStatement[] = [
+			this.db.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario = ?`).bind(id),
+			...centroCustosList.map((c) =>
+				this.db
+					.prepare(`INSERT INTO MovimentoCentroCustos (idMovimentoBancario, idCentroCustos, valor) VALUES (?, ?, ?)`)
+					.bind(id, c.idCentroCustos, c.valor),
+			),
+		];
+		const centroGravado =
+			camposAlterados.idCentroCustos !== undefined ? camposAlterados.idCentroCustos : movimentoAtual.idCentroCustos;
+		if ((centroGravado ?? null) !== centroSincronizado) {
+			console.log(`🔄 Sincronizando mb.idCentroCustos: ${centroGravado} → ${centroSincronizado}`);
+			statements.push(
+				this.db
+					.prepare(`UPDATE MovimentoBancario SET idCentroCustos = ?, atualizado_em = datetime('now') WHERE id = ?`)
+					.bind(centroSincronizado, id),
+			);
 		}
+		// D1 batch runs as one transaction: the rateio is never left half-written
+		await this.db.batch(statements);
+		console.log(`✅ ${centroCustosList.length} centro(s) de custos gravado(s)`);
 
 		console.log('✅ Movimento atualizado com sucesso');
 	}
@@ -1096,7 +1204,9 @@ export class MovimentoBancarioRepository {
 		}
 	}
 
-	async deleteAllByContaCorrente(idContaCorrente: number): Promise<{ excluidos: number }> {
+	async deleteAllByContaCorrente(
+		idContaCorrente: number,
+	): Promise<{ excluidos: number; falhas: number; detalhesFalhas: string[] }> {
 		console.log(`🚀🚀🚀 INICIANDO deleteAllByContaCorrente - ID: ${idContaCorrente} 🚀🚀🚀`);
 
 		try {
@@ -1120,10 +1230,12 @@ export class MovimentoBancarioRepository {
 
 			if (!movimentos.results || movimentos.results.length === 0) {
 				console.log(`ℹ️ Nenhum movimento encontrado`);
-				return { excluidos: 0 };
+				return { excluidos: 0, falhas: 0, detalhesFalhas: [] };
 			}
 
 			let excluidos = 0;
+			let falhas = 0;
+			const detalhesFalhas: string[] = [];
 
 			// Excluir cada movimento diretamente sem usar deleteById
 			for (let i = 0; i < movimentos.results.length; i++) {
@@ -1137,6 +1249,8 @@ export class MovimentoBancarioRepository {
 				// Validar ID
 				if (!movimentoId || isNaN(Number(movimentoId)) || Number(movimentoId) <= 0) {
 					console.error(`❌ ID inválido: ${movimentoId}`);
+					falhas++;
+					detalhesFalhas.push(`ID inválido: ${movimentoId}`);
 					continue;
 				}
 
@@ -1144,40 +1258,35 @@ export class MovimentoBancarioRepository {
 				console.log(`✅ ID numérico: ${idNumerico}`);
 
 				try {
-					// Excluir resultados relacionados
-					console.log(`🧹 Excluindo resultados para movimento ${idNumerico}`);
-					await this.resultadoRepo.deleteByMovimento(idNumerico);
-
-					// Excluir parcelas relacionadas
-					console.log(`🧹 Excluindo parcelas para movimento ${idNumerico}`);
-					await this.parcelaRepo.deleteByMovimentoBancario(idNumerico);
-
-					// Excluir centros de custos relacionados
-					console.log(`🧹 Excluindo centros de custos para movimento ${idNumerico}`);
-					await this.movimentoCentroCustosRepo.deleteByMovimento(idNumerico);
-
-					// Excluir movimento principal
-					console.log(`🗑 Excluindo movimento principal ${idNumerico}`);
-					await this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(idNumerico).run();
+					// Resultado, parcelas, centros e o movimento numa única transação (D1 batch):
+					// uma falha não deixa o movimento sem a sua classificação.
+					await this.db.batch([
+						this.db.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario = ?`).bind(idNumerico),
+						this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario = ?`).bind(idNumerico),
+						this.db.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario = ?`).bind(idNumerico),
+						this.db.prepare(`DELETE FROM MovimentoBancario WHERE id = ?`).bind(idNumerico),
+					]);
 
 					excluidos++;
 					console.log(`✅ Movimento ${idNumerico} excluído com sucesso`);
 				} catch (error) {
 					console.error(`❌ Erro ao excluir movimento ${idNumerico}:`, error);
+					falhas++;
+					detalhesFalhas.push(`Movimento ${idNumerico}: ${error instanceof Error ? error.message : String(error)}`);
 					continue;
 				}
 			}
 
-			console.log(`🎉 Exclusão concluída: ${excluidos} movimentos excluídos`);
-			return { excluidos };
+			console.log(`🎉 Exclusão concluída: ${excluidos} movimentos excluídos, ${falhas} falha(s)`);
+			return { excluidos, falhas, detalhesFalhas };
 		} catch (error) {
 			console.error(`❌ Erro geral:`, error);
 			throw error;
 		}
 	}
 
-	/** Tamanho do lote para bulk delete (evita "Too many API requests" no worker). */
-	private static readonly RESET_TESTE_BATCH_SIZE = 150;
+	/** Tamanho do lote para bulk delete: D1 aceita no máximo 100 parâmetros por query (IN (...)). */
+	private static readonly RESET_TESTE_BATCH_SIZE = 90;
 
 	/**
 	 * Remove movimentos para testes (por contas e opcionalmente ano).
@@ -1212,22 +1321,13 @@ export class MovimentoBancarioRepository {
 			const chunk = ids.slice(i, i + batchSize);
 			const placeholdersChunk = chunk.map(() => '?').join(',');
 			try {
-				await this.db
-					.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario IN (${placeholdersChunk})`)
-					.bind(...chunk)
-					.run();
-				await this.db
-					.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario IN (${placeholdersChunk})`)
-					.bind(...chunk)
-					.run();
-				await this.db
-					.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario IN (${placeholdersChunk})`)
-					.bind(...chunk)
-					.run();
-				await this.db
-					.prepare(`DELETE FROM MovimentoBancario WHERE id IN (${placeholdersChunk})`)
-					.bind(...chunk)
-					.run();
+				// One transaction per chunk (dependents + movements together)
+				await this.db.batch([
+					this.db.prepare(`DELETE FROM Resultado WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk),
+					this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk),
+					this.db.prepare(`DELETE FROM MovimentoCentroCustos WHERE idMovimentoBancario IN (${placeholdersChunk})`).bind(...chunk),
+					this.db.prepare(`DELETE FROM MovimentoBancario WHERE id IN (${placeholdersChunk})`).bind(...chunk),
+				]);
 				excluidos += chunk.length;
 			} catch (err) {
 				console.error(`Erro ao excluir lote de movimentos (reset teste):`, err);
@@ -1328,9 +1428,10 @@ export class MovimentoBancarioRepository {
 		return { atualizados: totalAtualizados };
 	}
 
-	async getPlanoTransferencia(): Promise<number> {
+	/** Plano de contas das transferências (Parametros), ou null quando não configurado. */
+	async getPlanoTransferencia(): Promise<number | null> {
 		const { results } = await this.db.prepare(`SELECT idPlanoTransferenciaEntreContas FROM Parametros WHERE id = 1`).all();
-		return Number(results[0]?.idPlanoTransferenciaEntreContas) ?? 0;
+		return parsePlanoTransferencia(results[0]?.idPlanoTransferenciaEntreContas);
 	}
 
 	async transfer(data: {
@@ -1342,92 +1443,79 @@ export class MovimentoBancarioRepository {
 		descricao: string;
 		data: string;
 		idUsuario: number;
-	}): Promise<void> {
+	}): Promise<{ idSaida: number; idEntrada: number }> {
 		try {
+			const erroValidacao = validarTransferencia(data);
+			if (erroValidacao) throw new TransferenciaInvalidaError(erroValidacao);
+
 			const planoTransferencia = await this.getPlanoTransferencia();
+			if (planoTransferencia === null) {
+				throw new TransferenciaInvalidaError(
+					'Plano de contas de transferência entre contas não configurado. Defina-o em Parâmetros antes de transferir.',
+				);
+			}
 
-			// Movimento de saída
+			const valorAbs = Math.abs(Number(data.valor));
+			const ids = identificadoresTransferencia(crypto.randomUUID());
 			const historicoSaida = `Transferência para a conta corrente ${data.contaDestinoDescricao} com descrição: ${data.descricao}`;
-			const identificador = crypto.randomUUID();
-
-			const { meta: saida } = await this.db
-				.prepare(
-					`
-				INSERT INTO MovimentoBancario (
-					dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
-					ideagro, numero_documento, descricao, transf_origem, transf_destino,
-					identificador_ofx, idUsuario, tipoMovimento, modalidadeMovimento,
-					criado_em, atualizado_em
-				)
-				VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, null, ?, ?, ?, 'D', 'transferencia', datetime('now'), datetime('now'))
-			`,
-				)
-				.bind(
-					data.data,
-					historicoSaida,
-					planoTransferencia,
-					data.contaOrigemId,
-					-data.valor,
-					data.descricao,
-					data.contaDestinoId,
-					identificador,
-					data.idUsuario,
-				)
-				.run();
-
-			const idSaida = saida.last_row_id;
-
-			await this.resultadoRepo.createMany([
-				{
-					dtMovimento: data.data,
-					idPlanoContas: planoTransferencia,
-					idContaCorrente: data.contaOrigemId,
-					valor: -data.valor,
-					tipo: 'D',
-					idMovimentoBancario: idSaida,
-				},
-			]);
-
-			// Movimento de entrada
 			const historicoEntrada = `Transferência da conta corrente ${data.contaOrigemDescricao} com descrição: ${data.descricao}`;
-			const { meta: entrada } = await this.db
-				.prepare(
-					`
+			const idPorIdentificador = `(SELECT id FROM MovimentoBancario WHERE identificador_ofx = ?)`;
+			const insertMovimento = `
 				INSERT INTO MovimentoBancario (
 					dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo,
 					ideagro, numero_documento, descricao, transf_origem, transf_destino,
 					identificador_ofx, idUsuario, tipoMovimento, modalidadeMovimento,
 					criado_em, atualizado_em
-				)
-				VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, ?, null, ?, ?, 'C', 'transferencia', datetime('now'), datetime('now'))
-			`,
-				)
-				.bind(
-					data.data,
-					historicoEntrada,
-					planoTransferencia,
-					data.contaDestinoId,
-					data.valor,
-					data.descricao,
-					idSaida,
-					identificador,
-					data.idUsuario,
-				)
-				.run();
+				)`;
+			const insertResultado = `
+				INSERT INTO Resultado (dtMovimento, idPlanoContas, idContaCorrente, idMovimentoBancario, idParcelaFinanciamento, valor, tipo)
+				VALUES (?, ?, ?, ${idPorIdentificador}, NULL, ?, ?)`;
 
-			const idEntrada = entrada.last_row_id;
-
-			// Inserir resultado da entrada
-			await this.resultadoRepo.createMany([
-				{
-					dtMovimento: data.data,
-					idPlanoContas: planoTransferencia,
-					idContaCorrente: data.contaDestinoId,
-					valor: data.valor,
-					tipo: 'C',
-					idMovimentoBancario: idEntrada,
-				},
+			// Both legs + their Resultado in ONE D1 batch (a transaction): all or nothing.
+			// The exit id is resolved by its (unique) identificador inside the batch.
+			await this.db.batch([
+				this.db
+					.prepare(
+						`${insertMovimento}
+						VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, null, ?, ?, ?, 'D', 'transferencia', datetime('now'), datetime('now'))`,
+					)
+					.bind(
+						data.data,
+						historicoSaida,
+						planoTransferencia,
+						data.contaOrigemId,
+						-valorAbs,
+						data.descricao,
+						data.contaDestinoId,
+						ids.saida,
+						data.idUsuario ?? null,
+					),
+				this.db.prepare(insertResultado).bind(data.data, planoTransferencia, data.contaOrigemId, ids.saida, valorAbs, 'D'),
+				this.db
+					.prepare(
+						`${insertMovimento}
+						VALUES (?, ?, ?, ?, ?, 0, 0, null, ?, ${idPorIdentificador}, null, ?, ?, 'C', 'transferencia', datetime('now'), datetime('now'))`,
+					)
+					.bind(
+						data.data,
+						historicoEntrada,
+						planoTransferencia,
+						data.contaDestinoId,
+						valorAbs,
+						data.descricao,
+						ids.saida,
+						ids.entrada,
+						data.idUsuario ?? null,
+					),
+				this.db.prepare(insertResultado).bind(data.data, planoTransferencia, data.contaDestinoId, ids.entrada, valorAbs, 'C'),
 			]);
+
+			const { results } = await this.db
+				.prepare(`SELECT id, identificador_ofx FROM MovimentoBancario WHERE identificador_ofx IN (?, ?)`)
+				.bind(ids.saida, ids.entrada)
+				.all<{ id: number; identificador_ofx: string }>();
+			const idDe = (ident: string) => Number(results.find((r) => r.identificador_ofx === ident)?.id);
+			return { idSaida: idDe(ids.saida), idEntrada: idDe(ids.entrada) };
 		} catch (error) {
 			console.error('Erro ao processar transferência:', error);
 			throw error;
@@ -1460,11 +1548,17 @@ export class MovimentoBancarioRepository {
 		};
 	}
 
-	/** OFX duplicate lookup scoped to ContaCorrente (never cross-account). */
+	/**
+	 * OFX duplicate lookup scoped to ContaCorrente (never cross-account).
+	 * Matches the bare identificador or its conta-suffixed form (`|@c<id>`, used when the
+	 * same identificador already exists in another conta); the bare form wins.
+	 */
 	async getByIdentificadorOfxAndConta(
 		identificadorOfx: string,
 		idContaCorrente: number,
 	): Promise<MovimentoBancario | null> {
+		const base = stripContaSuffix(identificadorOfx);
+		const range = contaSuffixRange(base);
 		const { results } = await this.db
 			.prepare(
 				`
@@ -1473,11 +1567,13 @@ export class MovimentoBancarioRepository {
 					criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
 					idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
 				FROM MovimentoBancario
-				WHERE identificador_ofx = ? AND idContaCorrente = ?
+				WHERE idContaCorrente = ?
+				AND (identificador_ofx = ? OR (identificador_ofx >= ? AND identificador_ofx < ?))
+				ORDER BY CASE WHEN identificador_ofx = ? THEN 0 ELSE 1 END, id ASC
 				LIMIT 1
 			`,
 			)
-			.bind(identificadorOfx, idContaCorrente)
+			.bind(idContaCorrente, base, range.from, range.to, base)
 			.all();
 
 		const result = results[0];
@@ -1795,6 +1891,52 @@ export class MovimentoBancarioRepository {
 		}
 	}
 
+	/**
+	 * Movement classified in a chart-of-accounts plan: own plan OR at least one Resultado line
+	 * (split movements keep idPlanoContas NULL and carry their plans only in Resultado).
+	 */
+	private sqlMovimentoComPlano(alias: string): string {
+		return `((${alias}.idPlanoContas IS NOT NULL AND ${alias}.idPlanoContas != 0)
+			OR EXISTS (SELECT 1 FROM Resultado r_cls WHERE r_cls.idMovimentoBancario = ${alias}.id))`;
+	}
+
+	/** Movement has a cost centre: own centre OR rateio rows in MovimentoCentroCustos. */
+	private sqlMovimentoComCentro(alias: string): string {
+		return `(${alias}.idCentroCustos IS NOT NULL
+			OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc_cls WHERE mcc_cls.idMovimentoBancario = ${alias}.id))`;
+	}
+
+	/** Credit by tipoMovimento, or by the sign of valor when tipoMovimento is NULL (legacy rows). */
+	private sqlMovimentoCredito(alias: string): string {
+		return `(${alias}.tipoMovimento = 'C' OR (${alias}.tipoMovimento IS NULL AND ${alias}.valor > 0))`;
+	}
+
+	/** Financing movement already conciliated with its contract (never "pendente"). */
+	private sqlNaoConciliadoFinanciamento(alias: string): string {
+		return `(${alias}.modalidadeMovimento IS NULL OR ${alias}.modalidadeMovimento != 'financiamento' OR ${alias}.idFinanciamento IS NULL)`;
+	}
+
+	/** Pending in the conciliation list/exports: no plan (neither own nor Resultado) and not a conciliated financing. */
+	private sqlPendenteConciliacaoLista(alias: string): string {
+		return `(NOT ${this.sqlMovimentoComPlano(alias)} AND ${this.sqlNaoConciliadoFinanciamento(alias)})`;
+	}
+
+	/** Plan descriptions of the movement: own plan, else the Resultado plans (split) joined by ' / '. */
+	private sqlPlanoDescricao(alias: string): string {
+		return `COALESCE(
+			(SELECT pc_d.descricao FROM PlanoContas pc_d WHERE pc_d.id = ${alias}.idPlanoContas),
+			(SELECT GROUP_CONCAT(pc_r.descricao, ' / ') FROM Resultado r_d
+				INNER JOIN PlanoContas pc_r ON pc_r.id = r_d.idPlanoContas
+				WHERE r_d.idMovimentoBancario = ${alias}.id)
+		)`;
+	}
+
+	/** Normalized 'C'/'D' (legacy rows may have tipoMovimento NULL → sign of valor). */
+	private tipoMovimentoNormalizado(mov: { tipoMovimento?: string | null; valor?: number | string | null }): 'C' | 'D' {
+		if (mov.tipoMovimento === 'C' || mov.tipoMovimento === 'D') return mov.tipoMovimento;
+		return Number(mov.valor) >= 0 ? 'C' : 'D';
+	}
+
 	async getPaginado(filters: {
 		page: number;
 		limit: number;
@@ -1843,21 +1985,24 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.status === 'pendentes') {
-				// Pendente = sem plano E não conciliado como financiamento (quem tem modalidade financiamento + idFinanciamento já está conciliado)
-				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
-				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
+				// Pendente = sem plano (nem próprio nem em Resultado/rateio) E não conciliado como financiamento
+				whereConditions.push(this.sqlPendenteConciliacaoLista('mb'));
 			}
 
 			if (filters.planosIds && filters.planosIds.length > 0) {
+				// Plano próprio ou qualquer linha de Resultado (movimentos rateados têm idPlanoContas NULL)
 				const placeholders = filters.planosIds.map(() => '?').join(',');
-				whereConditions.push(`mb.idPlanoContas IN (${placeholders})`);
-				params.push(...filters.planosIds);
+				whereConditions.push(`(mb.idPlanoContas IN (${placeholders})
+					OR EXISTS (SELECT 1 FROM Resultado r_f WHERE r_f.idMovimentoBancario = mb.id AND r_f.idPlanoContas IN (${placeholders})))`);
+				params.push(...filters.planosIds, ...filters.planosIds);
 			}
 
 			if (filters.centrosIds && filters.centrosIds.length > 0) {
+				// Centro próprio ou qualquer linha de rateio em MovimentoCentroCustos
 				const placeholders = filters.centrosIds.map(() => '?').join(',');
-				whereConditions.push(`mb.idCentroCustos IN (${placeholders})`);
-				params.push(...filters.centrosIds);
+				whereConditions.push(`(mb.idCentroCustos IN (${placeholders})
+					OR EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc_f WHERE mcc_f.idMovimentoBancario = mb.id AND mcc_f.idCentroCustos IN (${placeholders})))`);
+				params.push(...filters.centrosIds, ...filters.centrosIds);
 			}
 
 			const historicoTrim = filters.historicoContem?.trim();
@@ -1987,23 +2132,21 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.status === 'pendentes') {
-				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
-				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
+				whereConditions.push(this.sqlPendenteConciliacaoLista('mb'));
 			}
 
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
 			// Query para buscar todos os movimentos que atendem aos filtros
 			const query = `
-				SELECT 
+				SELECT
 					mb.*,
-					pc.descricao as planoDescricao,
+					${this.sqlPlanoDescricao('mb')} as planoDescricao,
 					b.nome as bancoNome,
 					p.nome as pessoaNome,
 					cc.numConta,
 					cc.responsavel
 				FROM MovimentoBancario mb
-				LEFT JOIN PlanoContas pc ON mb.idPlanoContas = pc.id
 				LEFT JOIN Banco b ON mb.idBanco = b.id
 				LEFT JOIN Pessoa p ON mb.idPessoa = p.id
 				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
@@ -2022,7 +2165,7 @@ export class MovimentoBancarioRepository {
 			const dadosParaExportar = results.map((mov: any) => ({
 				'Data do Movimento': new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
 				Histórico: mov.historico,
-				Tipo: mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+				Tipo: this.tipoMovimentoNormalizado(mov) === 'C' ? 'Crédito' : 'Débito',
 				Modalidade: mov.modalidadeMovimento || 'Padrão',
 				'Plano de Contas': mov.planoDescricao || 'Não definido',
 				'Valor R$': mov.valor,
@@ -2088,25 +2231,24 @@ export class MovimentoBancarioRepository {
 			}
 
 			if (filters.status === 'pendentes') {
-				whereConditions.push('(mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0)');
-				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
+				whereConditions.push(this.sqlPendenteConciliacaoLista('mb'));
 			}
 
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
 			// Query para buscar dados com informações da conta
 			const query = `
-				SELECT 
+				SELECT
 					mb.*,
 					cc.numConta,
 					b.nome as bancoNome,
-					pc.descricao as planoDescricao,
+					${this.sqlPlanoDescricao('mb')} as planoDescricao,
+					CASE WHEN ${this.sqlPendenteConciliacaoLista('mb')} THEN 'Pendente' ELSE 'Conciliado' END as statusConciliacao,
 					p.nome as pessoaNome,
 					cc.responsavel
 				FROM MovimentoBancario mb
 				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
 				LEFT JOIN Banco b ON cc.idBanco = b.id
-				LEFT JOIN PlanoContas pc ON mb.idPlanoContas = pc.id
 				LEFT JOIN Pessoa p ON mb.idPessoa = p.id
 				${whereClause}
 				ORDER BY mb.dtMovimento DESC
@@ -2161,7 +2303,7 @@ export class MovimentoBancarioRepository {
 			const dadosTabela = results.map((result: any) => [
 				new Date(result.dtMovimento).toLocaleDateString('pt-BR'),
 				result.historico || '',
-				result.tipoMovimento === 'C' ? 'Crédito' : 'Débito',
+				this.tipoMovimentoNormalizado(result) === 'C' ? 'Crédito' : 'Débito',
 				`R$ ${Math.abs(result.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
 				result.planoDescricao || 'Não conciliado',
 				result.pessoaNome || '',
@@ -2344,24 +2486,21 @@ export class MovimentoBancarioRepository {
 			let whereConditions: string[] = [];
 			let params: any[] = [];
 
-			// Buscar movimentos conciliados:
-			// - Despesas: devem ter plano de contas
-			// - Receitas: devem ter centro de custos (mesmo sem plano de contas)
-			whereConditions.push(`(
-				(mb.idPlanoContas IS NOT NULL AND mb.idPlanoContas != 0) 
-				OR 
-				(
-					mb.tipoMovimento = 'C' 
-					AND (
-						mb.idCentroCustos IS NOT NULL 
-						OR EXISTS (
-							SELECT 1 
-							FROM MovimentoCentroCustos mcc 
-							WHERE mcc.idMovimentoBancario = mb.id
-						)
-					)
-				)
-			)`);
+			// Movimento classificado (conciliado):
+			// - tem plano de contas (próprio OU linhas em Resultado — rateio deixa mb.idPlanoContas NULL)
+			// - OU é receita com centro de custos (mesmo sem plano de contas)
+			const classificado = `(
+				${this.sqlMovimentoComPlano('mb')}
+				OR (${this.sqlMovimentoCredito('mb')} AND ${this.sqlMovimentoComCentro('mb')})
+			)`;
+
+			if (filters.status === 'pendentes') {
+				// Pendentes = os NÃO classificados; excluir conciliados como financiamento
+				whereConditions.push(`NOT ${classificado}`);
+				whereConditions.push(this.sqlNaoConciliadoFinanciamento('mb'));
+			} else {
+				whereConditions.push(classificado);
+			}
 
 			if (filters.contaId) {
 				whereConditions.push('mb.idContaCorrente = ?');
@@ -2378,29 +2517,11 @@ export class MovimentoBancarioRepository {
 				params.push(filters.dataFim);
 			}
 
-			if (filters.status === 'pendentes') {
-				// Pendentes: despesas sem plano OU receitas sem centro; excluir conciliados como financiamento
-				whereConditions.push(`(
-					(mb.tipoMovimento = 'D' AND (mb.idPlanoContas IS NULL OR mb.idPlanoContas = 0))
-					OR
-					(
-						mb.tipoMovimento = 'C' 
-						AND mb.idCentroCustos IS NULL 
-						AND NOT EXISTS (
-							SELECT 1 
-							FROM MovimentoCentroCustos mcc 
-							WHERE mcc.idMovimentoBancario = mb.id
-						)
-					)
-				)`);
-				whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'financiamento' OR mb.idFinanciamento IS NULL)");
-			}
-
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
 			// Query para buscar movimentos com informações relacionadas
 			const query = `
-				SELECT 
+				SELECT
 					mb.id,
 					mb.dtMovimento,
 					mb.historico,
@@ -2413,7 +2534,7 @@ export class MovimentoBancarioRepository {
 					mb.idPessoa,
 					mb.idBanco,
 					mb.idContaCorrente,
-					pc.descricao as planoDescricao,
+					${this.sqlPlanoDescricao('mb')} as planoDescricao,
 					p.nome as pessoaNome,
 					b.nome as bancoNome,
 					b.codigo as bancoCodigo,
@@ -2425,7 +2546,6 @@ export class MovimentoBancarioRepository {
 					cco.tipo as centroCustosTipo,
 					cco.tipoReceitaDespesa as centroCustosTipoReceitaDespesa
 				FROM MovimentoBancario mb
-				LEFT JOIN PlanoContas pc ON mb.idPlanoContas = pc.id
 				LEFT JOIN Pessoa p ON mb.idPessoa = p.id
 				LEFT JOIN ContaCorrente cc ON mb.idContaCorrente = cc.id
 				LEFT JOIN Banco b ON cc.idBanco = b.id
@@ -2489,12 +2609,15 @@ export class MovimentoBancarioRepository {
 					valor: number;
 				}> = [];
 
+				const tipoMov = this.tipoMovimentoNormalizado(mov);
 				const tipoReport = (
 					base: string | null | undefined,
 				): 'RECEITA' | 'DESPESA' | 'FINANCIAMENTO' | undefined => {
 					if (movFinanciamento) return 'FINANCIAMENTO';
 					if (base === 'RECEITA' || base === 'DESPESA') return base;
-					return undefined;
+					// Centre without tipoReceitaDespesa (or no centre at all): follow the movement direction,
+					// otherwise the group is shown in no block (Receitas/Despesas) of the report.
+					return tipoMov === 'C' ? 'RECEITA' : 'DESPESA';
 				};
 
 				// Use rateio if available, otherwise use direct assignment
@@ -2525,14 +2648,24 @@ export class MovimentoBancarioRepository {
 					});
 				}
 
-				// Filtrar por centroCustosId se especificado
-				if (filters.centroCustosId) {
-					const temCentro = centrosDoMovimento.some((cc) => cc.id === filters.centroCustosId);
-					if (!temCentro) continue;
+				// Pendentes geralmente não têm centro: agrupar em "Sem centro de custos" para não sumirem do relatório
+				if (centrosDoMovimento.length === 0 && filters.status === 'pendentes') {
+					centrosDoMovimento.push({
+						id: 0,
+						descricao: 'Sem centro de custos',
+						tipo: undefined,
+						tipoReceitaDespesa: tipoReport(null),
+						valor: Math.abs(Number(mov.valor)),
+					});
 				}
 
+				// Filtrar por centroCustosId se especificado: só a parcela (rateio) do centro filtrado
+				const centrosRelatorio = filters.centroCustosId
+					? centrosDoMovimento.filter((cc) => cc.id === filters.centroCustosId)
+					: centrosDoMovimento;
+
 				// Adicionar movimento a cada centro
-				for (const centroMov of centrosDoMovimento) {
+				for (const centroMov of centrosRelatorio) {
 					const grupoKey = `${centroMov.id}|${centroMov.tipoReceitaDespesa ?? ''}`;
 					if (!agrupados.has(grupoKey)) {
 						agrupados.set(grupoKey, {
@@ -2554,7 +2687,7 @@ export class MovimentoBancarioRepository {
 						dtMovimento: mov.dtMovimento,
 						historico: mov.historico,
 						valor: centroMov.valor,
-						tipoMovimento: mov.tipoMovimento,
+						tipoMovimento: tipoMov,
 						planoDescricao: mov.planoDescricao,
 						pessoaNome: mov.pessoaNome,
 						bancoNome: mov.bancoNome,
@@ -2609,8 +2742,8 @@ export class MovimentoBancarioRepository {
 			let whereConditions: string[] = [];
 			let params: any[] = [];
 
-			// Apenas movimentos com plano de contas (classificados)
-			whereConditions.push('mb.idPlanoContas IS NOT NULL AND mb.idPlanoContas != 0');
+			// Apenas movimentos com plano de contas (classificados): plano próprio OU linhas em Resultado (rateio)
+			whereConditions.push(this.sqlMovimentoComPlano('mb'));
 			whereConditions.push("(mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento != 'transferencia')");
 
 			if (filters.contaId) {
@@ -2691,28 +2824,78 @@ export class MovimentoBancarioRepository {
 				});
 			}
 
-			// Process results using pre-loaded batch data
+			// Plans of split movements (idPlanoContas NULL) live only in Resultado: batch-load them with descriptions
+			const planosPorMovimento = new Map<number, Array<{ idPlanoContas: number; valor: number; descricao: string | null }>>();
+			const idsRateioPlano = (results as any[]).filter((r: any) => !r.idPlanoContas).map((r: any) => r.id as number);
+			for (let i = 0; i < idsRateioPlano.length; i += 100) {
+				const lote = idsRateioPlano.slice(i, i + 100);
+				const { results: resRows } = await this.db
+					.prepare(
+						`SELECT r.idMovimentoBancario, r.idPlanoContas, r.valor, pc.descricao
+						 FROM Resultado r LEFT JOIN PlanoContas pc ON pc.id = r.idPlanoContas
+						 WHERE r.idMovimentoBancario IN (${lote.map(() => '?').join(',')})
+						 ORDER BY r.id`,
+					)
+					.bind(...lote)
+					.all();
+				for (const r of resRows as any[]) {
+					const lista = planosPorMovimento.get(r.idMovimentoBancario) ?? [];
+					lista.push({ idPlanoContas: r.idPlanoContas, valor: Math.abs(Number(r.valor)), descricao: r.descricao ?? null });
+					planosPorMovimento.set(r.idMovimentoBancario, lista);
+				}
+			}
+
+			const arred = (v: number) => Math.round(v * 100) / 100;
+
+			// Process results using pre-loaded batch data: one row per plan × centre.
+			// Single plan → unchanged behaviour (one row per centre with the centre value).
+			// Several plans (rateio) → each centre value split proportionally to the plan share
+			// (no centre rateio → the plan value itself), so totals per plan and per centre are kept.
 			const movimentosProcessados: any[] = [];
 
 			for (const mov of results as any[]) {
 				const centroCustosList = centroCustosMapBatch.get(mov.id) || [];
+				const planos = mov.idPlanoContas
+					? [{ idPlanoContas: mov.idPlanoContas as number, valor: Math.abs(Number(mov.valor)), descricao: mov.planoDescricao ?? null }]
+					: planosPorMovimento.get(mov.id) || [];
+				const somaPlanos = planos.reduce((s, p) => s + p.valor, 0);
 
-				if (centroCustosList.length > 0) {
-					// Multiple cost centers (rateio) - create one row per center
-					for (const cc of centroCustosList) {
-						const centroInfo = centrosCustosInfoMap.get(cc.idCentroCustos);
+				const centros: Array<{ descricao: string; tipo: string | null; valor: number }> =
+					centroCustosList.length > 0
+						? centroCustosList.map((cc) => {
+								const centroInfo = centrosCustosInfoMap.get(cc.idCentroCustos);
+								return { descricao: centroInfo?.descricao || 'Não definido', tipo: centroInfo?.tipo || null, valor: Math.abs(cc.valor) };
+							})
+						: [{ descricao: mov.centroCustosDescricao || 'Não definido', tipo: mov.centroCustosTipo || null, valor: Math.abs(Number(mov.valor)) }];
 
+				for (const plano of planos) {
+					const proporcao = planos.length === 1 || somaPlanos === 0 ? 1 : plano.valor / somaPlanos;
+					const valoresCentros =
+						planos.length === 1
+							? centros.map((c) => c.valor)
+							: centroCustosList.length > 0
+								? centros.map((c) => arred(c.valor * proporcao))
+								: [plano.valor];
+					// Rounding residue goes to the last centre so the plan total stays exact
+					if (planos.length > 1 && centroCustosList.length > 0) {
+						const somaCentros = centros.reduce((s, c) => s + c.valor, 0);
+						const alvo = arred(somaCentros * proporcao);
+						const parcial = valoresCentros.reduce((s, v) => s + v, 0);
+						valoresCentros[valoresCentros.length - 1] = arred(valoresCentros[valoresCentros.length - 1] + alvo - parcial);
+					}
+
+					centros.forEach((centro, idx) => {
 						movimentosProcessados.push({
 							id: mov.id,
 							dtMovimento: mov.dtMovimento,
 							historico: mov.historico,
-							valor: Math.abs(cc.valor),
-							tipoMovimento: mov.tipoMovimento,
+							valor: valoresCentros[idx],
+							tipoMovimento: this.tipoMovimentoNormalizado(mov),
 							modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
-							idPlanoContas: mov.idPlanoContas,
-							planoDescricao: mov.planoDescricao,
-							centroCustosDescricao: centroInfo?.descricao || 'Não definido',
-							centroCustosTipo: centroInfo?.tipo || null,
+							idPlanoContas: plano.idPlanoContas,
+							planoDescricao: plano.descricao ?? undefined,
+							centroCustosDescricao: centro.descricao,
+							centroCustosTipo: centro.tipo,
 							pessoaNome: mov.pessoaNome,
 							bancoNome: mov.bancoNome,
 							bancoCodigo: mov.bancoCodigo,
@@ -2722,28 +2905,6 @@ export class MovimentoBancarioRepository {
 							contaDescricao:
 								`${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim(),
 						});
-					}
-				} else {
-					// Single or no cost center
-					movimentosProcessados.push({
-						id: mov.id,
-						dtMovimento: mov.dtMovimento,
-						historico: mov.historico,
-						valor: Math.abs(mov.valor),
-						tipoMovimento: mov.tipoMovimento,
-						modalidadeMovimento: mov.modalidadeMovimento || 'padrao',
-						idPlanoContas: mov.idPlanoContas,
-						planoDescricao: mov.planoDescricao,
-						centroCustosDescricao: mov.centroCustosDescricao || 'Não definido',
-						centroCustosTipo: mov.centroCustosTipo || null,
-						pessoaNome: mov.pessoaNome,
-						bancoNome: mov.bancoNome,
-						bancoCodigo: mov.bancoCodigo,
-						agencia: mov.agencia,
-						numConta: mov.numConta,
-						responsavel: mov.responsavel || '',
-						contaDescricao:
-							`${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim(),
 					});
 				}
 			}
@@ -2806,38 +2967,38 @@ export class MovimentoBancarioRepository {
 				[`Centro de Custos: ${centroCustosNome}`],
 				[''],
 				['Resumo por Centro de Custos'],
-				['Centro de Custos', 'Receitas', 'Despesas de custeio', 'Despesas de investimento'],
+				['Centro de Custos', 'Receitas', 'Despesas de custeio', 'Despesas de investimento', 'Financiamentos'],
 			];
 
 			const dadosReceitas = dados.filter((item) => item.centro.tipoReceitaDespesa === 'RECEITA');
 			const dadosDespesas = dados.filter((item) => item.centro.tipoReceitaDespesa === 'DESPESA');
 			const dadosFinanciamentos = dados.filter((item) => item.centro.tipoReceitaDespesa === 'FINANCIAMENTO');
 
+			// Same rule as Dashboard/Fluxo: centre tipo CUSTEIO → custeio; anything else → investimento
+			const ehCusteio = (item: (typeof dados)[0]) => item.centro.tipo === 'CUSTEIO';
 			const totalReceitas = dadosReceitas.reduce((sum, item) => sum + item.total, 0);
-			const totalDespesasCusteio = dadosDespesas
-				.filter((item) => item.centro.tipo === 'CUSTEIO')
-				.reduce((sum, item) => sum + item.total, 0);
+			const totalDespesasCusteio = dadosDespesas.filter(ehCusteio).reduce((sum, item) => sum + item.total, 0);
 			const totalDespesasInvestimento = dadosDespesas
-				.filter((item) => item.centro.tipo === 'INVESTIMENTO')
+				.filter((item) => !ehCusteio(item))
 				.reduce((sum, item) => sum + item.total, 0);
 			const totalFinanciamentos = dadosFinanciamentos.reduce((sum, item) => sum + item.total, 0);
 			const saldoOperacional = totalReceitas - totalDespesasCusteio - totalDespesasInvestimento;
 
 			const resumoRows: (string | number)[][] = [];
+			const valorOuVazio = (v: number) => (v ? this.excelNumero(v) : '');
 			const pushCentroRow = (item: (typeof dados)[0]) => {
-				const receita = item.centro.tipoReceitaDespesa === 'RECEITA' ? item.total : item.centro.tipoReceitaDespesa === 'FINANCIAMENTO' ? item.total : 0;
-				const despesaCusteio = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'CUSTEIO' ? item.total : 0;
-				const despesaInvestimento = item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO' ? item.total : 0;
+				const tipoRD = item.centro.tipoReceitaDespesa;
 				resumoRows.push([
 					item.centro.descricao,
-					receita ? this.excelNumero(receita) : '',
-					despesaCusteio ? this.excelNumero(despesaCusteio) : '',
-					despesaInvestimento ? this.excelNumero(despesaInvestimento) : '',
+					valorOuVazio(tipoRD === 'RECEITA' ? item.total : 0),
+					valorOuVazio(tipoRD === 'DESPESA' && ehCusteio(item) ? item.total : 0),
+					valorOuVazio(tipoRD === 'DESPESA' && !ehCusteio(item) ? item.total : 0),
+					valorOuVazio(tipoRD === 'FINANCIAMENTO' ? item.total : 0),
 				]);
 			};
 
 			if (dadosReceitas.length > 0) {
-				resumoRows.push(['Total Receitas', this.excelNumero(totalReceitas), '', '']);
+				resumoRows.push(['Total Receitas', this.excelNumero(totalReceitas), '', '', '']);
 				for (const item of dadosReceitas) pushCentroRow(item);
 			}
 			if (dadosDespesas.length > 0) {
@@ -2846,25 +3007,19 @@ export class MovimentoBancarioRepository {
 					'',
 					this.excelNumero(totalDespesasCusteio),
 					this.excelNumero(totalDespesasInvestimento),
+					'',
 				]);
 				for (const item of dadosDespesas) pushCentroRow(item);
 			}
 			if (dadosFinanciamentos.length > 0) {
-				resumoRows.push(['Total Financiamentos', this.excelNumero(totalFinanciamentos), '', '']);
+				resumoRows.push(['Total Financiamentos', '', '', '', this.excelNumero(totalFinanciamentos)]);
 				for (const item of dadosFinanciamentos) pushCentroRow(item);
 			}
-			resumoRows.push([
-				'Saldo operacional (Receitas - Despesas)',
-				this.excelNumero(totalReceitas),
-				this.excelNumero(totalDespesasCusteio),
-				this.excelNumero(totalDespesasInvestimento),
-			]);
-			if (totalFinanciamentos > 0) {
-				resumoRows.push(['Financiamentos (separado)', this.excelNumero(totalFinanciamentos), '', '']);
-			}
+			// Saldo operacional = Receitas − (Custeio + Investimento); financing stays apart
+			resumoRows.push(['Saldo operacional (Receitas - Despesas)', this.excelNumero(saldoOperacional), '', '', '']);
 
 			const wsResumo = XLSX.utils.aoa_to_sheet([...headerData, ...resumoRows]);
-			this.applyExcelCurrencyFormat(wsResumo, [1, 2, 3], headerData.length);
+			this.applyExcelCurrencyFormat(wsResumo, [1, 2, 3, 4], headerData.length);
 			XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo por Centro');
 
 			// Planilha 2: Detalhamento
@@ -2956,8 +3111,9 @@ export class MovimentoBancarioRepository {
 			const totalDespesasCusteio = dadosDespesasPdf
 				.filter((item) => item.centro.tipo === 'CUSTEIO')
 				.reduce((sum, item) => sum + item.total, 0);
+			// Same rule as Dashboard/Fluxo: only tipo CUSTEIO is custeio; anything else is investimento
 			const totalDespesasInvestimento = dadosDespesasPdf
-				.filter((item) => item.centro.tipo === 'INVESTIMENTO')
+				.filter((item) => item.centro.tipo !== 'CUSTEIO')
 				.reduce((sum, item) => sum + item.total, 0);
 			const totalFinanciamentos = dadosFinanciamentosPdf.reduce((sum, item) => sum + item.total, 0);
 			const saldoOperacional = totalReceitas - totalDespesas;
@@ -3380,7 +3536,7 @@ export class MovimentoBancarioRepository {
 				doc.setTextColor(0, 0, 0);
 				let fillColor = [240, 240, 240];
 				if (item.centro.tipoReceitaDespesa === 'DESPESA') {
-					if (item.centro.tipo === 'INVESTIMENTO') {
+					if (item.centro.tipo !== 'CUSTEIO') {
 						fillColor = [219, 234, 254];
 					} else {
 						fillColor = [254, 226, 226];
@@ -3395,7 +3551,7 @@ export class MovimentoBancarioRepository {
 				doc.text(item.centro.descricao, 22, yPos);
 				doc.setFontSize(8);
 				doc.setFont('helvetica', 'normal');
-				if (item.centro.tipo === 'INVESTIMENTO') {
+				if (item.centro.tipo !== 'CUSTEIO') {
 					doc.setTextColor(30, 64, 175);
 				} else {
 					doc.setTextColor(220, 20, 60);
@@ -3652,15 +3808,14 @@ export class MovimentoBancarioRepository {
 			// Preparar dados para Excel
 			const dadosParaExportar = dados.map((mov) => {
 				const receita = mov.tipoMovimento === 'C' ? mov.valor : 0;
+				// Same rule as UI/Dashboard/Fluxo: centre tipo CUSTEIO → custeio; anything else (incl. no tipo) → investimento
 				const despesaCusteio = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO' ? mov.valor : 0;
-				const despesaInvestimento = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO' ? mov.valor : 0;
-				// Se despesa sem tipo definido, colocar em custeio
-				const despesaSemTipo = mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo ? mov.valor : 0;
+				const despesaInvestimento = mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo !== 'CUSTEIO' ? mov.valor : 0;
 				return [
 					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
 					mov.historico || '',
 					receita ? this.excelNumero(receita) : '',
-					despesaCusteio || despesaSemTipo ? this.excelNumero(despesaCusteio || despesaSemTipo) : '',
+					despesaCusteio ? this.excelNumero(despesaCusteio) : '',
 					despesaInvestimento ? this.excelNumero(despesaInvestimento) : '',
 					mov.planoDescricao || '',
 					mov.centroCustosDescricao || '',
@@ -3671,10 +3826,10 @@ export class MovimentoBancarioRepository {
 			// Calcular totais
 			const totalReceitas = dados.filter((mov) => mov.tipoMovimento === 'C').reduce((sum, mov) => sum + mov.valor, 0);
 			const totalDespesasCusteio = dados
-				.filter((mov) => mov.tipoMovimento === 'D' && ((mov as any).centroCustosTipo === 'CUSTEIO' || !(mov as any).centroCustosTipo))
+				.filter((mov) => mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO')
 				.reduce((sum, mov) => sum + mov.valor, 0);
 			const totalDespesasInvestimento = dados
-				.filter((mov) => mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO')
+				.filter((mov) => mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo !== 'CUSTEIO')
 				.reduce((sum, mov) => sum + mov.valor, 0);
 
 			// Adicionar linha de total
@@ -3741,7 +3896,7 @@ export class MovimentoBancarioRepository {
 				.reduce((sum, item) => sum + item.valor, 0);
 
 			const totalDespesasInvestimento = dados
-				.filter((item) => item.tipoMovimento === 'D' && (item as any).centroCustosTipo === 'INVESTIMENTO')
+				.filter((item) => item.tipoMovimento === 'D' && (item as any).centroCustosTipo !== 'CUSTEIO')
 				.reduce((sum, item) => sum + item.valor, 0);
 
 			const totalGeral = totalReceitas - totalDespesas;
@@ -3932,12 +4087,9 @@ export class MovimentoBancarioRepository {
 					mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'CUSTEIO'
 						? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)
 						: '-';
+				// Same rule as UI/Dashboard/Fluxo: anything not CUSTEIO (incl. no tipo) is investimento
 				const despesaInvestimento =
-					mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo === 'INVESTIMENTO'
-						? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)
-						: '-';
-				const despesaSemTipo =
-					mov.tipoMovimento === 'D' && !(mov as any).centroCustosTipo
+					mov.tipoMovimento === 'D' && (mov as any).centroCustosTipo !== 'CUSTEIO'
 						? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)
 						: '-';
 
@@ -3945,7 +4097,7 @@ export class MovimentoBancarioRepository {
 					new Date(mov.dtMovimento).toLocaleDateString('pt-BR'),
 					historicoLimpo || '-',
 					receita,
-					despesaCusteio || despesaSemTipo,
+					despesaCusteio,
 					despesaInvestimento,
 					planoLimpo,
 					centroLimpo,

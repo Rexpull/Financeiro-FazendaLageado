@@ -30,8 +30,28 @@ export class ParametroController {
             }
 
             if (method === "PUT" && pathname === "/api/parametro") {
-                const body: Parametro = await req.json();
-                await this.parametroRepository.update(body);
+                const body = (await req.json().catch(() => null)) as Parametro | null;
+                const obrigatorios = [
+                    "idPlanoTransferenciaEntreContas",
+                    "idPlanoEntradaFinanciamentos",
+                    "idPlanoPagamentoFinanciamentos",
+                ] as const;
+                const opcionais = ["idPlanoEstornos", "idPlanoAplicacaoResgateInvestimentos"] as const;
+                // null is accepted (parameter not configured yet); a missing field or a non-id value is not.
+                const valido = (v: unknown) => v === null || (typeof v === "number" && Number.isInteger(v) && v > 0);
+                const faltando = !body || typeof body !== "object"
+                    ? [...obrigatorios]
+                    : [
+                        ...obrigatorios.filter((k) => body[k] === undefined || !valido(body[k])),
+                        ...opcionais.filter((k) => body[k] !== undefined && !valido(body[k])),
+                    ];
+                if (faltando.length > 0) {
+                    return new Response(JSON.stringify({ error: `Parâmetros inválidos ou ausentes: ${faltando.join(", ")}` }), {
+                        status: 400,
+                        headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    });
+                }
+                await this.parametroRepository.update(body!);
                 return new Response(JSON.stringify({ message: "Parâmetros atualizados com sucesso!" }), { status: 200, headers: corsHeaders });
             }
 

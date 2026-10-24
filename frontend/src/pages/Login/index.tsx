@@ -27,11 +27,8 @@ const Login: React.FC = () => {
     setIsLoading(true);
     setErro("");
 
-    const success = await login(email, senha);
-
-    if (!success) {
-      setErro("Usuário ou senha incorretos. Confira os dados e tente de novo.");
-    }
+    const mensagemErro = await login(email, senha);
+    if (mensagemErro) setErro(mensagemErro);
     setIsLoading(false);
   };
 

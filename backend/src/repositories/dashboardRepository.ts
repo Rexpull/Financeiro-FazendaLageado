@@ -201,22 +201,23 @@ export class DashboardRepository {
     const creditOnly =
       " AND (mb.tipoMovimento = 'C' OR (mb.tipoMovimento IS NULL AND mb.valor > 0))";
 
+    // Grouped by centro id: the same label can exist in CUSTEIO and INVESTIMENTO
     const qComMcc = `
       SELECT 
-        cc.descricao,
+        cc.id, cc.descricao, UPPER(TRIM(COALESCE(cc.tipo, ''))) as centroTipo,
         SUM(ABS(COALESCE(mcc.valor, 0))) as valor,
         SUM(ABS(COALESCE(mcc.valor, 0))) as valorConciliado
       FROM MovimentoCentroCustos mcc
       JOIN centroCustos cc ON mcc.idCentroCustos = cc.id
       JOIN MovimentoBancario mb ON mcc.idMovimentoBancario = mb.id
       ${whereBase}${creditOnly}
-      GROUP BY cc.descricao
+      GROUP BY cc.id
     `;
 
     // Anti-join: movements with idCentroCustos and no MCC rows (legacy single-centro)
     const qSoMbCentro = `
       SELECT 
-        cc.descricao,
+        cc.id, cc.descricao, UPPER(TRIM(COALESCE(cc.tipo, ''))) as centroTipo,
         SUM(ABS(mb.valor)) as valor,
         SUM(ABS(mb.valor)) as valorConciliado
       FROM MovimentoBancario mb
@@ -225,7 +226,7 @@ export class DashboardRepository {
       ${whereBase}${creditOnly}
         AND mb.idCentroCustos IS NOT NULL
         AND mcc0.idMovimentoBancario IS NULL
-      GROUP BY cc.descricao
+      GROUP BY cc.id
     `;
 
     const [rMcc, rMb] = await Promise.all([
@@ -233,7 +234,7 @@ export class DashboardRepository {
       this.db.prepare(qSoMbCentro).bind(...paramsBase).all(),
     ]);
 
-    const merged = new Map<string, { valor: number; valorConciliado: number }>();
+    const merged = new Map<number, { descricao: string; tipo: string; valor: number; valorConciliado: number }>();
     const addRows = (rows: any[]) => {
       for (const row of rows) {
         const d = row.descricao as string;
@@ -241,20 +242,28 @@ export class DashboardRepository {
         const vt = Math.abs(Number(row.valor) || 0);
         if (vt < 1e-9) continue;
         const vc = Math.abs(Number(row.valorConciliado) || 0);
-        const prev = merged.get(d);
+        const prev = merged.get(Number(row.id));
         if (prev) {
           prev.valor += vt;
           prev.valorConciliado += vc;
         } else {
-          merged.set(d, { valor: vt, valorConciliado: vc });
+          merged.set(Number(row.id), { descricao: d, tipo: String(row.centroTipo || ''), valor: vt, valorConciliado: vc });
         }
       }
     };
     addRows(rMcc.results as any[]);
     addRows(rMb.results as any[]);
 
+    // Two centres with the same label stay separate rows, told apart by their tipo
+    const contagemRotulo = new Map<string, number>();
+    for (const v of merged.values()) contagemRotulo.set(v.descricao, (contagemRotulo.get(v.descricao) ?? 0) + 1);
+
     const out: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
-    for (const [descricao, agg] of merged) {
+    for (const agg of merged.values()) {
+      const descricao =
+        (contagemRotulo.get(agg.descricao) ?? 0) > 1
+          ? `${agg.descricao} (${agg.tipo === 'INVESTIMENTO' ? 'Investimento' : 'Custeio'})`
+          : agg.descricao;
       const conciliado = agg.valorConciliado > 0 && agg.valorConciliado >= agg.valor * 0.99;
       out.push({
         descricao,
@@ -271,6 +280,44 @@ export class DashboardRepository {
     });
 
     return out;
+  }
+
+  /**
+   * Movements of the period with no cost centre yet (pending conciliation): they are not part of
+   * the centre composition. Same base filters as the centre aggregates.
+   */
+  private async totalSemCentroCustos(args: {
+    ano: number;
+    mes?: number;
+    contas: number[];
+    mbExcl: { sql: string; bind: Array<string | number> };
+  }): Promise<{ receitas: number; despesas: number }> {
+    const { ano, mes, contas, mbExcl } = args;
+    let where =
+      "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
+    const params: unknown[] = [];
+    if (contas && contas.length > 0) {
+      where += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
+      params.push(...contas);
+    }
+    const dtRange = this.sqlDtRange('mb.dtMovimento', ano, mes);
+    where += dtRange.sql;
+    params.push(...dtRange.bind);
+    where += mbExcl.sql;
+    params.push(...mbExcl.bind);
+    const row = await this.db
+      .prepare(
+        `SELECT
+          SUM(CASE WHEN mb.tipoMovimento = 'C' OR (mb.tipoMovimento IS NULL AND mb.valor > 0) THEN ABS(mb.valor) ELSE 0 END) AS receitas,
+          SUM(CASE WHEN mb.tipoMovimento = 'D' OR (mb.tipoMovimento IS NULL AND mb.valor < 0) THEN ABS(mb.valor) ELSE 0 END) AS despesas
+        FROM MovimentoBancario mb
+        ${where}
+          AND mb.idCentroCustos IS NULL
+          AND NOT EXISTS (SELECT 1 FROM MovimentoCentroCustos mcc WHERE mcc.idMovimentoBancario = mb.id)`,
+      )
+      .bind(...params)
+      .first<{ receitas: number | null; despesas: number | null }>();
+    return { receitas: Number(row?.receitas) || 0, despesas: Number(row?.despesas) || 0 };
   }
 
   /**
@@ -938,6 +985,8 @@ export class DashboardRepository {
     receitasAgrupadoPorCentrosAno: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }>,
     totalConciliado: number,
     totalSemConciliar: number,
+    /** Period movements without a cost centre (pending conciliation), outside the composition */
+    semCentroCustos: { receitas: number; despesas: number },
     totalReceitas: number,
     totalDespesas: number
   }> {
@@ -1029,6 +1078,7 @@ export class DashboardRepository {
     let receitasAgrupadoPorCentrosAno: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
     let totalConciliado = 0;
     let totalSemConciliar = 0;
+    let semCentroCustos = { receitas: 0, despesas: 0 };
     let totalReceitas = 0;
     let totalDespesas = 0;
 
@@ -1063,6 +1113,7 @@ export class DashboardRepository {
         else totalSemConciliar += r.valor;
       }
       totalReceitas = receitasAgrupadoPorCentros.reduce((s, r) => s + r.valor, 0);
+      semCentroCustos = await this.totalSemCentroCustos({ ano, mes, contas, mbExcl: fluxoMbExcl });
 
       // Full-year breakdown in the same request when ?mes= is set (avoids a second /api/dashboard).
       if (mes != null && mes >= 1 && mes <= 12) {
@@ -1134,6 +1185,7 @@ export class DashboardRepository {
         debug,
       });
       totalReceitas = receitasAgrupadoPorCentros.reduce((s, r) => s + r.valor, 0);
+      semCentroCustos = await this.totalSemCentroCustos({ ano, mes, contas, mbExcl: fluxoMbExcl });
 
       if (mes != null && mes >= 1 && mes <= 12) {
         const dtAno = this.sqlDtRange('mb.dtMovimento', ano);
@@ -1212,6 +1264,7 @@ export class DashboardRepository {
       receitasAgrupadoPorCentrosAno,
       totalConciliado,
       totalSemConciliar,
+      semCentroCustos,
       totalReceitas: sumReceitas,
       totalDespesas: sumDespesasAgrupado,
     };

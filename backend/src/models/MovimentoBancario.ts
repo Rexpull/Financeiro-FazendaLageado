@@ -27,4 +27,6 @@ export interface MovimentoBancario {
     idFinanciamento?: number;
     resultadoList?: Resultado[];
     centroCustosList?: MovimentoCentroCustos[];
+    /** PUT only: "Limpar conciliação" — removes every plan and cost-centre split (also rateios) */
+    limparConciliacao?: boolean;
 }

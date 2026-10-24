@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes } from '@fortawesome/free-solid-svg-icons';
-import { formatarData } from '../../../Utils/formatarData';
+import { formatarDataISO } from '../../../Utils/formatarData';
 
 Modal.setAppElement('#root');
 
@@ -115,9 +115,9 @@ const ModalDetalhamento: React.FC<Props> = ({ isOpen, onClose, movimentos, titul
 					<div style={{ maxHeight: '300px', overflowY: 'auto' }}>
 						<table className="w-full min-w-[600px]">
 							<tbody>
-								{movimentosFiltrados.map((mov) => (
-									<tr key={mov.id} className="border-b">
-										<td className="px-3 py-2 whitespace-nowrap">{formatarData(mov.data)}</td>
+								{movimentosFiltrados.map((mov, idx) => (
+									<tr key={`${mov.id}-${idx}`} className="border-b">
+										<td className="px-3 py-2 whitespace-nowrap">{formatarDataISO(mov.data)}</td>
 										<td className="px-3 py-2 text-left">{mov.descricao}</td>
 										<td className="px-3 py-2 text-right font-semibold" style={{ color: mov.valor < 0 ? 'red' : 'green' }}>
 											R$ {mov.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

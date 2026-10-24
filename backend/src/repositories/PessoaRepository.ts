@@ -1,4 +1,5 @@
 import { Pessoa } from "../models/Pessoa";
+import { garantirSemUso, plural } from "../utils/verificarUsoRegistro";
 
 export class PessoaRepository {
     private db: D1Database;
@@ -95,6 +96,18 @@ export class PessoaRepository {
     }
 
     async deleteById(id: number): Promise<void> {
+        await garantirSemUso(this.db, [
+            {
+                sql: `SELECT COUNT(*) AS n FROM Financiamento WHERE idPessoa = ?`,
+                binds: [id],
+                rotulo: (n) => plural(n, "financiamento", "financiamentos"),
+            },
+            {
+                sql: `SELECT COUNT(*) AS n FROM MovimentoBancario WHERE idPessoa = ?`,
+                binds: [id],
+                rotulo: (n) => plural(n, "lançamento bancário", "lançamentos bancários"),
+            },
+        ], "Não é possível excluir esta pessoa. Ela está em uso em:", "Inative a pessoa em vez de excluí-la.");
         await this.db.prepare(`DELETE FROM pessoa WHERE id = ?`).bind(id).run();
     }
 }

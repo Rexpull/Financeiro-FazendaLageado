@@ -84,6 +84,26 @@ export class ParcelaFinanciamentoRepository {
 		})) as ParcelaFinanciamento[];
 	  }
 
+	async getByIdFinanciamento(idFinanciamento: number): Promise<ParcelaFinanciamento[]> {
+		const { results } = await this.db.prepare(`
+			SELECT * FROM parcelaFinanciamento
+			WHERE idFinanciamento = ?
+			ORDER BY numParcela
+		`).bind(idFinanciamento).all();
+
+		return results.map((p) => ({
+			id: p.id as number,
+			idMovimentoBancario: p.idMovimentoBancario as number | null,
+			idFinanciamento: p.idFinanciamento as number,
+			valor: p.valor as number,
+			status: p.status as 'Aberto' | 'Vencido' | 'Liquidado',
+			numParcela: p.numParcela as number,
+			dt_lancamento: p.dt_lancamento as string,
+			dt_vencimento: p.dt_vencimento as string,
+			dt_liquidacao: p.dt_liquidacao as string | null,
+		})) as ParcelaFinanciamento[];
+	}
+
 	async deleteByMovimentoBancario(idMovimentoBancario: number): Promise<void> {
 		await this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idMovimentoBancario = ?`)
 			.bind(idMovimentoBancario).run();

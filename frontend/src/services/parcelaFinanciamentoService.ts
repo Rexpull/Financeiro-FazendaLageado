@@ -1,4 +1,4 @@
-import { ParcelaFinanciamento } from '../../../../backend/src/models/ParcelaFinanciamento';
+import { ParcelaFinanciamento } from '../../../backend/src/models/ParcelaFinanciamento';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -46,8 +46,8 @@ export const salvarParcelaFinanciamento = async (parcela: ParcelaFinanciamento):
 		});
 
 		if (!response.ok) {
-			const errorData = await response.json().catch(() => ({ message: 'Erro ao salvar parcela' }));
-			throw new Error(errorData.message || 'Erro ao salvar parcela');
+			const errorData = (await response.json().catch(() => ({ message: 'Erro ao salvar parcela' }))) as { message?: string; error?: string; details?: string };
+			throw new Error(errorData.details || errorData.error || errorData.message || 'Erro ao salvar parcela');
 		}
 
 		return await response.json();
@@ -64,8 +64,8 @@ export const excluirParcelaFinanciamento = async (id: number): Promise<void> => 
 		});
 
 		if (!response.ok) {
-			const errorData = await response.json().catch(() => ({ message: 'Erro ao excluir parcela' }));
-			throw new Error(errorData.message || 'Erro ao excluir parcela');
+			const errorData = (await response.json().catch(() => ({ message: 'Erro ao excluir parcela' }))) as { message?: string; error?: string; details?: string };
+			throw new Error(errorData.details || errorData.error || errorData.message || 'Erro ao excluir parcela');
 		}
 	} catch (error) {
 		console.error('Erro ao excluir parcela:', error);
@@ -78,8 +78,8 @@ export const listarParcelasFinanciamento = async (idFinanciamento: number): Prom
 		const response = await fetch(`${API_URL}/api/parcelaFinanciamento/financiamento/${idFinanciamento}`);
 
 		if (!response.ok) {
-			const errorData = await response.json().catch(() => ({ message: 'Erro ao listar parcelas' }));
-			throw new Error(errorData.message || 'Erro ao listar parcelas');
+			const errorData = (await response.json().catch(() => ({ message: 'Erro ao listar parcelas' }))) as { message?: string; error?: string; details?: string };
+			throw new Error(errorData.details || errorData.error || errorData.message || 'Erro ao listar parcelas');
 		}
 
 		return await response.json();

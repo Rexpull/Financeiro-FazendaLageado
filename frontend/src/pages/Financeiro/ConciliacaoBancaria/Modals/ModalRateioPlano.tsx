@@ -72,7 +72,8 @@ const ModalRateioPlano: React.FC<ModalRateioPlanoProps> = ({
 			const buscaCorreta =
 				plano.descricao.toLowerCase().includes(searchPlano.toLowerCase()) ||
 				plano.hierarquia.toLowerCase().includes(searchPlano.toLowerCase());
-			return plano.nivel === 3 && hierarquiaCorreta && buscaCorreta;
+			// Plano inativo não entra na seleção (rateios existentes continuam exibindo o nome via planosDisponiveis)
+			return plano.nivel === 3 && !plano.inativo && hierarquiaCorreta && buscaCorreta;
 		})
 		.slice(0, 10);
 

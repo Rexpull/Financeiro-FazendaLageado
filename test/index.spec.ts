@@ -197,6 +197,31 @@ describe('OFX batch import keeps rateio (multi centro de custos)', () => {
 		expect(new Set(rows.map((r) => r.conta))).toEqual(new Set(['BB GFS']));
 	});
 
+	it('"Limpar conciliação" removes plan and centre rateios', async () => {
+		const { id } = await importarComRateio();
+		// make it a plan rateio too (idPlanoContas becomes NULL)
+		await SELF.fetch(`${BASE}/api/movBancario/${id}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				resultadoList: [
+					{ idPlanoContas: 300, valor: 2779.85, tipo: 'D', idContaCorrente: 24, dtMovimento: '2026-10-05T00:00:00.000Z' },
+					{ idPlanoContas: 301, valor: 2000, tipo: 'D', idContaCorrente: 24, dtMovimento: '2026-10-05T00:00:00.000Z' },
+				],
+			}),
+		});
+		const res = await SELF.fetch(`${BASE}/api/movBancario/${id}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ idPlanoContas: null, idCentroCustos: null, resultadoList: [], limparConciliacao: true }),
+		});
+		expect(res.status).toBe(200);
+		const mov = (await res.json()) as { idPlanoContas: number | null; idCentroCustos: number | null; resultadoList: unknown[]; centroCustosList: unknown[] };
+		expect(mov).toMatchObject({ idPlanoContas: null, idCentroCustos: null });
+		expect(mov.resultadoList).toHaveLength(0);
+		expect(mov.centroCustosList).toHaveLength(0);
+	});
+
 	it('valor correction on re-import rescales rateio instead of deleting it', async () => {
 		const { id: idMov } = await importarComRateio();
 		// Same FITID + day, corrected valor (parser fix scenario)

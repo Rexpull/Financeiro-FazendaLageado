@@ -1,3 +1,5 @@
+import { erroExclusao, garantirSemUso, plural } from "../utils/verificarUsoRegistro";
+
 export async function handleRequest(req: Request, DB: D1Database): Promise<Response> {
   const url = new URL(req.url);
   const { pathname } = url;
@@ -142,11 +144,18 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
     }
 
     if (req.method === "GET" && pathname.startsWith("/api/bancos/")) {
-      const id = parseInt(pathname.split("/")[3]);
+      const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+      const raw = pathname.split("/")[3] ?? "";
+      if (!/^\d+$/.test(raw)) {
+        return new Response(JSON.stringify({ error: "ID inválido" }), { status: 400, headers: jsonHeaders });
+      }
       const result = await DB.prepare("SELECT id, nome, codigo FROM banco where id = ?;")
-      .bind(id)
+      .bind(parseInt(raw, 10))
       .first();
-      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!result) {
+        return new Response(JSON.stringify({ error: "Banco não encontrado" }), { status: 404, headers: jsonHeaders });
+      }
+      return new Response(JSON.stringify(result), { headers: jsonHeaders });
     }
 
     // 📌 POST - Criar banco
@@ -185,8 +194,36 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
     // 📌 DELETE - Excluir banco
     if (method === "DELETE" && pathname.startsWith("/api/bancos/")) {
       const id = parseInt(pathname.split("/")[3]);
+      const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+      if (!id || isNaN(id)) {
+        return new Response(JSON.stringify({ error: "ID inválido" }), { status: 400, headers: jsonHeaders });
+      }
 
-      await DB.prepare("DELETE FROM banco WHERE id = ?").bind(id).run();
+      try {
+        // Accounts are listed with INNER JOIN banco, so deleting a bank in use would hide its accounts.
+        await garantirSemUso(DB, [
+          {
+            sql: "SELECT COUNT(*) AS n FROM contaCorrente WHERE idBanco = ?",
+            binds: [id],
+            rotulo: (n) => plural(n, "conta corrente/cartão", "contas correntes/cartões"),
+          },
+          {
+            sql: "SELECT COUNT(*) AS n FROM Financiamento WHERE idBanco = ?",
+            binds: [id],
+            rotulo: (n) => plural(n, "financiamento", "financiamentos"),
+          },
+          {
+            sql: "SELECT COUNT(*) AS n FROM MovimentoBancario WHERE idBanco = ?",
+            binds: [id],
+            rotulo: (n) => plural(n, "lançamento bancário", "lançamentos bancários"),
+          },
+        ], "Não é possível excluir este banco. Ele está em uso em:");
+        await DB.prepare("DELETE FROM banco WHERE id = ?").bind(id).run();
+      } catch (error) {
+        console.error("❌ Erro ao excluir banco:", error);
+        const { status, message } = erroExclusao(error, "o banco");
+        return new Response(JSON.stringify({ error: message }), { status, headers: jsonHeaders });
+      }
       console.log("✅ Banco excluído:", id);
       return new Response(JSON.stringify({ message: "Banco excluído com sucesso!" }), { status: 200, headers: corsHeaders });
     }

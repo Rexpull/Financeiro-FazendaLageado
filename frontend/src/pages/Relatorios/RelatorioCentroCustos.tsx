@@ -10,6 +10,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFileExcel, faFilePdf, faChevronDown, faChevronUp, faPlus, faMinus, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { toast } from 'react-toastify';
 import { getBancoLogo } from '../../Utils/bancoUtils';
+import { formatarDataISO } from '../../Utils/formatarData';
 
 const RelatorioCentroCustos: React.FC = () => {
 	const [dados, setDados] = useState<RelatorioCentroCustosItem[]>([]);
@@ -133,7 +134,7 @@ const RelatorioCentroCustos: React.FC = () => {
 		.reduce((sum, item) => sum + item.total, 0);
 	
 	const totalDespesasInvestimento = dados
-		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo === 'INVESTIMENTO')
+		.filter(item => item.centro.tipoReceitaDespesa === 'DESPESA' && item.centro.tipo !== 'CUSTEIO')
 		.reduce((sum, item) => sum + item.total, 0);
 	
 	const totalFinanciamentos = dados
@@ -158,16 +159,11 @@ const RelatorioCentroCustos: React.FC = () => {
 			return { custeio: 0, investimento: 0 };
 		}
 		
-		// Se o centro tem tipo definido, usar o total diretamente
+		// Mesma regra do Dashboard/Fluxo (e do Excel/PDF): só tipo CUSTEIO é custeio; qualquer outro (inclusive sem tipo) é investimento
 		if (item.centro.tipo === 'CUSTEIO') {
 			return { custeio: item.total, investimento: 0 };
-		} else if (item.centro.tipo === 'INVESTIMENTO') {
-			return { custeio: 0, investimento: item.total };
 		}
-		
-		// Se não tem tipo definido, distribuir igualmente ou calcular pelos movimentos
-		// Por enquanto, vamos assumir que se não tem tipo, é custeio (comportamento padrão)
-		return { custeio: item.total, investimento: 0 };
+		return { custeio: 0, investimento: item.total };
 	};
 
 	const expandirTodos = () => {
@@ -386,7 +382,7 @@ const RelatorioCentroCustos: React.FC = () => {
 																<tbody className="divide-y divide-gray-100">
 																	{item.movimentos.map((mov, idx) => (
 																		<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{new Date(mov.dtMovimento).toLocaleDateString('pt-BR')}</td>
+																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{formatarDataISO(mov.dtMovimento)}</td>
 																			<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
 																			<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)}</td>
 																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
@@ -456,7 +452,7 @@ const RelatorioCentroCustos: React.FC = () => {
 																	<tbody className="divide-y divide-gray-100">
 																		{item.movimentos.map((mov, idx) => (
 																			<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
-																				<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{new Date(mov.dtMovimento).toLocaleDateString('pt-BR')}</td>
+																				<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{formatarDataISO(mov.dtMovimento)}</td>
 																				<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
 																				<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mov.valor)}</td>
 																				<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>
@@ -521,7 +517,7 @@ const RelatorioCentroCustos: React.FC = () => {
 																<tbody className="divide-y divide-gray-100">
 																	{item.movimentos.map((mov, idx) => (
 																		<tr key={`${mov.id}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
-																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{new Date(mov.dtMovimento).toLocaleDateString('pt-BR')}</td>
+																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-800">{formatarDataISO(mov.dtMovimento)}</td>
 																			<td className="px-4 py-2 text-sm text-gray-800">{mov.historico}</td>
 																			<td className="px-4 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatBRL(mov.valor)}</td>
 																			<td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{mov.tipoMovimento === 'C' ? 'Crédito' : 'Débito'}</td>

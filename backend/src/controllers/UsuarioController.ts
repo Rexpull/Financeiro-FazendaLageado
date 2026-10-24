@@ -16,7 +16,7 @@ export class UsuarioController {
         const corsHeaders = {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
         };
 
         if (method === "OPTIONS") {
@@ -38,6 +38,13 @@ export class UsuarioController {
                         headers: corsHeaders,
                     });
                 } catch (error) {
+                    if ((error as Error).message === "SENHA_OBRIGATORIA") {
+                        return new Response(JSON.stringify({ error: "A senha é obrigatória para cadastrar o usuário." }), {
+                            status: 400,
+                            headers: corsHeaders,
+                        });
+                    }
+
                     console.error("❌ Erro ao cadastrar usuário:", error);
             
                     if ((error as Error).message.includes("UNIQUE constraint failed: usuario.email")) {
@@ -65,7 +72,10 @@ export class UsuarioController {
             if (method === "PUT" && pathname.startsWith("/api/usuario/")) {
                 try {
                     const id = parseInt(pathname.split("/")[3]);
-                    const body: Usuario = await req.json();
+                    if (!id || isNaN(id)) {
+                        return new Response(JSON.stringify({ error: "ID inválido!" }), { status: 400, headers: corsHeaders });
+                    }
+                    const body: Partial<Usuario> = await req.json();
                     await this.usuarioRepository.update(id, body);
                     return new Response(JSON.stringify({ message: "Usuário atualizado com sucesso!" }), {
                         status: 200,

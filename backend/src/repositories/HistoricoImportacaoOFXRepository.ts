@@ -1,14 +1,22 @@
 import { HistoricoImportacaoOFX } from '../models/HistoricoImportacaoOFX';
 
+// Table check runs lazily, awaited, at most once per worker instance (retried only if it failed).
+let tabelaVerificada: Promise<boolean> | null = null;
+
 export class HistoricoImportacaoOFXRepository {
 	private db: D1Database;
 
 	constructor(db: D1Database) {
 		this.db = db;
-		this.ensureTableExists();
 	}
 
-	private async ensureTableExists(): Promise<void> {
+	private async ready(): Promise<void> {
+		if (!tabelaVerificada) tabelaVerificada = this.ensureTableExists();
+		const ok = await tabelaVerificada;
+		if (!ok) tabelaVerificada = null;
+	}
+
+	private async ensureTableExists(): Promise<boolean> {
 		try {
 			// Verificar se a tabela existe
 			const { results } = await this.db.prepare(`
@@ -47,12 +55,15 @@ export class HistoricoImportacaoOFXRepository {
 
 				console.log('✅ Tabela HistoricoImportacaoOFX criada com sucesso');
 			}
+			return true;
 		} catch (error) {
 			console.error('❌ Erro ao verificar/criar tabela HistoricoImportacaoOFX:', error);
+			return false;
 		}
 	}
 
 	async getAllByUsuario(idUsuario: number): Promise<HistoricoImportacaoOFX[]> {
+		await this.ready();
 		try {
 			const { results } = await this.db
 				.prepare(`
@@ -96,6 +107,7 @@ export class HistoricoImportacaoOFXRepository {
 	}
 
 	async create(historico: Omit<HistoricoImportacaoOFX, 'id' | 'criadoEm' | 'atualizadoEm'>): Promise<number> {
+		await this.ready();
 		try {
 			const {
 				idUsuario,
@@ -144,6 +156,7 @@ export class HistoricoImportacaoOFXRepository {
 	}
 
 	async deleteByUsuario(idUsuario: number): Promise<void> {
+		await this.ready();
 		try {
 			await this.db
 				.prepare('DELETE FROM HistoricoImportacaoOFX WHERE idUsuario = ?')
@@ -156,6 +169,7 @@ export class HistoricoImportacaoOFXRepository {
 	}
 
 	async deleteById(id: number, idUsuario: number): Promise<void> {
+		await this.ready();
 		try {
 			await this.db
 				.prepare('DELETE FROM HistoricoImportacaoOFX WHERE id = ? AND idUsuario = ?')
