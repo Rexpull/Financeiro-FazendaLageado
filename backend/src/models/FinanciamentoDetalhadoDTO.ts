@@ -12,5 +12,7 @@ export interface FinanciamentoDetalhadoDTO {
     numeroContrato: string;
     valorTotal: number;
     credor: string;
+    /** Borrower (Financiamento.responsavel), e.g. "GJN" */
+    tomador?: string;
     parcelas: ParcelaDetalhadaDTO[];
 } 

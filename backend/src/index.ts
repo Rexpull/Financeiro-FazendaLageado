@@ -11,6 +11,7 @@ import { handleAuthRequest as handleAuthRequest } from "./routes/handleAuthReque
 import { handleRequest as handleNotificacaoRequest } from "./routes/handleNotifications";
 import { handleRequest as handleCentroCustosRequest } from "./routes/handleCentroCustos";
 import { handleRequest as handleRelatorioFinanciamentosRequest } from "./routes/handleRelatorioFinanciamentos";
+import { handleRequest as handleCaixaRequest } from "./routes/handleCaixa";
 import scheduler from "./workers/scheduler";
 
 const corsHeaders = {
@@ -61,6 +62,8 @@ export default {
         return handleBancoRequest(req, env.DB);
       case pathname.startsWith("/api/auth"):
         return handleAuthRequest(req, env, env.DB);
+      case pathname.startsWith("/api/caixa"):
+        return handleCaixaRequest(req, env.DB);
       case pathname.startsWith("/api/dashboard"):
         {
           const { handleRequest } = await import("./routes/dashboardRoutes");

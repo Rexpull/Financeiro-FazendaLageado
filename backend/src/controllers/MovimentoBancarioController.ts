@@ -500,7 +500,14 @@ export class MovimentoBancarioController {
 
 				if (tipo === 'financiamentos') {
 					const credorKey = urlObj.searchParams.get('planoId') || '';
-					if (subtipo === 'contratados') {
+					if (credorKey === 'todos') {
+						// Fluxo (centros): Quitados / Créditos novos totalizados do mês, todos os credores
+						movimentos = (await this.movBancarioRepository.getDetalhesFinanciamentoMes(
+							mes,
+							ano,
+							subtipo === 'contratados' ? 'contratados' : 'pagos',
+						)) as any;
+					} else if (subtipo === 'contratados') {
 						movimentos = (await this.movBancarioRepository.getDetalhesFinanciamentoContratados(credorKey, mes, ano)) as any;
 					} else {
 						movimentos = await this.movBancarioRepository.getDetalhesFinanciamento(credorKey, mes, ano);
@@ -835,6 +842,14 @@ export class MovimentoBancarioController {
 
 					// Processar financiamentos contratados pelo dataContrato (quando agrupado por centros)
 					if (tipoAgrupamento === 'centros') {
+						// Créditos novos = all parcelas of the contract (the year list above only has this year's);
+						// financiamentoRepo.getAll() already brings each contract's parcelasList
+						const totalParcelasPorContrato = new Map<number, number>(
+							financiamentos.map((f: any) => [
+								f.id,
+								(f.parcelasList ?? []).reduce((acc: number, p: any) => acc + (Number(p.valor) || 0), 0),
+							]),
+						);
 						// Primeiro, processar financiamentos para identificar contratados pelo dataContrato
 						const financiamentosProcessados = new Set<number>();
 						for (const financiamento of financiamentos) {
@@ -852,9 +867,11 @@ export class MovimentoBancarioController {
 								const banco = bancos.find((b) => b.id === financiamento.idBanco);
 								credorKey = `b_${financiamento.idBanco}`;
 								credorDescricao = banco ? banco.nome : `Banco ${financiamento.idBanco}`;
+							} else {
+								// No lender registered: still a new credit (totals must match the Dashboard)
+								credorKey = `f_${financiamento.id}`;
+								credorDescricao = financiamento.responsavel || `Contrato ${financiamento.numeroContrato}`;
 							}
-
-							if (!credorKey) continue;
 
 							// Contratados: usar dataContrato do financiamento
 							const dataContrato = new Date(financiamento.dataContrato);
@@ -866,8 +883,8 @@ export class MovimentoBancarioController {
 								if (!dadosMensais[mesContrato].financiamentos.contratados[credorKey]) {
 									dadosMensais[mesContrato].financiamentos.contratados[credorKey] = { valor: 0, descricao: credorDescricao };
 								}
-								// Usar valor total do financiamento (valor + juros)
-								const valorTotal = financiamento.valor + (financiamento.totalJuros || 0);
+								// Créditos novos = soma das parcelas do contrato (mesma regra do saldo devedor no Dashboard)
+								const valorTotal = totalParcelasPorContrato.get(financiamento.id) ?? 0;
 								dadosMensais[mesContrato].financiamentos.contratados[credorKey].valor += valorTotal;
 							}
 						}

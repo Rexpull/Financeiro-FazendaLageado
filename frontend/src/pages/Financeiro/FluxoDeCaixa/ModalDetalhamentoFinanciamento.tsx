@@ -22,14 +22,13 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 		setExpandido((prev) => ({ ...prev, [id]: !prev[id] }));
 	};
 
+	// Dates are 'YYYY-MM-DD': format the text directly (new Date() would shift a day in UTC−3)
 	const formatarDataBR = (data?: string | null) => {
 		if (!data) return '—';
-		try {
-			return new Date(data).toLocaleDateString('pt-BR');
-		} catch {
-			return data;
-		}
+		const [a, m, d] = String(data).slice(0, 10).split('-');
+		return a && m && d ? `${d}/${m}/${a}` : String(data);
 	};
+	const temTomador = financiamentos.some((f) => f.tomador);
 
 	const getStatusClass = (status: string) => {
 		if (status === 'Liquidado') return 'bg-green-100 text-green-800';
@@ -62,7 +61,8 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 						<tr>
 							<th className="text-left px-3 py-2 w-12"></th>
 							<th className="text-left px-3 py-2">Contrato</th>
-							<th className="text-left px-3 py-2">Credor</th>
+							<th className="text-left px-3 py-2">Banco / credor</th>
+							{temTomador && <th className="text-left px-3 py-2">Tomador</th>}
 							<th className="text-right px-3 py-2">Valor Total do Contrato</th>
 						</tr>
 					</thead>
@@ -75,11 +75,12 @@ const ModalDetalhamentoFinanciamento: React.FC<Props> = ({ isOpen, onClose, fina
 									</td>
 									<td className="px-3 py-2 font-semibold text-primary">{fin.numeroContrato}</td>
 									<td className="px-3 py-2">{fin.credor}</td>
+									{temTomador && <td className="px-3 py-2">{fin.tomador || '—'}</td>}
 									<td className="px-3 py-2 text-right font-bold text-primary">{formatarMoeda(fin.valorTotal)}</td>
 								</tr>
 								{expandido[fin.id] && (
 									<tr className="bg-gray-50">
-										<td colSpan={4} className="p-3">
+										<td colSpan={temTomador ? 5 : 4} className="p-3">
 											<div className="border rounded-lg overflow-hidden">
 												<table className="w-full">
 													<thead className="bg-gray-200 text-gray-600 text-sm">

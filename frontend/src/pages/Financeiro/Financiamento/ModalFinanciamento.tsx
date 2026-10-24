@@ -468,6 +468,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 							<option value="INVESTIMENTO">Investimento</option>
 							<option value="CUSTEIO">Custeio</option>
 							<option value="PARTICULAR">Particular</option>
+							<option value="RENEGOCIACAO">Renegociação</option>
 						</select>
 						{errors.modalidade && <p className="text-red-500 text-xs">{errors.modalidade}</p>}
 					</div>

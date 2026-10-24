@@ -21,6 +21,7 @@ import { getDashboardData, DashboardData, getResumoSaldoDevedor, ResumoSaldoDeve
 import { getContasCorrentes } from '../../services/contaCorrenteService';
 import ReceitasDespesasTab from './ReceitasDespesasTab';
 import FinanciamentosTab from './FinanciamentosTab';
+import { CaixaTab } from './CaixaTab';
 import ComparativoReceitasDespesasChart from './ComparativoReceitasDespesasChart';
 import { totaisPorCentros } from './totaisPorCentros';
 import { saldoDevedorPeriodo } from './saldoDevedorPeriodo';
@@ -33,7 +34,7 @@ const Dashboard = () => {
   });
   const [bancoSelecionado, setBancoSelecionado] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [activeDashboardTab, setActiveDashboardTab] = useState<'receitas-despesas' | 'financiamentos' | 'resultado'>('receitas-despesas');
+  const [activeDashboardTab, setActiveDashboardTab] = useState<'receitas-despesas' | 'financiamentos' | 'resultado' | 'caixa'>('receitas-despesas');
   const [tipoDetalhamento, setTipoDetalhamento] = useState<'receitas' | 'despesas'>('despesas');
   const [resumoSaldoDevedor, setResumoSaldoDevedor] = useState<ResumoSaldoDevedorMes[] | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData>({
@@ -163,7 +164,7 @@ const Dashboard = () => {
     setAnoSelecionado(Number(event.target.value));
   };
 
-  const handleDashboardTabChange = (event: React.SyntheticEvent, newValue: 'receitas-despesas' | 'financiamentos' | 'resultado') => {
+  const handleDashboardTabChange = (event: React.SyntheticEvent, newValue: 'receitas-despesas' | 'financiamentos' | 'resultado' | 'caixa') => {
     setActiveDashboardTab(newValue);
   };
 
@@ -206,21 +207,31 @@ const Dashboard = () => {
           display: 'flex',
           justifyContent: 'space-between', 
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 1,
           borderBottom: 1, 
           borderColor: 'divider',
           
         }}>
-          <Tabs value={activeDashboardTab} onChange={handleDashboardTabChange} sx={{ borderBottom: 'none' }}>
+          <Tabs
+            value={activeDashboardTab}
+            onChange={handleDashboardTabChange}
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+            sx={{ borderBottom: 'none', minWidth: 0, flex: '1 1 420px' }}
+          >
             <Tab label="Receitas e Despesas" value="receitas-despesas" sx={{ fontWeight: 'bold !important' }}/>
             <Tab label="Financiamentos" value="financiamentos" sx={{ fontWeight: 'bold !important' }}/>
             <Tab label="Resultado Consolidado" value="resultado" sx={{ fontWeight: 'bold !important' }}/>
+            <Tab label="Caixa" value="caixa" sx={{ fontWeight: 'bold !important' }}/>
           </Tabs>
           
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', pb: 1 }}>
           <FormControl sx={{ minWidth: 120 }} size="small">
             <InputLabel>Ano</InputLabel>
             <Select value={anoSelecionado} sx={{backgroundColor: 'white'}} label="Ano" onChange={handleAnoChange}>
-              {[2020, 2021, 2022, 2023, 2024, 2025, 2026].map(ano => (
+              {Array.from({ length: new Date().getFullYear() + 2 - 2020 }, (_, i) => 2020 + i).map(ano => (
                 <MenuItem key={ano} value={ano}>{ano}</MenuItem>
               ))}
             </Select>
@@ -271,6 +282,10 @@ const Dashboard = () => {
             mesSelecionado={mesSelecionado}
             resumo={resumoSaldoDevedor}
           />
+        )}
+
+        {activeDashboardTab === 'caixa' && (
+          <CaixaTab anoSelecionado={anoSelecionado} mesSelecionado={mesSelecionado} />
         )}
 
         {activeDashboardTab === 'resultado' && (() => {

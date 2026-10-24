@@ -1567,6 +1567,7 @@ export class MovimentoBancarioRepository {
 			LEFT JOIN Pessoa p ON f.idPessoa = p.id
 			LEFT JOIN Banco b ON f.idBanco = b.id
 			WHERE ${credorField} = ?
+			  AND pf.status = 'Liquidado'
 			  AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) BETWEEN ? AND ?
 			ORDER BY f.id, pf.numParcela
 		`;
@@ -1597,6 +1598,62 @@ export class MovimentoBancarioRepository {
 		}
 
 		return Array.from(financiamentosMap.values());
+	}
+
+	/**
+	 * Fluxo (centros) detail for the month across all lenders:
+	 * - pagos: parcelas liquidated in the month (same rule as "Quitados")
+	 * - contratados: contracts with dataContrato in the month and all their parcelas ("Créditos novos")
+	 */
+	async getDetalhesFinanciamentoMes(mes: number, ano: number, subtipo: 'pagos' | 'contratados'): Promise<FinanciamentoDetalhadoDTO[]> {
+		const pad = (n: number) => String(n).padStart(2, '0');
+		const inicio = `${ano}-${pad(mes + 1)}-01`;
+		const fim = mes === 11 ? `${ano + 1}-01-01` : `${ano}-${pad(mes + 2)}-01`;
+		const filtro =
+			subtipo === 'pagos'
+				? `pf.status = 'Liquidado' AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) >= ? AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) < ?`
+				: `f.dataContrato >= ? AND f.dataContrato < ?`;
+
+		const { results } = await this.db
+			.prepare(
+				`
+				SELECT
+					f.id as idFinanciamento, f.numeroContrato, f.valor as valorFinanciamento, f.responsavel,
+					p.nome as nomePessoa, b.nome as nomeBanco,
+					pf.id as idParcela, pf.numParcela, pf.valor as valorParcela, pf.dt_vencimento, pf.dt_liquidacao, pf.status
+				FROM parcelaFinanciamento pf
+				JOIN Financiamento f ON pf.idFinanciamento = f.id
+				LEFT JOIN Pessoa p ON f.idPessoa = p.id
+				LEFT JOIN Banco b ON f.idBanco = b.id
+				WHERE ${filtro}
+				ORDER BY b.nome, f.numeroContrato, pf.numParcela
+			`,
+			)
+			.bind(inicio, fim)
+			.all();
+
+		const porContrato = new Map<number, FinanciamentoDetalhadoDTO>();
+		for (const row of results as any[]) {
+			if (!porContrato.has(row.idFinanciamento)) {
+				porContrato.set(row.idFinanciamento, {
+					id: row.idFinanciamento,
+					numeroContrato: row.numeroContrato,
+					valorTotal: row.valorFinanciamento,
+					credor: row.nomeBanco || row.nomePessoa || 'Não identificado',
+					tomador: row.responsavel || undefined,
+					parcelas: [],
+				});
+			}
+			porContrato.get(row.idFinanciamento)!.parcelas.push({
+				id: row.idParcela,
+				numParcela: row.numParcela,
+				valor: row.valorParcela,
+				dt_vencimento: row.dt_vencimento,
+				dt_liquidacao: row.dt_liquidacao,
+				status: row.status,
+			});
+		}
+		return Array.from(porContrato.values());
 	}
 
 	/** Retorna financiamentos contratados no mês/ano (dataContrato no período) para o credor, para detalhamento da linha "Contratados". */

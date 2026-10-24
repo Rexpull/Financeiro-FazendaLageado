@@ -1,4 +1,5 @@
 import { RelatorioFinanciamentosRepository, FiltrosRelatorioFinanciamentos } from '../repositories/RelatorioFinanciamentosRepository';
+import { MODALIDADES_FINANCIAMENTO, FAIXAS_JUROS, hojeISO, type StatusContrato } from '../utils/relatorioFinanciamentos';
 
 export class RelatorioFinanciamentosController {
   constructor(private repository: RelatorioFinanciamentosRepository) {}
@@ -20,47 +21,44 @@ export class RelatorioFinanciamentosController {
 
     try {
       if (method === "GET" && pathname === "/api/relatorio/financiamentos") {
-        const filtros: FiltrosRelatorioFinanciamentos = {};
-        
-        // Parse dos filtros da query string
-        const mesVencimento = url.searchParams.get("mesVencimento");
-        if (mesVencimento) filtros.mesVencimento = parseInt(mesVencimento);
+        const hoje = hojeISO();
 
-        const anoVencimento = url.searchParams.get("anoVencimento");
-        if (anoVencimento) filtros.anoVencimento = parseInt(anoVencimento);
+        // Período (mês/ano). Sem ano: ano atual. Sem mês: ano inteiro.
+        const ano = parseInt(url.searchParams.get("ano") || "");
+        const filtros: FiltrosRelatorioFinanciamentos = {
+          ano: ano >= 1900 && ano <= 2100 ? ano : Number(hoje.slice(0, 4)),
+        };
 
-        const idBanco = url.searchParams.get("idBanco");
-        if (idBanco) filtros.idBanco = parseInt(idBanco);
+        const mes = parseInt(url.searchParams.get("mes") || "");
+        if (mes >= 1 && mes <= 12) filtros.mes = mes;
 
-        const idPessoa = url.searchParams.get("idPessoa");
-        if (idPessoa) filtros.idPessoa = parseInt(idPessoa);
+        const idBanco = parseInt(url.searchParams.get("idBanco") || "");
+        if (idBanco) filtros.idBanco = idBanco;
 
-        const numeroGarantia = url.searchParams.get("numeroGarantia");
+        // Tomador = Financiamento.responsavel
+        const tomador = url.searchParams.get("tomador")?.trim();
+        if (tomador) filtros.tomador = tomador;
+
+        const numeroGarantia = url.searchParams.get("numeroGarantia")?.trim();
         if (numeroGarantia) filtros.numeroGarantia = numeroGarantia;
 
-        const modalidade = url.searchParams.get("modalidade");
-        if (modalidade && ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR'].includes(modalidade)) {
-          filtros.modalidade = modalidade as 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR';
+        const modalidade = url.searchParams.get("modalidade")?.toUpperCase();
+        if (modalidade && (MODALIDADES_FINANCIAMENTO as readonly string[]).includes(modalidade)) {
+          filtros.modalidade = modalidade;
         }
 
-        const dataContratoInicio = url.searchParams.get("dataContratoInicio");
-        if (dataContratoInicio) filtros.dataContratoInicio = dataContratoInicio;
-
-        const dataContratoFim = url.searchParams.get("dataContratoFim");
-        if (dataContratoFim) filtros.dataContratoFim = dataContratoFim;
-
         const faixaJuros = url.searchParams.get("faixaJuros");
-        if (faixaJuros && ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15'].includes(faixaJuros)) {
+        if (faixaJuros && (FAIXAS_JUROS as readonly string[]).includes(faixaJuros)) {
           filtros.faixaJuros = faixaJuros;
         }
 
-        const statusContrato = url.searchParams.get("statusContrato");
+        const statusContrato = url.searchParams.get("statusContrato")?.toUpperCase();
         if (statusContrato && ['ATIVO', 'QUITADO', 'NOVO'].includes(statusContrato)) {
-          filtros.statusContrato = statusContrato as 'ATIVO' | 'QUITADO' | 'NOVO';
+          filtros.statusContrato = statusContrato as StatusContrato;
         }
 
-        const data = await this.repository.getRelatorioFinanciamentos(filtros);
-        
+        const data = await this.repository.getRelatorioFinanciamentos(filtros, hoje);
+
         return new Response(JSON.stringify(data), {
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
@@ -82,4 +80,3 @@ export class RelatorioFinanciamentosController {
     }
   }
 }
-

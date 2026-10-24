@@ -289,4 +289,58 @@ describe('dashboard saldo devedor', () => {
 		const out = meses[9];
 		expect(out).toMatchObject({ saldoInicial: 750, quitados: 300, creditosNovos: 3000, saldoFinal: 3450 });
 	});
+
+	it('Fluxo (centros): créditos novos sum ALL parcelas of the new contract, even future years', async () => {
+		await db
+			.prepare(
+				`INSERT INTO Financiamento (id, idBanco, idPessoa, responsavel, dataContrato, valor, numeroContrato) VALUES
+				 (2, NULL, NULL, 'JPT', '2026-10-15', 5000, 'B')`,
+			)
+			.run();
+		await db
+			.prepare(
+				`INSERT INTO parcelaFinanciamento (idFinanciamento, valor, status, numParcela, dt_vencimento, dt_liquidacao) VALUES
+				 (2, 3000, 'Aberto', 1, '2027-10-15', NULL), (2, 3000, 'Aberto', 2, '2028-10-15', NULL)`,
+			)
+			.run();
+		const res = await SELF.fetch(`${BASE}/api/fluxoCaixa`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ano: '2026', contas: ['24'], tipoAgrupamento: 'centros' }),
+		});
+		expect(res.status).toBe(200);
+		const { dadosMensais } = (await res.json()) as { dadosMensais: Array<{ financiamentos: { contratados: Record<string, { valor: number }> } }> };
+		const outubro = Object.values(dadosMensais[9].financiamentos.contratados).reduce((a, c) => a + c.valor, 0);
+		expect(outubro).toBe(6000); // no lender registered and parcelas only in 2027/2028
+	});
+
+	it('Fluxo detail "todos": quitados of the month and créditos novos with all their parcelas', async () => {
+		await db.prepare(`INSERT INTO banco (id, nome, codigo) VALUES (1, 'SICREDI', '748')`).run();
+		await db
+			.prepare(
+				`INSERT INTO Financiamento (id, idBanco, responsavel, dataContrato, valor, numeroContrato) VALUES
+				 (1, 1, 'GJN', '2025-06-06', 1000, 'A'), (2, 1, 'JPT', '2026-10-15', 5000, 'B')`,
+			)
+			.run();
+		await db
+			.prepare(
+				`INSERT INTO parcelaFinanciamento (idFinanciamento, valor, status, numParcela, dt_vencimento, dt_liquidacao) VALUES
+				 (1, 300, 'Liquidado', 1, '2026-10-15', '2026-10-14'),
+				 (1, 450, 'Vencido', 2, '2026-10-20', NULL),
+				 (2, 3000, 'Aberto', 1, '2027-10-15', NULL),
+				 (2, 3000, 'Aberto', 2, '2028-10-15', NULL)`,
+			)
+			.run();
+		const url = (subtipo: string) =>
+			`${BASE}/api/fluxoCaixa/detalhar?planoId=todos&tipo=financiamentos&subtipo=${subtipo}&mes=9&ano=2026&tipoAgrupamento=centros`;
+
+		const pagos = (await (await SELF.fetch(url('pagos'))).json()) as Array<{ numeroContrato: string; credor: string; tomador: string; parcelas: Array<{ valor: number }> }>;
+		expect(pagos).toHaveLength(1);
+		expect(pagos[0]).toMatchObject({ numeroContrato: 'A', credor: 'SICREDI', tomador: 'GJN' });
+		expect(pagos[0].parcelas.map((p) => p.valor)).toEqual([300]); // unpaid parcela of the month is not "quitado"
+
+		const novos = (await (await SELF.fetch(url('contratados'))).json()) as Array<{ numeroContrato: string; parcelas: unknown[] }>;
+		expect(novos.map((n) => n.numeroContrato)).toEqual(['B']);
+		expect(novos[0].parcelas).toHaveLength(2);
+	});
 });

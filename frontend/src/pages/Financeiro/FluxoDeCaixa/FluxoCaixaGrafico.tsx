@@ -2,7 +2,7 @@ import React from 'react';
 import { formatarMoeda } from '../../../Utils/formataMoeda';
 import { Chart } from 'react-chartjs-2';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCaretDown, faCaretUp } from '@fortawesome/free-solid-svg-icons';
+import { faCaretDown, faCaretUp, faArrowUp, faArrowDown } from '@fortawesome/free-solid-svg-icons';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -292,7 +292,7 @@ const FluxoCaixaGrafico: React.FC<Props> = ({
           <ul className="mt-2">
             {top10.length === 0 && <li className="text-gray-400">Nenhum dado para exibir.</li>}
             {top10.map((item, idx) => (
-              <li key={item.descricao} className="flex justify-between items-center border-b py-2">
+              <li key={`${idx}-${item.descricao}`} className="flex justify-between items-center border-b py-2">
                 <span className="flex items-center gap-2">
                   <FontAwesomeIcon icon={tipoTop === 'receitas' ? faArrowUp : faArrowDown} className={`${tipoTop === 'receitas' ? 'text-green-500' : 'text-red-500'}`} />
                   <span className="font-bold text-gray-700">{item.descricao}</span>

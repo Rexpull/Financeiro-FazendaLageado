@@ -8,7 +8,7 @@ CREATE TABLE "CentroCustos" (
   UNIQUE(descricao, tipo, tipoReceitaDespesa)
 );
 
-CREATE TABLE Financiamento (     id INTEGER PRIMARY KEY AUTOINCREMENT,      idBanco INTEGER,     idPessoa INTEGER,      responsavel VARCHAR(255) NOT NULL,     dataContrato DATE NOT NULL,     valor DECIMAL(15,2) NOT NULL,     taxaJurosAnual DECIMAL(15,2),     taxaJurosMensal DECIMAL(15,2),     numeroContrato VARCHAR(255) NOT NULL,     numeroGarantia VARCHAR(255),     observacao VARCHAR(255),      dataVencimentoPrimeiraParcela DATE,     dataVencimentoUltimaParcela DATE,     totalJuros DECIMAL(15,2),      criadoEm DATE DEFAULT CURRENT_TIMESTAMP,     atualizadoEm DATE, modalidade TEXT CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR')), nomeModalidadeParticular TEXT,      FOREIGN KEY (idBanco) REFERENCES Banco(id),     FOREIGN KEY (idPessoa) REFERENCES Pessoa(id) );
+CREATE TABLE Financiamento (     id INTEGER PRIMARY KEY AUTOINCREMENT,      idBanco INTEGER,     idPessoa INTEGER,      responsavel VARCHAR(255) NOT NULL,     dataContrato DATE NOT NULL,     valor DECIMAL(15,2) NOT NULL,     taxaJurosAnual DECIMAL(15,2),     taxaJurosMensal DECIMAL(15,2),     numeroContrato VARCHAR(255) NOT NULL,     numeroGarantia VARCHAR(255),     observacao VARCHAR(255),      dataVencimentoPrimeiraParcela DATE,     dataVencimentoUltimaParcela DATE,     totalJuros DECIMAL(15,2),      criadoEm DATE DEFAULT CURRENT_TIMESTAMP,     atualizadoEm DATE, modalidade TEXT CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO')), nomeModalidadeParticular TEXT,      FOREIGN KEY (idBanco) REFERENCES Banco(id),     FOREIGN KEY (idPessoa) REFERENCES Pessoa(id) );
 
 CREATE TABLE HistoricoImportacaoOFX (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

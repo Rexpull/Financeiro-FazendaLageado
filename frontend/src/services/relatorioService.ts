@@ -151,23 +151,24 @@ export const exportRelatorioItensClassificadosPDF = async (
 	return res.blob();
 };
 
+export type StatusContratoFinanciamento = 'NOVO' | 'ATIVO' | 'QUITADO';
+export type ModalidadeFinanciamento = 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR' | 'RENEGOCIACAO';
+
 export interface FiltrosRelatorioFinanciamentos {
-	mesVencimento?: number;
-	anoVencimento?: number;
+	ano: number;
+	mes?: number; // 1..12; sem mês = ano inteiro
 	idBanco?: number;
-	idPessoa?: number;
+	tomador?: string; // Financiamento.responsavel
 	numeroGarantia?: string;
-	modalidade?: 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR';
-	dataContratoInicio?: string;
-	dataContratoFim?: string;
+	modalidade?: ModalidadeFinanciamento;
 	faixaJuros?: string;
-	statusContrato?: 'ATIVO' | 'QUITADO' | 'NOVO';
+	statusContrato?: StatusContratoFinanciamento;
 }
 
 export interface ItemRelatorioFinanciamentos {
 	idFinanciamento: number;
 	numeroContrato: string;
-	responsavel: string;
+	responsavel: string; // tomador
 	banco?: string;
 	pessoa?: string;
 	dataContrato: string;
@@ -178,7 +179,11 @@ export interface ItemRelatorioFinanciamentos {
 	nomeModalidadeParticular?: string;
 	numeroGarantia?: string;
 	taxaJurosAnual?: number;
-	statusContrato?: 'ATIVO' | 'QUITADO' | 'NOVO';
+	statusContrato: StatusContratoFinanciamento;
+	valor: number; // NOVO: valor do contrato; ATIVO: parcelas não liquidadas; QUITADO: valor pago
+	valorPago: number;
+	valorVincendo: number;
+	dataQuitacao?: string;
 	parcelas: Array<{
 		idParcela: number;
 		numParcela: number;
@@ -193,6 +198,7 @@ export interface TotalizadoresRelatorioFinanciamentos {
 	totalContratos: number;
 	totalValorContratos: number;
 	totalJuros: number;
+	totalValor: number;
 	totalValorParcelas: number;
 	totalParcelas: number;
 	totalParcelasLiquidadas: number;
@@ -201,11 +207,15 @@ export interface TotalizadoresRelatorioFinanciamentos {
 }
 
 export interface RelatorioFinanciamentosData {
+	periodo: { ano: number; mes: number | null; inicio: string; fim: string };
+	tomadores: string[];
 	itens: ItemRelatorioFinanciamentos[];
 	totalizadores: TotalizadoresRelatorioFinanciamentos;
+	resumoStatus: Record<StatusContratoFinanciamento, { quantidade: number; valor: number }>;
 	graficos: {
-		mensais: Array<{ mes: string; novos: number; quitados: number; ativos: number }>;
-		anuais: Array<{ ano: number; novos: number; quitados: number; ativos: number }>;
+		mensal: Array<{ mes: number; novos: number; liquidados: number; compromissos: number }>;
+		compromissosPorAno: Array<{ ano: number; valor: number }>;
+		liquidadosPorAno: Array<{ ano: number; valor: number }>;
 	};
 }
 
@@ -213,14 +223,12 @@ export const getRelatorioFinanciamentos = async (
 	filtros: FiltrosRelatorioFinanciamentos
 ): Promise<RelatorioFinanciamentosData> => {
 	const params = new URLSearchParams();
-	if (filtros.mesVencimento) params.append('mesVencimento', filtros.mesVencimento.toString());
-	if (filtros.anoVencimento) params.append('anoVencimento', filtros.anoVencimento.toString());
+	params.append('ano', filtros.ano.toString());
+	if (filtros.mes) params.append('mes', filtros.mes.toString());
 	if (filtros.idBanco) params.append('idBanco', filtros.idBanco.toString());
-	if (filtros.idPessoa) params.append('idPessoa', filtros.idPessoa.toString());
+	if (filtros.tomador) params.append('tomador', filtros.tomador);
 	if (filtros.numeroGarantia) params.append('numeroGarantia', filtros.numeroGarantia);
 	if (filtros.modalidade) params.append('modalidade', filtros.modalidade);
-	if (filtros.dataContratoInicio) params.append('dataContratoInicio', filtros.dataContratoInicio);
-	if (filtros.dataContratoFim) params.append('dataContratoFim', filtros.dataContratoFim);
 	if (filtros.faixaJuros) params.append('faixaJuros', filtros.faixaJuros);
 	if (filtros.statusContrato) params.append('statusContrato', filtros.statusContrato);
 
@@ -228,4 +236,3 @@ export const getRelatorioFinanciamentos = async (
 	if (!res.ok) throw new Error('Erro ao buscar relatório de financiamentos');
 	return res.json();
 };
-
