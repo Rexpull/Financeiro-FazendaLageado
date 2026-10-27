@@ -2,6 +2,7 @@
  * Caixa diário (previsão de posição de caixa dia a dia de um mês).
  *
  * Saldo       = saldo inicial − Σ boletos − Σ financiamento (acumulado até o dia, inclusive)
+ *               (financiamento = só as parcelas marcadas como consideradas na apuração)
  * Saldo final = saldo + Σ previsões C − Σ previsões D (acumulado até o dia, inclusive)
  *
  * Datas são comparadas como strings 'YYYY-MM-DD' (só os 10 primeiros caracteres contam,
@@ -22,6 +23,8 @@ export interface LancamentoCaixaCalculo {
 export interface ParcelaCaixaCalculo {
 	data: string;
 	valor: number;
+	/** false = parcela listada no mês mas fora da apuração do saldo (omitido = considerada) */
+	considerada?: boolean;
 }
 
 export interface DiaCaixa {
@@ -93,6 +96,20 @@ export function intervaloDoMes(ano: number, mes: number): { inicio: string; fimE
 	return { inicio: `${ano}-${pad2(mes)}-01`, fimExclusivo: `${proxAno}-${pad2(proxMes)}-01` };
 }
 
+/**
+ * Padrão quando o usuário ainda não marcou a parcela: abertas/vencidas entram na apuração,
+ * liquidadas não (já saíram do caixa antes do saldo inicial informado).
+ */
+export function parcelaConsideradaPadrao(status: string | null | undefined): boolean {
+	return String(status ?? '').trim().toLowerCase() !== 'liquidado';
+}
+
+/** Escolha gravada (1/0/true/false) prevalece; sem escolha vale o padrão pelo status. */
+export function parcelaConsiderada(status: string | null | undefined, escolha: unknown): boolean {
+	if (escolha === null || escolha === undefined) return parcelaConsideradaPadrao(status);
+	return escolha === true || Number(escolha) === 1;
+}
+
 export function calcularCaixaDiario(args: {
 	ano: number;
 	mes: number;
@@ -117,6 +134,7 @@ export function calcularCaixaDiario(args: {
 	}
 
 	for (const p of args.parcelas) {
+		if (p.considerada === false) continue;
 		const dia = porDia.get(String(p.data ?? '').slice(0, 10));
 		if (!dia) continue;
 		dia.financiamento += Math.abs(paraCentavos(p.valor));

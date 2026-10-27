@@ -6,9 +6,13 @@ import { coerceMonetaryValue } from '../utils/coerceMonetaryValue';
  * Dashboard aba "Caixa" — rotas sob /api/caixa
  *   GET    /api/caixa?ano=2026&mes=10
  *   PUT    /api/caixa/saldo-inicial        { ano, mes, valor }   (valor null remove)
- *   POST   /api/caixa/lancamentos          { tipo, natureza, data, descricao, valor }
+ *   PUT    /api/caixa/boletos              { data, valor }       (total de boletos do dia; null ou 0 remove)
+ *   PUT    /api/caixa/parcelas/:id         { considerar: boolean } (parcela entra ou não na apuração do saldo)
+ *   POST   /api/caixa/lancamentos          { tipo: 'PREVISAO', natureza, data, descricao, valor }
  *   PUT    /api/caixa/lancamentos/:id      (campos omitidos mantêm o valor atual)
  *   DELETE /api/caixa/lancamentos/:id
+ *
+ * Boletos não têm descrição: o usuário informa só o total a pagar em cada dia.
  */
 
 const corsHeaders = {
@@ -69,28 +73,23 @@ function numero(v: unknown): number | null {
 const centavos = (v: number) => Math.round(v * 100) / 100;
 
 /**
- * Valida o corpo de um lançamento. Com `atual` (PUT), campos ausentes mantêm o valor gravado.
- * Boleto é sempre saída: natureza 'D' (forçada quando omitida; 'C' é rejeitada).
+ * Valida o corpo de uma movimentação prevista. Com `atual` (PUT), campos ausentes mantêm o valor gravado.
+ * Boletos não passam por aqui: são o total do dia, gravado em PUT /api/caixa/boletos.
  */
 function validarLancamento(body: Record<string, unknown>, atual?: CaixaLancamento): Resultado<CaixaLancamentoInput> {
 	const tem = (k: string) => body[k] !== undefined;
 
 	const tipo = tem('tipo') ? body.tipo : atual?.tipo;
-	if (tipo !== 'BOLETO' && tipo !== 'PREVISAO') {
-		return { ok: false, erro: "'tipo' deve ser 'BOLETO' ou 'PREVISAO'." };
+	if (tipo === 'BOLETO') {
+		return { ok: false, erro: 'Boletos são informados pelo total do dia (PUT /api/caixa/boletos), sem descrição.' };
+	}
+	if (tipo !== 'PREVISAO') {
+		return { ok: false, erro: "'tipo' deve ser 'PREVISAO'." };
 	}
 
-	let natureza: unknown;
-	if (tipo === 'BOLETO') {
-		if (tem('natureza') && body.natureza !== 'D') {
-			return { ok: false, erro: "Boleto é sempre saída: 'natureza' deve ser 'D'." };
-		}
-		natureza = 'D';
-	} else {
-		natureza = tem('natureza') ? body.natureza : atual?.natureza;
-		if (natureza !== 'C' && natureza !== 'D') {
-			return { ok: false, erro: "Previsão precisa de 'natureza' 'C' (entrada) ou 'D' (saída)." };
-		}
+	const natureza = tem('natureza') ? body.natureza : atual?.natureza;
+	if (natureza !== 'C' && natureza !== 'D') {
+		return { ok: false, erro: "Previsão precisa de 'natureza' 'C' (entrada) ou 'D' (saída)." };
 	}
 
 	const data = tem('data') ? body.data : atual?.data;
@@ -111,7 +110,7 @@ function validarLancamento(body: Record<string, unknown>, atual?: CaixaLancament
 	if (valor <= 0) return { ok: false, erro: "'valor' deve ser maior que zero." };
 	if (valor > VALOR_MAX) return { ok: false, erro: "'valor' muito alto." };
 
-	return { ok: true, valor: { tipo, natureza: natureza as 'C' | 'D', data, descricao, valor } };
+	return { ok: true, valor: { tipo, natureza, data, descricao, valor } };
 }
 
 async function lerCorpo(req: Request): Promise<Resultado<Record<string, unknown>>> {
@@ -150,7 +149,7 @@ export async function handleRequest(req: Request, db: D1Database): Promise<Respo
 				mes,
 				saldoInicial: dados.saldoInicial.valor,
 				lancamentos: dados.lancamentos,
-				parcelas: dados.parcelas,
+				parcelas: dados.parcelas, // só as consideradas entram no saldo
 			});
 			return json({
 				ano,
@@ -158,7 +157,8 @@ export async function handleRequest(req: Request, db: D1Database): Promise<Respo
 				saldoInicial: dados.saldoInicial.valor,
 				saldoInicialAtualizadoEm: dados.saldoInicial.atualizadoEm,
 				...calculo,
-				lancamentos: dados.lancamentos,
+				// boletos já vêm somados por dia em `dias`; aqui só as movimentações previstas (com descrição)
+				lancamentos: dados.lancamentos.filter((l) => l.tipo === 'PREVISAO'),
 				parcelas: dados.parcelas,
 			});
 		}
@@ -178,6 +178,38 @@ export async function handleRequest(req: Request, db: D1Database): Promise<Respo
 			if (valor === null) return erro(400, "Informe o 'valor' do saldo inicial (número; null para remover).");
 			if (Math.abs(valor) > VALOR_MAX) return erro(400, "'valor' muito alto.");
 			return json(await repo.salvarSaldoInicial(ano, mes, centavos(valor)));
+		}
+
+		if (path === '/api/caixa/boletos') {
+			if (method !== 'PUT') return erro(405, 'Método não permitido.');
+			const corpo = await lerCorpo(req);
+			if (!corpo.ok) return erro(400, corpo.erro);
+			const { data } = corpo.valor;
+			if (!dataValida(data)) return erro(400, "'data' deve ser uma data válida no formato AAAA-MM-DD.");
+			const ano = Number(data.slice(0, 4));
+			if (ano < 2000 || ano > 2100) return erro(400, "'data' deve estar entre 2000 e 2100.");
+
+			if (corpo.valor.valor === null) return json(await repo.salvarBoletosDia(data, null));
+			const valorNum = numero(corpo.valor.valor);
+			if (valorNum === null) return erro(400, "Informe o 'valor' dos boletos do dia (número; null ou 0 para remover).");
+			const valor = centavos(valorNum);
+			if (valor < 0) return erro(400, "'valor' não pode ser negativo.");
+			if (valor > VALOR_MAX) return erro(400, "'valor' muito alto.");
+			return json(await repo.salvarBoletosDia(data, valor === 0 ? null : valor));
+		}
+
+		const mp = path.match(/^\/api\/caixa\/parcelas\/([^/]+)$/);
+		if (mp) {
+			if (method !== 'PUT') return erro(405, 'Método não permitido.');
+			const id = inteiro(mp[1]);
+			if (id === null || id <= 0) return erro(400, 'Id de parcela inválido.');
+			const corpo = await lerCorpo(req);
+			if (!corpo.ok) return erro(400, corpo.erro);
+			if (typeof corpo.valor.considerar !== 'boolean') {
+				return erro(400, "Informe 'considerar' como true ou false.");
+			}
+			if (!(await repo.parcelaExiste(id))) return erro(404, 'Parcela não encontrada.');
+			return json(await repo.salvarParcelaConsiderada(id, corpo.valor.considerar));
 		}
 
 		if (path === '/api/caixa/lancamentos') {

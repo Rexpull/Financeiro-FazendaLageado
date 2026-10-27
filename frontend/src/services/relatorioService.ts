@@ -49,7 +49,7 @@ export interface RelatorioItensClassificadosItem {
 	subtipoDespesa?: 'custeio' | 'investimento';
 	/** Without cost centre: pending, outside the receitas/despesas totals */
 	semCentro?: boolean;
-	/** Classified only by cost centre (normal for receitas) */
+	/** Debit without plan ("Sem plano": pending). Credits without plan are not returned (Centro de Custos report). */
 	semPlano?: boolean;
 	pendente?: boolean;
 	pessoaNome?: string;
@@ -83,13 +83,15 @@ export const getRelatorioItensClassificados = async (
 	dataInicio?: string,
 	dataFim?: string,
 	contaId?: number,
-	status?: string
+	status?: string,
+	planoContasId?: number
 ): Promise<RelatorioItensClassificadosItem[]> => {
 	const params = new URLSearchParams();
 	if (dataInicio) params.append('dataInicio', dataInicio);
 	if (dataFim) params.append('dataFim', dataFim);
 	if (contaId) params.append('contaId', contaId.toString());
 	if (status) params.append('status', status);
+	if (planoContasId) params.append('planoContasId', planoContasId.toString());
 
 	const res = await fetch(`${API_URL}/api/relatorio/itens-classificados?${params}`);
 	if (!res.ok) throw new Error('Erro ao buscar relatório de itens classificados');
@@ -138,13 +140,15 @@ export const exportRelatorioItensClassificadosExcel = async (
 	dataInicio?: string,
 	dataFim?: string,
 	contaId?: number,
-	status?: string
+	status?: string,
+	planoContasId?: number
 ): Promise<Blob> => {
 	const params = new URLSearchParams();
 	if (dataInicio) params.append('dataInicio', dataInicio);
 	if (dataFim) params.append('dataFim', dataFim);
 	if (contaId) params.append('contaId', contaId.toString());
 	if (status) params.append('status', status);
+	if (planoContasId) params.append('planoContasId', planoContasId.toString());
 
 	const res = await fetch(`${API_URL}/api/relatorio/itens-classificados/excel?${params}`);
 	if (!res.ok) throw new Error('Erro ao exportar relatório de itens classificados para Excel');
@@ -155,84 +159,106 @@ export const exportRelatorioItensClassificadosPDF = async (
 	dataInicio?: string,
 	dataFim?: string,
 	contaId?: number,
-	status?: string
+	status?: string,
+	planoContasId?: number
 ): Promise<Blob> => {
 	const params = new URLSearchParams();
 	if (dataInicio) params.append('dataInicio', dataInicio);
 	if (dataFim) params.append('dataFim', dataFim);
 	if (contaId) params.append('contaId', contaId.toString());
 	if (status) params.append('status', status);
+	if (planoContasId) params.append('planoContasId', planoContasId.toString());
 
 	const res = await fetch(`${API_URL}/api/relatorio/itens-classificados/pdf?${params}`);
 	if (!res.ok) throw new Error('Erro ao exportar relatório de itens classificados para PDF');
 	return res.blob();
 };
 
-export type StatusContratoFinanciamento = 'NOVO' | 'ATIVO' | 'QUITADO';
 export type ModalidadeFinanciamento = 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR' | 'RENEGOCIACAO';
 
+/** Tomador value that selects the contracts without responsável (same constant as the backend) */
+export const SEM_TOMADOR_FINANCIAMENTO = 'Sem tomador';
+
 export interface FiltrosRelatorioFinanciamentos {
+	/** Year of the "Compromissos financeiros de <ano>" chart */
 	ano: number;
-	mes?: number; // 1..12; sem mês = ano inteiro
+	/** Period [inicio, fim) as AAAA-MM-DD, fim exclusive (contratados, liquidados, novos x liquidados) */
+	inicio: string;
+	fim: string;
 	idBanco?: number;
 	tomador?: string; // Financiamento.responsavel
 	numeroGarantia?: string;
 	modalidade?: ModalidadeFinanciamento;
 	faixaJuros?: string;
-	statusContrato?: StatusContratoFinanciamento;
 }
 
-export interface ItemRelatorioFinanciamentos {
+export interface ParcelaRelatorioFinanciamentos {
+	idParcela: number;
+	numParcela: number;
+	valor: number;
+	dt_vencimento: string;
+	status: string;
+	dt_liquidacao?: string;
+}
+
+export interface ContratoRelatorioFinanciamentos {
 	idFinanciamento: number;
 	numeroContrato: string;
-	responsavel: string; // tomador
-	banco?: string;
-	pessoa?: string;
+	tomador: string;
+	credor: string;
 	dataContrato: string;
 	valorContrato: number;
 	totalJuros: number;
-	valorTotal: number;
 	modalidade?: string;
 	nomeModalidadeParticular?: string;
 	numeroGarantia?: string;
 	taxaJurosAnual?: number;
-	statusContrato: StatusContratoFinanciamento;
-	valor: number; // NOVO: valor do contrato; ATIVO: parcelas não liquidadas; QUITADO: valor pago
-	valorPago: number;
+	ativo: boolean;
+	/** Sum of the parcelas not liquidated (the value that prevails) */
 	valorVincendo: number;
+	valorPago: number;
+	parcelasAbertas: number;
 	dataQuitacao?: string;
-	parcelas: Array<{
-		idParcela: number;
-		numParcela: number;
-		valor: number;
-		dt_vencimento: string;
-		status: string;
-		dt_liquidacao?: string;
-	}>;
+	parcelas: ParcelaRelatorioFinanciamentos[];
 }
 
-export interface TotalizadoresRelatorioFinanciamentos {
-	totalContratos: number;
-	totalValorContratos: number;
-	totalJuros: number;
-	totalValor: number;
-	totalValorParcelas: number;
-	totalParcelas: number;
-	totalParcelasLiquidadas: number;
-	totalParcelasAberto: number;
-	totalParcelasVencidas: number;
+/** A contract inside a view or chart bar, with the value it adds there */
+export interface ValorContratoFinanciamento {
+	idFinanciamento: number;
+	valor: number;
+	quitado?: boolean;
+}
+
+export interface BlocoContratosFinanciamento {
+	quantidade: number;
+	valor: number;
+	valorContratos: number;
+	contratos: ValorContratoFinanciamento[];
+}
+
+export interface PontoGraficoFinanciamento {
+	valor: number;
+	contratos: ValorContratoFinanciamento[];
 }
 
 export interface RelatorioFinanciamentosData {
-	periodo: { ano: number; mes: number | null; inicio: string; fim: string };
+	periodo: { ano: number; inicio: string; fim: string; ultimoDia: string };
+	hoje: string;
 	tomadores: string[];
-	itens: ItemRelatorioFinanciamentos[];
-	totalizadores: TotalizadoresRelatorioFinanciamentos;
-	resumoStatus: Record<StatusContratoFinanciamento, { quantidade: number; valor: number }>;
+	contratos: ContratoRelatorioFinanciamentos[];
+	ativos: BlocoContratosFinanciamento;
+	contratados: BlocoContratosFinanciamento;
+	liquidados: BlocoContratosFinanciamento & { quitados: number; amortizados: number; valorVincendo: number };
+	porTomador: {
+		grupos: Array<{ tomador: string; quantidade: number; valor: number; valorContratos: number; contratos: ValorContratoFinanciamento[] }>;
+		quantidade: number;
+		valor: number;
+		valorContratos: number;
+	};
 	graficos: {
-		mensal: Array<{ mes: number; novos: number; liquidados: number; compromissos: number }>;
-		compromissosPorAno: Array<{ ano: number; valor: number }>;
-		liquidadosPorAno: Array<{ ano: number; valor: number }>;
+		novosXLiquidados: Array<{ ano: number; mes: number; novos: PontoGraficoFinanciamento; liquidados: PontoGraficoFinanciamento }>;
+		compromissosDoAno: { ano: number; meses: Array<{ mes: number } & PontoGraficoFinanciamento> };
+		compromissosPorAno: Array<{ ano: number } & PontoGraficoFinanciamento>;
 	};
 }
 
@@ -241,13 +267,13 @@ export const getRelatorioFinanciamentos = async (
 ): Promise<RelatorioFinanciamentosData> => {
 	const params = new URLSearchParams();
 	params.append('ano', filtros.ano.toString());
-	if (filtros.mes) params.append('mes', filtros.mes.toString());
+	params.append('inicio', filtros.inicio);
+	params.append('fim', filtros.fim);
 	if (filtros.idBanco) params.append('idBanco', filtros.idBanco.toString());
 	if (filtros.tomador) params.append('tomador', filtros.tomador);
 	if (filtros.numeroGarantia) params.append('numeroGarantia', filtros.numeroGarantia);
 	if (filtros.modalidade) params.append('modalidade', filtros.modalidade);
 	if (filtros.faixaJuros) params.append('faixaJuros', filtros.faixaJuros);
-	if (filtros.statusContrato) params.append('statusContrato', filtros.statusContrato);
 
 	const res = await fetch(`${API_URL}/api/relatorio/financiamentos?${params}`);
 	if (!res.ok) throw new Error('Erro ao buscar relatório de financiamentos');

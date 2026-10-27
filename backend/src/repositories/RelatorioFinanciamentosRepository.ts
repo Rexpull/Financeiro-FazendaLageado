@@ -9,9 +9,7 @@ import {
 } from '../utils/relatorioFinanciamentos';
 
 export type {
-  StatusContrato,
-  ItemRelatorio as ItemRelatorioFinanciamentos,
-  Totalizadores as TotalizadoresRelatorioFinanciamentos,
+  ContratoRelatorio as ContratoRelatorioFinanciamentos,
   RelatorioFinanciamentos,
 } from '../utils/relatorioFinanciamentos';
 
@@ -48,7 +46,7 @@ export class RelatorioFinanciamentosRepository {
 
   /**
    * Busca contratos e parcelas em 2 consultas (tabelas pequenas) e aplica as regras em
-   * montarRelatorioFinanciamentos (status/valor por período, filtros e gráficos).
+   * montarRelatorioFinanciamentos (visões ativos/contratados/liquidados/por tomador, filtros e gráficos).
    */
   async getRelatorioFinanciamentos(
     filtros: FiltrosRelatorioFinanciamentos,

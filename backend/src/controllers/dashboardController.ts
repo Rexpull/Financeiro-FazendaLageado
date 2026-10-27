@@ -1,4 +1,17 @@
-import { DashboardRepository } from "../repositories/dashboardRepository";
+import { DashboardRepository, validarPeriodo } from "../repositories/dashboardRepository";
+
+const JSON_HEADERS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
+
+/** ?contas=1,2,3 → [1, 2, 3] */
+const listaIds = (param: string | null): number[] =>
+  param ? param.split(",").map((c) => parseInt(c.trim(), 10)).filter((c) => !isNaN(c)) : [];
 
 export class DashboardController {
   private repository: DashboardRepository;
@@ -160,6 +173,32 @@ export class DashboardController {
       }
     }
 
+    // Resultado consolidado: receitas/despesas by cost centre for any range (trimestre, semestre, 12 meses…)
+    if (method === "GET" && path === "/api/dashboard/periodo") {
+      try {
+        const periodo = validarPeriodo(url.searchParams.get("inicio"), url.searchParams.get("fim"));
+        return json(await this.repository.getReceitasDespesasPeriodo(periodo, listaIds(url.searchParams.get("contas"))));
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : "Erro desconhecido" }, 400);
+      }
+    }
+
+    // Movements behind a value of the "Detalhamento" (receitas or despesas of the given centros)
+    if (method === "GET" && path === "/api/dashboard/detalhar") {
+      try {
+        const periodo = validarPeriodo(url.searchParams.get("inicio"), url.searchParams.get("fim"));
+        const tipo = url.searchParams.get("tipo");
+        if (tipo !== "C" && tipo !== "D") return json({ error: "Tipo inválido (C ou D)" }, 400);
+        const centros = listaIds(url.searchParams.get("centros"));
+        if (!centros.length) return json({ error: "Informe os centros de custos" }, 400);
+        return json(
+          await this.repository.getMovimentosCentros({ periodo, tipo, centros, contas: listaIds(url.searchParams.get("contas")) }),
+        );
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : "Erro desconhecido" }, 400);
+      }
+    }
+
     // Novo endpoint para filtros rápidos de financiamentos
     if (method === "GET" && path === "/api/dashboard/financiamentos") {
       const ano = url.searchParams.get("ano") ? parseInt(url.searchParams.get("ano")!) : undefined;
@@ -180,7 +219,14 @@ export class DashboardController {
             data = await this.repository.getContratosNovos(ano, mes);
             break;
           case "saldo-devedor":
-            data = await this.repository.getResumoSaldoDevedor(ano ?? new Date().getFullYear());
+            // ?inicio=&fim= (period filter) or ?ano= (the 12 months of the year)
+            data = url.searchParams.get("inicio") || url.searchParams.get("fim")
+              ? await this.repository.getResumoSaldoDevedorPeriodo(validarPeriodo(url.searchParams.get("inicio"), url.searchParams.get("fim")))
+              : await this.repository.getResumoSaldoDevedor(ano ?? new Date().getFullYear());
+            break;
+          case "contratos-periodo":
+            // Contracts behind "Créditos novos" / "Quitados" of the period (detail modal)
+            data = await this.repository.getContratosDoPeriodo(validarPeriodo(url.searchParams.get("inicio"), url.searchParams.get("fim")));
             break;
           default:
             return new Response(JSON.stringify({ error: "Tipo de filtro inválido" }), {

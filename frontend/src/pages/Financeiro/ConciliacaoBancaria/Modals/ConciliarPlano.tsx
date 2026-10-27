@@ -897,8 +897,9 @@ const ConciliaPlanoContasModal: React.FC<
 						idCentroCustos: rc.idCentro,
 						valor: rc.valor,
 					}));
-				} else if ((movimento.centroCustosList ?? []).length > 0) {
-					// Se não há rateios novos mas há centros existentes, manter os existentes
+				} else if ((movimento.centroCustosList ?? []).length > 1 && !formData.idCentroCustos) {
+					// Rateio already saved and untouched (the single-centre field is locked while there is one): keep it.
+					// A single saved centre is NOT kept here: that is what the user may just have changed.
 					dados.centroCustosList = movimento.centroCustosList;
 				}
 
@@ -1063,9 +1064,10 @@ const ConciliaPlanoContasModal: React.FC<
 				? 'Múltiplos Planos'
 				: rateiosPlanos.length === 1
 					? rateiosPlanos[0].descricao
-					: rl.length === 1
-						? planos.find((p) => p.id === rl[0].idPlanoContas)?.descricao || searchPlano
-						: searchPlano;
+					: searchPlano ||
+						(rl.length === 1 && Number(formData.idPlanoContas) === rl[0].idPlanoContas
+							? planos.find((p) => p.id === rl[0].idPlanoContas)?.descricao || ''
+							: '');
 			const bloqueioMultiplosCentros =
 				rateiosCentros.length > 1 ||
 				rateiosCentrosPorcentagem.length > 1 ||
@@ -1084,9 +1086,11 @@ const ConciliaPlanoContasModal: React.FC<
 				? 'Múltiplos Centros'
 				: rateiosCentros.length === 1
 					? rateiosCentros[0].descricao
-					: ccl.length === 1
-						? centroCustos.find((c) => c.id === ccl[0].idCentroCustos)?.descricao || searchCentroCustos
-						: searchCentroCustos;
+					: searchCentroCustos ||
+						// Saved centre only while it is still the chosen one ("Limpar seleção" must show empty)
+						(ccl.length === 1 && Number(formData.idCentroCustos) === ccl[0].idCentroCustos
+							? centroCustos.find((c) => c.id === ccl[0].idCentroCustos)?.descricao || ''
+							: '');
 			// Non-blocking: plan type (investimento/custeio) × centre type. The Dashboard splits by centre, the
 			// plan-based views by plan, so a mismatch makes them disagree. Batch mode only looks at what was chosen.
 			const unico = movimentosSelecionados.length <= 1;
@@ -1185,7 +1189,11 @@ const ConciliaPlanoContasModal: React.FC<
 								{errors.idPlanoContas && <p className="text-red-500 text-xs mt-1">{errors.idPlanoContas}</p>}
 
 								{showPlanoDropdown && !bloqueioMultiplosPlanos && (
-									<div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-md overflow-hidden flex flex-col max-h-72">
+									<div
+										// Opening near the bottom of a small screen left the options below the visible area
+										ref={(el) => el?.scrollIntoView({ block: 'nearest' })}
+										className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-md overflow-hidden flex flex-col max-h-72"
+									>
 										{isDespesa && (
 											<div className="p-2 border-b bg-gray-50 flex-shrink-0">
 												<label className="block text-xs font-medium text-gray-700 mb-1.5">Tipo de Despesa</label>
@@ -1343,7 +1351,11 @@ const ConciliaPlanoContasModal: React.FC<
 							)}
 
 							{showCentroCustosDropdown && !bloqueioMultiplosCentros && (
-								<div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-md overflow-hidden flex flex-col max-h-72">
+								<div
+									// Opening near the bottom of a small screen left the options below the visible area
+									ref={(el) => el?.scrollIntoView({ block: 'nearest' })}
+									className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-md overflow-hidden flex flex-col max-h-72"
+								>
 									{isDespesa && (
 										<div className="p-2 border-b bg-gray-50 flex-shrink-0">
 											<label className="block text-xs font-medium text-gray-700 mb-1.5">Tipo de Despesa</label>

@@ -38,9 +38,12 @@ export const CATEGORIA_INVESTIMENTO = '2000';
 /** First year offered in the Fluxo filter. */
 export const PRIMEIRO_ANO_FLUXO = 2024;
 
-/** Years of the Fluxo filter: from PRIMEIRO_ANO_FLUXO to next year (e.g. 2024…2027 in 2026). */
+/** How many years ahead the filters offer (planning with future financing parcelas and forecasts). */
+export const ANOS_FUTUROS_FILTRO = 5;
+
+/** Years of the Fluxo/Dashboard filters: from PRIMEIRO_ANO_FLUXO to 5 years ahead (2024…2031 in 2026). */
 export function anosFiltroFluxo(hoje: Date = new Date()): string[] {
-	const ultimo = Math.max(hoje.getFullYear() + 1, PRIMEIRO_ANO_FLUXO);
+	const ultimo = Math.max(hoje.getFullYear() + ANOS_FUTUROS_FILTRO, PRIMEIRO_ANO_FLUXO);
 	return Array.from({ length: ultimo - PRIMEIRO_ANO_FLUXO + 1 }, (_, i) => String(PRIMEIRO_ANO_FLUXO + i));
 }
 

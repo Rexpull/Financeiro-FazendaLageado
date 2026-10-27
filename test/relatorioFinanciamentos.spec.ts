@@ -21,28 +21,26 @@ async function applySchema(sql = schemaSql) {
 	}
 }
 
-type Item = {
-	idFinanciamento: number;
-	responsavel: string;
-	statusContrato: 'NOVO' | 'ATIVO' | 'QUITADO';
-	valor: number;
-	modalidade?: string;
-	dataContrato: string;
-	dataQuitacao?: string;
-};
+type ValorContrato = { idFinanciamento: number; valor: number; quitado?: boolean };
+type Bloco = { quantidade: number; valor: number; valorContratos: number; contratos: ValorContrato[] };
+type Ponto = { valor: number; contratos: ValorContrato[] };
 
 type Relatorio = {
-	periodo: { ano: number; mes: number | null; inicio: string; fim: string };
+	periodo: { ano: number; inicio: string; fim: string; ultimoDia: string };
 	tomadores: string[];
-	itens: Item[];
-	totalizadores: { totalContratos: number; totalValor: number };
-	resumoStatus: Record<'NOVO' | 'ATIVO' | 'QUITADO', { quantidade: number; valor: number }>;
+	contratos: Array<{ idFinanciamento: number; tomador: string; credor: string; modalidade?: string; ativo: boolean; valorVincendo: number; dataQuitacao?: string }>;
+	ativos: Bloco;
+	contratados: Bloco;
+	liquidados: Bloco & { quitados: number; amortizados: number };
+	porTomador: { grupos: Array<{ tomador: string; quantidade: number; valor: number }>; quantidade: number; valor: number };
 	graficos: {
-		mensal: Array<{ mes: number; novos: number; liquidados: number; compromissos: number }>;
-		compromissosPorAno: Array<{ ano: number; valor: number }>;
-		liquidadosPorAno: Array<{ ano: number; valor: number }>;
+		novosXLiquidados: Array<{ ano: number; mes: number; novos: Ponto; liquidados: Ponto }>;
+		compromissosDoAno: { ano: number; meses: Array<{ mes: number } & Ponto> };
+		compromissosPorAno: Array<{ ano: number } & Ponto>;
 	};
 };
+
+const ids = (b: { contratos: ValorContrato[] }) => b.contratos.map((c) => c.idFinanciamento).sort((a, b) => a - b);
 
 async function relatorio(query: string): Promise<Relatorio> {
 	const res = await SELF.fetch(`${BASE}/api/relatorio/financiamentos?${query}`);
@@ -97,84 +95,88 @@ describe('GET /api/relatorio/financiamentos', () => {
 		await seedFinanciamentos();
 	});
 
-	it('status e valor por contrato no ano filtrado', async () => {
+	it('contratos ativos: posição de hoje, sem distinguir novos; valor = soma das parcelas a vencer', async () => {
 		const r = await relatorio('ano=2026');
-		expect(r.periodo).toEqual({ ano: 2026, mes: null, inicio: '2026-01-01', fim: '2026-12-31' });
-		const m = new Map(r.itens.map((i) => [i.idFinanciamento, i]));
-		// NOVO pela data do contrato (não por criadoEm): contrato 3 foi cadastrado em 2026 mas é de 2023
-		expect(m.get(2)).toMatchObject({ statusContrato: 'NOVO', valor: 50000, responsavel: 'CGF' });
-		expect(m.get(5)).toMatchObject({ statusContrato: 'NOVO', valor: 8000, modalidade: 'RENEGOCIACAO' });
-		expect(m.get(1)).toMatchObject({ statusContrato: 'ATIVO', valor: 4000 });
-		expect(m.get(3)).toMatchObject({ statusContrato: 'QUITADO', valor: 22000, dataQuitacao: '2026-02-01' });
-		expect(m.has(4)).toBe(false); // quitado em 2025
-		expect(r.resumoStatus).toEqual({
-			NOVO: { quantidade: 2, valor: 58000 },
-			// novos ainda em aberto também são ativos: 1 (4.000) + 2 (60.000) + 5 (9.000)
-			ATIVO: { quantidade: 3, valor: 73000 },
-			QUITADO: { quantidade: 1, valor: 22000 },
-		});
-		expect(r.tomadores).toEqual(['CGF', 'GFS', 'MLF', 'RLF']);
-	});
-
-	it('filtro de status retorna só os contratos daquele status', async () => {
-		const quitados = await relatorio('ano=2026&statusContrato=QUITADO');
-		expect(quitados.itens.map((i) => i.idFinanciamento)).toEqual([3]);
-		expect(quitados.totalizadores).toMatchObject({ totalContratos: 1, totalValor: 22000 });
-
-		const novos = await relatorio('ano=2026&statusContrato=NOVO');
-		expect(novos.itens.map((i) => i.idFinanciamento).sort()).toEqual([2, 5]);
-
-		const ativos = await relatorio('ano=2026&statusContrato=ATIVO');
-		expect(ativos.itens.map((i) => [i.idFinanciamento, i.statusContrato, i.valor]).sort((a, b) => Number(a[0]) - Number(b[0]))).toEqual([
-			[1, 'ATIVO', 4000],
-			[2, 'ATIVO', 60000],
-			[5, 'ATIVO', 9000],
+		expect(r.periodo).toEqual({ ano: 2026, inicio: '2026-01-01', fim: '2027-01-01', ultimoDia: '2026-12-31' });
+		expect(r.ativos.contratos).toEqual([
+			{ idFinanciamento: 2, valor: 60000 },
+			{ idFinanciamento: 5, valor: 9000 },
+			{ idFinanciamento: 1, valor: 4000 },
 		]);
+		expect(r.ativos).toMatchObject({ quantidade: 3, valor: 73000, valorContratos: 68000 });
+		const m = new Map(r.contratos.map((c) => [c.idFinanciamento, c]));
+		expect(m.get(3)).toMatchObject({ ativo: false, valorVincendo: 0, dataQuitacao: '2026-02-01' });
+		expect(m.get(4)?.credor).toBe('Credor Particular');
+		expect(m.get(5)?.modalidade).toBe('RENEGOCIACAO');
+		expect(r.tomadores).toEqual(['CGF', 'GFS', 'MLF', 'RLF']);
+		// o período não muda os ativos
+		expect((await relatorio('ano=2024')).ativos).toEqual(r.ativos);
 	});
 
-	it('tomador filtra por responsavel; modalidade aceita RENEGOCIACAO', async () => {
-		const gfs = await relatorio('ano=2026&tomador=GFS');
-		expect(gfs.itens.map((i) => i.idFinanciamento).sort()).toEqual([1, 3]);
-		expect(gfs.graficos.mensal.every((x) => x.novos === 0)).toBe(true);
+	it('contratados no período (só ativos, pela data do contrato; inclui o último dia)', async () => {
+		const ano = await relatorio('ano=2026');
+		expect(ids(ano.contratados)).toEqual([2, 5]);
+		expect(ano.contratados.valor).toBe(69000);
+		expect(ids(await relatorio('ano=2026&inicio=2026-05-01&fim=2026-05-20').then((r) => r.contratados))).toEqual([]);
+		expect(ids(await relatorio('ano=2026&inicio=2026-05-01&fim=2026-05-21').then((r) => r.contratados))).toEqual([2]);
+		expect(ids(await relatorio('ano=2026&mes=8').then((r) => r.contratados))).toEqual([5]);
+	});
+
+	it('liquidados no período: amortizados e quitados, valor = parcelas pagas no período', async () => {
+		const r = await relatorio('ano=2026');
+		expect(r.liquidados.contratos).toEqual([
+			{ idFinanciamento: 3, valor: 11000, quitado: true },
+			{ idFinanciamento: 1, valor: 4000, quitado: false },
+		]);
+		expect(r.liquidados).toMatchObject({ quantidade: 2, valor: 15000, quitados: 1, amortizados: 1 });
+		const t1 = await relatorio('ano=2026&inicio=2026-01-01&fim=2026-04-01');
+		expect(ids(t1.liquidados)).toEqual([1, 3]);
+		expect(ids(t1.contratados)).toEqual([]);
+		const r2025 = await relatorio('ano=2025');
+		expect(r2025.liquidados.contratos.find((c) => c.idFinanciamento === 4)).toEqual({ idFinanciamento: 4, valor: 5500, quitado: true });
+	});
+
+	it('contratos por tomador (ativos) e filtro de tomador / modalidade', async () => {
+		const r = await relatorio('ano=2026');
+		expect(r.porTomador.grupos.map((g) => [g.tomador, g.quantidade, g.valor])).toEqual([
+			['CGF', 1, 60000],
+			['MLF', 1, 9000],
+			['GFS', 1, 4000],
+		]);
+		expect(r.porTomador.valor).toBe(r.ativos.valor);
+
+		const gfs = await relatorio('ano=2026&tomador=gfs');
+		expect(ids(gfs.ativos)).toEqual([1]);
+		expect(ids(gfs.liquidados)).toEqual([1, 3]);
+		expect(gfs.graficos.novosXLiquidados.every((x) => x.novos.valor === 0)).toBe(true);
 
 		const reneg = await relatorio('ano=2026&modalidade=RENEGOCIACAO');
-		expect(reneg.itens.map((i) => i.idFinanciamento)).toEqual([5]);
+		expect(ids(reneg.ativos)).toEqual([5]);
 	});
 
-	it('período mensal e histórico', async () => {
-		const maio = await relatorio('ano=2026&mes=5');
-		const m = new Map(maio.itens.map((i) => [i.idFinanciamento, i]));
-		expect(m.get(2)?.statusContrato).toBe('NOVO');
-		expect(m.has(3)).toBe(false); // quitado em fevereiro
-		expect(m.has(5)).toBe(false); // assinado em agosto
-
-		const r2025 = await relatorio('ano=2025');
-		const h = new Map(r2025.itens.map((i) => [i.idFinanciamento, i]));
-		expect(h.get(4)).toMatchObject({ statusContrato: 'QUITADO', valor: 5500 });
-		expect(h.get(1)).toMatchObject({ statusContrato: 'ATIVO', valor: 8000 });
-	});
-
-	it('gráficos: novos x quitados, compromissos e liquidados', async () => {
-		const { graficos: g } = await relatorio('ano=2026&statusContrato=QUITADO');
-		expect(g.mensal).toHaveLength(12);
-		expect(g.mensal[4].novos).toBe(50000);
-		expect(g.mensal[7].novos).toBe(8000);
-		expect(g.mensal[1].liquidados).toBe(11000);
-		expect(g.mensal[2].liquidados).toBe(4000);
-		expect(g.mensal[8].compromissos).toBe(4500);
-		expect(g.compromissosPorAno[g.compromissosPorAno.length - 1].ano).toBe(2036);
+	it('gráficos: novos x liquidados, compromissos do ano e por ano', async () => {
+		const { graficos: g, ativos } = await relatorio('ano=2026');
+		expect(g.novosXLiquidados).toHaveLength(12);
+		expect(g.novosXLiquidados[4].novos).toEqual({ valor: 60000, contratos: [{ idFinanciamento: 2, valor: 60000 }] });
+		expect(g.novosXLiquidados[7].novos.valor).toBe(9000);
+		expect(g.novosXLiquidados[1].liquidados.valor).toBe(11000);
+		expect(g.novosXLiquidados[2].liquidados.valor).toBe(4000);
+		expect(g.compromissosDoAno.meses[8].valor).toBe(4500);
 		expect(g.compromissosPorAno.find((x) => x.ano === 2030)?.valor).toBe(38500);
 		expect(g.compromissosPorAno.find((x) => x.ano === 2031)?.valor).toBe(30000);
-		expect(g.liquidadosPorAno).toEqual([
-			{ ano: 2025, valor: 20500 },
-			{ ano: 2026, valor: 15000 },
-		]);
+		expect(g.compromissosPorAno[g.compromissosPorAno.length - 1].ano).toBe(2031);
+		expect(g.compromissosPorAno.reduce((s, x) => s + x.valor, 0)).toBe(ativos.valor);
+
+		const tri = await relatorio('ano=2026&inicio=2026-04-01&fim=2026-07-01');
+		expect(tri.graficos.novosXLiquidados.map((x) => x.mes)).toEqual([4, 5, 6]);
 	});
 
 	it('sem ano usa o ano atual e ignora parâmetros inválidos', async () => {
-		const r = await relatorio('mes=13&modalidade=XYZ&statusContrato=foo');
-		expect(r.periodo.mes).toBeNull();
-		expect(r.periodo.ano).toBeGreaterThanOrEqual(2026);
+		const r = await relatorio('mes=13&modalidade=XYZ&inicio=foo&fim=2026-01-01&statusContrato=foo');
+		const ano = r.periodo.ano;
+		expect(ano).toBeGreaterThanOrEqual(2026);
+		expect(r.periodo).toMatchObject({ inicio: `${ano}-01-01`, fim: `${ano + 1}-01-01` });
+		expect(ids(r.ativos)).toEqual([1, 2, 5]);
 	});
 });
 

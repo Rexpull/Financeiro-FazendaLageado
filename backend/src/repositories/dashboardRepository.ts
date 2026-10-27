@@ -1,5 +1,41 @@
 import { D1Database } from "@cloudflare/workers-types";
-import { resumoSaldoDevedor, type FinanciamentoRow, type ParcelaRow, type ResumoSaldoDevedorMes } from "../utils/saldoDevedor";
+import {
+  resumoSaldoDevedor,
+  resumoSaldoDevedorMeses,
+  mesesDoIntervalo,
+  contratosDoPeriodo,
+  type FinanciamentoRow,
+  type ParcelaRow,
+  type ResumoSaldoDevedorMes,
+  type ContratoDetalheRow,
+  type ParcelaDetalheRow,
+  type ContratoDoPeriodo,
+} from "../utils/saldoDevedor";
+
+/** Date range [inicio, fim) as AAAA-MM-DD (fim exclusive): quarter, semester, last 12 months… */
+export type PeriodoDashboard = { inicio: string; fim: string };
+
+/** Movement behind a dashboard centro value (detail modal) */
+export type MovimentoCentroDashboard = { id: number; data: string; historico: string; conta: string; valor: number };
+
+/** Longest range accepted by the period endpoints (keeps the D1 reads bounded). */
+const MAX_MESES_PERIODO = 60;
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Validates ?inicio=&fim= (AAAA-MM-DD, fim exclusive). Throws a pt-BR message when invalid. */
+export function validarPeriodo(inicio: string | null | undefined, fim: string | null | undefined): PeriodoDashboard {
+  if (!inicio || !fim || !DATA_ISO.test(inicio) || !DATA_ISO.test(fim)) {
+    throw new Error("Período inválido: informe inicio e fim no formato AAAA-MM-DD");
+  }
+  if (Number(inicio.slice(0, 4)) < 2000 || Number(fim.slice(0, 4)) > 2101 || inicio >= fim) {
+    throw new Error("Período inválido");
+  }
+  if (mesesDoIntervalo(inicio, fim).length > MAX_MESES_PERIODO) {
+    throw new Error(`Período muito longo (máximo de ${MAX_MESES_PERIODO} meses)`);
+  }
+  return { inicio, fim };
+}
 
 export interface DashboardTotais {
   receitas: number;
@@ -56,6 +92,12 @@ export class DashboardRepository {
       sql: ` AND ${columnSql} >= ? AND ${columnSql} < ?`,
       bind: [`${ano}-01-01`, `${ano + 1}-01-01`],
     };
+  }
+
+  /** Same as sqlDtRange for an explicit [inicio, fim) range (period filter of the dashboard). */
+  private sqlDtFaixa(columnSql: string, ano: number, mes?: number, periodo?: PeriodoDashboard): { sql: string; bind: string[] } {
+    if (periodo) return { sql: ` AND ${columnSql} >= ? AND ${columnSql} < ?`, bind: [periodo.inicio, periodo.fim] };
+    return this.sqlDtRange(columnSql, ano, mes);
   }
 
   /** Month number 1–12 from ISO date/datetime string (after range filter already applied). */
@@ -179,11 +221,13 @@ export class DashboardRepository {
   private async aggregateReceitasPorCentroCredito(args: {
     ano: number;
     mes?: number;
+    /** Overrides ano/mes */
+    periodo?: PeriodoDashboard;
     contas: number[];
     mbExcl: { sql: string; bind: Array<string | number> };
     debug: boolean;
-  }): Promise<Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }>> {
-    const { ano, mes, contas, mbExcl, debug } = args;
+  }): Promise<Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean; idsCentros: number[] }>> {
+    const { ano, mes, periodo, contas, mbExcl, debug } = args;
 
     let whereBase =
       "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
@@ -192,7 +236,7 @@ export class DashboardRepository {
       whereBase += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       paramsBase = [...contas];
     }
-    const dtRange = this.sqlDtRange('mb.dtMovimento', ano, mes);
+    const dtRange = this.sqlDtFaixa('mb.dtMovimento', ano, mes, periodo);
     whereBase += dtRange.sql;
     paramsBase.push(...dtRange.bind);
     whereBase += mbExcl.sql;
@@ -258,8 +302,8 @@ export class DashboardRepository {
     const contagemRotulo = new Map<string, number>();
     for (const v of merged.values()) contagemRotulo.set(v.descricao, (contagemRotulo.get(v.descricao) ?? 0) + 1);
 
-    const out: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean }> = [];
-    for (const agg of merged.values()) {
+    const out: Array<{ descricao: string; valor: number; tipoMovimento: 'C'; conciliado: boolean; idsCentros: number[] }> = [];
+    for (const [id, agg] of merged) {
       const descricao =
         (contagemRotulo.get(agg.descricao) ?? 0) > 1
           ? `${agg.descricao} (${agg.tipo === 'INVESTIMENTO' ? 'Investimento' : 'Custeio'})`
@@ -270,6 +314,7 @@ export class DashboardRepository {
         valor: agg.valor,
         tipoMovimento: 'C',
         conciliado,
+        idsCentros: [id],
       });
     }
     out.sort((a, b) => b.valor - a.valor || a.descricao.localeCompare(b.descricao));
@@ -289,10 +334,11 @@ export class DashboardRepository {
   private async totalSemCentroCustos(args: {
     ano: number;
     mes?: number;
+    periodo?: PeriodoDashboard;
     contas: number[];
     mbExcl: { sql: string; bind: Array<string | number> };
   }): Promise<{ receitas: number; despesas: number }> {
-    const { ano, mes, contas, mbExcl } = args;
+    const { ano, mes, periodo, contas, mbExcl } = args;
     let where =
       "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
     const params: unknown[] = [];
@@ -300,7 +346,7 @@ export class DashboardRepository {
       where += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       params.push(...contas);
     }
-    const dtRange = this.sqlDtRange('mb.dtMovimento', ano, mes);
+    const dtRange = this.sqlDtFaixa('mb.dtMovimento', ano, mes, periodo);
     where += dtRange.sql;
     params.push(...dtRange.bind);
     where += mbExcl.sql;
@@ -327,6 +373,8 @@ export class DashboardRepository {
   private async aggregateDespesasPorCentroDebito(args: {
     ano: number;
     mes?: number;
+    /** Overrides ano/mes */
+    periodo?: PeriodoDashboard;
     contas: number[];
     mbExcl: { sql: string; bind: Array<string | number> };
     debug: boolean;
@@ -337,9 +385,10 @@ export class DashboardRepository {
       tipoMovimento: 'D';
       conciliado: boolean;
       subtipoDespesa: 'custeio' | 'investimento';
+      idsCentros: number[];
     }>
   > {
-    const { ano, mes, contas, mbExcl, debug } = args;
+    const { ano, mes, periodo, contas, mbExcl, debug } = args;
 
     let whereBase =
       "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
@@ -348,7 +397,7 @@ export class DashboardRepository {
       whereBase += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
       paramsBase = [...contas];
     }
-    const dtRange = this.sqlDtRange('mb.dtMovimento', ano, mes);
+    const dtRange = this.sqlDtFaixa('mb.dtMovimento', ano, mes, periodo);
     whereBase += dtRange.sql;
     paramsBase.push(...dtRange.bind);
     whereBase += mbExcl.sql;
@@ -359,6 +408,7 @@ export class DashboardRepository {
 
     const qComMcc = `
       SELECT 
+        cc.id,
         cc.descricao,
         UPPER(TRIM(COALESCE(cc.tipo, ''))) as centroTipo,
         SUM(ABS(COALESCE(mcc.valor, 0))) as valor,
@@ -367,11 +417,12 @@ export class DashboardRepository {
       JOIN centroCustos cc ON mcc.idCentroCustos = cc.id
       JOIN MovimentoBancario mb ON mcc.idMovimentoBancario = mb.id
       ${whereBase}${debitOnly}
-      GROUP BY cc.descricao, UPPER(TRIM(COALESCE(cc.tipo, '')))
+      GROUP BY cc.id
     `;
 
     const qSoMbCentro = `
       SELECT 
+        cc.id,
         cc.descricao,
         UPPER(TRIM(COALESCE(cc.tipo, ''))) as centroTipo,
         SUM(ABS(mb.valor)) as valor,
@@ -382,7 +433,7 @@ export class DashboardRepository {
       ${whereBase}${debitOnly}
         AND mb.idCentroCustos IS NOT NULL
         AND mcc0.idMovimentoBancario IS NULL
-      GROUP BY cc.descricao, UPPER(TRIM(COALESCE(cc.tipo, '')))
+      GROUP BY cc.id
     `;
 
     const [rMcc, rMb] = await Promise.all([
@@ -392,7 +443,7 @@ export class DashboardRepository {
 
     const merged = new Map<
       string,
-      { descricao: string; subtipo: 'custeio' | 'investimento'; valor: number; valorConciliado: number }
+      { descricao: string; subtipo: 'custeio' | 'investimento'; valor: number; valorConciliado: number; ids: Set<number> }
     >();
     const addRows = (rows: any[]) => {
       for (const row of rows) {
@@ -408,8 +459,9 @@ export class DashboardRepository {
         if (prev) {
           prev.valor += vt;
           prev.valorConciliado += vc;
+          prev.ids.add(Number(row.id));
         } else {
-          merged.set(key, { descricao: d, subtipo, valor: vt, valorConciliado: vc });
+          merged.set(key, { descricao: d, subtipo, valor: vt, valorConciliado: vc, ids: new Set([Number(row.id)]) });
         }
       }
     };
@@ -425,6 +477,7 @@ export class DashboardRepository {
           tipoMovimento: 'D' as const,
           conciliado,
           subtipoDespesa: agg.subtipo,
+          idsCentros: [...agg.ids].sort((a, b) => a - b),
         };
       })
       .sort((a, b) => b.valor - a.valor || a.descricao.localeCompare(b.descricao));
@@ -1508,6 +1561,133 @@ export class DashboardRepository {
         .all<ParcelaRow>(),
     ]);
     return resumoSaldoDevedor(ano, fin.results ?? [], parc.results ?? []);
+  }
+
+  /** Same as getResumoSaldoDevedor for every month of [inicio, fim) — e.g. "últimos 12 meses". */
+  async getResumoSaldoDevedorPeriodo(periodo: PeriodoDashboard): Promise<ResumoSaldoDevedorMes[]> {
+    const [fin, parc] = await Promise.all([
+      this.db.prepare(`SELECT id, dataContrato, valor FROM Financiamento`).all<FinanciamentoRow>(),
+      this.db
+        .prepare(`SELECT idFinanciamento, valor, status, dt_vencimento, dt_liquidacao FROM parcelaFinanciamento`)
+        .all<ParcelaRow>(),
+    ]);
+    return resumoSaldoDevedorMeses(mesesDoIntervalo(periodo.inicio, periodo.fim), fin.results ?? [], parc.results ?? []);
+  }
+
+  /** Contracts behind "Créditos novos" and "Quitados" of the period (same rules and totals as the cards). */
+  async getContratosDoPeriodo(periodo: PeriodoDashboard): Promise<{ novos: ContratoDoPeriodo[]; quitados: ContratoDoPeriodo[] }> {
+    const [fin, parc] = await Promise.all([
+      this.db
+        .prepare(
+          `SELECT f.id, f.dataContrato, f.valor, f.numeroContrato, f.responsavel AS tomador,
+                  COALESCE(b.nome, p.nome) AS credor
+           FROM Financiamento f
+           LEFT JOIN banco b ON f.idBanco = b.id
+           LEFT JOIN pessoa p ON f.idPessoa = p.id`,
+        )
+        .all<ContratoDetalheRow>(),
+      this.db
+        .prepare(`SELECT id, idFinanciamento, numParcela, valor, status, dt_vencimento, dt_liquidacao FROM parcelaFinanciamento`)
+        .all<ParcelaDetalheRow>(),
+    ]);
+    return contratosDoPeriodo(periodo.inicio, periodo.fim, fin.results ?? [], parc.results ?? []);
+  }
+
+  /**
+   * Receitas / despesas by cost centre for any date range (Resultado consolidado: trimestre, semestre,
+   * últimos 12 meses…). Same engine and exclusions as getReceitasDespesas, so a whole year here equals
+   * the year there (and the Fluxo de Caixa / Relatório de Centro de Custos).
+   */
+  async getReceitasDespesasPeriodo(periodo: PeriodoDashboard, contas: number[] = []) {
+    const fluxoExclIds = await this.getIdsPlanosExclusaoFluxo();
+    const mbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds, { start: periodo.inicio, end: periodo.fim });
+    const base = { ano: Number(periodo.inicio.slice(0, 4)), periodo, contas, mbExcl };
+    const [receitasAgrupadoPorCentros, agrupadoPor, semCentroCustos] = await Promise.all([
+      this.aggregateReceitasPorCentroCredito({ ...base, debug: false }),
+      this.aggregateDespesasPorCentroDebito({ ...base, debug: false }),
+      this.totalSemCentroCustos(base),
+    ]);
+    return {
+      periodo,
+      receitasAgrupadoPorCentros,
+      agrupadoPor,
+      semCentroCustos,
+      totalReceitas: receitasAgrupadoPorCentros.reduce((s, r) => s + r.valor, 0),
+      totalDespesas: agrupadoPor.reduce((s, r) => s + r.valor, 0),
+    };
+  }
+
+  /**
+   * Movements behind one row of the Dashboard detail (receitas or despesas of given centros in a period).
+   * Mirrors aggregateReceitasPorCentroCredito / aggregateDespesasPorCentroDebito row by row, so the list
+   * adds up to the value shown on the screen: the rateio share (MovimentoCentroCustos) when the movement
+   * has one, the whole movement when it only has mb.idCentroCustos.
+   */
+  async getMovimentosCentros(args: {
+    periodo: PeriodoDashboard;
+    tipo: 'C' | 'D';
+    centros: number[];
+    contas?: number[];
+  }): Promise<MovimentoCentroDashboard[]> {
+    const { periodo, tipo, centros, contas = [] } = args;
+    if (!centros.length) return [];
+    const fluxoExclIds = await this.getIdsPlanosExclusaoFluxo();
+    const mbExcl = this.sqlExcludeMbPlanoContas('mb', fluxoExclIds, { start: periodo.inicio, end: periodo.fim });
+
+    let where =
+      "WHERE mb.idFinanciamento IS NULL AND (mb.modalidadeMovimento IS NULL OR mb.modalidadeMovimento NOT IN ('transferencia', 'financiamento'))";
+    const params: unknown[] = [];
+    if (contas.length > 0) {
+      where += ` AND mb.idContaCorrente IN (${contas.map(() => '?').join(',')})`;
+      params.push(...contas);
+    }
+    const dtRange = this.sqlDtFaixa('mb.dtMovimento', 0, undefined, periodo);
+    where += dtRange.sql;
+    params.push(...dtRange.bind);
+    where += mbExcl.sql;
+    params.push(...mbExcl.bind);
+    where +=
+      tipo === 'C'
+        ? " AND (mb.tipoMovimento = 'C' OR (mb.tipoMovimento IS NULL AND mb.valor > 0))"
+        : " AND (mb.tipoMovimento = 'D' OR (mb.tipoMovimento IS NULL AND mb.valor < 0))";
+
+    const phCentros = centros.map(() => '?').join(', ');
+    const colunas = `mb.id, mb.dtMovimento, mb.historico, ct.responsavel, ct.numConta, ct.numCartao, b.nome AS bancoNome`;
+    const joinsConta = `LEFT JOIN contaCorrente ct ON mb.idContaCorrente = ct.id LEFT JOIN banco b ON ct.idBanco = b.id`;
+    const qComMcc = `
+      SELECT ${colunas}, ABS(COALESCE(mcc.valor, 0)) AS valor
+      FROM MovimentoCentroCustos mcc
+      JOIN centroCustos cc ON mcc.idCentroCustos = cc.id
+      JOIN MovimentoBancario mb ON mcc.idMovimentoBancario = mb.id
+      ${joinsConta}
+      ${where}
+        AND mcc.idCentroCustos IN (${phCentros})
+    `;
+    const qSoMbCentro = `
+      SELECT ${colunas}, ABS(mb.valor) AS valor
+      FROM MovimentoBancario mb
+      INNER JOIN centroCustos cc ON mb.idCentroCustos = cc.id
+      LEFT JOIN MovimentoCentroCustos mcc0 ON mcc0.idMovimentoBancario = mb.id
+      ${joinsConta}
+      ${where}
+        AND mb.idCentroCustos IN (${phCentros})
+        AND mcc0.idMovimentoBancario IS NULL
+    `;
+    const [rMcc, rMb] = await Promise.all([
+      this.db.prepare(qComMcc).bind(...params, ...centros).all(),
+      this.db.prepare(qSoMbCentro).bind(...params, ...centros).all(),
+    ]);
+    const linhas = [...(rMcc.results as any[]), ...(rMb.results as any[])]
+      .map((row) => ({
+        id: Number(row.id),
+        data: String(row.dtMovimento ?? '').slice(0, 10),
+        historico: String(row.historico ?? ''),
+        // Same account name the Fluxo detail shows (responsável, e.g. "BB GFS"), bank + number as fallback
+        conta: row.responsavel || `${row.bancoNome || 'Banco'} - ${row.numConta || row.numCartao || '???'}`,
+        valor: Number(row.valor) || 0,
+      }))
+      .filter((m) => m.valor >= 1e-9);
+    return linhas.sort((a, b) => a.data.localeCompare(b.data) || a.id - b.id);
   }
 
   async getContratosNovos(ano?: number, mes?: number): Promise<{

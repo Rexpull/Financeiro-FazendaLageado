@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resumoSaldoDevedor } from './saldoDevedor';
+import { resumoSaldoDevedor, resumoSaldoDevedorMeses, mesesDoIntervalo, contratosDoPeriodo } from './saldoDevedor';
 
 const fin = [
 	{ id: 1, dataContrato: '2025-06-06', valor: 1000 }, // contrato antigo
@@ -47,5 +47,48 @@ describe('resumoSaldoDevedor', () => {
 		expect(s[0].creditosNovos).toBe(0);
 		expect(s[0].valorContratadoNovos).toBe(100000);
 		expect(s[11].saldoFinal).toBe(0);
+	});
+});
+
+describe('resumoSaldoDevedorMeses / mesesDoIntervalo (filtro de período)', () => {
+	it('lista os meses de um intervalo que cruza o ano', () => {
+		expect(mesesDoIntervalo('2025-11-01', '2026-02-01')).toEqual([
+			{ ano: 2025, mes: 11 },
+			{ ano: 2025, mes: 12 },
+			{ ano: 2026, mes: 1 },
+		]);
+		expect(mesesDoIntervalo('2026-01-01', '2027-01-01')).toHaveLength(12);
+	});
+
+	it('últimos 12 meses: mesmos números do ano mês a mês, encadeados entre os anos', () => {
+		const r = resumoSaldoDevedorMeses(mesesDoIntervalo('2025-11-01', '2026-11-01'), fin, parcelas);
+		expect(r).toHaveLength(12);
+		expect(r[0]).toMatchObject({ ano: 2025, mes: 11 });
+		// Jan..Out/2026 equal to the year view
+		expect(r.slice(2)).toEqual(resumoSaldoDevedor(2026, fin, parcelas).slice(0, 10));
+		for (let i = 1; i < r.length; i++) expect(r[i].saldoInicial).toBe(r[i - 1].saldoFinal);
+	});
+});
+
+describe('contratosDoPeriodo (contratos dos quadros Créditos novos / Quitados)', () => {
+	const contratos = fin.map((f) => ({ ...f, numeroContrato: `C${f.id}`, credor: 'BB', tomador: 'GJN' }));
+	const parcelasComId = parcelas.map((p, i) => ({ ...p, id: i + 1, numParcela: i + 1 }));
+
+	it('somam exatamente os quadros do período', () => {
+		const { novos, quitados } = contratosDoPeriodo('2026-01-01', '2027-01-01', contratos, parcelasComId);
+		const r = resumoSaldoDevedor(2026, fin, parcelas);
+		const soma = (k: 'quitados' | 'creditosNovos') => r.reduce((s, m) => s + m[k], 0);
+		expect(novos.map((c) => c.numeroContrato)).toEqual(['C2']);
+		expect(novos.reduce((s, c) => s + c.valorNoPeriodo, 0)).toBe(soma('creditosNovos'));
+		expect(quitados.map((c) => c.numeroContrato)).toEqual(['C1']);
+		expect(quitados[0].parcelas.map((p) => p.dt_liquidacao)).toEqual(['2026-03-10', '2026-10-14']);
+		expect(quitados.reduce((s, c) => s + c.valorNoPeriodo, 0)).toBe(soma('quitados'));
+	});
+
+	it('trimestre: só as parcelas liquidadas dentro dele', () => {
+		const { novos, quitados } = contratosDoPeriodo('2026-01-01', '2026-04-01', contratos, parcelasComId);
+		expect(novos).toEqual([]);
+		expect(quitados).toHaveLength(1);
+		expect(quitados[0].valorNoPeriodo).toBe(300);
 	});
 });

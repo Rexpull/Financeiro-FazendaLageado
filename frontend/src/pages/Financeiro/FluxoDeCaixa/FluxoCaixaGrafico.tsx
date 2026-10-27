@@ -4,6 +4,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCaretDown, faCaretUp, faArrowUp, faArrowDown } from '@fortawesome/free-solid-svg-icons';
 import {
   Chart as ChartJS,
+  BarController,
+  LineController,
   CategoryScale,
   LinearScale,
   BarElement,
@@ -19,7 +21,11 @@ import { FluxoMesCentrosInput } from './fluxoMensalRegras';
 import { CentroInfo, compararAnos, resumoAnoFluxo, topCentros } from './fluxoGraficoRegras';
 import { brl, brlCompacto, pct } from '../../../Utils/formatos';
 
+// <Chart type="bar"> with line datasets needs both controllers registered: the production build
+// tree-shakes everything not registered and the tab crashed ("bar" is not a registered controller).
 ChartJS.register(
+  BarController,
+  LineController,
   CategoryScale,
   LinearScale,
   BarElement,

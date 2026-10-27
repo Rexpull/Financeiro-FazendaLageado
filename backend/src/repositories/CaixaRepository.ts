@@ -1,4 +1,4 @@
-import { intervaloDoMes, type NaturezaCaixa, type TipoLancamentoCaixa } from '../utils/caixaDiario';
+import { intervaloDoMes, parcelaConsiderada, type NaturezaCaixa, type TipoLancamentoCaixa } from '../utils/caixaDiario';
 
 export interface CaixaLancamento {
 	id: number;
@@ -29,6 +29,12 @@ export interface CaixaParcela {
 	contrato: string | null;
 	tomador: string | null;
 	banco: string | null;
+	/** modalidade do financiamento (INVESTIMENTO, CUSTEIO, PARTICULAR, RENEGOCIACAO) */
+	modalidade: string | null;
+	/** entra na apuração do saldo (escolha gravada ou padrão pelo status) */
+	considerada: boolean;
+	/** true quando o usuário marcou/desmarcou a parcela; false = padrão pelo status */
+	consideradaManual: boolean;
 }
 
 export interface CaixaSaldoInicial {
@@ -44,7 +50,9 @@ export interface CaixaDadosMes {
 	parcelas: CaixaParcela[];
 }
 
-// Mesmo DDL de migration_caixa.sql (idempotente).
+const TABELAS = ['caixaSaldoInicial', 'caixaLancamento', 'caixaParcelaConsiderada'];
+
+// Mesmo DDL de migration_caixa.sql + migration_caixa_v2.sql (idempotente).
 const DDL = [
 	`CREATE TABLE IF NOT EXISTS caixaSaldoInicial (
 		ano INTEGER NOT NULL,
@@ -64,6 +72,12 @@ const DDL = [
 		atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_caixa_lancamento_data ON caixaLancamento(data)`,
+	// Sem FK para parcelaFinanciamento: o D1 aplica FKs e isso travaria a exclusão de parcelas no cadastro.
+	`CREATE TABLE IF NOT EXISTS caixaParcelaConsiderada (
+		idParcela INTEGER PRIMARY KEY,
+		considerar INTEGER NOT NULL CHECK(considerar IN (0, 1)),
+		atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
+	)`,
 ];
 
 const COLUNAS_LANCAMENTO = `id, tipo, natureza, data, descricao, valor, criado_em, atualizado_em`;
@@ -99,9 +113,10 @@ export class CaixaRepository {
 
 	private async criarTabelasSeFaltarem(): Promise<void> {
 		const { results } = await this.db
-			.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('caixaSaldoInicial', 'caixaLancamento')`)
+			.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${TABELAS.map(() => '?').join(', ')})`)
+			.bind(...TABELAS)
 			.all();
-		if (results.length === 2) return;
+		if (results.length === TABELAS.length) return;
 		await this.db.batch(DDL.map((sql) => this.db.prepare(sql)));
 	}
 
@@ -115,14 +130,17 @@ export class CaixaRepository {
 			this.db
 				.prepare(`SELECT ${COLUNAS_LANCAMENTO} FROM caixaLancamento WHERE data >= ? AND data < ? ORDER BY data, id`)
 				.bind(inicio, fimExclusivo),
+			// Todas as parcelas do mês (qualquer status), pela data de vencimento ATUAL do cadastro.
 			// dt_vencimento pode estar como 'YYYY-MM-DD' ou com hora; a faixa por string cobre os dois.
 			this.db
 				.prepare(
 					`SELECT pf.id, substr(pf.dt_vencimento, 1, 10) AS data, pf.valor, pf.status, pf.numParcela, pf.idFinanciamento,
-					        f.numeroContrato AS contrato, f.responsavel AS tomador, b.nome AS banco
+					        f.numeroContrato AS contrato, f.responsavel AS tomador, b.nome AS banco, f.modalidade,
+					        c.considerar AS escolha
 					   FROM parcelaFinanciamento pf
 					   LEFT JOIN Financiamento f ON f.id = pf.idFinanciamento
 					   LEFT JOIN banco b ON b.id = f.idBanco
+					   LEFT JOIN caixaParcelaConsiderada c ON c.idParcela = pf.id
 					  WHERE pf.dt_vencimento >= ? AND pf.dt_vencimento < ?
 					  ORDER BY pf.dt_vencimento, pf.id`,
 				)
@@ -150,6 +168,9 @@ export class CaixaRepository {
 					contrato: (r.contrato as string | null) ?? null,
 					tomador: (r.tomador as string | null) ?? null,
 					banco: (r.banco as string | null) ?? null,
+					modalidade: (r.modalidade as string | null) ?? null,
+					considerada: parcelaConsiderada(r.status as string | null, r.escolha),
+					consideradaManual: r.escolha !== null && r.escolha !== undefined,
 				};
 			}),
 		};
@@ -177,6 +198,45 @@ export class CaixaRepository {
 		await this.ensureTables();
 		await this.db.prepare(`DELETE FROM caixaSaldoInicial WHERE ano = ? AND mes = ?`).bind(ano, mes).run();
 		return { ano, mes, valor: null, atualizadoEm: null };
+	}
+
+	/**
+	 * Grava o total de boletos do dia (substitui o que houver na data). valor null remove.
+	 * Boletos ficam em caixaLancamento (tipo BOLETO, natureza D) com descrição vazia: um registro por dia.
+	 */
+	async salvarBoletosDia(data: string, valor: number | null): Promise<{ data: string; valor: number | null }> {
+		await this.ensureTables();
+		const apagar = this.db.prepare(`DELETE FROM caixaLancamento WHERE tipo = 'BOLETO' AND data = ?`).bind(data);
+		if (valor === null) {
+			await apagar.run();
+			return { data, valor: null };
+		}
+		// batch = transação: nunca fica sem registro nem com dois para o mesmo dia
+		await this.db.batch([
+			apagar,
+			this.db
+				.prepare(`INSERT INTO caixaLancamento (tipo, natureza, data, descricao, valor) VALUES ('BOLETO', 'D', ?, '', ?)`)
+				.bind(data, valor),
+		]);
+		return { data, valor };
+	}
+
+	async parcelaExiste(id: number): Promise<boolean> {
+		const row = await this.db.prepare(`SELECT 1 AS ok FROM parcelaFinanciamento WHERE id = ?`).bind(id).first();
+		return !!row;
+	}
+
+	/** Marca se a parcela entra (true) ou não (false) na apuração do saldo do caixa. */
+	async salvarParcelaConsiderada(idParcela: number, considerar: boolean): Promise<{ idParcela: number; considerar: boolean }> {
+		await this.ensureTables();
+		await this.db
+			.prepare(
+				`INSERT INTO caixaParcelaConsiderada (idParcela, considerar, atualizado_em) VALUES (?, ?, CURRENT_TIMESTAMP)
+				 ON CONFLICT(idParcela) DO UPDATE SET considerar = excluded.considerar, atualizado_em = CURRENT_TIMESTAMP`,
+			)
+			.bind(idParcela, considerar ? 1 : 0)
+			.run();
+		return { idParcela, considerar };
 	}
 
 	async getLancamento(id: number): Promise<CaixaLancamento | null> {

@@ -1,5 +1,7 @@
 // Integration: the result screens must agree. For one period, Relatório Centro de Custos totals
-// (receitas, custeio, investimento) == Dashboard == Fluxo de Caixa (centros) == Itens Classificados,
+// (receitas, custeio, investimento) == Dashboard == Fluxo de Caixa (centros); Itens Classificados (Plano de
+// Contas report) has the same despesas, but only the receitas WITH plan (credits without plan are receitas by
+// centre and stay out of that plan-based report — client request),
 // using the single "pendente" rule (isMovimentoPendenteConcilacao) for every status filter, the
 // notification bell and the Conciliação list/exports.
 import { env, SELF } from 'cloudflare:test';
@@ -147,6 +149,8 @@ async function seed() {
 
 const PERIODO = 'dataInicio=2026-10-01&dataFim=2026-10-31';
 const ESPERADO = { receitas: 13750, custeio: 4050, investimento: 5500 };
+/** Plano de Contas report: only credits WITH plan (mov 2, "Venda de grãos"); receitas by centre are left out. */
+const RECEITAS_COM_PLANO = 3000;
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const soma = (xs: number[]) => r2(xs.reduce((a, b) => a + b, 0));
@@ -254,7 +258,7 @@ describe('Relatórios × Dashboard × Fluxo: mesmos totais', () => {
 		await prepararAuth();
 	});
 
-	it('Centro de Custos == Dashboard == Fluxo (centros) == Itens Classificados', async () => {
+	it('Centro de Custos == Dashboard == Fluxo (centros); Itens Classificados: same despesas, receitas only with plan', async () => {
 		const cc = totaisCentroCustos(await getJson<GrupoCentro[]>(`/api/relatorio/centro-custos?${PERIODO}`));
 		const dash = await totaisDashboard();
 		const fluxo = await totaisFluxo();
@@ -262,7 +266,9 @@ describe('Relatórios × Dashboard × Fluxo: mesmos totais', () => {
 		expect(dash).toEqual(ESPERADO);
 		expect(fluxo).toEqual(ESPERADO);
 		expect(cc).toEqual(ESPERADO);
-		expect(itens).toEqual(ESPERADO);
+		// New rule: the plan-based report leaves out receitas classified only by centre (they are in the
+		// Centro de Custos report), so its receitas are NOT the Dashboard receitas; despesas still match.
+		expect(itens).toEqual({ ...ESPERADO, receitas: RECEITAS_COM_PLANO });
 	});
 
 	describe('Relatório Centro de Custos', () => {
@@ -322,14 +328,20 @@ describe('Relatórios × Dashboard × Fluxo: mesmos totais', () => {
 	});
 
 	describe('Relatório Itens Classificados', () => {
-		it('includes credits classified only by cost centre (plan shown as "—")', async () => {
-			const itens = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&status=conciliados`);
-			const venda = itens.find((i) => i.id === 1)!;
-			expect(venda.valor).toBe(10000);
-			expect(venda.semPlano).toBe(true);
-			expect(venda.planoDescricao).toBeUndefined();
-			expect(venda.centroCustosDescricao).toBe('Venda Leite');
-			expect(totaisItens(itens)).toEqual({ ...ESPERADO, custeio: ESPERADO.custeio - 350 });
+		it('leaves out credits without plan (receitas by centre: Centro de Custos report); credits with plan stay', async () => {
+			const todos = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}`);
+			const ids = new Set(todos.map((i) => i.id));
+			// 1, 12, 16: receitas classified only by centre; 14: credit without centre and plan (pending in Centro de Custos)
+			for (const fora of [1, 12, 14, 16]) expect(ids.has(fora)).toBe(false);
+			expect(todos.some((i) => i.tipoMovimento === 'C' && (i.semPlano || !i.planoDescricao))).toBe(false);
+			const vendaGraos = todos.find((i) => i.id === 2)!;
+			expect(vendaGraos.planoDescricao).toBe('Venda de grãos');
+			expect(vendaGraos.valor).toBe(RECEITAS_COM_PLANO);
+			// "Sem plano" now only lists debits pending classification
+			expect([...new Set(todos.filter((i) => i.semPlano).map((i) => i.id))]).toEqual([13]);
+			expect(todos.find((i) => i.id === 13)!.tipoMovimento).toBe('D');
+			const conc = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&status=conciliados`);
+			expect(totaisItens(conc)).toEqual({ receitas: RECEITAS_COM_PLANO, custeio: ESPERADO.custeio - 350, investimento: ESPERADO.investimento });
 		});
 
 		it('applies the base exclusions (transfers, financing, children of 170)', async () => {
@@ -340,7 +352,8 @@ describe('Relatórios × Dashboard × Fluxo: mesmos totais', () => {
 
 		it('status filter works; a debit without centre is "Sem centro", never investimento', async () => {
 			const pend = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&status=pendentes`);
-			expect([...new Set(pend.map((i) => i.id))].sort((a, b) => a - b)).toEqual([13, 14, 15]);
+			// 14 (credit without centre and plan) is not here anymore: no plan → Centro de Custos report
+			expect([...new Set(pend.map((i) => i.id))].sort((a, b) => a - b)).toEqual([13, 15]);
 			const semCentro = pend.find((i) => i.id === 15)!;
 			expect(semCentro.semCentro).toBe(true);
 			expect(semCentro.subtipoDespesa).toBeUndefined();
@@ -353,7 +366,13 @@ describe('Relatórios × Dashboard × Fluxo: mesmos totais', () => {
 			const rows = await getSheetRows(`/api/relatorio/itens-classificados/excel?${PERIODO}`);
 			const header = rows.find((r) => r[0] === 'Data')!;
 			const total = rows.find((r) => r[0] === 'TOTAL')!;
-			expect(total[2]).toBe(ESPERADO.receitas);
+			expect(header[2]).toBe('Receitas (com plano de contas)');
+			expect(total[2]).toBe(RECEITAS_COM_PLANO);
+			// No "Receitas − Despesas" line (it would not be the real result) and a note pointing to the other report
+			expect(rows.some((r) => String(r[0]).startsWith('SALDO'))).toBe(false);
+			expect(rows.some((r) => String(r[0]).includes('Relatório de Centro de Custos'))).toBe(true);
+			expect(rows.some((r) => r[1] === 'Venda leite (só centro)')).toBe(false);
+			expect(rows.find((r) => String(r[0]).startsWith('Plano de Contas:'))![0]).toBe('Plano de Contas: Todos');
 			expect(total[3]).toBe(ESPERADO.custeio);
 			expect(total[4]).toBe(ESPERADO.investimento);
 			const linha15 = rows.find((r) => r[1] === 'Débito sem centro')!;
@@ -362,6 +381,34 @@ describe('Relatórios × Dashboard × Fluxo: mesmos totais', () => {
 			expect(linha15[header.indexOf('Despesa sem centro (pendente)')]).toBe(90);
 			const res = await api(`/api/relatorio/itens-classificados/pdf?${PERIODO}`);
 			expect(res.status).toBe(200);
+		});
+
+		it('planoContasId filter: only that plan (split movements included), totals and exports follow it', async () => {
+			const insumos = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&planoContasId=300`);
+			expect(insumos.every((i) => i.idPlanoContas === 300)).toBe(true);
+			// 5 = split (idPlanoContas NULL, plan only in Resultado); 15 = debit without centre (pending, outside the totals)
+			expect([...new Set(insumos.map((i) => i.id))].sort((a, b) => a - b)).toEqual([3, 5, 11, 15]);
+			const esperado300 = { receitas: 0, custeio: 2000 + 700 + 1000, investimento: 500 };
+			expect(totaisItens(insumos)).toEqual(esperado300);
+
+			const rows = await getSheetRows(`/api/relatorio/itens-classificados/excel?${PERIODO}&planoContasId=300`);
+			expect(rows.find((r) => String(r[0]).startsWith('Plano de Contas:'))![0]).toBe('Plano de Contas: 002.001.001 - Insumos');
+			const total = rows.find((r) => r[0] === 'TOTAL')!;
+			expect(total[1]).toBe('4 movimento(s)');
+			expect(total[3]).toBe(esperado300.custeio);
+			expect(total[4]).toBe(esperado300.investimento);
+			expect(rows.some((r) => r[1] === 'Trator')).toBe(false);
+
+			const pdf = await api(`/api/relatorio/itens-classificados/pdf?${PERIODO}&planoContasId=300`);
+			expect(pdf.status).toBe(200);
+			expect((await pdf.arrayBuffer()).byteLength).toBeGreaterThan(0);
+
+			// A receita plan: only its credits; combined with the status filter
+			const graos = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&planoContasId=110`);
+			expect(graos.map((i) => i.id)).toEqual([2]);
+			expect(totaisItens(graos)).toEqual({ receitas: RECEITAS_COM_PLANO, custeio: 0, investimento: 0 });
+			const pend300 = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&planoContasId=300&status=pendentes`);
+			expect([...new Set(pend300.map((i) => i.id))]).toEqual([15]);
 		});
 	});
 

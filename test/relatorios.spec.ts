@@ -193,6 +193,20 @@ describe('Relatórios com movimentos rateados (idPlanoContas NULL)', () => {
 			expect(linhaM10[4]).toBe('');
 			expect(linhaM10[header.indexOf('Despesa sem centro (pendente)')]).toBe(250);
 		});
+
+		it('planoContasId filter keeps only that plan share of a split movement (plan × centre)', async () => {
+			const itens = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}&planoContasId=301`);
+			expect(itens.every((i) => i.idPlanoContas === 301)).toBe(true);
+			expect([...new Set(itens.map((i) => i.id))].sort((a, b) => a - b)).toEqual([1, 10]);
+			const m1 = itens.filter((i) => i.id === 1);
+			expect(soma(m1.map((i) => i.valor))).toBe(4000);
+			// 4000 of 10000 → 40% of each centre (7000 custeio / 3000 investimento)
+			expect(soma(m1.filter((i) => i.centroCustosTipo === 'CUSTEIO').map((i) => i.valor))).toBe(2800);
+			expect(soma(m1.filter((i) => i.centroCustosTipo === 'INVESTIMENTO').map((i) => i.valor))).toBe(1200);
+			// M5 (credit without plan) is never in the plan-based report
+			const todos = await getJson<ItemClassificado[]>(`/api/relatorio/itens-classificados?${PERIODO}`);
+			expect(todos.some((i) => i.id === 5)).toBe(false);
+		});
 	});
 
 	describe('Centro de Custos', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularCaixaDiario, datasDoMes, diasNoMes, intervaloDoMes } from './caixaDiario';
+import { calcularCaixaDiario, datasDoMes, diasNoMes, intervaloDoMes, parcelaConsiderada, parcelaConsideradaPadrao } from './caixaDiario';
 
 describe('datas do mês', () => {
 	it('gera um dia por data do calendário, sem depender de fuso', () => {
@@ -156,5 +156,39 @@ describe('calcularCaixaDiario', () => {
 		expect(r.dias[2].saldo).toBe(0);
 		expect(r.totais.boletos).toBe(2.8);
 		expect(r.totais.saldo).toBe(-2.5);
+	});
+});
+
+describe('parcelas consideradas na apuração', () => {
+	it('padrão: abertas e vencidas entram, liquidadas não', () => {
+		expect(parcelaConsideradaPadrao('Aberto')).toBe(true);
+		expect(parcelaConsideradaPadrao('Vencido')).toBe(true);
+		expect(parcelaConsideradaPadrao('Liquidado')).toBe(false);
+		expect(parcelaConsideradaPadrao(' liquidado ')).toBe(false);
+		expect(parcelaConsideradaPadrao(null)).toBe(true);
+	});
+
+	it('a escolha gravada prevalece sobre o status', () => {
+		expect(parcelaConsiderada('Liquidado', 1)).toBe(true);
+		expect(parcelaConsiderada('Aberto', 0)).toBe(false);
+		expect(parcelaConsiderada('Aberto', false)).toBe(false);
+		expect(parcelaConsiderada('Liquidado', null)).toBe(false);
+		expect(parcelaConsiderada('Vencido', undefined)).toBe(true);
+	});
+
+	it('parcela não considerada fica fora do saldo', () => {
+		const r = calcularCaixaDiario({
+			ano: 2026,
+			mes: 10,
+			saldoInicial: 10000,
+			lancamentos: [],
+			parcelas: [
+				{ data: '2026-10-05', valor: 1000, considerada: true },
+				{ data: '2026-10-05', valor: 2000, considerada: false },
+				{ data: '2026-10-06', valor: 500 }, // sem o campo: considerada
+			],
+		});
+		expect(r.dias[4]).toMatchObject({ financiamento: 1000, saldo: 9000 });
+		expect(r.totais).toMatchObject({ financiamento: 1500, saldo: 8500, saldoFinal: 8500 });
 	});
 });

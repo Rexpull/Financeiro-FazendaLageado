@@ -54,6 +54,10 @@ export interface ResultadoMudancaContaOFX {
 /** Filters of the Conciliação exports: exactly the list filters (getPaginado) without the paging. */
 export type FiltrosExportacaoConciliacao = Omit<Parameters<MovimentoBancarioRepository['getPaginado']>[0], 'page' | 'limit'>;
 
+/** Note under the title of the Plano de Contas report exports (same text as the screen). */
+const NOTA_RECEITAS_ITENS_CLASSIFICADOS =
+	'Receitas classificadas só por centro de custos (sem plano de contas) não aparecem aqui: veja o Relatório de Centro de Custos.';
+
 export class MovimentoBancarioRepository {
 	private db: D1Database;
 	private resultadoRepo: ResultadoRepository;
@@ -2910,13 +2914,21 @@ export class MovimentoBancarioRepository {
 	/**
 	 * Relatório de Itens Classificados (screen "Relatório de Plano de Contas"): one row per plan × centre.
 	 * - Base = Dashboard/Fluxo: no transfers, no financing, nothing on children of plano 170.
-	 * - Receitas are normally classified ONLY by cost centre: a movement without plan is kept with
-	 *   `semPlano: true` (planoDescricao undefined → "—" / "Sem plano" on screen).
+	 * - Plan-based report: credits WITHOUT plan (receitas classified only by cost centre, or still pending)
+	 *   are left out — they belong to the Relatório de Centro de Custos. Debits without plan stay, with
+	 *   `semPlano: true` ("Sem plano": pending classification).
+	 * - planoContasId: only that plan's rows (split movements: the plan's share, via Resultado).
 	 * - Movement without cost centre: `semCentro: true`, centre "Sem centro"; never counted as custeio or
 	 *   investimento (outside the totals). Debits with centre: `subtipoDespesa` by the centre tipo.
 	 * - status: single pendente rule ('pendentes' / 'conciliados'; else todos).
 	 */
-	async getRelatorioItensClassificados(filters: { dataInicio?: string; dataFim?: string; contaId?: number; status?: string }): Promise<
+	async getRelatorioItensClassificados(filters: {
+		dataInicio?: string;
+		dataFim?: string;
+		contaId?: number;
+		status?: string;
+		planoContasId?: number;
+	}): Promise<
 		Array<{
 			id: number;
 			dtMovimento: string;
@@ -2953,6 +2965,15 @@ export class MovimentoBancarioRepository {
 			if (filters.contaId) {
 				whereConditions.push('mb.idContaCorrente = ?');
 				params.push(filters.contaId);
+			}
+
+			// Plan filter: single-plan movements by idPlanoContas; split ones (idPlanoContas NULL) by Resultado
+			if (filters.planoContasId) {
+				whereConditions.push(
+					`(mb.idPlanoContas = ? OR (mb.idPlanoContas IS NULL AND EXISTS (
+						SELECT 1 FROM Resultado rf WHERE rf.idMovimentoBancario = mb.id AND rf.idPlanoContas = ?)))`,
+				);
+				params.push(filters.planoContasId, filters.planoContasId);
 			}
 
 			const periodo = sqlPeriodo('mb.dtMovimento', filters.dataInicio, filters.dataFim);
@@ -3044,7 +3065,10 @@ export class MovimentoBancarioRepository {
 					? [{ idPlanoContas: mov.idPlanoContas as number, valor: Math.abs(Number(mov.valor)), descricao: mov.planoDescricao ?? null }]
 					: planosPorMovimento.get(mov.id) || [];
 				const semPlano = planosMov.length === 0;
-				// Classified only by cost centre (normal for receitas): one row without plan
+				// Credit without plan = receita classified by cost centre (or pending): not part of this plan-based
+				// report — it is in the Relatório de Centro de Custos
+				if (semPlano && tipoMov === 'C') continue;
+				// Debit without plan: one "Sem plano" row (pending classification)
 				const planos: Array<{ idPlanoContas: number | undefined; valor: number; descricao: string | null }> = semPlano
 					? [{ idPlanoContas: undefined, valor: Math.abs(Number(mov.valor)), descricao: null }]
 					: planosMov;
@@ -3071,6 +3095,8 @@ export class MovimentoBancarioRepository {
 							: [{ descricao: 'Sem centro', tipo: null, valor: Math.abs(Number(mov.valor)), semCentro: true }];
 
 				for (const plano of planos) {
+					// Split across plans: with the plan filter only that plan's share is listed
+					if (filters.planoContasId && plano.idPlanoContas !== filters.planoContasId) continue;
 					const proporcao = planos.length === 1 || somaPlanos === 0 ? 1 : plano.valor / somaPlanos;
 					const valoresCentros =
 						planos.length === 1
@@ -3123,7 +3149,11 @@ export class MovimentoBancarioRepository {
 		}
 	}
 
-	/** Totals of the Itens Classificados report (screen, Excel and PDF). "Sem centro" stays out of R/D. */
+	/**
+	 * Totals of the Itens Classificados report (screen, Excel and PDF). "Sem centro" stays out of R/D.
+	 * `receitas` = only credits WITH plan (receitas by centre are not in this report), so there is no
+	 * saldo here — the real result is in the Relatório de Centro de Custos / Dashboard.
+	 */
 	private totaisItensClassificados(dados: Awaited<ReturnType<MovimentoBancarioRepository['getRelatorioItensClassificados']>>) {
 		const arred = (v: number) => Math.round(v * 100) / 100;
 		const somar = (xs: typeof dados) => arred(xs.reduce((s, i) => s + i.valor, 0));
@@ -3137,7 +3167,6 @@ export class MovimentoBancarioRepository {
 			custeio,
 			investimento,
 			despesas: arred(custeio + investimento),
-			saldo: arred(receitas - custeio - investimento),
 			semCentroReceitas: somar(semCentro.filter((i) => i.tipoMovimento === 'C')),
 			semCentroDespesas: somar(semCentro.filter((i) => i.tipoMovimento === 'D')),
 			movimentos: new Set(dados.map((i) => i.id)).size,
@@ -4054,11 +4083,19 @@ export class MovimentoBancarioRepository {
 		}
 	}
 
+	/** Name of the plan chosen in the Plano de Contas report filter (Excel/PDF header). */
+	private async nomePlanoFiltro(planoContasId?: number): Promise<string> {
+		if (!planoContasId) return 'Todos';
+		const plano = await this.db.prepare('SELECT hierarquia, descricao FROM PlanoContas WHERE id = ?').bind(planoContasId).first();
+		return plano ? `${plano.hierarquia ? `${plano.hierarquia} - ` : ''}${plano.descricao}` : String(planoContasId);
+	}
+
 	async exportRelatorioItensClassificadosExcel(filters: {
 		dataInicio?: string;
 		dataFim?: string;
 		contaId?: number;
 		status?: string;
+		planoContasId?: number;
 	}): Promise<Buffer> {
 		try {
 			console.log('📊 Repository: Iniciando exportação Excel - Relatório Itens Classificados');
@@ -4081,22 +4118,24 @@ export class MovimentoBancarioRepository {
 			}
 
 			const statusNome = this.statusFiltroNome(filters.status);
+			const planoNome = await this.nomePlanoFiltro(filters.planoContasId);
 			const totais = this.totaisItensClassificados(dados);
 
 			// Criar header igual ao de Centro de Custos
 			const headerData = [
 				['RELATÓRIO DE PLANO DE CONTAS'],
-				[''],
+				[NOTA_RECEITAS_ITENS_CLASSIFICADOS],
 				['Filtros Aplicados:'],
 				[`Período: ${filters.dataInicio || 'Início'} até ${filters.dataFim || 'Fim'}`],
 				[`Conta Corrente: ${contaNome}`],
 				[`Status: ${statusNome}`],
+				[`Plano de Contas: ${planoNome}`],
 				[''],
 				['Plano de Contas'],
 				[
 					'Data',
 					'Histórico',
-					'Receitas',
+					'Receitas (com plano de contas)',
 					'Despesas de custeio',
 					'Despesas de investimento',
 					'Plano de Contas',
@@ -4122,7 +4161,7 @@ export class MovimentoBancarioRepository {
 					receita ? this.excelNumero(receita) : '',
 					despesaCusteio ? this.excelNumero(despesaCusteio) : '',
 					despesaInvestimento ? this.excelNumero(despesaInvestimento) : '',
-					mov.planoDescricao || (mov.tipoMovimento === 'C' ? '—' : 'Sem plano'),
+					mov.planoDescricao || 'Sem plano',
 					mov.centroCustosDescricao || '',
 					(mov as any).responsavel || '',
 					receitaSemCentro ? this.excelNumero(receitaSemCentro) : '',
@@ -4143,10 +4182,9 @@ export class MovimentoBancarioRepository {
 				this.excelNumero(totais.semCentroReceitas),
 				this.excelNumero(totais.semCentroDespesas),
 			];
-			const linhaSaldo = ['SALDO (Receitas - Despesas)', '', this.excelNumero(totais.saldo)];
-
+			// No "Receitas − Despesas" line: receitas classified only by centre are not listed here
 			const wb = XLSX.utils.book_new();
-			const ws = XLSX.utils.aoa_to_sheet([...headerData, ...dadosParaExportar, linhaTotal, linhaSaldo]);
+			const ws = XLSX.utils.aoa_to_sheet([...headerData, ...dadosParaExportar, linhaTotal]);
 			this.applyExcelCurrencyFormat(ws, [2, 3, 4, 8, 9], headerData.length);
 			XLSX.utils.book_append_sheet(wb, ws, 'Itens Classificados');
 
@@ -4164,6 +4202,7 @@ export class MovimentoBancarioRepository {
 		dataFim?: string;
 		contaId?: number;
 		status?: string;
+		planoContasId?: number;
 	}): Promise<Uint8Array> {
 		try {
 			console.log('📊 Repository: Iniciando exportação PDF - Relatório Itens Classificados');
@@ -4186,12 +4225,12 @@ export class MovimentoBancarioRepository {
 			}
 
 			const statusNome = this.statusFiltroNome(filters.status);
+			const planoNome = await this.nomePlanoFiltro(filters.planoContasId);
 
 			// Same totals as the screen/Excel: "sem centro" (pending) stays out of receitas/despesas
 			const totais = this.totaisItensClassificados(dados);
 			const totalReceitas = totais.receitas;
 			const totalDespesas = totais.despesas;
-			const totalGeral = totais.saldo;
 			const totalSemCentro = totais.semCentroReceitas + totais.semCentroDespesas;
 
 			const jsPDF = (await import('jspdf')).default;
@@ -4251,12 +4290,23 @@ export class MovimentoBancarioRepository {
 				doc.setFont('helvetica', 'normal');
 				doc.text(statusNome, 185, yPos);
 
+				doc.setFont('helvetica', 'bold');
+				doc.text('Plano de Contas:', 150, yPos + 5);
+				doc.setFont('helvetica', 'normal');
+				doc.text(planoNome.length > 50 ? `${planoNome.slice(0, 47)}...` : planoNome, 185, yPos + 5);
+
+				// Nota: receitas classificadas só por centro de custos ficam no outro relatório
+				doc.setFontSize(8);
+				doc.setTextColor(90, 90, 90);
+				doc.text(NOTA_RECEITAS_ITENS_CLASSIFICADOS, 20, yPos + 10);
+				doc.setTextColor(0, 0, 0);
+
 				// Linha separadora
 				doc.setDrawColor(200, 200, 200);
 				doc.setLineWidth(0.3);
-				doc.line(20, yPos + 10, 277, yPos + 10);
+				doc.line(20, yPos + 13, 277, yPos + 13);
 
-				return yPos + 15;
+				return yPos + 18;
 			};
 
 			// Função para desenhar resumo executivo
@@ -4275,15 +4325,16 @@ export class MovimentoBancarioRepository {
 				doc.setLineWidth(0.3);
 				doc.rect(20, yStart - 5, 257, alturaResumo);
 
-				// Totais - ajustar posicionamento para evitar sobreposição
-				doc.text('Total Receitas:', 25, yStart + 2);
+				// Totais - ajustar posicionamento para evitar sobreposição.
+				// Only receitas WITH plan are listed here: no "Total Geral" (R − D) to avoid a misleading saldo.
+				doc.text('Receitas c/ plano:', 25, yStart + 2);
 				doc.setFont('helvetica', 'normal');
 				doc.setTextColor(0, 128, 0);
 				const receitasFormatado = new Intl.NumberFormat('pt-BR', {
 					style: 'currency',
 					currency: 'BRL',
 				}).format(totalReceitas);
-				doc.text(receitasFormatado, 55, yStart + 2);
+				doc.text(receitasFormatado, 60, yStart + 2);
 
 				doc.setFont('helvetica', 'bold');
 				doc.setTextColor(0, 0, 0);
@@ -4295,15 +4346,6 @@ export class MovimentoBancarioRepository {
 					currency: 'BRL',
 				}).format(totalDespesas);
 				doc.text(despesasFormatado, 155, yStart + 2);
-
-				doc.setFont('helvetica', 'bold');
-				doc.setTextColor(0, 0, 0);
-				doc.text('Total Geral:', 225, yStart + 2);
-				const geralFormatado = new Intl.NumberFormat('pt-BR', {
-					style: 'currency',
-					currency: 'BRL',
-				}).format(totalGeral);
-				doc.text(geralFormatado, 248, yStart + 2);
 
 				doc.setFont('helvetica', 'normal');
 				doc.setFontSize(8);
@@ -4349,8 +4391,8 @@ export class MovimentoBancarioRepository {
 					historicoLimpo = '-';
 				}
 
-				// Sanitizar plano de contas (receita classificada só por centro: "—"; débito sem plano: pendente)
-				let planoLimpo = String(mov.planoDescricao || (mov.tipoMovimento === 'C' ? '—' : 'Sem plano'));
+				// Sanitizar plano de contas (débito sem plano: pendente de classificação)
+				let planoLimpo = String(mov.planoDescricao || 'Sem plano');
 				try {
 					planoLimpo = planoLimpo
 						.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')

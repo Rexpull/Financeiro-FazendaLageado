@@ -165,8 +165,8 @@ describe('Fluxo de Caixa (centros)', () => {
 });
 
 describe('Fluxo filter years', () => {
-	it('goes from 2024 to next year, so 2027 is reachable in 2026', () => {
-		expect(anosFiltroFluxo(new Date(2026, 9, 24))).toEqual(['2024', '2025', '2026', '2027']);
-		expect(anosFiltroFluxo()).toContain(String(new Date().getFullYear() + 1));
+	it('goes from 2024 to five years ahead, so 2031 is reachable in 2026', () => {
+		expect(anosFiltroFluxo(new Date(2026, 9, 24))).toEqual(['2024', '2025', '2026', '2027', '2028', '2029', '2030', '2031']);
+		expect(anosFiltroFluxo()).toContain(String(new Date().getFullYear() + 5));
 	});
 });

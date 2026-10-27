@@ -275,12 +275,14 @@ export class MovimentoBancarioController {
 				const dataInicio = searchParams.get('dataInicio') || undefined;
 				const dataFim = searchParams.get('dataFim') || undefined;
 				const status = searchParams.get('status') || undefined;
+				const planoContasId = searchParams.get('planoContasId') ? parseInt(searchParams.get('planoContasId')!) : undefined;
 
 				const dados = await this.movBancarioRepository.getRelatorioItensClassificados({
 					contaId,
 					dataInicio,
 					dataFim,
 					status,
+					planoContasId,
 				});
 
 				return new Response(JSON.stringify(dados), {
@@ -350,12 +352,14 @@ export class MovimentoBancarioController {
 				const dataInicio = searchParams.get('dataInicio') || undefined;
 				const dataFim = searchParams.get('dataFim') || undefined;
 				const status = searchParams.get('status') || undefined;
+				const planoContasId = searchParams.get('planoContasId') ? parseInt(searchParams.get('planoContasId')!) : undefined;
 
 				const excelBuffer = await this.movBancarioRepository.exportRelatorioItensClassificadosExcel({
 					contaId,
 					dataInicio,
 					dataFim,
 					status,
+					planoContasId,
 				});
 
 				return new Response(excelBuffer as any, {
@@ -375,12 +379,14 @@ export class MovimentoBancarioController {
 				const dataInicio = searchParams.get('dataInicio') || undefined;
 				const dataFim = searchParams.get('dataFim') || undefined;
 				const status = searchParams.get('status') || undefined;
+				const planoContasId = searchParams.get('planoContasId') ? parseInt(searchParams.get('planoContasId')!) : undefined;
 
 				const pdfBuffer = await this.movBancarioRepository.exportRelatorioItensClassificadosPDF({
 					contaId,
 					dataInicio,
 					dataFim,
 					status,
+					planoContasId,
 				});
 
 				return new Response(pdfBuffer as any, {

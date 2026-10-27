@@ -1,39 +1,37 @@
 /**
  * Relatório de Financiamentos (regras confirmadas pelo cliente).
  *
- * Período = mês/ano filtrado (sem mês = ano inteiro). Status de cada contrato no período:
- * - NOVO: dataContrato dentro do período (data do contrato, não criadoEm).
- * - QUITADO: todas as parcelas liquidadas e a última liquidação dentro do período.
- * - ATIVO: todo contrato não quitado no fim do período — inclui os NOVOS ainda em aberto
- *   ("todo contrato que não estiver quitado está ativo"), então a soma dos ativos = saldo devedor.
- * Um contrato pode ser NOVO e ATIVO ao mesmo tempo: o resumo e o filtro de status usam cada
- * definição; sem filtro, a tabela mostra cada contrato uma vez com o status principal
- * (precedência NOVO > QUITADO > ATIVO).
- * Ficam fora: contratos assinados depois do período e contratos quitados antes dele.
+ * Não diferencia contratos "novos" de "ativos": todo contrato com alguma parcela não liquidada é ATIVO
+ * (antigo ou novo); QUITADO quando todas as parcelas estão liquidadas.
+ * O valor que prevalece é a SOMA DAS PARCELAS A VENCER (não liquidadas; cada parcela já inclui os juros,
+ * então a soma dos ativos = saldo devedor). O valor do contrato é mostrado ao lado, só como informação.
  *
- * Valor por status:
- * - NOVO: valor do contrato.
- * - ATIVO: soma das parcelas não liquidadas no fim do período (já incluem juros; o que foi pago é ignorado).
- * - QUITADO: soma das parcelas liquidadas (valor efetivamente pago).
+ * Visões (o cliente escolhe quais quer ver; todas respeitam os filtros de contrato — tomador, banco, ...):
+ * - ativos: posição de hoje (situação das parcelas), independe do período.
+ * - contratados: contratos ATIVOS com data do contrato dentro do período.
+ * - liquidados: contratos com parcelas liquidadas dentro do período (amortizados ou quitados).
+ *   Valor = parcelas liquidadas no período; quitado = todas liquidadas e a última liquidação no período.
+ * - porTomador: contratos ativos agrupados pelo tomador (Financiamento.responsavel).
  *
- * Gráficos (respeitam os filtros de contrato; o filtro de status só afeta a tabela):
- * - mensal (ano filtrado): novos = valor dos contratos assinados no mês; liquidados = parcelas liquidadas no mês;
- *   compromissos = parcelas não liquidadas com vencimento no mês.
- * - compromissosPorAno: parcelas não liquidadas por ano de vencimento, do ano atual até 2036.
- * - liquidadosPorAno: parcelas liquidadas por ano de liquidação.
+ * Gráficos:
+ * - novosXLiquidados (mês a mês do período): novos = soma das parcelas dos contratos assinados no mês
+ *   (dívida assumida, mesma regra do Dashboard); liquidados = parcelas liquidadas no mês.
+ * - compromissosDoAno: parcelas não liquidadas pelo mês de vencimento, no ano escolhido.
+ * - compromissosPorAno: parcelas não liquidadas pelo ano de vencimento — inclui atrasadas de anos
+ *   anteriores e todos os anos futuros, então a soma = saldo devedor dos ativos.
  *
- * Datas comparadas como texto AAAA-MM-DD (sem new Date, evita erro de fuso).
- * Parcela "Liquidado" sem dt_liquidacao: assume o vencimento como data de liquidação.
+ * Período = [inicio, fim) em AAAA-MM-DD (fim exclusivo, igual ao Dashboard). Datas comparadas como
+ * texto (sem new Date, evita erro de fuso). Parcela "Liquidado" sem dt_liquidacao: vale o vencimento
+ * (liquidacaoEfetiva, mesma regra do Dashboard e do Fluxo de Caixa).
  */
-
-export type StatusContrato = 'NOVO' | 'ATIVO' | 'QUITADO';
+import { liquidacaoEfetiva } from './saldoDevedor';
 
 export const MODALIDADES_FINANCIAMENTO = ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO'] as const;
 export type ModalidadeFinanciamento = (typeof MODALIDADES_FINANCIAMENTO)[number];
 
 export const FAIXAS_JUROS = ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15'] as const;
 
-export const ANO_LIMITE_COMPROMISSOS = 2036;
+export const SEM_TOMADOR = 'Sem tomador';
 
 export type ContratoRow = {
 	id: number;
@@ -62,14 +60,16 @@ export type ParcelaRow = {
 };
 
 export type FiltrosRelatorio = {
+	/** Ano do gráfico "Compromissos financeiros de <ano>" (e do período, quando inicio/fim não vêm) */
 	ano: number;
-	mes?: number; // 1..12; ausente = ano inteiro
+	mes?: number; // 1..12; usado só quando inicio/fim não vêm
+	inicio?: string; // AAAA-MM-DD, inclusivo
+	fim?: string; // AAAA-MM-DD, exclusivo
 	idBanco?: number;
 	tomador?: string; // Financiamento.responsavel
 	modalidade?: string;
 	numeroGarantia?: string;
 	faixaJuros?: string;
-	statusContrato?: StatusContrato;
 };
 
 export type ParcelaRelatorio = {
@@ -81,78 +81,111 @@ export type ParcelaRelatorio = {
 	dt_liquidacao?: string;
 };
 
-export type ItemRelatorio = {
+export type ContratoRelatorio = {
 	idFinanciamento: number;
 	numeroContrato: string;
-	responsavel: string; // tomador
-	banco?: string;
-	pessoa?: string;
+	tomador: string; // Financiamento.responsavel
+	credor: string; // banco, pessoa ou nome da modalidade particular
 	dataContrato: string;
 	valorContrato: number;
 	totalJuros: number;
-	valorTotal: number;
 	modalidade?: string;
 	nomeModalidadeParticular?: string;
 	numeroGarantia?: string;
 	taxaJurosAnual?: number;
-	statusContrato: StatusContrato;
-	valor: number; // conforme o status
-	valorPago: number; // parcelas liquidadas até o fim do período
-	valorVincendo: number; // parcelas não liquidadas no fim do período
-	dataQuitacao?: string; // última liquidação, quando todas as parcelas estão liquidadas até o fim do período
+	ativo: boolean;
+	/** Soma das parcelas não liquidadas (o valor que prevalece) */
+	valorVincendo: number;
+	/** Soma das parcelas liquidadas (até hoje) */
+	valorPago: number;
+	parcelasAbertas: number;
+	/** Última liquidação, quando todas as parcelas estão liquidadas */
+	dataQuitacao?: string;
 	parcelas: ParcelaRelatorio[];
 };
 
-export type Totalizadores = {
-	totalContratos: number;
-	totalValorContratos: number;
-	totalJuros: number;
-	totalValor: number;
-	totalValorParcelas: number;
-	totalParcelas: number;
-	totalParcelasLiquidadas: number;
-	totalParcelasAberto: number;
-	totalParcelasVencidas: number;
+/** Contrato dentro de uma visão ou barra de gráfico, com o valor que ele soma ali. */
+export type ValorContrato = { idFinanciamento: number; valor: number; quitado?: boolean };
+
+export type BlocoContratos = {
+	quantidade: number;
+	valor: number; // soma de contratos[].valor
+	valorContratos: number; // soma do valor dos contratos (informativo)
+	contratos: ValorContrato[];
 };
 
-export type ResumoStatus = Record<StatusContrato, { quantidade: number; valor: number }>;
+export type BlocoLiquidados = BlocoContratos & { quitados: number; amortizados: number; valorVincendo: number };
+
+export type GrupoTomador = {
+	tomador: string;
+	quantidade: number;
+	valor: number; // parcelas a vencer
+	valorContratos: number;
+	contratos: ValorContrato[];
+};
+
+export type PontoGrafico = { valor: number; contratos: ValorContrato[] };
 
 export type GraficosRelatorio = {
-	mensal: Array<{ mes: number; novos: number; liquidados: number; compromissos: number }>;
-	compromissosPorAno: Array<{ ano: number; valor: number }>;
-	liquidadosPorAno: Array<{ ano: number; valor: number }>;
+	novosXLiquidados: Array<{ ano: number; mes: number; novos: PontoGrafico; liquidados: PontoGrafico }>;
+	compromissosDoAno: { ano: number; meses: Array<{ mes: number } & PontoGrafico> };
+	compromissosPorAno: Array<{ ano: number } & PontoGrafico>;
 };
 
 export type RelatorioFinanciamentos = {
-	periodo: { ano: number; mes: number | null; inicio: string; fim: string };
+	periodo: { ano: number; inicio: string; fim: string; ultimoDia: string };
+	hoje: string;
 	tomadores: string[];
-	itens: ItemRelatorio[];
-	totalizadores: Totalizadores;
-	resumoStatus: ResumoStatus; // antes do filtro de status
+	/** Todos os contratos citados nas visões e gráficos (filtros de contrato aplicados) */
+	contratos: ContratoRelatorio[];
+	ativos: BlocoContratos;
+	contratados: BlocoContratos;
+	liquidados: BlocoLiquidados;
+	porTomador: { grupos: GrupoTomador[]; quantidade: number; valor: number; valorContratos: number };
 	graficos: GraficosRelatorio;
 };
 
 const dia = (s: string | null | undefined) => (s ? String(s).slice(0, 10) : '');
 const centavos = (v: number | null | undefined) => Math.round((Number(v) || 0) * 100);
+const reais = (c: number) => c / 100;
 const pad = (n: number) => String(n).padStart(2, '0');
 const normalizarTomador = (s: string | null | undefined) => String(s ?? '').trim().toUpperCase();
-/** Índice 0..11 do mês de uma data AAAA-MM-DD (ou -1 se inválida). */
-const idxMes = (d: string) => {
-	const m = Number(d.slice(5, 7));
-	return m >= 1 && m <= 12 ? m - 1 : -1;
-};
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Data efetiva de liquidação (AAAA-MM-DD) ou null se a parcela não está liquidada. */
-function liquidacaoEfetiva(p: ParcelaRow): string | null {
-	if (p.status !== 'Liquidado') return null;
-	return dia(p.dt_liquidacao) || dia(p.dt_vencimento);
+/** First day of month m (1..13) of `ano`; m = 13 → Jan 1 of the next year. */
+const inicioMes = (ano: number, m: number) => (m > 12 ? `${ano + 1}-01-01` : `${ano}-${pad(m)}-01`);
+
+/** Last day of a range whose end is exclusive: '2026-04-01' → '2026-03-31'. */
+export function ultimoDiaAntes(fim: string): string {
+	const d = new Date(Date.UTC(Number(fim.slice(0, 4)), Number(fim.slice(5, 7)) - 1, Number(fim.slice(8, 10)) - 1));
+	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
-export function periodoDoFiltro(ano: number, mes?: number): { inicio: string; fim: string } {
-	if (mes && mes >= 1 && mes <= 12) {
-		return { inicio: `${ano}-${pad(mes)}-01`, fim: `${ano}-${pad(mes)}-31` };
+/**
+ * Período [inicio, fim) do filtro: inicio/fim válidos (AAAA-MM-DD, inicio < fim) prevalecem;
+ * senão o mês `mes` de `ano`; senão o ano inteiro.
+ */
+export function periodoDoFiltro(f: Pick<FiltrosRelatorio, 'ano' | 'mes' | 'inicio' | 'fim'>): { inicio: string; fim: string } {
+	if (f.inicio && f.fim && DATA_ISO.test(f.inicio) && DATA_ISO.test(f.fim) && f.inicio < f.fim) {
+		return { inicio: f.inicio, fim: f.fim };
 	}
-	return { inicio: `${ano}-01-01`, fim: `${ano}-12-31` };
+	if (f.mes && f.mes >= 1 && f.mes <= 12) return { inicio: inicioMes(f.ano, f.mes), fim: inicioMes(f.ano, f.mes + 1) };
+	return { inicio: `${f.ano}-01-01`, fim: `${f.ano + 1}-01-01` };
+}
+
+/** Meses (ano, mes 1..12) de [inicio, fim). */
+function mesesDoPeriodo(inicio: string, fim: string): Array<{ ano: number; mes: number }> {
+	const out: Array<{ ano: number; mes: number }> = [];
+	let ano = Number(inicio.slice(0, 4));
+	let mes = Number(inicio.slice(5, 7));
+	while (ano && mes && inicioMes(ano, mes) < fim && out.length < 600) {
+		out.push({ ano, mes });
+		if (++mes > 12) {
+			mes = 1;
+			ano++;
+		}
+	}
+	return out;
 }
 
 function atendeFaixaJuros(taxa: number | null | undefined, faixa: string): boolean {
@@ -173,10 +206,14 @@ function atendeFaixaJuros(taxa: number | null | undefined, faixa: string): boole
 	}
 }
 
-/** Filtros de contrato (valem para tabela e gráficos). */
+/** Filtros de contrato (valem para todas as visões e gráficos). */
 function atendeFiltrosContrato(c: ContratoRow, f: FiltrosRelatorio): boolean {
 	if (f.idBanco && Number(c.idBanco) !== Number(f.idBanco)) return false;
-	if (f.tomador && normalizarTomador(c.responsavel) !== normalizarTomador(f.tomador)) return false;
+	if (f.tomador) {
+		const alvo = normalizarTomador(f.tomador);
+		const tomador = normalizarTomador(c.responsavel);
+		if (alvo === normalizarTomador(SEM_TOMADOR) ? tomador !== '' : tomador !== alvo) return false;
+	}
 	if (f.modalidade && String(c.modalidade ?? '').toUpperCase() !== f.modalidade.toUpperCase()) return false;
 	if (f.numeroGarantia) {
 		const busca = f.numeroGarantia.trim().toLowerCase();
@@ -196,76 +233,80 @@ export function listarTomadores(contratos: ContratoRow[]): string[] {
 	return [...porChave.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
+/** Acumulador de "valor por contrato" em centavos, para barras de gráfico e visões. */
+class Acumulador {
+	private porContrato = new Map<number, number>();
+	somar(id: number, c: number) {
+		this.porContrato.set(id, (this.porContrato.get(id) ?? 0) + c);
+	}
+	ponto(): PontoGrafico {
+		let total = 0;
+		const contratos: ValorContrato[] = [];
+		for (const [idFinanciamento, c] of this.porContrato) {
+			total += c;
+			contratos.push({ idFinanciamento, valor: reais(c) });
+		}
+		contratos.sort((a, b) => b.valor - a.valor || a.idFinanciamento - b.idFinanciamento);
+		return { valor: reais(total), contratos };
+	}
+}
+
 export function montarRelatorioFinanciamentos(
-	contratos: ContratoRow[],
-	parcelas: ParcelaRow[],
+	contratosRows: ContratoRow[],
+	parcelasRows: ParcelaRow[],
 	filtros: FiltrosRelatorio,
 	hoje: string,
 ): RelatorioFinanciamentos {
-	const ano = filtros.ano;
-	const mes = filtros.mes && filtros.mes >= 1 && filtros.mes <= 12 ? filtros.mes : null;
-	const { inicio, fim } = periodoDoFiltro(ano, mes ?? undefined);
+	const { inicio, fim } = periodoDoFiltro(filtros);
+	const noPeriodo = (d: string | null | undefined) => !!d && d >= inicio && d < fim;
 
 	const parcelasPorContrato = new Map<number, ParcelaRow[]>();
-	for (const p of parcelas) {
+	for (const p of parcelasRows) {
 		const lista = parcelasPorContrato.get(p.idFinanciamento);
 		if (lista) lista.push(p);
 		else parcelasPorContrato.set(p.idFinanciamento, [p]);
 	}
 
-	const selecionados = contratos.filter((c) => atendeFiltrosContrato(c, filtros));
-
-	// ---- Tabela ----
-	const linhas: ItemRelatorio[] = [];
-	const flags = new Map<number, { novo: boolean; quitado: boolean; valorContrato: number; pago: number; vincendo: number }>();
-	for (const c of selecionados) {
-		const dataContrato = dia(c.dataContrato);
-		if (dataContrato && dataContrato > fim) continue; // ainda não existia no período
-
-		const ps = [...(parcelasPorContrato.get(c.id) ?? [])].sort((a, b) => a.numParcela - b.numParcela);
-		let pago = 0;
+	// ---- Contratos (filtros de contrato) com a posição de hoje ----
+	const contratos: ContratoRelatorio[] = [];
+	for (const c of contratosRows) {
+		if (!atendeFiltrosContrato(c, filtros)) continue;
+		const ps = [...(parcelasPorContrato.get(c.id) ?? [])].sort(
+			(a, b) => a.numParcela - b.numParcela || dia(a.dt_vencimento).localeCompare(dia(b.dt_vencimento)),
+		);
 		let vincendo = 0;
+		let pago = 0;
+		let abertas = 0;
 		let ultimaLiquidacao = '';
-		let todasLiquidadas = ps.length > 0;
 		for (const p of ps) {
 			const liq = liquidacaoEfetiva(p);
-			if (liq && liq <= fim) {
+			if (liq) {
 				pago += centavos(p.valor);
 				if (liq > ultimaLiquidacao) ultimaLiquidacao = liq;
 			} else {
 				vincendo += centavos(p.valor);
-				todasLiquidadas = false;
+				abertas++;
 			}
 		}
-		const dataQuitacao = todasLiquidadas ? ultimaLiquidacao : '';
-		if (dataQuitacao && dataQuitacao < inicio) continue; // quitado antes do período
-
-		const novo = !!dataContrato && dataContrato >= inicio && dataContrato <= fim;
-		const statusContrato: StatusContrato = novo ? 'NOVO' : dataQuitacao ? 'QUITADO' : 'ATIVO';
-		const valor =
-			statusContrato === 'NOVO' ? centavos(c.valor) : statusContrato === 'QUITADO' ? pago : vincendo;
-		flags.set(c.id, { novo, quitado: !!dataQuitacao, valorContrato: centavos(c.valor), pago, vincendo });
-
-		const totalJuros = Number(c.totalJuros) || 0;
-		linhas.push({
+		// Sem parcelas cadastradas: continua ATIVO (dívida ainda não parcelada no sistema), com R$ 0 a vencer
+		const ativo = abertas > 0 || ps.length === 0;
+		contratos.push({
 			idFinanciamento: c.id,
-			numeroContrato: c.numeroContrato,
-			responsavel: String(c.responsavel ?? '').trim(),
-			banco: c.banco || undefined,
-			pessoa: c.pessoa || undefined,
-			dataContrato,
+			numeroContrato: String(c.numeroContrato ?? ''),
+			tomador: String(c.responsavel ?? '').trim(),
+			credor: c.banco || c.pessoa || c.nomeModalidadeParticular || '—',
+			dataContrato: dia(c.dataContrato),
 			valorContrato: Number(c.valor) || 0,
-			totalJuros,
-			valorTotal: (centavos(c.valor) + centavos(totalJuros)) / 100,
+			totalJuros: Number(c.totalJuros) || 0,
 			modalidade: c.modalidade || undefined,
 			nomeModalidadeParticular: c.nomeModalidadeParticular || undefined,
 			numeroGarantia: c.numeroGarantia || undefined,
 			taxaJurosAnual: c.taxaJurosAnual ?? undefined,
-			statusContrato,
-			valor: valor / 100,
-			valorPago: pago / 100,
-			valorVincendo: vincendo / 100,
-			dataQuitacao: dataQuitacao || undefined,
+			ativo,
+			valorVincendo: reais(vincendo),
+			valorPago: reais(pago),
+			parcelasAbertas: abertas,
+			dataQuitacao: !ativo ? ultimaLiquidacao : undefined,
 			parcelas: ps.map((p) => ({
 				idParcela: p.id,
 				numParcela: p.numParcela,
@@ -276,122 +317,134 @@ export function montarRelatorioFinanciamentos(
 			})),
 		});
 	}
+	const porId = new Map(contratos.map((c) => [c.idFinanciamento, c]));
 
-	linhas.sort(
-		(a, b) =>
-			b.dataContrato.localeCompare(a.dataContrato) ||
-			String(a.numeroContrato).localeCompare(String(b.numeroContrato), 'pt-BR', { numeric: true }),
+	const ordenar = (lista: ValorContrato[]) =>
+		lista.sort(
+			(a, b) =>
+				b.valor - a.valor ||
+				String(porId.get(a.idFinanciamento)?.numeroContrato).localeCompare(String(porId.get(b.idFinanciamento)?.numeroContrato), 'pt-BR', {
+					numeric: true,
+				}),
+		);
+	const bloco = (lista: ValorContrato[]): BlocoContratos => ({
+		quantidade: lista.length,
+		valor: reais(lista.reduce((s, v) => s + centavos(v.valor), 0)),
+		valorContratos: reais(lista.reduce((s, v) => s + centavos(porId.get(v.idFinanciamento)?.valorContrato), 0)),
+		contratos: ordenar(lista),
+	});
+
+	// ---- Visões ----
+	const ativosLista = contratos.filter((c) => c.ativo);
+	const ativos = bloco(ativosLista.map((c) => ({ idFinanciamento: c.idFinanciamento, valor: c.valorVincendo })));
+	const contratados = bloco(
+		ativosLista.filter((c) => noPeriodo(c.dataContrato)).map((c) => ({ idFinanciamento: c.idFinanciamento, valor: c.valorVincendo })),
 	);
 
-	const resumoStatus: ResumoStatus = {
-		NOVO: { quantidade: 0, valor: 0 },
-		ATIVO: { quantidade: 0, valor: 0 },
-		QUITADO: { quantidade: 0, valor: 0 },
+	const liquidadosLista: ValorContrato[] = [];
+	for (const c of contratos) {
+		const pagasNoPeriodo = c.parcelas.filter((p) => noPeriodo(liquidacaoEfetiva(p)));
+		if (!pagasNoPeriodo.length) continue;
+		liquidadosLista.push({
+			idFinanciamento: c.idFinanciamento,
+			valor: reais(pagasNoPeriodo.reduce((s, p) => s + centavos(p.valor), 0)),
+			quitado: !c.ativo && noPeriodo(c.dataQuitacao),
+		});
+	}
+	const blocoLiq = bloco(liquidadosLista);
+	const liquidados: BlocoLiquidados = {
+		...blocoLiq,
+		quitados: liquidadosLista.filter((l) => l.quitado).length,
+		amortizados: liquidadosLista.filter((l) => !l.quitado).length,
+		valorVincendo: reais(liquidadosLista.reduce((s, l) => s + centavos(porId.get(l.idFinanciamento)?.valorVincendo), 0)),
 	};
-	const resumoCentavos: Record<StatusContrato, number> = { NOVO: 0, ATIVO: 0, QUITADO: 0 };
-	// Value of a contract under each status definition
-	const valorNoStatus = (f: { valorContrato: number; pago: number; vincendo: number }, s: StatusContrato) =>
-		s === 'NOVO' ? f.valorContrato : s === 'QUITADO' ? f.pago : f.vincendo;
-	const pertence = (f: { novo: boolean; quitado: boolean }, s: StatusContrato) =>
-		s === 'NOVO' ? f.novo : s === 'QUITADO' ? f.quitado : !f.quitado;
-	for (const l of linhas) {
-		const f = flags.get(l.idFinanciamento)!;
-		for (const st of ['NOVO', 'ATIVO', 'QUITADO'] as StatusContrato[]) {
-			if (!pertence(f, st)) continue;
-			resumoStatus[st].quantidade++;
-			resumoCentavos[st] += valorNoStatus(f, st);
+
+	const grupos = new Map<string, { tomador: string; lista: ValorContrato[] }>();
+	for (const c of ativosLista) {
+		const chave = normalizarTomador(c.tomador);
+		const g = grupos.get(chave) ?? { tomador: c.tomador || SEM_TOMADOR, lista: [] };
+		g.lista.push({ idFinanciamento: c.idFinanciamento, valor: c.valorVincendo });
+		grupos.set(chave, g);
+	}
+	const gruposTomador: GrupoTomador[] = [...grupos.values()]
+		.map((g) => {
+			const b = bloco(g.lista);
+			return { tomador: g.tomador, quantidade: b.quantidade, valor: b.valor, valorContratos: b.valorContratos, contratos: b.contratos };
+		})
+		.sort((a, b) => b.valor - a.valor || a.tomador.localeCompare(b.tomador, 'pt-BR'));
+
+	// ---- Gráficos ----
+	const meses = mesesDoPeriodo(inicio, fim);
+	const chaveMes = (d: string) => d.slice(0, 7);
+	const novosMes = new Map<string, Acumulador>();
+	const liquidadosMes = new Map<string, Acumulador>();
+	for (const m of meses) {
+		const k = `${m.ano}-${pad(m.mes)}`;
+		novosMes.set(k, new Acumulador());
+		liquidadosMes.set(k, new Acumulador());
+	}
+	const anoCompromissos = filtros.ano;
+	const compromissosMes = Array.from({ length: 12 }, () => new Acumulador());
+	const compromissosAno = new Map<number, Acumulador>();
+
+	for (const c of contratos) {
+		const novo = novosMes.get(chaveMes(c.dataContrato));
+		if (novo) {
+			novo.somar(c.idFinanciamento, 0); // contrato sem parcelas ainda aparece na lista
+			for (const p of c.parcelas) novo.somar(c.idFinanciamento, centavos(p.valor));
 		}
-	}
-	for (const s of Object.keys(resumoCentavos) as StatusContrato[]) {
-		resumoStatus[s].valor = resumoCentavos[s] / 100;
-	}
-
-	// Status filter: each definition on its own; the row shows that status and its value
-	const filtroStatus = filtros.statusContrato;
-	const itens = filtroStatus
-		? linhas
-				.filter((l) => pertence(flags.get(l.idFinanciamento)!, filtroStatus))
-				.map((l) => ({
-					...l,
-					statusContrato: filtroStatus,
-					valor: valorNoStatus(flags.get(l.idFinanciamento)!, filtroStatus) / 100,
-				}))
-		: linhas;
-
-	const soma = (vals: number[]) => vals.reduce((s, v) => s + centavos(v), 0) / 100;
-	const todasParcelas = itens.flatMap((i) => i.parcelas);
-	const totalizadores: Totalizadores = {
-		totalContratos: itens.length,
-		totalValorContratos: soma(itens.map((i) => i.valorContrato)),
-		totalJuros: soma(itens.map((i) => i.totalJuros)),
-		totalValor: soma(itens.map((i) => i.valor)),
-		totalValorParcelas: soma(todasParcelas.map((p) => p.valor)),
-		totalParcelas: todasParcelas.length,
-		totalParcelasLiquidadas: todasParcelas.filter((p) => p.status === 'Liquidado').length,
-		totalParcelasAberto: todasParcelas.filter((p) => p.status === 'Aberto').length,
-		totalParcelasVencidas: todasParcelas.filter((p) => p.status === 'Vencido').length,
-	};
-
-	// ---- Gráficos (filtros de contrato, sem filtro de status/mês) ----
-	const anoTxt = String(ano);
-	const novosMes = new Array<number>(12).fill(0);
-	const liquidadosMes = new Array<number>(12).fill(0);
-	const compromissosMes = new Array<number>(12).fill(0);
-	const liquidadosAno = new Map<number, number>();
-	const anoAtual = Number(dia(hoje).slice(0, 4)) || ano;
-	let anoFimCompromissos = ANO_LIMITE_COMPROMISSOS;
-	const compromissosAno = new Map<number, number>();
-
-	const idsSelecionados = new Set(selecionados.map((c) => c.id));
-	for (const c of selecionados) {
-		const dc = dia(c.dataContrato);
-		if (dc.slice(0, 4) === anoTxt && idxMes(dc) >= 0) novosMes[idxMes(dc)] += centavos(c.valor);
-	}
-	for (const p of parcelas) {
-		if (!idsSelecionados.has(p.idFinanciamento)) continue;
-		const liq = liquidacaoEfetiva(p);
-		if (liq) {
-			const a = Number(liq.slice(0, 4));
-			if (a) liquidadosAno.set(a, (liquidadosAno.get(a) ?? 0) + centavos(p.valor));
-			if (liq.slice(0, 4) === anoTxt && idxMes(liq) >= 0) liquidadosMes[idxMes(liq)] += centavos(p.valor);
-		} else {
-			const venc = dia(p.dt_vencimento);
-			const a = Number(venc.slice(0, 4));
-			if (venc.slice(0, 4) === anoTxt && idxMes(venc) >= 0) compromissosMes[idxMes(venc)] += centavos(p.valor);
-			if (a >= anoAtual) {
-				compromissosAno.set(a, (compromissosAno.get(a) ?? 0) + centavos(p.valor));
-				if (a > anoFimCompromissos) anoFimCompromissos = a; // não esconde parcelas depois de 2036
+		for (const p of c.parcelas) {
+			const liq = liquidacaoEfetiva(p);
+			if (liq) {
+				liquidadosMes.get(chaveMes(liq))?.somar(c.idFinanciamento, centavos(p.valor));
+				continue;
 			}
+			const venc = p.dt_vencimento;
+			const a = Number(venc.slice(0, 4));
+			const m = Number(venc.slice(5, 7));
+			if (!a) continue;
+			if (a === anoCompromissos && m >= 1 && m <= 12) compromissosMes[m - 1].somar(c.idFinanciamento, centavos(p.valor));
+			const acc = compromissosAno.get(a) ?? new Acumulador();
+			acc.somar(c.idFinanciamento, centavos(p.valor));
+			compromissosAno.set(a, acc);
 		}
 	}
 
-	const mensal = novosMes.map((_, i) => ({
-		mes: i + 1,
-		novos: novosMes[i] / 100,
-		liquidados: liquidadosMes[i] / 100,
-		compromissos: compromissosMes[i] / 100,
-	}));
-
+	const anosComValor = [...compromissosAno.keys()];
+	const anoAtual = Number(dia(hoje).slice(0, 4)) || anoCompromissos;
 	const compromissosPorAno: GraficosRelatorio['compromissosPorAno'] = [];
-	for (let a = anoAtual; a <= anoFimCompromissos; a++) {
-		compromissosPorAno.push({ ano: a, valor: (compromissosAno.get(a) ?? 0) / 100 });
+	if (anosComValor.length) {
+		const primeiro = Math.min(anoAtual, ...anosComValor);
+		const ultimo = Math.max(anoAtual, ...anosComValor);
+		for (let a = primeiro; a <= ultimo; a++) {
+			compromissosPorAno.push({ ano: a, ...(compromissosAno.get(a) ?? new Acumulador()).ponto() });
+		}
 	}
 
-	const anosLiquidados = [...liquidadosAno.keys()];
-	const liquidadosPorAno: GraficosRelatorio['liquidadosPorAno'] = [];
-	if (anosLiquidados.length) {
-		const ini = Math.min(...anosLiquidados);
-		const ult = Math.max(...anosLiquidados);
-		for (let a = ini; a <= ult; a++) liquidadosPorAno.push({ ano: a, valor: (liquidadosAno.get(a) ?? 0) / 100 });
-	}
+	const graficos: GraficosRelatorio = {
+		novosXLiquidados: meses.map((m) => {
+			const k = `${m.ano}-${pad(m.mes)}`;
+			return { ano: m.ano, mes: m.mes, novos: novosMes.get(k)!.ponto(), liquidados: liquidadosMes.get(k)!.ponto() };
+		}),
+		compromissosDoAno: { ano: anoCompromissos, meses: compromissosMes.map((acc, i) => ({ mes: i + 1, ...acc.ponto() })) },
+		compromissosPorAno,
+	};
 
 	return {
-		periodo: { ano, mes, inicio, fim },
-		tomadores: listarTomadores(contratos),
-		itens,
-		totalizadores,
-		resumoStatus,
-		graficos: { mensal, compromissosPorAno, liquidadosPorAno },
+		periodo: { ano: filtros.ano, inicio, fim, ultimoDia: ultimoDiaAntes(fim) },
+		hoje: dia(hoje),
+		tomadores: listarTomadores(contratosRows),
+		contratos,
+		ativos,
+		contratados,
+		liquidados,
+		porTomador: {
+			grupos: gruposTomador,
+			quantidade: ativos.quantidade,
+			valor: ativos.valor,
+			valorContratos: ativos.valorContratos,
+		},
+		graficos,
 	};
 }
 

@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { anosFiltroFluxo, montarFluxoMensal } from './fluxoMensalRegras';
 
 describe('anosFiltroFluxo', () => {
-	it('goes from 2024 to next year (2027 reachable in 2026)', () => {
-		expect(anosFiltroFluxo(new Date(2026, 9, 24))).toEqual(['2024', '2025', '2026', '2027']);
-		expect(anosFiltroFluxo(new Date(2030, 0, 1)).at(-1)).toBe('2031');
+	it('goes from 2024 to five years ahead (2031 reachable in 2026)', () => {
+		expect(anosFiltroFluxo(new Date(2026, 9, 24))).toEqual(['2024', '2025', '2026', '2027', '2028', '2029', '2030', '2031']);
+		expect(anosFiltroFluxo(new Date(2030, 0, 1)).at(-1)).toBe('2035');
 	});
 });
 

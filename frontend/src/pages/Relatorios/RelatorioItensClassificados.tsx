@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import BreadCrumb from '../../components/BreadCrumb';
-import FiltroRelatorio from './FiltroRelatorio';
+import FiltroRelatorio, { FiltrosRelatorio } from './FiltroRelatorio';
 import {
 	getRelatorioItensClassificados,
 	exportRelatorioItensClassificadosExcel,
@@ -15,24 +16,27 @@ import { formatarDataISO } from '../../Utils/formatarData';
 
 type OrdenarPor = 'data' | 'plano';
 
+/** Group of debits without plan (pending classification); credits without plan are not in this report. */
+const ROTULO_SEM_PLANO = 'Sem plano (pendente de classificação)';
+
+const notaReceitas = (
+	<>
+		Receitas classificadas só por centro de custos (sem plano de contas) não aparecem aqui: veja o{' '}
+		<Link to="/relatorios/centro-custos" className="text-blue-600 hover:underline">
+			Relatório de Centro de Custos
+		</Link>
+		.
+	</>
+);
+
 const RelatorioItensClassificados: React.FC = () => {
 	const [dados, setDados] = useState<RelatorioItensClassificadosItem[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [isExporting, setIsExporting] = useState(false);
 	const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>('data');
-	const [filtrosAplicados, setFiltrosAplicados] = useState<{
-		dataInicio?: string;
-		dataFim?: string;
-		contaId?: number;
-		status?: string;
-	}>({});
+	const [filtrosAplicados, setFiltrosAplicados] = useState<FiltrosRelatorio>({});
 
-	const handleAplicarFiltros = async (filters: {
-		dataInicio?: string;
-		dataFim?: string;
-		contaId?: number;
-		status?: string;
-	}) => {
+	const handleAplicarFiltros = async (filters: FiltrosRelatorio) => {
 		setIsLoading(true);
 		setFiltrosAplicados(filters);
 		try {
@@ -40,7 +44,8 @@ const RelatorioItensClassificados: React.FC = () => {
 				filters.dataInicio,
 				filters.dataFim,
 				filters.contaId,
-				filters.status
+				filters.status,
+				filters.planoContasId
 			);
 			setDados(resultado);
 		} catch (error) {
@@ -58,7 +63,8 @@ const RelatorioItensClassificados: React.FC = () => {
 				filtrosAplicados.dataInicio,
 				filtrosAplicados.dataFim,
 				filtrosAplicados.contaId,
-				filtrosAplicados.status
+				filtrosAplicados.status,
+				filtrosAplicados.planoContasId
 			);
 
 			const url = window.URL.createObjectURL(blob);
@@ -86,7 +92,8 @@ const RelatorioItensClassificados: React.FC = () => {
 				filtrosAplicados.dataInicio,
 				filtrosAplicados.dataFim,
 				filtrosAplicados.contaId,
-				filtrosAplicados.status
+				filtrosAplicados.status,
+				filtrosAplicados.planoContasId
 			);
 
 			const url = window.URL.createObjectURL(blob);
@@ -107,8 +114,10 @@ const RelatorioItensClassificados: React.FC = () => {
 		}
 	};
 
-	// Same rules as the Dashboard / Fluxo / Relatório de Centro de Custos:
-	// receitas = credits by cost centre; despesas = debits with centre, custeio (centre tipo CUSTEIO) × investimento.
+	// Plan-based report: the backend leaves out credits without plan (receitas classified only by cost centre —
+	// they are in the Relatório de Centro de Custos), so "receitas" here are only credits WITH plan and there is
+	// no saldo line (it would not be the real result). Despesas: same rule as Dashboard / Fluxo / Centro de Custos
+	// (debits with centre, custeio = centre tipo CUSTEIO, else investimento).
 	// Rows without cost centre are pending ("Sem centro"): shown, but outside the totals.
 	const ehSemCentro = (item: RelatorioItensClassificadosItem) => item.semCentro === true;
 	const subtipoDespesa = (item: RelatorioItensClassificadosItem): 'custeio' | 'investimento' | null => {
@@ -123,8 +132,6 @@ const RelatorioItensClassificados: React.FC = () => {
 	const totalDespesasInvestimento = somar(dados.filter(item => subtipoDespesa(item) === 'investimento'));
 	const totalDespesas = totalDespesasCusteio + totalDespesasInvestimento;
 	const totalSemCentro = somar(dados.filter(ehSemCentro));
-
-	const totalGeral = totalReceitas - totalDespesas;
 	// One movement can produce several rows (rateio plan × centre)
 	const totalMovimentos = new Set(dados.map(item => item.id)).size;
 
@@ -132,7 +139,7 @@ const RelatorioItensClassificados: React.FC = () => {
 	const gruposPorPlano = useMemo(() => {
 		const map = new Map<string | number, RelatorioItensClassificadosItem[]>();
 		for (const item of dados) {
-			const key = item.idPlanoContas ?? item.planoDescricao ?? 'Sem plano';
+			const key = item.idPlanoContas ?? item.planoDescricao ?? ROTULO_SEM_PLANO;
 			if (!map.has(key)) map.set(key, []);
 			map.get(key)!.push(item);
 		}
@@ -183,12 +190,9 @@ const RelatorioItensClassificados: React.FC = () => {
 				</>
 			)}
 			<td className="px-2 py-2 text-[13px] truncate text-gray-800" title={item.planoDescricao || ''}>
-				{item.planoDescricao ||
-					(item.tipoMovimento === 'C' ? (
-						<span className="text-gray-400" title="Receita classificada só por centro de custos">—</span>
-					) : (
-						<span className="text-amber-700 font-medium" title="Pendente: débito sem plano de contas">Sem plano</span>
-					))}
+				{item.planoDescricao || (
+					<span className="text-amber-700 font-medium" title="Pendente: débito sem plano de contas">Sem plano</span>
+				)}
 			</td>
 			<td className="px-2 py-2 text-[13px] truncate" title={item.centroCustosDescricao || ''}>
 				<span className={ehSemCentro(item) ? 'text-red-600 font-medium' : 'text-gray-800'}>{item.centroCustosDescricao || '-'}</span>
@@ -206,7 +210,7 @@ const RelatorioItensClassificados: React.FC = () => {
 		<div className="min-h-screen ">
 			<div className="max-w-8xl mx-auto">
 				<BreadCrumb grupo="Relatórios" pagina="Plano de Contas" />
-				<FiltroRelatorio onAplicarFiltros={handleAplicarFiltros} mostrarCentroCustos={false} />
+				<FiltroRelatorio onAplicarFiltros={handleAplicarFiltros} mostrarCentroCustos={false} mostrarPlanoContas={true} />
 
 			{isLoading && (
 				<div className="bg-white border border-gray-200 rounded-xl shadow-sm p-12">
@@ -223,6 +227,7 @@ const RelatorioItensClassificados: React.FC = () => {
 			{!isLoading && dados.length === 0 && Object.keys(filtrosAplicados).length > 0 && (
 				<div className="text-center py-8">
 					<p className="text-gray-600">Nenhum dado encontrado para os filtros aplicados.</p>
+					<p className="mt-2 text-sm text-gray-500">{notaReceitas}</p>
 				</div>
 			)}
 
@@ -269,37 +274,22 @@ const RelatorioItensClassificados: React.FC = () => {
 								</button>
 							</div>
 						</div>
+						<p className="text-sm text-gray-500">{notaReceitas}</p>
 						<div className="mb-4 pt-4 mt-4 border-t flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
 							<div className="text-gray-600" title="Um movimento rateado aparece em uma linha por plano × centro">
 								Total de movimentos: <span className="font-medium text-gray-900">{totalMovimentos}</span>
 								{dados.length !== totalMovimentos && <span className="text-xs text-gray-500 ml-1">({dados.length} linhas)</span>}
 							</div>
 							<span className="text-gray-600">|</span>
-							<div className="text-emerald-700">
-								Total Receitas: <span className="font-semibold">
-									{new Intl.NumberFormat('pt-BR', {
-										style: 'currency',
-										currency: 'BRL'
-									}).format(totalReceitas)}
-								</span>
+							<div className="text-emerald-700" title="Só receitas lançadas com plano de contas. As demais estão no Relatório de Centro de Custos.">
+								Receitas com plano de contas: <span className="font-semibold">{formatarMoeda(totalReceitas)}</span>
 							</div>
 							<span className="text-gray-600">|</span>
 							<div className="text-rose-700">
-								Total Despesas: <span className="font-semibold">
-									{new Intl.NumberFormat('pt-BR', {
-										style: 'currency',
-										currency: 'BRL'
-									}).format(totalDespesas)}
-								</span>
+								Total Despesas: <span className="font-semibold">{formatarMoeda(totalDespesas)}</span>
 								<span className="text-xs ml-2">
 									(Custeio: {formatarMoeda(totalDespesasCusteio)} | Investimento: {formatarMoeda(totalDespesasInvestimento)})
 								</span>
-							</div>
-							<span className="text-gray-600">|</span>
-
-							<div className="text-gray-900 font-semibold" title="C = Receitas − Despesas de custeio − Despesas de investimento">
-								Saldo após investimentos (C):{' '}
-								<span className={totalGeral < 0 ? 'text-rose-700' : 'text-emerald-700'}>{formatarMoeda(totalGeral)}</span>
 							</div>
 							{totalSemCentro > 0 && (
 								<>

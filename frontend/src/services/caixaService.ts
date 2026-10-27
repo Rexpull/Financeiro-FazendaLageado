@@ -33,6 +33,11 @@ export interface CaixaParcela {
 	contrato: string | null;
 	tomador: string | null;
 	banco: string | null;
+	modalidade: string | null;
+	/** entra na apuração do saldo (marcada pelo usuário ou padrão: abertas/vencidas sim, liquidadas não) */
+	considerada: boolean;
+	/** true quando o usuário marcou/desmarcou; false = padrão pelo status */
+	consideradaManual: boolean;
 }
 
 export interface CaixaMes {
@@ -43,6 +48,7 @@ export interface CaixaMes {
 	dias: DiaCaixa[];
 	totais: TotaisCaixa;
 	minimo: MinimoCaixa;
+	/** só movimentações previstas (tipo PREVISAO); boletos vêm somados por dia em `dias` */
 	lancamentos: CaixaLancamento[];
 	parcelas: CaixaParcela[];
 }
@@ -66,6 +72,20 @@ export const salvarSaldoInicial = (ano: number, mes: number, valor: number | nul
 	requisitar<{ ano: number; mes: number; valor: number | null; atualizadoEm: string | null }>('/api/caixa/saldo-inicial', {
 		method: 'PUT',
 		body: JSON.stringify({ ano, mes, valor }),
+	});
+
+/** Total de boletos a pagar no dia (substitui o anterior); null ou 0 remove. */
+export const salvarBoletosDia = (data: string, valor: number | null) =>
+	requisitar<{ data: string; valor: number | null }>('/api/caixa/boletos', {
+		method: 'PUT',
+		body: JSON.stringify({ data, valor }),
+	});
+
+/** Marca se a parcela de financiamento entra na apuração do saldo do caixa. */
+export const salvarParcelaConsiderada = (idParcela: number, considerar: boolean) =>
+	requisitar<{ idParcela: number; considerar: boolean }>(`/api/caixa/parcelas/${idParcela}`, {
+		method: 'PUT',
+		body: JSON.stringify({ considerar }),
 	});
 
 export const criarLancamentoCaixa = (l: CaixaLancamentoInput) =>

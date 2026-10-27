@@ -165,6 +165,22 @@ describe('montarMovimentoConciliacaoIndividual — null limpa, undefined mantém
 		expect(corpo.ideagro).toBe(true);
 	});
 
+	it('padrão: trocar o centro único não reenvia a linha antiga do centro (senão o backend a regrava)', () => {
+		const base = mov({
+			idCentroCustos: 47,
+			centroCustosList: [{ idMovimentoBancario: 1, idCentroCustos: 47, valor: 97 }],
+		});
+		const out = montarMovimentoConciliacaoIndividual(base, {
+			modalidadeMovimento: 'padrao',
+			idPlanoContas: 283,
+			idCentroCustos: 38,
+			resultadoList: [],
+		});
+		const corpo = montarCorpoPutParcial(out);
+		expect(corpo.idCentroCustos).toBe(38);
+		expect('centroCustosList' in corpo).toBe(false);
+	});
+
 	it('padrão com rateio de centros: idCentroCustos null + lista', () => {
 		const lista = [
 			{ idCentroCustos: 20, valor: 600 },

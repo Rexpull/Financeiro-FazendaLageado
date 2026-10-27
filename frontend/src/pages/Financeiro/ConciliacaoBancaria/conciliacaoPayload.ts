@@ -68,8 +68,10 @@ export function montarMovimentoConciliacaoIndividual(base: MovimentoBancario, da
 
 	if (data.centroCustosList !== undefined) {
 		mov.centroCustosList = data.centroCustosList as MovimentoCentroCustos[];
-	} else if (mov.idCentroCustos == null) {
-		// Não reenviar o rateio antigo do movimento: null sem lista = limpar centros
+	} else {
+		// Never resend the movement's previous centre rows: the backend gives a sent list priority over
+		// idCentroCustos, so the old centre was written back (changing Estrutura e patrimônio → Agricultura
+		// silently kept Estrutura e patrimônio). Without a list: new idCentroCustos = one row; null = clear.
 		mov.centroCustosList = undefined;
 	}
 

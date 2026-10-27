@@ -1,13 +1,14 @@
-import React, { lazy, Suspense } from "react";
-import { Paper, Typography, Box, CircularProgress, Chip } from "@mui/material";
+import React, { lazy, Suspense, useState } from "react";
+import { Paper, Typography, Box, CircularProgress } from "@mui/material";
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import type { ResumoSaldoDevedorMes } from "../../services/dashboardService";
 import { saldoDevedorPeriodo } from "./saldoDevedorPeriodo";
+import { rotuloMesGrafico, ultimoDiaDoIntervalo, type IntervaloDashboard } from "./periodoDashboard";
+import ModalContratosPeriodo, { type AbaContratos } from "./ModalContratosPeriodo";
+import { formatarDataISO } from "../../Utils/dataSemFuso";
 import { brl, brlCompacto } from "../../Utils/formatos";
 
 const Chart = lazy(() => import("react-apexcharts"));
-
-const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 const CARD_SX = {
   border: '1px solid #e0e0e0',
@@ -20,8 +21,6 @@ const CARD_SX = {
   justifyContent: 'center',
 } as const;
 
-const DICA_PROJECAO = 'Período futuro: valores previstos pelas parcelas e contratos já cadastrados (ainda não aconteceram).';
-
 const NoData = ({ message }: { message: string }) => (
   <Box sx={{ textAlign: 'center', py: 6, color: 'grey.500' }}>
     <InsertChartOutlinedIcon sx={{ fontSize: 60, color: 'grey.400' }} />
@@ -31,21 +30,49 @@ const NoData = ({ message }: { message: string }) => (
   </Box>
 );
 
-const BadgeProjecao = () => (
-  <Chip label="Projeção" size="small" color="warning" variant="outlined" title={DICA_PROJECAO} sx={{ height: 20, fontSize: '0.7rem', fontWeight: 600 }} />
+/** Card value that opens the contracts behind it (créditos novos / quitados). */
+export const ValorContratos: React.FC<{ valor: number; cor: string; onClick: () => void; variant?: 'h5' | 'subtitle1' }> = ({
+  valor,
+  cor,
+  onClick,
+  variant = 'h5',
+}) => (
+  <Typography
+    component="button"
+    type="button"
+    variant={variant}
+    onClick={onClick}
+    title="Ver os contratos deste valor"
+    sx={{
+      all: 'unset',
+      cursor: 'pointer',
+      fontWeight: 'bold',
+      color: cor,
+      fontSize: variant === 'h5' ? '1.5rem' : '1rem',
+      lineHeight: 1.4,
+      textDecoration: 'underline dotted',
+      textUnderlineOffset: '4px',
+      '&:hover': { textDecoration: 'underline' },
+      '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2, borderRadius: 0.5 },
+    }}
+  >
+    {brl(valor)}
+  </Typography>
 );
 
 interface FinanciamentosTabProps {
-  anoSelecionado: number;
-  mesSelecionado: string;
+  /** Period filter (ano inteiro, trimestre, semestre, últimos 12 meses) */
+  intervalo: IntervaloDashboard;
   resumo: ResumoSaldoDevedorMes[] | null;
 }
 
 /**
- * Saldo devedor = parcelas não liquidadas (o valor de cada parcela já inclui os juros).
- * Saldo final = saldo inicial − quitados + créditos novos.
+ * Saldo devedor = every registered parcela not liquidated (the value of each parcela already includes
+ * the interest). Saldo final = saldo inicial − quitados + créditos novos.
  */
-const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, mesSelecionado, resumo }) => {
+const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo }) => {
+  const [modalContratos, setModalContratos] = useState<AbaContratos | null>(null);
+
   if (!resumo) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
@@ -54,20 +81,12 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
     );
   }
 
-  const mesIdx = mesSelecionado ? MESES.indexOf(mesSelecionado) : -1;
-  const periodo = saldoDevedorPeriodo(resumo, mesIdx);
-  const rotulo = mesIdx >= 0 ? `${MESES[mesIdx]}/${anoSelecionado}` : String(anoSelecionado);
-  const rotuloInicio = mesIdx >= 0 ? `início de ${MESES[mesIdx]}/${anoSelecionado}` : `início de ${anoSelecionado}`;
-  const rotuloFim = mesIdx >= 0 ? `fim de ${MESES[mesIdx]}/${anoSelecionado}` : `fim de ${anoSelecionado}`;
-
-  // Months up to the current one already happened; later months are a projection (open parcelas as if unpaid)
-  const hoje = new Date();
-  const ultimoMes = anoSelecionado === hoje.getFullYear() ? hoje.getMonth() + 1 : anoSelecionado < hoje.getFullYear() ? 12 : 0;
-  const periodoFuturo = mesIdx >= 0 ? mesIdx + 1 > ultimoMes : ultimoMes === 0;
-  const realizado = resumo.map((r) => (r.mes <= ultimoMes ? r.saldoFinal : null));
-  // Starts at the current month so both lines meet
-  const projecao = resumo.map((r) => (ultimoMes < 12 && r.mes >= Math.max(ultimoMes, 1) ? r.saldoFinal : null));
-  const temProjecao = projecao.some((v) => v != null);
+  const periodo = saldoDevedorPeriodo(resumo, -1);
+  const rotulo = intervalo.rotulo;
+  const variosAnos = new Set(resumo.map((r) => r.ano ?? 0)).size > 1;
+  const categorias = resumo.map((r, i) =>
+    rotuloMesGrafico({ ano: r.ano ?? intervalo.meses[i]?.ano ?? 0, mes: r.mes }, variosAnos),
+  );
 
   const quadros = periodo
     ? [
@@ -75,13 +94,14 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
           titulo: 'Saldo devedor inicial',
           valor: periodo.saldoInicial,
           cor: 'text.primary',
-          nota: `Parcelas em aberto no ${rotuloInicio}`,
+          nota: `Parcelas em aberto em ${formatarDataISO(intervalo.inicio)}`,
         },
         {
           titulo: 'Quitados',
           valor: periodo.quitados,
           cor: 'success.main',
           nota: `Parcelas amortizadas e liquidadas em ${rotulo}`,
+          aba: 'quitados' as const,
         },
         {
           titulo: 'Créditos novos',
@@ -91,12 +111,13 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
             periodo.contratosNovos > 0
               ? `${periodo.contratosNovos} contrato(s), valor contratado ${brl(periodo.valorContratadoNovos)}`
               : `Nenhum contrato novo em ${rotulo}`,
+          aba: 'novos' as const,
         },
         {
           titulo: 'Saldo devedor final',
           valor: periodo.saldoFinal,
           cor: 'warning.dark',
-          nota: `No ${rotuloFim} (inicial − quitados + créditos novos)`,
+          nota: `Em ${formatarDataISO(ultimoDiaDoIntervalo(intervalo.fim))} (inicial − quitados + créditos novos)`,
           destaque: true,
         },
       ]
@@ -104,11 +125,9 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
 
   return (
     <Box sx={{ mb: 4 }}>
-      {periodoFuturo && quadros.length > 0 && (
-        <Typography variant="body2" color="warning.dark" sx={{ mb: 1.5, fontWeight: 600 }}>
-          {rotulo} ainda não aconteceu: os valores abaixo são uma projeção com base nas parcelas e contratos cadastrados.
-        </Typography>
-      )}
+      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'text.primary' }}>
+        Financiamentos — {rotulo}
+      </Typography>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: 4 }}>
         {quadros.map((q) => (
           <Paper
@@ -116,15 +135,18 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
             elevation={3}
             sx={{ ...CARD_SX, ...(q.destaque ? { border: '2px solid', borderColor: 'warning.main' } : {}) }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.9rem', fontWeight: q.destaque ? 700 : 600 }}>
-                {q.titulo}
-              </Typography>
-              {periodoFuturo && <BadgeProjecao />}
-            </Box>
-            <Typography variant="h5" fontWeight="bold" color={q.cor} sx={{ my: 0.5 }}>
-              {brl(q.valor)}
+            <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.9rem', fontWeight: q.destaque ? 700 : 600 }}>
+              {q.titulo}
             </Typography>
+            <Box sx={{ my: 0.5 }}>
+              {q.aba ? (
+                <ValorContratos valor={q.valor} cor={q.cor} onClick={() => setModalContratos(q.aba)} />
+              ) : (
+                <Typography variant="h5" fontWeight="bold" color={q.cor}>
+                  {brl(q.valor)}
+                </Typography>
+              )}
+            </Box>
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem', lineHeight: 1.35 }}>
               {q.nota}
             </Typography>
@@ -135,70 +157,72 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ anoSelecionado, m
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
         <Paper sx={{ p: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-            Créditos novos x Quitados por mês — {anoSelecionado}
+            Créditos novos x Quitados por mês — {rotulo}
           </Typography>
           {resumo.some((r) => r.creditosNovos || r.quitados) ? (
             <Suspense fallback={<CircularProgress />}>
               <Chart
                 options={{
                   chart: { type: 'bar', toolbar: { show: false } },
-                  plotOptions: { bar: { horizontal: false, columnWidth: '60%', borderRadius: 3 } },
-                  xaxis: { categories: MESES },
-                  yaxis: { labels: { formatter: (val: number) => brlCompacto(val), minWidth: 70 } },
+                  plotOptions: { bar: { horizontal: true, barHeight: '70%', borderRadius: 3 } },
+                  // Horizontal bars: months on the vertical axis, money along the horizontal one
+                  xaxis: {
+                    categories: categorias,
+                    labels: { formatter: (val: string | number) => brlCompacto(Number(val)), hideOverlappingLabels: true, trim: false },
+                    tickAmount: 4,
+                  },
                   tooltip: { y: { formatter: (val: number) => brl(val) } },
                   colors: ['#2196f3', '#4caf50'],
                   legend: { position: 'top' },
                   dataLabels: { enabled: false },
+                  grid: { padding: { right: 16 } },
                 }}
                 series={[
                   { name: 'Créditos novos', data: resumo.map((r) => r.creditosNovos) },
                   { name: 'Quitados', data: resumo.map((r) => r.quitados) },
                 ]}
                 type="bar"
-                height={350}
+                height={Math.max(300, resumo.length * 44 + 90)}
                 width="100%"
               />
             </Suspense>
           ) : (
-            <NoData message={`Nenhum contrato novo ou parcela liquidada em ${anoSelecionado}.`} />
+            <NoData message={`Nenhum contrato novo ou parcela liquidada em ${rotulo}.`} />
           )}
         </Paper>
 
         <Paper sx={{ p: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Evolução do saldo devedor — {anoSelecionado}
-            </Typography>
-            {temProjecao && <BadgeProjecao />}
-          </Box>
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+            Evolução do saldo devedor — {rotulo}
+          </Typography>
+          {/* Every registered parcela not liquidated is part of the saldo devedor (no projection) */}
           {resumo.some((r) => r.saldoFinal) ? (
             <Suspense fallback={<CircularProgress />}>
               <Chart
                 options={{
                   chart: { type: 'line', toolbar: { show: false }, zoom: { enabled: false } },
-                  stroke: { curve: 'straight', width: 3, dashArray: [0, 6] },
-                  xaxis: { categories: MESES },
+                  stroke: { curve: 'straight', width: 3 },
+                  xaxis: { categories: categorias },
                   yaxis: { labels: { formatter: (val: number) => brlCompacto(val), minWidth: 70 } },
                   tooltip: { y: { formatter: (val: number) => brl(val) } },
-                  colors: ['#ff9800', '#ffb74d'],
+                  colors: ['#ff9800'],
                   markers: { size: 5 },
-                  legend: { position: 'top', show: temProjecao },
+                  legend: { show: false },
                   dataLabels: { enabled: false },
                 }}
-                series={[
-                  { name: 'Saldo devedor no fim do mês', data: realizado },
-                  ...(temProjecao ? [{ name: 'Projeção (parcelas ainda em aberto)', data: projecao }] : []),
-                ]}
+                series={[{ name: 'Saldo devedor no fim do mês', data: resumo.map((r) => r.saldoFinal) }]}
                 type="line"
                 height={350}
                 width="100%"
               />
             </Suspense>
           ) : (
-            <NoData message={`Nenhum saldo devedor em ${anoSelecionado}.`} />
+            <NoData message={`Nenhum saldo devedor em ${rotulo}.`} />
           )}
         </Paper>
       </Box>
+
+      <ModalContratosPeriodo aberto={modalContratos} periodo={intervalo} onClose={() => setModalContratos(null)} />
     </Box>
   );
 };

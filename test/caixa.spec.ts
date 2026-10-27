@@ -1,14 +1,17 @@
 // Integration tests: Dashboard aba "Caixa" (/api/caixa) against an isolated local D1
-// seeded with the production schema snapshot + migration_caixa.sql.
+// seeded with the production schema snapshot + migration_caixa.sql + migration_caixa_v2.sql.
 // The route is called through its handler directly (backend/src/routes/handleCaixa.ts).
 import { env } from 'cloudflare:test';
 import { describe, it, expect, beforeAll } from 'vitest';
 import schemaSql from './fixtures/schema.sql?raw';
 import migrationCaixaSql from '../migration_caixa.sql?raw';
+import migrationCaixaV2Sql from '../migration_caixa_v2.sql?raw';
 import { handleRequest } from '../backend/src/routes/handleCaixa';
 
 const BASE = 'https://worker.test';
 const db = (env as unknown as { DB: D1Database }).DB;
+const TABELAS_CAIXA = `SELECT name FROM sqlite_master WHERE type = 'table'
+	AND name IN ('caixaSaldoInicial', 'caixaLancamento', 'caixaParcelaConsiderada')`;
 
 async function applySql(sqlText: string) {
 	const statements = sqlText
@@ -18,6 +21,12 @@ async function applySql(sqlText: string) {
 	for (const sql of statements) {
 		await db.prepare(sql).run();
 	}
+}
+
+async function aplicarMigrations() {
+	await applySql(schemaSql);
+	await applySql(migrationCaixaSql);
+	await applySql(migrationCaixaV2Sql);
 }
 
 async function seedFinanciamentos() {
@@ -54,15 +63,17 @@ async function call(method: string, path: string, body?: unknown) {
 }
 
 const getOutubro = () => call('GET', '/api/caixa?ano=2026&mes=10');
+const boletosDia = (data: string, valor: unknown) => call('PUT', '/api/caixa/boletos', { data, valor });
+
+type ParcelaResp = { id: number; data: string; considerada: boolean; consideradaManual: boolean };
 
 describe('GET /api/caixa', () => {
 	beforeAll(async () => {
-		await applySql(schemaSql);
-		await applySql(migrationCaixaSql);
+		await aplicarMigrations();
 		await seedFinanciamentos();
 	});
 
-	it('monta os 31 dias de outubro com as parcelas do mês (todos os status)', async () => {
+	it('monta os 31 dias de outubro com todas as parcelas do mês; liquidadas ficam fora do saldo por padrão', async () => {
 		const { status, body } = await getOutubro();
 		expect(status).toBe(200);
 		expect(body.ano).toBe(2026);
@@ -74,14 +85,14 @@ describe('GET /api/caixa', () => {
 
 		expect(body.dias[0].financiamento).toBe(10000);
 		expect(body.dias[0].saldo).toBe(-10000);
-		// 2.500,50 (Liquidado) + 499,50 gravada com hora
-		expect(body.dias[14].financiamento).toBe(3000);
-		expect(body.dias[14].saldo).toBe(-13000);
-		expect(body.totais.financiamento).toBe(13000);
+		// dia 15: 2.500,50 (Liquidado, fora por padrão) + 499,50 (Vencido, gravada com hora)
+		expect(body.dias[14].financiamento).toBe(499.5);
+		expect(body.dias[14].saldo).toBe(-10499.5);
+		expect(body.totais.financiamento).toBe(10499.5);
 		expect(body.totais.boletos).toBe(0);
 		expect(body.lancamentos).toEqual([]);
 
-		expect(body.parcelas.map((p: { id: number }) => p.id)).toEqual([100, 101, 104]);
+		expect(body.parcelas.map((p: ParcelaResp) => p.id)).toEqual([100, 101, 104]);
 		expect(body.parcelas[0]).toEqual({
 			id: 100,
 			data: '2026-10-01',
@@ -92,27 +103,35 @@ describe('GET /api/caixa', () => {
 			contrato: 'CT-001',
 			tomador: 'GFS',
 			banco: 'Banco do Brasil',
+			modalidade: null,
+			considerada: true,
+			consideradaManual: false,
 		});
-		expect(body.parcelas[2].data).toBe('2026-10-15');
-		expect(body.parcelas[1]).toMatchObject({ status: 'Liquidado', tomador: 'JPT', banco: 'Sicredi', contrato: 'CT-002' });
+		expect(body.parcelas[2]).toMatchObject({ data: '2026-10-15', status: 'Vencido', considerada: true });
+		expect(body.parcelas[1]).toMatchObject({
+			status: 'Liquidado',
+			tomador: 'JPT',
+			banco: 'Sicredi',
+			contrato: 'CT-002',
+			considerada: false,
+			consideradaManual: false,
+		});
 	});
 
-	it('exemplo do cliente: saldo inicial 100.000, boleto 1.000 e financiamento 10.000 no dia 01 → 89.000', async () => {
+	it('exemplo do cliente: saldo inicial 100.000, boletos 1.000 e financiamento 10.000 no dia 01 → 89.000', async () => {
 		expect((await call('PUT', '/api/caixa/saldo-inicial', { ano: 2026, mes: 10, valor: 100000 })).status).toBe(200);
-		const boleto = await call('POST', '/api/caixa/lancamentos', {
-			tipo: 'BOLETO',
-			data: '2026-10-01',
-			descricao: 'Energia elétrica',
-			valor: 1000,
-		});
-		expect(boleto.status).toBe(201);
+		const boleto = await boletosDia('2026-10-01', 1000);
+		expect(boleto.status).toBe(200);
+		expect(boleto.body).toEqual({ data: '2026-10-01', valor: 1000 });
 
 		const { body } = await getOutubro();
 		expect(body.saldoInicial).toBe(100000);
 		expect(body.saldoInicialAtualizadoEm).toBeTruthy();
 		expect(body.dias[0]).toMatchObject({ boletos: 1000, financiamento: 10000, saldo: 89000, saldoFinal: 89000 });
-		expect(body.totais.saldo).toBe(86000);
-		expect(body.minimo.saldo).toMatchObject({ valor: 86000, data: '2026-10-15', aporteNecessario: 0, caixaNecessario: 14000 });
+		expect(body.totais).toMatchObject({ boletos: 1000, saldo: 88500.5 });
+		// boletos vêm somados em `dias`; a lista de lançamentos traz só as movimentações previstas
+		expect(body.lancamentos).toEqual([]);
+		expect(body.minimo.saldo).toMatchObject({ valor: 88500.5, data: '2026-10-15', aporteNecessario: 0, caixaNecessario: 11499.5 });
 	});
 
 	it('previsões C/D entram só no saldo final (acumulado)', async () => {
@@ -123,19 +142,19 @@ describe('GET /api/caixa', () => {
 		const { body } = await getOutubro();
 		const dia = (d: number) => body.dias[d - 1];
 		expect(dia(10)).toMatchObject({ saldo: 10000, previsaoC: 5000, previsaoD: 0, previsao: 5000, saldoFinal: 15000 });
-		expect(dia(15)).toMatchObject({ saldo: 7000, saldoFinal: 12000 });
-		expect(dia(20)).toMatchObject({ saldo: 7000, previsaoD: 30000, previsao: -30000, saldoFinal: -18000 });
-		expect(body.totais).toMatchObject({ previsaoC: 5000, previsaoD: 30000, previsao: -25000, saldo: 7000, saldoFinal: -18000 });
-		expect(body.minimo.saldo).toMatchObject({ valor: 7000, data: '2026-10-15' });
-		expect(body.minimo.saldoFinal).toMatchObject({ valor: -18000, data: '2026-10-20', aporteNecessario: 18000, caixaNecessario: 38000 });
+		expect(dia(15)).toMatchObject({ saldo: 9500.5, saldoFinal: 14500.5 });
+		expect(dia(20)).toMatchObject({ saldo: 9500.5, previsaoD: 30000, previsao: -30000, saldoFinal: -15499.5 });
+		expect(body.totais).toMatchObject({ previsaoC: 5000, previsaoD: 30000, previsao: -25000, saldo: 9500.5, saldoFinal: -15499.5 });
+		expect(body.minimo.saldo).toMatchObject({ valor: 9500.5, data: '2026-10-15' });
+		expect(body.minimo.saldoFinal).toMatchObject({ valor: -15499.5, data: '2026-10-20', aporteNecessario: 15499.5, caixaNecessario: 35499.5 });
 		expect(body.lancamentos).toHaveLength(2);
 		expect(body.lancamentos[0]).toMatchObject({ tipo: 'PREVISAO', natureza: 'C', data: '2026-10-10', descricao: 'Venda de gado', valor: 5000 });
 	});
 
 	it('lançamentos e saldo de outro mês não entram no mês consultado', async () => {
 		await call('PUT', '/api/caixa/saldo-inicial', { ano: 2026, mes: 11, valor: 999 });
-		await call('POST', '/api/caixa/lancamentos', { tipo: 'BOLETO', data: '2026-11-05', descricao: 'Boleto de novembro', valor: 700 });
-		await call('POST', '/api/caixa/lancamentos', { tipo: 'BOLETO', data: '2026-09-30', descricao: 'Boleto de setembro', valor: 700 });
+		await boletosDia('2026-11-05', 700);
+		await boletosDia('2026-09-30', 700);
 
 		const out = await getOutubro();
 		expect(out.body.saldoInicial).toBeNull();
@@ -149,6 +168,60 @@ describe('GET /api/caixa', () => {
 		expect(nov.body.dias[4]).toMatchObject({ boletos: 700, saldo: -2701 });
 	});
 
+	it('marca/desmarca parcelas para a apuração e a escolha fica gravada', async () => {
+		const liq = await call('PUT', '/api/caixa/parcelas/101', { considerar: true });
+		expect(liq.status).toBe(200);
+		expect(liq.body).toEqual({ idParcela: 101, considerar: true });
+		expect((await call('PUT', '/api/caixa/parcelas/100', { considerar: false })).status).toBe(200);
+
+		const { body } = await getOutubro();
+		expect(body.dias[0]).toMatchObject({ financiamento: 0, saldo: 0 });
+		expect(body.dias[14]).toMatchObject({ financiamento: 3000, saldo: -3000 });
+		expect(body.totais.financiamento).toBe(3000);
+		// todas continuam listadas, com a escolha
+		expect(body.parcelas.map((p: ParcelaResp) => [p.id, p.considerada, p.consideradaManual])).toEqual([
+			[100, false, true],
+			[101, true, true],
+			[104, true, false],
+		]);
+
+		// marcar de novo: upsert (uma linha por parcela)
+		await call('PUT', '/api/caixa/parcelas/100', { considerar: true });
+		expect((await getOutubro()).body.dias[0].financiamento).toBe(10000);
+		const { results } = await db.prepare(`SELECT * FROM caixaParcelaConsiderada ORDER BY idParcela`).all();
+		expect(results).toHaveLength(2);
+	});
+
+	it('se o vencimento muda no cadastro, a parcela acompanha a nova data (com a escolha)', async () => {
+		await call('PUT', '/api/caixa/parcelas/101', { considerar: true });
+		await db.prepare(`UPDATE parcelaFinanciamento SET dt_vencimento = '2026-10-20' WHERE id = 101`).run();
+
+		let out = (await getOutubro()).body;
+		expect(out.dias[14].financiamento).toBe(499.5);
+		expect(out.dias[19].financiamento).toBe(2500.5);
+		expect(out.parcelas.find((p: ParcelaResp) => p.id === 101)).toMatchObject({ data: '2026-10-20', considerada: true });
+
+		await db.prepare(`UPDATE parcelaFinanciamento SET dt_vencimento = '2026-11-03' WHERE id = 101`).run();
+		out = (await getOutubro()).body;
+		expect(out.parcelas.map((p: ParcelaResp) => p.id)).toEqual([100, 104]);
+		const nov = (await call('GET', '/api/caixa?ano=2026&mes=11')).body;
+		expect(nov.dias[2].financiamento).toBe(2500.5);
+		expect(nov.parcelas.find((p: ParcelaResp) => p.id === 101)).toMatchObject({ considerada: true, consideradaManual: true });
+	});
+
+	it('valida a escolha da parcela', async () => {
+		expect((await call('PUT', '/api/caixa/parcelas/9999', { considerar: true })).status).toBe(404);
+		for (const corpo of [{}, { considerar: 'sim' }, { considerar: 1 }, 'nao-e-json']) {
+			const r = await call('PUT', '/api/caixa/parcelas/100', corpo);
+			expect(r.status, JSON.stringify(corpo)).toBe(400);
+			expect(typeof r.body.error).toBe('string');
+		}
+		expect((await call('PUT', '/api/caixa/parcelas/abc', { considerar: true })).status).toBe(400);
+		expect((await call('GET', '/api/caixa/parcelas/100')).status).toBe(405);
+		const { results } = await db.prepare(`SELECT * FROM caixaParcelaConsiderada`).all();
+		expect(results).toHaveLength(0);
+	});
+
 	it('valida ano/mes', async () => {
 		for (const qs of ['', '?ano=2026', '?mes=10', '?ano=2026&mes=13', '?ano=2026&mes=0', '?ano=abc&mes=10', '?ano=1999&mes=1']) {
 			const r = await call('GET', `/api/caixa${qs}`);
@@ -160,8 +233,7 @@ describe('GET /api/caixa', () => {
 
 describe('PUT /api/caixa/saldo-inicial', () => {
 	beforeAll(async () => {
-		await applySql(schemaSql);
-		await applySql(migrationCaixaSql);
+		await aplicarMigrations();
 	});
 
 	it('faz upsert (uma linha por mês, vale o último valor)', async () => {
@@ -205,21 +277,85 @@ describe('PUT /api/caixa/saldo-inicial', () => {
 	});
 });
 
-describe('/api/caixa/lancamentos', () => {
+describe('PUT /api/caixa/boletos (total do dia, sem descrição)', () => {
 	beforeAll(async () => {
-		await applySql(schemaSql);
-		await applySql(migrationCaixaSql);
+		await aplicarMigrations();
 	});
 
-	it('cria boleto sempre com natureza D', async () => {
-		const r = await call('POST', '/api/caixa/lancamentos', { tipo: 'BOLETO', data: '2026-10-05', descricao: '  Unimed  ', valor: '1.234,56' });
+	const linhasBoleto = async (data: string) =>
+		(await db.prepare(`SELECT * FROM caixaLancamento WHERE tipo = 'BOLETO' AND data = ?`).bind(data).all()).results;
+
+	it('grava um valor por dia e substitui ao editar', async () => {
+		expect((await boletosDia('2026-10-05', '1.234,56')).body).toEqual({ data: '2026-10-05', valor: 1234.56 });
+		expect((await boletosDia('2026-10-05', 2000.006)).body).toEqual({ data: '2026-10-05', valor: 2000.01 });
+		await boletosDia('2026-10-06', 300);
+
+		const linhas = await linhasBoleto('2026-10-05');
+		expect(linhas).toHaveLength(1);
+		expect(linhas[0]).toMatchObject({ natureza: 'D', descricao: '', valor: 2000.01 });
+
+		const { body } = await getOutubro();
+		expect(body.dias[4]).toMatchObject({ boletos: 2000.01, saldo: -2000.01 });
+		expect(body.dias[5]).toMatchObject({ boletos: 300, saldo: -2300.01 });
+		expect(body.totais.boletos).toBe(2300.01);
+		expect(body.lancamentos).toEqual([]);
+	});
+
+	it('null ou 0 removem o valor do dia', async () => {
+		await boletosDia('2026-10-05', 500);
+		expect((await boletosDia('2026-10-05', 0)).body).toEqual({ data: '2026-10-05', valor: null });
+		expect(await linhasBoleto('2026-10-05')).toHaveLength(0);
+
+		await boletosDia('2026-10-05', 500);
+		expect((await boletosDia('2026-10-05', null)).body).toEqual({ data: '2026-10-05', valor: null });
+		expect(await linhasBoleto('2026-10-05')).toHaveLength(0);
+		expect((await getOutubro()).body.totais.boletos).toBe(0);
+	});
+
+	it('aceita datas até dez/2040', async () => {
+		expect((await boletosDia('2040-12-31', 100)).status).toBe(200);
+		const r = await call('GET', '/api/caixa?ano=2040&mes=12');
+		expect(r.status).toBe(200);
+		expect(r.body.dias[30]).toMatchObject({ data: '2040-12-31', boletos: 100 });
+	});
+
+	it('rejeita dados inválidos com 400', async () => {
+		const casos: unknown[] = [
+			{ data: '2026-02-30', valor: 1 },
+			{ data: '05/10/2026', valor: 1 },
+			{ valor: 1 },
+			{ data: '2026-10-05' },
+			{ data: '2026-10-05', valor: 'abc' },
+			{ data: '2026-10-05', valor: -1 },
+			{ data: '2026-10-05', valor: true },
+			{ data: '2026-10-05', valor: 1e13 },
+			'nao-e-json',
+		];
+		for (const c of casos) {
+			const r = await call('PUT', '/api/caixa/boletos', c);
+			expect(r.status, JSON.stringify(c)).toBe(400);
+			expect(typeof r.body.error).toBe('string');
+		}
+		expect((await call('POST', '/api/caixa/boletos', { data: '2026-10-05', valor: 1 })).status).toBe(405);
+		const { results } = await db.prepare(`SELECT * FROM caixaLancamento`).all();
+		expect(results).toHaveLength(0);
+	});
+});
+
+describe('/api/caixa/lancamentos', () => {
+	beforeAll(async () => {
+		await aplicarMigrations();
+	});
+
+	it('cria movimentação prevista e recusa boleto (boleto é o total do dia, em /api/caixa/boletos)', async () => {
+		const r = await call('POST', '/api/caixa/lancamentos', { tipo: 'PREVISAO', natureza: 'D', data: '2026-10-05', descricao: '  Unimed  ', valor: '1.234,56' });
 		expect(r.status).toBe(201);
-		expect(r.body).toMatchObject({ tipo: 'BOLETO', natureza: 'D', data: '2026-10-05', descricao: 'Unimed', valor: 1234.56 });
+		expect(r.body).toMatchObject({ tipo: 'PREVISAO', natureza: 'D', data: '2026-10-05', descricao: 'Unimed', valor: 1234.56 });
 		expect(r.body.id).toBeGreaterThan(0);
 
-		const c = await call('POST', '/api/caixa/lancamentos', { tipo: 'BOLETO', natureza: 'C', data: '2026-10-05', descricao: 'x', valor: 1 });
-		expect(c.status).toBe(400);
-		expect(c.body.error).toMatch(/Boleto/);
+		const b = await call('POST', '/api/caixa/lancamentos', { tipo: 'BOLETO', data: '2026-10-05', descricao: 'x', valor: 1 });
+		expect(b.status).toBe(400);
+		expect(b.body.error).toMatch(/Boletos/);
 	});
 
 	it('edita (parcial) e exclui uma previsão', async () => {
@@ -242,9 +378,8 @@ describe('/api/caixa/lancamentos', () => {
 		const dia11 = (await getOutubro()).body.dias[10];
 		expect(dia11).toMatchObject({ previsaoD: 1500.56, saldoFinal: -1500.56 });
 
-		// virar boleto força natureza D
-		const ed3 = await call('PUT', `/api/caixa/lancamentos/${id}`, { tipo: 'BOLETO' });
-		expect(ed3.body).toMatchObject({ tipo: 'BOLETO', natureza: 'D' });
+		// não vira boleto
+		expect((await call('PUT', `/api/caixa/lancamentos/${id}`, { tipo: 'BOLETO' })).status).toBe(400);
 
 		const del = await call('DELETE', `/api/caixa/lancamentos/${id}`);
 		expect(del.status).toBe(200);
@@ -301,25 +436,32 @@ describe('/api/caixa/lancamentos', () => {
 
 describe('tabelas do caixa criadas sob demanda', () => {
 	beforeAll(async () => {
-		await applySql(schemaSql); // sem migration_caixa.sql
+		await applySql(schemaSql); // sem as migrations do caixa
 	});
 
-	it('o repositório cria caixaSaldoInicial e caixaLancamento se não existirem', async () => {
-		const antes = await db
-			.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('caixaSaldoInicial', 'caixaLancamento')`)
-			.all();
-		expect(antes.results).toHaveLength(0);
+	it('o repositório cria as tabelas do caixa se não existirem', async () => {
+		expect((await db.prepare(TABELAS_CAIXA).all()).results).toHaveLength(0);
 
 		const r = await getOutubro();
 		expect(r.status).toBe(200);
 		expect(r.body.dias).toHaveLength(31);
 
-		const depois = await db
-			.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('caixaSaldoInicial', 'caixaLancamento')`)
-			.all();
-		expect(depois.results).toHaveLength(2);
+		expect((await db.prepare(TABELAS_CAIXA).all()).results).toHaveLength(3);
+		expect((await boletosDia('2026-10-05', 10)).status).toBe(200);
+	});
+});
 
-		const post = await call('POST', '/api/caixa/lancamentos', { tipo: 'BOLETO', data: '2026-10-05', descricao: 'Primeiro', valor: 10 });
-		expect(post.status).toBe(201);
+describe('upgrade do caixa v1 (como está em produção) para v2', () => {
+	beforeAll(async () => {
+		await applySql(schemaSql);
+		await applySql(migrationCaixaSql); // só as tabelas da v1
+		await seedFinanciamentos();
+	});
+
+	it('cria caixaParcelaConsiderada na primeira chamada e a escolha funciona', async () => {
+		expect((await db.prepare(TABELAS_CAIXA).all()).results).toHaveLength(2);
+		expect((await call('PUT', '/api/caixa/parcelas/101', { considerar: true })).status).toBe(200);
+		expect((await db.prepare(TABELAS_CAIXA).all()).results).toHaveLength(3);
+		expect((await getOutubro()).body.dias[14].financiamento).toBe(3000);
 	});
 });

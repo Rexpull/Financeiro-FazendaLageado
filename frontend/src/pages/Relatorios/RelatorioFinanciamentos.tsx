@@ -1,799 +1,701 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
-import type { ApexOptions } from 'apexcharts';
-import {
-	getRelatorioFinanciamentos,
-	FiltrosRelatorioFinanciamentos,
-	RelatorioFinanciamentosData,
-	ItemRelatorioFinanciamentos,
-	StatusContratoFinanciamento,
-	ModalidadeFinanciamento,
-} from '../../services/relatorioService';
-import { listarBancos } from '../../services/bancoService';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFileExcel, faSpinner, faChevronDown, faChevronUp, faFilter } from '@fortawesome/free-solid-svg-icons';
+import { faChartColumn, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
-import { Banco } from '../../../../backend/src/models/Banco';
+import {
+	getRelatorioFinanciamentos,
+	type RelatorioFinanciamentosData,
+	type ValorContratoFinanciamento,
+} from '../../services/relatorioService';
+import { listarBancos } from '../../services/bancoService';
+import type { Banco } from '../../../../backend/src/models/Banco';
 import BreadCrumb from '../../components/BreadCrumb';
-
-const Chart = lazy(() => import("react-apexcharts"));
-
-const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const MESES_EXTENSO = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-
-const MODALIDADES: Array<{ value: ModalidadeFinanciamento; label: string }> = [
-	{ value: 'INVESTIMENTO', label: 'Investimento' },
-	{ value: 'CUSTEIO', label: 'Custeio' },
-	{ value: 'PARTICULAR', label: 'Particular' },
-	{ value: 'RENEGOCIACAO', label: 'Renegociação' },
-];
-
-const STATUS_INFO: Record<StatusContratoFinanciamento, { label: string; plural: string; badge: string; borda: string; texto: string; valor: string }> = {
-	NOVO: { label: 'Novo', plural: 'Novos', badge: 'bg-purple-100 text-purple-800', borda: 'border-l-purple-500', texto: 'text-purple-600', valor: 'Valor contratado' },
-	ATIVO: { label: 'Ativo', plural: 'Ativos', badge: 'bg-blue-100 text-blue-800', borda: 'border-l-blue-500', texto: 'text-blue-600', valor: 'Parcelas a pagar' },
-	QUITADO: { label: 'Quitado', plural: 'Quitados', badge: 'bg-green-100 text-green-800', borda: 'border-l-green-500', texto: 'text-green-600', valor: 'Valor pago' },
-};
-const STATUS_ORDEM: StatusContratoFinanciamento[] = ['NOVO', 'ATIVO', 'QUITADO'];
-
-/** Summary card overrides: the Quitados total is everything paid on the contracts settled in the period, not the monthly chart sum. */
-const CARD_RESUMO: Partial<Record<StatusContratoFinanciamento, { titulo: string; explicacao: string }>> = {
-	QUITADO: {
-		titulo: 'Contratos quitados (valor pago)',
-		explicacao:
-			'Tudo o que foi pago nos contratos quitados no período, incluindo parcelas de anos anteriores. Não é a soma do gráfico "Parcelas liquidadas no mês".',
-	},
-};
-
-const CORES = { novos: '#8b5cf6', liquidados: '#22c55e', compromissos: '#3b82f6' };
-
-const formatCurrency = (value: number) => {
-	return new Intl.NumberFormat("pt-BR", {
-		style: "currency",
-		currency: "BRL",
-	}).format(value);
-};
-
-const formatCompact = (value: number) =>
-	new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 }).format(value);
-
-/** 'AAAA-MM-DD' → 'DD/MM/AAAA' sem passar por Date (evita deslocamento de fuso). */
-const formatDate = (dateString?: string | null) => {
-	if (!dateString) return '-';
-	const [ano, mes, dia] = String(dateString).slice(0, 10).split('-');
-	return ano && mes && dia ? `${dia}/${mes}/${ano}` : String(dateString);
-};
-
-const labelModalidade = (item: ItemRelatorioFinanciamentos) => {
-	const label = MODALIDADES.find((m) => m.value === item.modalidade)?.label || item.modalidade || '-';
-	return item.modalidade === 'PARTICULAR' && item.nomeModalidadeParticular ? `${label} - ${item.nomeModalidadeParticular}` : label;
-};
-
-const credor = (item: ItemRelatorioFinanciamentos) => item.banco || item.pessoa || item.nomeModalidadeParticular || '-';
+import { brl, pct } from '../../Utils/formatos';
+import { formatarDataISO } from '../../Utils/dataSemFuso';
+import { MESES_CURTOS, rotuloMesGrafico, ultimoDiaDoIntervalo } from '../Dashboard/periodoDashboard';
+import {
+	anosDisponiveis,
+	graficosExportados,
+	intervaloRelatorio,
+	lerPreferencias,
+	linhasDe,
+	planilhasExcel,
+	preferenciasPadrao,
+	proximosMeses,
+	somarPorContrato,
+	somaValores,
+	VISOES,
+	type ModoCompromissos,
+	type PreferenciasFinanciamentos,
+	type RefinosFinanciamentos,
+	type VisaoFinanciamentos,
+} from './financiamentosRelatorio';
+import TabelaContratosFinanciamento from './TabelaContratosFinanciamento';
+import ModalContratosFinanciamento, { type ConteudoModalContratos } from './ModalContratosFinanciamento';
+import BarraFiltrosFinanciamentos, { FAIXAS_JUROS, MODALIDADES } from './BarraFiltrosFinanciamentos';
+import GraficoBarrasFinanciamentos, { CORES_FINANCIAMENTOS as CORES } from './GraficoBarrasFinanciamentos';
 
 const anoAtual = new Date().getFullYear();
-const ANOS = Array.from({ length: anoAtual + 5 - 2010 + 1 }, (_, i) => anoAtual + 5 - i);
-const filtrosIniciais: FiltrosRelatorioFinanciamentos = { ano: anoAtual };
+const CHAVE_PREFERENCIAS = 'relatorioFinanciamentos.preferencias.v1';
 
-const rotuloPeriodo = (ano: number, mes?: number | null) => (mes ? `${MESES_EXTENSO[mes - 1]}/${ano}` : String(ano));
+const foco = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+const cartao = 'bg-white border border-gray-200 rounded-xl shadow-sm';
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
-/**
- * "Valor (conforme status)" is the contract value for Novo, the parcelas still to pay for Ativo and the amount paid
- * for Quitado: they can only be added up within one status. Returns the total per status present in the list.
- */
-function totaisPorStatus(itens: ItemRelatorioFinanciamentos[]) {
-	return STATUS_ORDEM.map((status) => {
-		const doStatus = itens.filter((i) => i.statusContrato === status);
-		return { status, quantidade: doStatus.length, valor: Math.round(doStatus.reduce((s, i) => s + (Number(i.valor) || 0), 0) * 100) / 100 };
-	}).filter((t) => t.quantidade > 0);
+function preferenciasSalvas(): PreferenciasFinanciamentos {
+	try {
+		return lerPreferencias(window.localStorage.getItem(CHAVE_PREFERENCIAS), anoAtual);
+	} catch {
+		return preferenciasPadrao(anoAtual);
+	}
 }
 
-/** Excel: one column per meaning of "valor", so a column sum never mixes them. */
-const colunasValorPorStatus = (item: ItemRelatorioFinanciamentos) => ({
-	'Valor contratado (Novo)': item.statusContrato === 'NOVO' ? item.valor : '',
-	'Parcelas a pagar (Ativo)': item.statusContrato === 'ATIVO' ? item.valor : '',
-	'Valor pago (Quitado)': item.statusContrato === 'QUITADO' ? item.valor : '',
-});
+// ---- Small building blocks ----
 
-const opcoesBarras = (categorias: string[], cores: string[], legenda = false): ApexOptions => ({
-	chart: { type: 'bar', toolbar: { show: false }, zoom: { enabled: false }, fontFamily: 'inherit' },
-	plotOptions: { bar: { horizontal: false, columnWidth: legenda ? '65%' : '55%', borderRadius: 3 } },
-	xaxis: { categories: categorias },
-	yaxis: { labels: { formatter: (val: number) => formatCompact(val) } },
-	tooltip: { y: { formatter: (val: number) => formatCurrency(val) }, shared: legenda, intersect: false },
-	colors: cores,
-	legend: { show: legenda, position: 'top', horizontalAlign: 'center' },
-	dataLabels: { enabled: false },
-	grid: { borderColor: '#f1f1f1' },
-});
-
-const CartaoGrafico: React.FC<{ titulo: string; subtitulo: string; vazio: boolean; className?: string; children: React.ReactNode }> = ({
-	titulo,
-	subtitulo,
-	vazio,
-	className = '',
-	children,
-}) => (
-	<div className={`bg-white border border-gray-200 rounded-xl shadow-sm p-5 min-w-0 ${className}`}>
-		<h3 className="text-base font-semibold text-gray-800">{titulo}</h3>
-		<p className="text-xs text-gray-500 mb-3">{subtitulo}</p>
-		{vazio ? (
-			<p className="text-gray-500 text-center py-16 text-sm">Nenhum valor para os filtros selecionados</p>
-		) : (
-			<Suspense fallback={<div className="py-16 text-center text-sm text-gray-500">Carregando gráfico...</div>}>{children}</Suspense>
-		)}
-	</div>
-);
-
-const totalizadoresVazios = {
-	totalContratos: 0,
-	totalValorContratos: 0,
-	totalJuros: 0,
-	totalValor: 0,
-	totalValorParcelas: 0,
-	totalParcelas: 0,
-	totalParcelasLiquidadas: 0,
-	totalParcelasAberto: 0,
-	totalParcelasVencidas: 0,
+/** Summary tile. Clickable tiles open the contracts behind the value. */
+const Kpi: React.FC<{
+	rotulo: string;
+	valor: string;
+	detalhe?: React.ReactNode;
+	destaque?: boolean;
+	onClick?: () => void;
+	dica?: string;
+}> = ({ rotulo, valor, detalhe, destaque, onClick, dica }) => {
+	const conteudo = (
+		<>
+			<span className={`flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-wide ${destaque ? 'text-blue-800' : 'text-gray-500'}`}>
+				{rotulo}
+				{onClick && <FontAwesomeIcon icon={faChevronRight} className="text-[10px] opacity-60" aria-hidden />}
+			</span>
+			<span
+				// Never break a money value in the middle ("R$ 18.802." / "391,37"): one line, size follows the screen
+				className={`block mt-1 tabular-nums whitespace-nowrap ${
+					destaque
+						? 'text-[clamp(1rem,1.55vw,1.5rem)] font-bold text-blue-900'
+						: 'text-[clamp(0.95rem,1.3vw,1.25rem)] font-semibold text-gray-900'
+				}`}
+			>
+				{valor}
+			</span>
+			{detalhe && <span className="block mt-0.5 text-xs text-gray-500">{detalhe}</span>}
+		</>
+	);
+	const base = `rounded-xl border p-3 sm:p-4 text-left min-w-0 ${destaque ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'}`;
+	return onClick ? (
+		<button type="button" onClick={onClick} title={dica ?? 'Ver os contratos'} className={`${base} shadow-sm hover:border-blue-400 hover:shadow transition ${foco}`}>
+			{conteudo}
+		</button>
+	) : (
+		<div className={`${base} shadow-sm`} title={dica}>
+			{conteudo}
+		</div>
+	);
 };
 
+const Kpis: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+	<div className={`grid grid-cols-2 gap-2 sm:gap-3 mb-4 ${React.Children.count(children) > 3 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>{children}</div>
+);
+
+/** Money value of a chart header that opens the contracts behind it. */
+const ValorLink: React.FC<{ rotulo: string; valor: number; cor?: string; onClick: () => void }> = ({ rotulo, valor, cor, onClick }) => (
+	<button
+		type="button"
+		onClick={onClick}
+		title="Ver os contratos deste valor"
+		className={`inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 rounded ${foco}`}
+	>
+		{cor && <span className="w-2.5 h-2.5 rounded-sm" style={{ background: cor }} aria-hidden />}
+		{rotulo}
+		<strong className="tabular-nums text-gray-900 underline decoration-dotted underline-offset-4">{brl(valor)}</strong>
+	</button>
+);
+
+/** Two-option switch (e.g. "Do ano" / "Por ano"). */
+function Alternador<T extends string>({ valor, opcoes, onChange, rotulo }: { valor: T; opcoes: Array<[T, string]>; onChange: (v: T) => void; rotulo: string }) {
+	return (
+		<div role="group" aria-label={rotulo} className="inline-flex rounded-lg bg-gray-100 p-0.5">
+			{opcoes.map(([v, texto]) => (
+				<button
+					key={v}
+					type="button"
+					aria-pressed={valor === v}
+					onClick={() => onChange(v)}
+					className={`h-7 px-3 rounded-md text-xs font-medium ${foco} ${valor === v ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+				>
+					{texto}
+				</button>
+			))}
+		</div>
+	);
+}
+
+// ---- Page ----
+
 const RelatorioFinanciamentos: React.FC = () => {
-	const [dados, setDados] = useState<RelatorioFinanciamentosData | null>(null);
-	const [isLoading, setIsLoading] = useState(false);
-	const [isExporting, setIsExporting] = useState(false);
-	const [financiamentosExpandidos, setFinanciamentosExpandidos] = useState<Set<number>>(new Set());
+	const [pref, setPref] = useState<PreferenciasFinanciamentos>(preferenciasSalvas);
+	const { visao, ano, periodo, refinos } = pref;
+	const mostrarGrafico = !!pref.graficos[visao];
+
 	const [bancos, setBancos] = useState<Banco[]>([]);
-	const [tomadores, setTomadores] = useState<string[]>([]);
+	const [dados, setDados] = useState<RelatorioFinanciamentosData | null>(null);
+	const [anosComDados, setAnosComDados] = useState<number[]>([]);
+	const [carregando, setCarregando] = useState(false);
+	const [erro, setErro] = useState<string | null>(null);
+	const [tentativa, setTentativa] = useState(0);
+	const [exportando, setExportando] = useState(false);
+	const [modal, setModal] = useState<ConteudoModalContratos | null>(null);
 
-	const [filtros, setFiltros] = useState<FiltrosRelatorioFinanciamentos>(filtrosIniciais);
-	const [filtrosExpandidos, setFiltrosExpandidos] = useState(true);
+	const raizRef = useRef<HTMLDivElement>(null);
+	const barraRef = useRef<HTMLDivElement>(null);
+	const [alturaBarra, setAlturaBarra] = useState(0);
 
+	const intervalo = useMemo(() => intervaloRelatorio(ano, periodo), [ano, periodo]);
+	const datasPeriodo = `${formatarDataISO(intervalo.inicio)} a ${formatarDataISO(ultimoDiaDoIntervalo(intervalo.fim))}`;
+	const atualizar = (parcial: Partial<PreferenciasFinanciamentos>) => setPref((p) => ({ ...p, ...parcial }));
+	const atualizarRefinos = (r: Partial<RefinosFinanciamentos>) => setPref((p) => ({ ...p, refinos: { ...p.refinos, ...r } }));
+	const limparFiltros = () => atualizar({ refinos: {} });
+	const algumFiltro = !!refinos.tomador || !!(refinos.idBanco || refinos.modalidade || refinos.numeroGarantia || refinos.faixaJuros);
+
+	// Remember the last tab and filters (localStorage may be blocked: ignore)
 	useEffect(() => {
-		const carregarDados = async () => {
-			try {
-				setBancos(await listarBancos());
-			} catch (error) {
-				console.error('Erro ao carregar dados:', error);
-			}
+		try {
+			window.localStorage.setItem(CHAVE_PREFERENCIAS, JSON.stringify(pref));
+		} catch {
+			/* private mode / blocked storage */
+		}
+	}, [pref]);
+
+	// The layout's content column has overflow-x: hidden, which turns it into a scroll container and
+	// disables position: sticky. While this page is open, use "clip" (same clipping, no scroll container).
+	useEffect(() => {
+		const pai = raizRef.current?.parentElement;
+		if (!pai) return;
+		const antes = pai.style.overflowX;
+		pai.style.overflowX = 'clip';
+		return () => {
+			pai.style.overflowX = antes;
 		};
-		carregarDados();
-		handleAplicarFiltros(filtrosIniciais);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	const handleAplicarFiltros = async (filtrosAplicados: FiltrosRelatorioFinanciamentos) => {
-		setIsLoading(true);
-		setFiltros(filtrosAplicados);
-		try {
-			const resultado = await getRelatorioFinanciamentos(filtrosAplicados);
-			setDados(resultado);
-			setTomadores(resultado.tomadores ?? []);
-			setFinanciamentosExpandidos(new Set());
-		} catch (error) {
-			console.error('Erro ao buscar relatório:', error);
-			toast.error('Erro ao buscar relatório de financiamentos');
-		} finally {
-			setIsLoading(false);
-		}
-	};
+	// Sticky table headers sit right under the toolbar (only sticky from the "sm" breakpoint up)
+	useLayoutEffect(() => {
+		const el = barraRef.current;
+		if (!el) return;
+		const medir = () => setAlturaBarra(getComputedStyle(el).position === 'sticky' ? el.offsetHeight : 0);
+		medir();
+		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(medir) : null;
+		ro?.observe(el);
+		window.addEventListener('resize', medir);
+		return () => {
+			ro?.disconnect();
+			window.removeEventListener('resize', medir);
+		};
+	}, []);
 
-	const toggleFinanciamento = (id: number) => {
-		const novosExpandidos = new Set(financiamentosExpandidos);
-		if (novosExpandidos.has(id)) {
-			novosExpandidos.delete(id);
-		} else {
-			novosExpandidos.add(id);
-		}
-		setFinanciamentosExpandidos(novosExpandidos);
-	};
+	useEffect(() => {
+		listarBancos()
+			.then(setBancos)
+			.catch((e) => console.error('Erro ao carregar bancos:', e));
+	}, []);
 
-	const expandirTodos = () => {
-		if (dados) {
-			setFinanciamentosExpandidos(new Set(dados.itens.map(item => item.idFinanciamento)));
-		}
-	};
+	// One request brings every view and chart; the tabs only switch what is shown.
+	useEffect(() => {
+		let ativo = true;
+		setCarregando(true);
+		setErro(null);
+		getRelatorioFinanciamentos({ ano, inicio: intervalo.inicio, fim: intervalo.fim, ...refinos })
+			.then((r) => {
+				if (!ativo) return;
+				setDados(r);
+				setAnosComDados((atuais) => anosDisponiveis(r.contratos, anoAtual, atuais));
+			})
+			.catch((e) => {
+				console.error('Erro ao buscar relatório:', e);
+				if (ativo) setErro('Não foi possível carregar o relatório de financiamentos.');
+			})
+			.finally(() => {
+				if (ativo) setCarregando(false);
+			});
+		return () => {
+			ativo = false;
+		};
+	}, [ano, intervalo.inicio, intervalo.fim, refinos, tentativa]);
 
-	const recolherTodos = () => {
-		setFinanciamentosExpandidos(new Set());
-	};
+	const anos = useMemo(() => anosDisponiveis([], anoAtual, [...anosComDados, ano]), [anosComDados, ano]);
+	const hoje = formatarDataISO(dados?.hoje);
+	const rotuloVisao = VISOES.find((v) => v.id === visao)?.rotulo ?? '';
 
-	const handleExportExcel = async () => {
+	const abrir = (conteudo: Omit<ConteudoModalContratos, 'linhas'> & { refs: ValorContratoFinanciamento[] }) => {
 		if (!dados) return;
+		const { refs, ...resto } = conteudo;
+		setModal({ ...resto, linhas: linhasDe(dados.contratos, refs) });
+	};
 
-		setIsExporting(true);
+	// ---- Excel: the view on the screen (+ its chart, if shown), same filters, plus the parcelas ----
+	const descricaoFiltros = (d: RelatorioFinanciamentosData): Array<[string, string]> => {
+		const usaPeriodo = VISOES.find((v) => v.id === visao)?.usaPeriodo;
+		const nomeBanco = bancos.find((b) => b.id === refinos.idBanco)?.nome;
+		return [
+			['Visão', rotuloVisao],
+			usaPeriodo ? ['Período', `${intervalo.rotulo} (${datasPeriodo})`] : ['Posição', `Hoje, ${formatarDataISO(d.hoje)}`],
+			...(visao === 'ativos' && mostrarGrafico ? [['Ano dos compromissos', String(ano)] as [string, string]] : []),
+			['Tomador', refinos.tomador || 'Todos'],
+			['Banco', nomeBanco || 'Todos'],
+			['Modalidade', MODALIDADES.find((m) => m.value === refinos.modalidade)?.label || 'Todas'],
+			['Garantia', refinos.numeroGarantia || 'Todas'],
+			['Faixa de juros', FAIXAS_JUROS.find((f) => f.value === refinos.faixaJuros)?.label || 'Todas'],
+		];
+	};
+
+	const exportarExcel = () => {
+		if (!dados) return;
+		setExportando(true);
 		try {
-			const periodo = rotuloPeriodo(dados.periodo.ano, dados.periodo.mes);
-			const contratos = dados.itens.map((item) => ({
-				'Contrato': item.numeroContrato,
-				'Tomador': item.responsavel,
-				'Banco/Credor': credor(item),
-				'Modalidade': labelModalidade(item),
-				'Data Contrato': formatDate(item.dataContrato),
-				'Garantia': item.numeroGarantia || '',
-				'Taxa Juros Anual': item.taxaJurosAnual ?? '',
-				'Valor Contrato': item.valorContrato,
-				'Total Juros': item.totalJuros,
-				'Valor Total': item.valorTotal,
-				'Status': STATUS_INFO[item.statusContrato].label,
-				...colunasValorPorStatus(item),
-				'Data Quitação': item.dataQuitacao ? formatDate(item.dataQuitacao) : '',
-				'Parcelas Liquidadas': item.parcelas.filter((p) => p.status === 'Liquidado').length,
-				'Total Parcelas': item.parcelas.length,
-				'Período': periodo,
-			}));
-
-			const parcelas = dados.itens.flatMap(item =>
-				item.parcelas.map(parcela => ({
-					'Contrato': item.numeroContrato,
-					'Tomador': item.responsavel,
-					'Banco/Credor': credor(item),
-					'Data Contrato': formatDate(item.dataContrato),
-					'Valor Contrato': item.valorContrato,
-					'Modalidade': labelModalidade(item),
-					'Status Contrato': STATUS_INFO[item.statusContrato].label,
-					'Parcela': parcela.numParcela,
-					'Valor Parcela': parcela.valor,
-					'Vencimento': formatDate(parcela.dt_vencimento),
-					'Status Parcela': parcela.status,
-					'Data Liquidação': parcela.dt_liquidacao ? formatDate(parcela.dt_liquidacao) : ''
-				}))
-			);
-
 			const wb = XLSX.utils.book_new();
-			XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(contratos), "Contratos");
-			XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(parcelas), "Parcelas");
-			const sufixo = dados.periodo.mes ? `${dados.periodo.ano}-${String(dados.periodo.mes).padStart(2, '0')}` : `${dados.periodo.ano}`;
-			XLSX.writeFile(wb, `relatorio_financiamentos_${sufixo}.xlsx`);
-
+			const planilhas = planilhasExcel(dados, new Set([visao]), graficosExportados(visao, mostrarGrafico, pref.compromissos), descricaoFiltros(dados));
+			for (const p of planilhas) {
+				XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(p.linhas.length ? p.linhas : [{ Aviso: 'Nenhum registro para os filtros escolhidos' }]), p.nome);
+			}
+			const sufixo = VISOES.find((v) => v.id === visao)?.usaPeriodo ? `${dados.periodo.inicio}_a_${dados.periodo.ultimoDia}` : `posicao_${dados.hoje}`;
+			XLSX.writeFile(wb, `financiamentos_${visao}_${sufixo}.xlsx`);
 			toast.success('Excel gerado com sucesso!');
 		} catch (error) {
 			console.error('Erro ao exportar Excel:', error);
 			toast.error('Erro ao gerar o Excel');
 		} finally {
-			setIsExporting(false);
+			setExportando(false);
 		}
 	};
 
-	const inputClass = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white";
-	const labelClass = "text-xs font-medium text-gray-600 uppercase tracking-wide";
+	// ---- Pieces shared by the views ----
+	const vazio = (texto: string) => (
+		<>
+			<p className="text-gray-700 font-medium">{texto}</p>
+			{algumFiltro && (
+				<button type="button" onClick={limparFiltros} className={`mt-2 text-sm text-blue-700 hover:text-blue-900 underline rounded ${foco}`}>
+					Limpar filtros
+				</button>
+			)}
+		</>
+	);
 
-	const g = dados?.graficos;
-	const anoGraficos = dados?.periodo.ano ?? filtros.ano;
-	const semValores = (valores: number[]) => valores.every((v) => !v);
-	const tot = dados?.totalizadores ?? totalizadoresVazios;
-	const valoresPorStatus = totaisPorStatus(dados?.itens ?? []);
-	const statusUnico = valoresPorStatus.length === 1 ? valoresPorStatus[0] : null;
+	const cabecalho = (subtitulo: string) => (
+		<div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+			<div className="min-w-0">
+				<h2 className="text-lg font-semibold text-gray-900">{rotuloVisao}</h2>
+				<p className="text-sm text-gray-500">{subtitulo}</p>
+			</div>
+			<button
+				type="button"
+				aria-pressed={mostrarGrafico}
+				onClick={() => setPref((p) => ({ ...p, graficos: { ...p.graficos, [visao]: !p.graficos[visao] } }))}
+				className={`h-9 px-3 inline-flex items-center gap-2 rounded-lg border text-sm font-medium ${foco} ${
+					mostrarGrafico ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+				}`}
+			>
+				<FontAwesomeIcon icon={faChartColumn} aria-hidden />
+				{mostrarGrafico ? 'Esconder gráfico' : 'Mostrar gráfico'}
+			</button>
+		</div>
+	);
 
-	return (
-		<div className="min-h-screen">
-			<div className="max-w-8xl mx-auto">
-				{/* Period under the title: the top-right corner is covered by the global navbar icons */}
-				<div className="flex flex-col mb-6">
-					<BreadCrumb grupo="Relatórios" pagina="Financiamentos" />
-					{dados && (
-						<span className="text-sm text-gray-600">
-							Período: <strong>{rotuloPeriodo(dados.periodo.ano, dados.periodo.mes)}</strong>
-						</span>
-					)}
+	const blocoTabela = (conteudo: React.ReactNode) => <section className={`${cartao} min-w-0 overflow-clip`}>{conteudo}</section>;
+
+	// ---- Charts ----
+	const graficoNovosXLiquidados = (d: RelatorioFinanciamentosData) => {
+		const nxl = d.graficos.novosXLiquidados;
+		const variosAnos = new Set(nxl.map((m) => m.ano)).size > 1;
+		const novos = somarPorContrato(nxl.map((m) => m.novos.contratos));
+		const liquidados = somarPorContrato(nxl.map((m) => m.liquidados.contratos));
+		const abrirNovos = (refs: ValorContratoFinanciamento[], quando: string) =>
+			abrir({ titulo: `Contratos novos — ${quando}`, dica: 'Soma de todas as parcelas dos contratos assinados (dívida assumida, com juros).', colunaValor: 'Novos (parcelas)', refs });
+		const abrirLiquidados = (refs: ValorContratoFinanciamento[], quando: string) =>
+			abrir({ titulo: `Parcelas pagas — ${quando}`, dica: 'Parcelas pagas no período.', colunaValor: 'Pago no período', mostrarSituacao: false, refs });
+		return (
+			<section className={`${cartao} p-3 sm:p-4 mb-4`} aria-label="Gráfico de contratos novos x liquidados">
+				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mb-1">
+					<h3 className="font-semibold text-gray-800">Contratos novos x liquidados — {intervalo.rotulo}</h3>
+					<div className="flex flex-wrap gap-x-4">
+						<ValorLink rotulo="Novos" cor={CORES.novos} valor={somaValores(novos)} onClick={() => abrirNovos(novos, intervalo.rotulo)} />
+						<ValorLink rotulo="Liquidados" cor={CORES.liquidados} valor={somaValores(liquidados)} onClick={() => abrirLiquidados(liquidados, intervalo.rotulo)} />
+					</div>
 				</div>
+				<GraficoBarrasFinanciamentos
+					categorias={nxl.map((m) => rotuloMesGrafico(m, variosAnos))}
+					series={[
+						{ name: 'Novos', data: nxl.map((m) => m.novos.valor) },
+						{ name: 'Liquidados', data: nxl.map((m) => m.liquidados.valor) },
+					]}
+					cores={[CORES.novos, CORES.liquidados]}
+					vazio={`Nenhum contrato novo nem parcela paga em ${intervalo.rotulo}.`}
+					onClickBarra={(serie, i) => {
+						const m = nxl[i];
+						if (!m) return;
+						const quando = `${MESES_CURTOS[m.mes - 1]}/${m.ano}`;
+						if (serie === 0) abrirNovos(m.novos.contratos, quando);
+						else abrirLiquidados(m.liquidados.contratos, quando);
+					}}
+				/>
+			</section>
+		);
+	};
 
-				{/* Filtros */}
-				<div className="bg-white border border-gray-200 shadow-sm rounded-xl mb-6 overflow-hidden">
-					<button
-						type="button"
-						onClick={() => setFiltrosExpandidos((v) => !v)}
-						className="w-full flex items-center justify-between gap-2 px-5 py-4 text-left hover:bg-gray-50 transition-colors border-b border-gray-200"
-					>
-						<span className="flex items-center gap-2 text-base font-semibold text-gray-800">
-							<FontAwesomeIcon icon={faFilter} className="text-blue-600" />
-							Filtros
-						</span>
-						<FontAwesomeIcon
-							icon={filtrosExpandidos ? faChevronUp : faChevronDown}
-							className="text-gray-500 text-sm"
+	const graficoCompromissos = (d: RelatorioFinanciamentosData) => {
+		const modo = pref.compromissos;
+		const abrirCompromissos = (refs: ValorContratoFinanciamento[], quando: string) =>
+			abrir({ titulo: `Compromissos financeiros — ${quando}`, dica: `Parcelas não pagas que vencem em ${quando} (inclui as vencidas).`, colunaValor: `Vence em ${quando}`, refs });
+		const ca = d.graficos.compromissosDoAno;
+		const cpa = d.graficos.compromissosPorAno;
+		const anoHoje = Number(d.hoje.slice(0, 4));
+		const temAtraso = cpa.some((a) => a.ano < anoHoje && a.valor > 0);
+		const totalAno = somaValores(ca.meses);
+		const totalPorAno = somaValores(cpa);
+		return (
+			<section className={`${cartao} p-3 sm:p-4 mb-4`} aria-label="Gráfico de compromissos financeiros">
+				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-1">
+					<div className="flex flex-wrap items-center gap-2">
+						<h3 className="font-semibold text-gray-800">Compromissos financeiros</h3>
+						<Alternador<ModoCompromissos>
+							rotulo="Tipo de gráfico"
+							valor={modo}
+							opcoes={[
+								['ano', 'Do ano'],
+								['porAno', 'Por ano'],
+							]}
+							onChange={(v) => atualizar({ compromissos: v })}
 						/>
-					</button>
-
-					{filtrosExpandidos && (
-					<div className="p-5">
-						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-							{/* Ano */}
-							<div className="space-y-1">
-								<label className={labelClass}>Ano</label>
-								<select
-									value={filtros.ano}
-									onChange={(e) => setFiltros({ ...filtros, ano: parseInt(e.target.value) })}
-									className={inputClass}
-								>
-									{ANOS.map((ano) => (
-										<option key={ano} value={ano}>{ano}</option>
-									))}
-								</select>
-							</div>
-
-							{/* Mês */}
-							<div className="space-y-1">
-								<label className={labelClass}>Mês</label>
-								<select
-									value={filtros.mes || ''}
-									onChange={(e) => setFiltros({ ...filtros, mes: e.target.value ? parseInt(e.target.value) : undefined })}
-									className={inputClass}
-								>
-									<option value="">Ano inteiro</option>
-									{MESES_EXTENSO.map((nome, i) => (
-										<option key={nome} value={i + 1}>{nome}</option>
-									))}
-								</select>
-							</div>
-
-							{/* Status do Contrato */}
-							<div className="space-y-1">
-								<label className={labelClass}>Status do Contrato</label>
-								<select
-									value={filtros.statusContrato || ''}
-									onChange={(e) => setFiltros({ ...filtros, statusContrato: (e.target.value || undefined) as StatusContratoFinanciamento | undefined })}
-									className={inputClass}
-								>
-									<option value="">Todos</option>
-									{STATUS_ORDEM.map((s) => (
-										<option key={s} value={s}>{STATUS_INFO[s].label}</option>
-									))}
-								</select>
-							</div>
-
-							{/* Tomador (Financiamento.responsavel) */}
-							<div className="space-y-1">
-								<label className={labelClass}>Tomador</label>
-								<select
-									value={filtros.tomador || ''}
-									onChange={(e) => setFiltros({ ...filtros, tomador: e.target.value || undefined })}
-									className={inputClass}
-								>
-									<option value="">Todos</option>
-									{tomadores.map((tomador) => (
-										<option key={tomador} value={tomador}>{tomador}</option>
-									))}
-								</select>
-							</div>
-
-							{/* Modalidade */}
-							<div className="space-y-1">
-								<label className={labelClass}>Modalidade</label>
-								<select
-									value={filtros.modalidade || ''}
-									onChange={(e) => setFiltros({ ...filtros, modalidade: (e.target.value || undefined) as ModalidadeFinanciamento | undefined })}
-									className={inputClass}
-								>
-									<option value="">Todas</option>
-									{MODALIDADES.map((m) => (
-										<option key={m.value} value={m.value}>{m.label}</option>
-									))}
-								</select>
-							</div>
-
-							{/* Banco */}
-							<div className="space-y-1">
-								<label className={labelClass}>Banco</label>
-								<select
-									value={filtros.idBanco || ''}
-									onChange={(e) => setFiltros({ ...filtros, idBanco: e.target.value ? parseInt(e.target.value) : undefined })}
-									className={inputClass}
-								>
-									<option value="">Todos</option>
-									{bancos.map((banco) => (
-										<option key={banco.id} value={banco.id}>
-											{banco.nome}
-										</option>
-									))}
-								</select>
-							</div>
-
-							{/* Garantia */}
-							<div className="space-y-1">
-								<label className={labelClass}>Garantia (Nº Matrícula)</label>
-								<input
-									type="text"
-									value={filtros.numeroGarantia || ''}
-									onChange={(e) => setFiltros({ ...filtros, numeroGarantia: e.target.value || undefined })}
-									placeholder="Número da garantia"
-									className={inputClass}
-								/>
-							</div>
-
-							{/* Faixa de Juros */}
-							<div className="space-y-1">
-								<label className={labelClass}>Faixa de Juros (%)</label>
-								<select
-									value={filtros.faixaJuros || ''}
-									onChange={(e) => setFiltros({ ...filtros, faixaJuros: e.target.value || undefined })}
-									className={inputClass}
-								>
-									<option value="">Todas</option>
-									<option value={'<=8'}>≤ 8%</option>
-									<option value={'>8<=10'}>{'>'} 8% ≤ 10%</option>
-									<option value={'>10<=12'}>{'>'} 10% ≤ 12%</option>
-									<option value={'>12<=15'}>{'>'} 12% ≤ 15%</option>
-									<option value={'>15'}>{'>'} 15%</option>
-								</select>
-							</div>
-						</div>
-
-						<div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-							<p className="text-xs text-gray-500">
-								Status no período: <strong>Novo</strong> = contrato assinado no período; <strong>Quitado</strong> = última parcela
-								liquidada no período; <strong>Ativo</strong> = não quitado até o fim do período.
-							</p>
-							<div className="flex gap-2 justify-end shrink-0">
-								<button
-									onClick={() => handleAplicarFiltros(filtrosIniciais)}
-									disabled={isLoading}
-									className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed transition-colors"
-								>
-									Limpar
-								</button>
-								<button
-									onClick={() => handleAplicarFiltros(filtros)}
-									disabled={isLoading}
-									className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
-								>
-									{isLoading ? 'Carregando...' : 'Aplicar Filtros'}
-								</button>
-							</div>
-						</div>
+						{modo === 'ano' && (
+							<select
+								aria-label="Ano dos compromissos"
+								value={ano}
+								onChange={(e) => atualizar({ ano: parseInt(e.target.value) })}
+								className={`h-7 px-2 border border-gray-300 rounded-md text-xs bg-white ${foco}`}
+							>
+								{anos.map((a) => (
+									<option key={a} value={a}>
+										{a}
+									</option>
+								))}
+							</select>
+						)}
 					</div>
+					{modo === 'ano' ? (
+						<ValorLink
+							rotulo={`Total de ${ca.ano}`}
+							valor={totalAno}
+							onClick={() => abrirCompromissos(somarPorContrato(ca.meses.map((m) => m.contratos)), String(ca.ano))}
+						/>
+					) : (
+						<ValorLink
+							rotulo="Saldo devedor"
+							valor={totalPorAno}
+							onClick={() => abrirCompromissos(somarPorContrato(cpa.map((a) => a.contratos)), 'todos os anos')}
+						/>
 					)}
 				</div>
-
-				{isLoading && (
-					<div className="bg-white border border-gray-200 rounded-xl shadow-sm p-12">
-						<div className="flex flex-col items-center justify-center">
-							<div className="relative">
-								<div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-							</div>
-							<p className="mt-6 text-gray-700 font-medium text-lg">Carregando dados do relatório...</p>
-						</div>
-					</div>
-				)}
-
-				{!isLoading && (
+				{modo === 'ano' ? (
+					<GraficoBarrasFinanciamentos
+						categorias={MESES_CURTOS}
+						series={[{ name: 'Parcelas a pagar', data: ca.meses.map((m) => m.valor) }]}
+						cores={[CORES.compromissos]}
+						vazio={`Nenhuma parcela a pagar em ${ca.ano}.`}
+						onClickBarra={(_s, i) => ca.meses[i] && abrirCompromissos(ca.meses[i].contratos, `${MESES_CURTOS[i]}/${ca.ano}`)}
+					/>
+				) : (
 					<>
-						{/* Resumo por Status (independe do filtro de status) */}
-						<div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-6">
-							<h3 className="text-base font-semibold text-gray-700 mb-5 uppercase tracking-wide">Resumo por Status</h3>
-							<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-								{STATUS_ORDEM.map((s) => {
-									const resumo = dados?.resumoStatus?.[s] ?? { quantidade: 0, valor: 0 };
-									const card = CARD_RESUMO[s];
-									return (
-										<div key={s} title={card?.explicacao} className={`border-l-4 ${STATUS_INFO[s].borda} border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow`}>
-											<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-												{card?.titulo ?? `Contratos ${STATUS_INFO[s].plural}`}
-											</p>
-											<p className={`text-2xl font-bold ${STATUS_INFO[s].texto} mb-1`}>{resumo.quantidade}</p>
-											<p className="text-sm text-gray-700 font-medium">{formatCurrency(resumo.valor)}</p>
-											<p className="text-xs text-gray-500">{card?.explicacao ?? STATUS_INFO[s].valor}</p>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-
-						{/* Totalizadores */}
-						<div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-6">
-							<h3 className="text-base font-semibold text-gray-700 mb-5 uppercase tracking-wide">Totalizadores</h3>
-							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Contratos</p>
-									<p className="text-2xl font-bold text-gray-900">{tot.totalContratos}</p>
-								</div>
-								<div
-									className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow"
-									title="Novo: valor contratado · Ativo: parcelas a pagar · Quitado: valor pago. Só se somam dentro do mesmo status."
-								>
-									{statusUnico || valoresPorStatus.length === 0 ? (
-										<>
-											<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-												{statusUnico ? `${STATUS_INFO[statusUnico.status].valor} (${STATUS_INFO[statusUnico.status].plural.toLowerCase()})` : 'Valor conforme status'}
-											</p>
-											<p className="text-2xl font-bold text-gray-900">{formatCurrency(statusUnico?.valor ?? 0)}</p>
-										</>
-									) : (
-										<>
-											<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor conforme status</p>
-											<ul className="space-y-0.5 text-sm">
-												{valoresPorStatus.map((t) => (
-													<li key={t.status} className="flex justify-between gap-2">
-														<span className="text-gray-600">{STATUS_INFO[t.status].valor}</span>
-														<span className={`font-bold whitespace-nowrap ${STATUS_INFO[t.status].texto}`}>{formatCurrency(t.valor)}</span>
-													</li>
-												))}
-											</ul>
-										</>
-									)}
-								</div>
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Valor Total Contratos</p>
-									<p className="text-2xl font-bold text-gray-900">{formatCurrency(tot.totalValorContratos)}</p>
-								</div>
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Juros</p>
-									<p className="text-2xl font-bold text-gray-900">{formatCurrency(tot.totalJuros)}</p>
-								</div>
-								<div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total de Parcelas</p>
-									<p className="text-2xl font-bold text-gray-900">{tot.totalParcelas}</p>
-									<p className="text-xs text-gray-500">{formatCurrency(tot.totalValorParcelas)}</p>
-								</div>
-								<div className="border-l-4 border-l-green-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas Liquidadas</p>
-									<p className="text-2xl font-bold text-green-600">{tot.totalParcelasLiquidadas}</p>
-								</div>
-								<div className="border-l-4 border-l-amber-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas em Aberto</p>
-									<p className="text-2xl font-bold text-amber-600">{tot.totalParcelasAberto}</p>
-								</div>
-								<div className="border-l-4 border-l-red-500 border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-									<p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Parcelas Vencidas</p>
-									<p className="text-2xl font-bold text-red-600">{tot.totalParcelasVencidas}</p>
-								</div>
-							</div>
-						</div>
-
-						{/* Gráficos (filtros de contrato; o filtro de status afeta só a tabela) */}
-						{g && (
-							<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-								<CartaoGrafico
-									className="lg:col-span-2"
-									titulo={`Contratos novos x parcelas liquidadas — ${anoGraficos}`}
-									subtitulo="Novos: valor dos contratos assinados no mês · Parcelas liquidadas no mês: soma das parcelas pagas em cada mês (mesma regra do Dashboard)"
-									vazio={semValores(g.mensal.flatMap((m) => [m.novos, m.liquidados]))}
-								>
-									<Chart
-										options={opcoesBarras(MESES, [CORES.novos, CORES.liquidados], true)}
-										series={[
-											{ name: 'Novos', data: g.mensal.map((m) => m.novos) },
-											{ name: 'Parcelas liquidadas no mês', data: g.mensal.map((m) => m.liquidados) },
-										]}
-										type="bar"
-										height={320}
-										width="100%"
-									/>
-								</CartaoGrafico>
-
-								<CartaoGrafico
-									titulo={`Compromissos financeiros de ${anoGraficos}`}
-									subtitulo="Parcelas não liquidadas, pelo mês de vencimento"
-									vazio={semValores(g.mensal.map((m) => m.compromissos))}
-								>
-									<Chart
-										options={opcoesBarras(MESES, [CORES.compromissos])}
-										series={[{ name: 'Compromissos', data: g.mensal.map((m) => m.compromissos) }]}
-										type="bar"
-										height={300}
-										width="100%"
-									/>
-								</CartaoGrafico>
-
-								<CartaoGrafico
-									titulo="Compromissos financeiros por ano"
-									subtitulo="Parcelas não liquidadas dos contratos ativos, pelo ano de vencimento"
-									vazio={semValores(g.compromissosPorAno.map((a) => a.valor))}
-								>
-									<Chart
-										options={opcoesBarras(g.compromissosPorAno.map((a) => String(a.ano)), [CORES.compromissos])}
-										series={[{ name: 'Compromissos', data: g.compromissosPorAno.map((a) => a.valor) }]}
-										type="bar"
-										height={300}
-										width="100%"
-									/>
-								</CartaoGrafico>
-
-								<CartaoGrafico
-									titulo={`Liquidados por mês — ${anoGraficos}`}
-									subtitulo="Parcelas liquidadas, pelo mês de liquidação"
-									vazio={semValores(g.mensal.map((m) => m.liquidados))}
-								>
-									<Chart
-										options={opcoesBarras(MESES, [CORES.liquidados])}
-										series={[{ name: 'Liquidados', data: g.mensal.map((m) => m.liquidados) }]}
-										type="bar"
-										height={300}
-										width="100%"
-									/>
-								</CartaoGrafico>
-
-								<CartaoGrafico
-									titulo="Liquidados por ano"
-									subtitulo="Parcelas liquidadas, pelo ano de liquidação"
-									vazio={semValores(g.liquidadosPorAno.map((a) => a.valor))}
-								>
-									<Chart
-										options={opcoesBarras(g.liquidadosPorAno.map((a) => String(a.ano)), [CORES.liquidados])}
-										series={[{ name: 'Liquidados', data: g.liquidadosPorAno.map((a) => a.valor) }]}
-										type="bar"
-										height={300}
-										width="100%"
-									/>
-								</CartaoGrafico>
-							</div>
-						)}
-
-						{/* Listagem */}
-						<div className="bg-white border border-gray-200 rounded-xl shadow-sm">
-							<div className="p-5 border-b border-gray-200">
-								<div className="flex items-center justify-between flex-wrap gap-3">
-									<h3 className="text-lg font-semibold text-gray-800">Listagem de Financiamentos</h3>
-									<div className="flex gap-2 flex-wrap">
-										<button
-											onClick={expandirTodos}
-											className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-2"
-										>
-											<FontAwesomeIcon icon={faChevronDown} />
-											Expandir todos
-										</button>
-										<button
-											onClick={recolherTodos}
-											className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-2"
-										>
-											<FontAwesomeIcon icon={faChevronUp} />
-											Recolher todos
-										</button>
-										<button
-											onClick={handleExportExcel}
-											disabled={isExporting || !dados?.itens?.length}
-											className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2 shadow-sm"
-										>
-											{isExporting ? (
-												<FontAwesomeIcon icon={faSpinner} className="animate-spin" />
-											) : (
-												<FontAwesomeIcon icon={faFileExcel} />
-											)}
-											Exportar Excel
-										</button>
-									</div>
-								</div>
-							</div>
-
-							<div className="overflow-x-auto">
-								<table className="min-w-full">
-									<thead className="bg-gray-50">
-										<tr>
-											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Contrato</th>
-											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tomador</th>
-											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Banco/Credor</th>
-											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Modalidade</th>
-											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Data Contrato</th>
-											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Garantia</th>
-											<th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Valor Contrato</th>
-											<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
-											<th
-												className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase"
-												title="Novo: valor do contrato · Ativo: parcelas não liquidadas · Quitado: valor pago"
-											>
-												Valor
-											</th>
-											<th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Parcelas</th>
-											<th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Ações</th>
-										</tr>
-									</thead>
-									<tbody className="divide-y divide-gray-200">
-										{(dados?.itens ?? []).length === 0 ? (
-											<tr>
-												<td colSpan={11} className="px-4 py-8 text-center text-gray-500">
-													{dados ? 'Nenhum financiamento encontrado para os filtros selecionados.' : 'Aplique os filtros para visualizar o relatório.'}
-												</td>
-											</tr>
-										) : (
-											(dados?.itens ?? []).map((item) => (
-											<React.Fragment key={item.idFinanciamento}>
-												<tr className="hover:bg-gray-50">
-													<td className="px-4 py-3 text-sm font-medium text-gray-900">{item.numeroContrato}</td>
-													<td className="px-4 py-3 text-sm text-gray-700">{item.responsavel || '-'}</td>
-													<td className="px-4 py-3 text-sm text-gray-700">{credor(item)}</td>
-													<td className="px-4 py-3 text-sm text-gray-700">{labelModalidade(item)}</td>
-													<td className="px-4 py-3 text-sm text-gray-700">{formatDate(item.dataContrato)}</td>
-													<td className="px-4 py-3 text-sm text-gray-700">{item.numeroGarantia || '-'}</td>
-													<td className="px-4 py-3 text-sm text-right text-gray-700">{formatCurrency(item.valorContrato)}</td>
-													<td className="px-4 py-3 text-sm whitespace-nowrap">
-														<span className={`px-2 py-1 rounded text-xs font-semibold ${STATUS_INFO[item.statusContrato]?.badge ?? 'bg-gray-100 text-gray-800'}`}>
-															{STATUS_INFO[item.statusContrato]?.label ?? '-'}
-														</span>
-														{item.dataQuitacao && (
-															<span className="block text-xs text-gray-500 mt-1">quitado em {formatDate(item.dataQuitacao)}</span>
-														)}
-													</td>
-													<td className="px-4 py-3 text-sm text-right font-bold text-gray-900 whitespace-nowrap">
-														{formatCurrency(item.valor)}
-														<span className="block text-xs font-normal text-gray-500">{STATUS_INFO[item.statusContrato]?.valor}</span>
-													</td>
-													<td className="px-4 py-3 text-sm text-center text-gray-700">
-														{item.parcelas.filter((p) => p.status === 'Liquidado').length}/{item.parcelas.length}
-													</td>
-													<td className="px-4 py-3 text-center">
-														<button
-															onClick={() => toggleFinanciamento(item.idFinanciamento)}
-															className="text-blue-600 hover:text-blue-800"
-															title="Ver parcelas"
-														>
-															<FontAwesomeIcon icon={financiamentosExpandidos.has(item.idFinanciamento) ? faChevronUp : faChevronDown} />
-														</button>
-													</td>
-												</tr>
-												{financiamentosExpandidos.has(item.idFinanciamento) && (
-													<tr>
-														<td colSpan={11} className="px-4 py-3 bg-gray-50">
-															<div className="overflow-x-auto">
-																<table className="min-w-full text-sm">
-																	<thead>
-																		<tr>
-																			<th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Parcela</th>
-																			<th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Vencimento</th>
-																			<th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Valor</th>
-																			<th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Status</th>
-																			<th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Liquidação</th>
-																		</tr>
-																	</thead>
-																	<tbody>
-																		{item.parcelas.length === 0 && (
-																			<tr className="border-t">
-																				<td colSpan={5} className="px-3 py-2 text-gray-500">Nenhuma parcela cadastrada.</td>
-																			</tr>
-																		)}
-																		{item.parcelas.map((parcela) => (
-																			<tr key={parcela.idParcela} className="border-t">
-																				<td className="px-3 py-2">{parcela.numParcela}</td>
-																				<td className="px-3 py-2">{formatDate(parcela.dt_vencimento)}</td>
-																				<td className="px-3 py-2 text-right font-medium">{formatCurrency(parcela.valor)}</td>
-																				<td className="px-3 py-2">
-																					<span className={`px-2 py-1 rounded text-xs font-semibold ${
-																						parcela.status === 'Liquidado' ? 'bg-green-100 text-green-800' :
-																						parcela.status === 'Vencido' ? 'bg-red-100 text-red-800' :
-																						'bg-yellow-100 text-yellow-800'
-																					}`}>
-																						{parcela.status}
-																					</span>
-																				</td>
-																				<td className="px-3 py-2">{parcela.dt_liquidacao ? formatDate(parcela.dt_liquidacao) : '-'}</td>
-																			</tr>
-																		))}
-																	</tbody>
-																</table>
-															</div>
-														</td>
-													</tr>
-												)}
-											</React.Fragment>
-											))
-										)}
-									</tbody>
-									{(dados?.itens ?? []).length > 0 && (
-										<tfoot className="bg-gray-50 border-t border-gray-200">
-											<tr>
-												<td colSpan={6} className="px-4 py-3 text-sm font-semibold text-gray-700">Total ({tot.totalContratos} contratos)</td>
-												<td className="px-4 py-3 text-sm text-right font-semibold text-gray-700">{formatCurrency(tot.totalValorContratos)}</td>
-												<td></td>
-												<td className="px-4 py-3 text-sm text-right font-bold text-gray-900 whitespace-nowrap">
-													{statusUnico ? (
-														formatCurrency(statusUnico.valor)
-													) : (
-														// Different meanings per status: one subtotal each, never a grand total
-														valoresPorStatus.map((t) => (
-															<span key={t.status} className="block">
-																<span className="text-xs font-normal text-gray-500 mr-1">{STATUS_INFO[t.status].plural}:</span>
-																{formatCurrency(t.valor)}
-															</span>
-														))
-													)}
-												</td>
-												<td colSpan={2}></td>
-											</tr>
-										</tfoot>
-									)}
-								</table>
-							</div>
-						</div>
+						<GraficoBarrasFinanciamentos
+							categorias={cpa.map((a) => (a.ano < anoHoje ? `${a.ano} (atraso)` : String(a.ano)))}
+							series={[{ name: 'Parcelas a pagar', data: cpa.map((a) => a.valor) }]}
+							cores={cpa.map((a) => (a.ano < anoHoje ? CORES.atraso : CORES.compromissos))}
+							corPorBarra
+							vazio="Nenhuma parcela a pagar."
+							onClickBarra={(_s, i) => cpa[i] && abrirCompromissos(cpa[i].contratos, String(cpa[i].ano))}
+						/>
+						{temAtraso && <p className="text-xs text-red-700 px-1 mt-1">Em vermelho: parcelas de anos anteriores ainda não pagas.</p>}
 					</>
 				)}
+			</section>
+		);
+	};
+
+	// ---- Views ----
+	const visaoAtivos = (d: RelatorioFinanciamentosData) => {
+		const prox = proximosMeses(d.contratos, d.ativos.contratos, d.hoje);
+		const abrirAtivos = () => abrir({ titulo: 'Contratos ativos', dica: `Contratos com parcelas a pagar, posição de ${hoje}.`, refs: d.ativos.contratos });
+		return (
+			<>
+				{cabecalho(`Todos os contratos com parcelas a pagar · posição de hoje, ${hoje}`)}
+				<Kpis>
+					<Kpi rotulo="Contratos" valor={String(d.ativos.quantidade)} onClick={abrirAtivos} />
+					<Kpi rotulo="A vencer" valor={brl(d.ativos.valor)} detalhe="soma das parcelas a pagar" destaque onClick={abrirAtivos} />
+					<Kpi rotulo="Valor dos contratos" valor={brl(d.ativos.valorContratos)} detalhe="valor original contratado" />
+					<Kpi
+						rotulo="Próximos 12 meses"
+						valor={brl(prox.valor)}
+						detalhe={prox.emAtraso ? <span className="text-red-700 font-medium">inclui {brl(prox.emAtraso)} em atraso</span> : 'parcelas que vencem em até 1 ano'}
+						onClick={() =>
+							abrir({
+								titulo: 'Parcelas dos próximos 12 meses',
+								dica: 'Parcelas não pagas que vencem em até 12 meses (inclui as vencidas).',
+								colunaValor: 'Próximos 12 meses',
+								refs: prox.contratos,
+							})
+						}
+					/>
+				</Kpis>
+				{mostrarGrafico && graficoCompromissos(d)}
+				{blocoTabela(
+					<TabelaContratosFinanciamento linhas={linhasDe(d.contratos, d.ativos.contratos)} vazio={vazio('Nenhum contrato com parcelas a pagar.')} topoCabecalho={alturaBarra} />,
+				)}
+			</>
+		);
+	};
+
+	const visaoContratados = (d: RelatorioFinanciamentosData) => {
+		const abrirContratados = () =>
+			abrir({ titulo: `Contratados em ${intervalo.rotulo}`, dica: 'Contratos assinados no período que ainda têm parcelas a pagar.', refs: d.contratados.contratos });
+		return (
+			<>
+				{cabecalho(`Contratos assinados de ${datasPeriodo} que ainda têm parcelas a pagar`)}
+				<Kpis>
+					<Kpi rotulo="Contratos" valor={String(d.contratados.quantidade)} onClick={abrirContratados} />
+					<Kpi rotulo="Valor contratado" valor={brl(d.contratados.valorContratos)} detalhe="valor original dos contratos" />
+					<Kpi rotulo="A vencer" valor={brl(d.contratados.valor)} detalhe="soma das parcelas a pagar" destaque onClick={abrirContratados} />
+				</Kpis>
+				{mostrarGrafico && graficoNovosXLiquidados(d)}
+				{blocoTabela(
+					<TabelaContratosFinanciamento
+						linhas={linhasDe(d.contratos, d.contratados.contratos)}
+						vazio={vazio(`Nenhum contrato assinado em ${intervalo.rotulo} com parcelas a pagar.`)}
+						topoCabecalho={alturaBarra}
+					/>,
+				)}
+			</>
+		);
+	};
+
+	const visaoLiquidados = (d: RelatorioFinanciamentosData) => {
+		const l = d.liquidados;
+		return (
+			<>
+				{cabecalho(`Contratos com parcelas pagas de ${datasPeriodo}`)}
+				<Kpis>
+					<Kpi
+						rotulo="Contratos"
+						valor={String(l.quantidade)}
+						detalhe={`${plural(l.quitados, 'quitado', 'quitados')} · ${plural(l.amortizados, 'amortizado', 'amortizados')}`}
+						onClick={() =>
+							abrir({ titulo: `Liquidados em ${intervalo.rotulo}`, dica: 'Contratos com parcelas pagas no período.', colunaValor: 'Pago no período', mostrarSituacao: true, refs: l.contratos })
+						}
+						dica="Quitado: última parcela paga no período. Amortizado: pagou parcelas e ainda tem a vencer."
+					/>
+					<Kpi
+						rotulo="Pago no período"
+						valor={brl(l.valor)}
+						detalhe="soma das parcelas pagas"
+						destaque
+						onClick={() =>
+							abrir({ titulo: `Pago em ${intervalo.rotulo}`, dica: 'Parcelas pagas no período, por contrato.', colunaValor: 'Pago no período', mostrarSituacao: true, refs: l.contratos })
+						}
+					/>
+					<Kpi
+						rotulo="Ainda a vencer"
+						valor={brl(l.valorVincendo)}
+						detalhe="destes contratos, hoje"
+						onClick={() =>
+							abrir({
+								titulo: 'Ainda a vencer',
+								dica: 'Parcelas que ainda faltam pagar nos contratos liquidados no período.',
+								refs: linhasDe(d.contratos, l.contratos)
+									.filter((x) => x.contrato.valorVincendo > 0)
+									.map((x) => ({ idFinanciamento: x.contrato.idFinanciamento, valor: x.contrato.valorVincendo })),
+							})
+						}
+					/>
+				</Kpis>
+				{mostrarGrafico && graficoNovosXLiquidados(d)}
+				{blocoTabela(
+					<TabelaContratosFinanciamento
+						linhas={linhasDe(d.contratos, l.contratos)}
+						colunaValor="Pago no período"
+						mostrarSituacao
+						vazio={vazio(`Nenhuma parcela paga em ${intervalo.rotulo}.`)}
+						topoCabecalho={alturaBarra}
+					/>,
+				)}
+			</>
+		);
+	};
+
+	const visaoPorTomador = (d: RelatorioFinanciamentosData) => {
+		const pt = d.porTomador;
+		const maior = pt.grupos[0];
+		const parte = (v: number) => (pt.valor ? (v / pt.valor) * 100 : 0);
+		const abrirTomador = (g: (typeof pt.grupos)[number]) =>
+			abrir({ titulo: `Contratos ativos — ${g.tomador}`, dica: 'Contratos deste tomador com parcelas a pagar.', refs: g.contratos });
+		const thT = 'px-2 sm:px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap bg-gray-50 shadow-[inset_0_-1px_0_#e5e7eb]';
+		const tdT = 'px-2 sm:px-3 py-2.5 text-[13px] sm:text-sm text-gray-700';
+		return (
+			<>
+				{cabecalho(`Parcelas a pagar somadas por tomador · posição de hoje, ${hoje}`)}
+				<Kpis>
+					<Kpi rotulo="Tomadores" valor={String(pt.grupos.length)} detalhe={plural(pt.quantidade, 'contrato ativo', 'contratos ativos')} />
+					<Kpi
+						rotulo="A vencer"
+						valor={brl(pt.valor)}
+						detalhe="soma das parcelas a pagar"
+						destaque
+						onClick={() => abrir({ titulo: 'Contratos ativos', dica: `Contratos com parcelas a pagar, posição de ${hoje}.`, refs: d.ativos.contratos })}
+					/>
+					{maior && <Kpi rotulo="Maior tomador" valor={maior.tomador} detalhe={`${pct(parte(maior.valor))} do total · ${brl(maior.valor)}`} onClick={() => abrirTomador(maior)} />}
+				</Kpis>
+				{mostrarGrafico && (
+					<section className={`${cartao} p-3 sm:p-4 mb-4`} aria-label="Gráfico de a vencer por tomador">
+						<h3 className="font-semibold text-gray-800 mb-1">A vencer por tomador</h3>
+						<GraficoBarrasFinanciamentos
+							horizontal
+							categorias={pt.grupos.map((g) => g.tomador)}
+							series={[{ name: 'A vencer', data: pt.grupos.map((g) => g.valor) }]}
+							cores={[CORES.tomador]}
+							vazio="Nenhum valor a vencer."
+							onClickBarra={(_s, i) => pt.grupos[i] && abrirTomador(pt.grupos[i])}
+						/>
+					</section>
+				)}
+				{blocoTabela(
+					!pt.grupos.length ? (
+						<div className="px-4 py-10 text-center text-sm text-gray-500">{vazio('Nenhum contrato com parcelas a pagar.')}</div>
+					) : (
+						<table className="w-full">
+							<thead className="sticky z-10" style={{ top: alturaBarra }}>
+								<tr>
+									<th scope="col" className={`${thT} text-left`}>
+										Tomador
+									</th>
+									<th scope="col" className={`${thT} text-right hidden sm:table-cell`}>
+										Contratos
+									</th>
+									<th scope="col" className={`${thT} text-right`}>
+										A vencer
+									</th>
+									<th scope="col" className={`${thT} text-left w-24 sm:w-56`}>
+										% do total
+									</th>
+									<th scope="col" className={`${thT} text-right hidden md:table-cell`}>
+										Valor dos contratos
+									</th>
+								</tr>
+							</thead>
+							<tbody className="divide-y divide-gray-200">
+								{pt.grupos.map((g, i) => {
+									const p = parte(g.valor);
+									return (
+										<tr key={g.tomador} className="hover:bg-gray-50 cursor-pointer" onClick={() => abrirTomador(g)}>
+											<td className={`${tdT} [overflow-wrap:anywhere]`}>
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														abrirTomador(g);
+													}}
+													aria-label={`Ver contratos de ${g.tomador}`}
+													className={`text-left rounded ${foco}`}
+												>
+													<span className="text-gray-400 tabular-nums mr-2">{i + 1}º</span>
+													<span className="font-semibold text-gray-900">{g.tomador}</span>
+													<span className="block text-xs text-gray-500 sm:hidden">{plural(g.quantidade, 'contrato', 'contratos')}</span>
+												</button>
+											</td>
+											<td className={`${tdT} text-right tabular-nums hidden sm:table-cell`}>{g.quantidade}</td>
+											<td className={`${tdT} text-right tabular-nums whitespace-nowrap font-bold text-gray-900`}>{brl(g.valor)}</td>
+											<td className={tdT}>
+												<div className="flex items-center gap-2">
+													<div className="flex-1 h-2 bg-gray-100 rounded hidden sm:block" aria-hidden>
+														<div className="h-2 rounded" style={{ width: `${Math.min(100, p)}%`, background: CORES.tomador }} />
+													</div>
+													<span className="text-xs tabular-nums text-gray-600 w-12 text-right">{pct(p)}</span>
+												</div>
+											</td>
+											<td className={`${tdT} text-right tabular-nums whitespace-nowrap text-gray-600 hidden md:table-cell`}>{brl(g.valorContratos)}</td>
+										</tr>
+									);
+								})}
+							</tbody>
+							<tfoot className="bg-gray-50 border-t-2 border-gray-200">
+								<tr>
+									<td className={`${tdT} font-semibold text-gray-900`}>Total</td>
+									<td className={`${tdT} text-right tabular-nums font-semibold hidden sm:table-cell`}>{pt.quantidade}</td>
+									<td className={`${tdT} text-right tabular-nums whitespace-nowrap font-bold text-gray-900`}>{brl(pt.valor)}</td>
+									<td className={`${tdT} text-xs text-gray-600`}>
+										<span className="block text-right sm:text-left">{pct(100)}</span>
+									</td>
+									<td className={`${tdT} text-right tabular-nums whitespace-nowrap font-semibold hidden md:table-cell`}>{brl(pt.valorContratos)}</td>
+								</tr>
+							</tfoot>
+						</table>
+					),
+				)}
+			</>
+		);
+	};
+
+	const VISAO_RENDER: Record<VisaoFinanciamentos, (d: RelatorioFinanciamentosData) => React.ReactNode> = {
+		ativos: visaoAtivos,
+		contratados: visaoContratados,
+		liquidados: visaoLiquidados,
+		porTomador: visaoPorTomador,
+	};
+
+	return (
+		<div ref={raizRef} className="min-h-screen">
+			<BreadCrumb grupo="Relatórios" pagina="Financiamentos" />
+
+			{/* Toolbar: sticky from the "sm" breakpoint up (on phones it would take too much of the screen) */}
+			<div ref={barraRef} className="sm:sticky top-0 z-20 bg-white pt-1 pb-3 sm:pt-2">
+				<BarraFiltrosFinanciamentos
+					visao={visao}
+					onVisao={(v) => atualizar({ visao: v })}
+					ano={ano}
+					anos={anos}
+					onAno={(a) => atualizar({ ano: a })}
+					periodo={periodo}
+					onPeriodo={(p) => atualizar({ periodo: p })}
+					refinos={refinos}
+					onRefinos={atualizarRefinos}
+					onLimpar={limparFiltros}
+					tomadores={dados?.tomadores ?? []}
+					bancos={bancos}
+					carregando={carregando && !!dados}
+					exportando={exportando}
+					podeExportar={!!dados && !erro}
+					onExportar={exportarExcel}
+				/>
 			</div>
+
+			<div id="painel-fin" role="tabpanel" aria-labelledby={`aba-fin-${visao}`} className="mt-1">
+				{erro ? (
+					<div className="bg-white border border-red-200 rounded-xl p-6 text-center">
+						<p className="text-red-700 mb-3">{erro}</p>
+						<button
+							type="button"
+							onClick={() => setTentativa((t) => t + 1)}
+							className={`px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 ${foco}`}
+						>
+							Tentar novamente
+						</button>
+					</div>
+				) : !dados ? (
+					<div className={`${cartao} p-12 flex flex-col items-center`} role="status">
+						<div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" aria-hidden />
+						<p className="mt-4 text-gray-700 font-medium">Carregando relatório...</p>
+					</div>
+				) : (
+					<div className={carregando ? 'opacity-60 transition-opacity' : 'transition-opacity'}>{VISAO_RENDER[visao](dados)}</div>
+				)}
+			</div>
+
+			<ModalContratosFinanciamento conteudo={modal} onClose={() => setModal(null)} />
 		</div>
 	);
 };

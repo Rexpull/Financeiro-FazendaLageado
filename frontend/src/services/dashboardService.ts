@@ -76,6 +76,8 @@ export interface DashboardData {
       tipoMovimento: 'C' | 'D';
       conciliado: boolean;
       subtipoDespesa?: 'custeio' | 'investimento';
+      /** Cost centres behind the row (detail modal: GET /api/dashboard/detalhar) */
+      idsCentros?: number[];
     }>;
     /** Revenues by cost center — prefer this for comparative receitas chart */
     receitasAgrupadoPorCentros?: Array<{
@@ -83,6 +85,7 @@ export interface DashboardData {
       valor: number;
       tipoMovimento: 'C';
       conciliado: boolean;
+      idsCentros?: number[];
     }>;
     /** Full-year centro breakdown when ?mes= is set (same payload avoids a 2nd dashboard call). */
     agrupadoPorAno?: Array<{
@@ -329,6 +332,7 @@ export const getContratosNovos = async (ano?: number, mes?: number): Promise<Con
   }
 }; 
 export interface ResumoSaldoDevedorMes {
+  ano?: number;
   mes: number; // 1..12
   saldoInicial: number;
   quitados: number;
@@ -338,15 +342,96 @@ export interface ResumoSaldoDevedorMes {
   saldoFinal: number;
 }
 
-/** Saldo devedor mês a mês: saldo inicial, quitados, créditos novos e saldo final (parcelas não liquidadas). */
-export const getResumoSaldoDevedor = async (ano: number): Promise<ResumoSaldoDevedorMes[]> => {
+const apiUrl = (caminho: string, params: URLSearchParams) => {
   const API_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_URL) ? (import.meta as any).env.VITE_API_URL : '';
-  const params = new URLSearchParams({ tipo: 'saldo-devedor', ano: String(ano) });
-  const url = API_URL ? `${API_URL}/api/dashboard/financiamentos?${params.toString()}` : `/api/dashboard/financiamentos?${params.toString()}`;
-  const res = await fetch(url);
+  return `${API_URL}${caminho}?${params.toString()}`;
+};
+
+async function getJson<T>(caminho: string, params: URLSearchParams, mensagemErro: string): Promise<T> {
+  const res = await fetch(apiUrl(caminho, params));
   if (!res.ok) {
     const errorData: any = await res.json().catch(() => ({}));
-    throw new Error(errorData?.error || 'Erro ao buscar saldo devedor');
+    throw new Error(errorData?.error || mensagemErro);
   }
-  return await res.json();
+  return (await res.json()) as T;
+}
+
+/** Date range [inicio, fim) as AAAA-MM-DD (fim exclusive). */
+export type FaixaDatas = { inicio: string; fim: string };
+
+/**
+ * Saldo devedor mês a mês: saldo inicial, quitados, créditos novos e saldo final (parcelas não liquidadas).
+ * A year (12 months) or any range of months (trimestre, semestre, últimos 12 meses).
+ */
+export const getResumoSaldoDevedor = async (periodo: number | FaixaDatas): Promise<ResumoSaldoDevedorMes[]> => {
+  const params = new URLSearchParams({ tipo: 'saldo-devedor' });
+  if (typeof periodo === 'number') params.set('ano', String(periodo));
+  else {
+    params.set('inicio', periodo.inicio);
+    params.set('fim', periodo.fim);
+  }
+  return getJson('/api/dashboard/financiamentos', params, 'Erro ao buscar saldo devedor');
+};
+
+export interface ParcelaContratoPeriodo {
+  id: number;
+  numParcela: number;
+  valor: number;
+  status: string;
+  dt_vencimento: string;
+  dt_liquidacao: string | null;
+}
+
+export interface ContratoPeriodo {
+  id: number;
+  numeroContrato: string;
+  credor: string;
+  tomador: string;
+  dataContrato: string;
+  valorContratado: number;
+  /** What the contract adds to the card: all its parcelas (créditos novos) or those liquidated in the period (quitados) */
+  valorNoPeriodo: number;
+  parcelas: ParcelaContratoPeriodo[];
+}
+
+/** Contracts behind "Créditos novos" and "Quitados" of the period (the lists add up to the cards). */
+export const getContratosPeriodo = async (periodo: FaixaDatas): Promise<{ novos: ContratoPeriodo[]; quitados: ContratoPeriodo[] }> =>
+  getJson('/api/dashboard/financiamentos', new URLSearchParams({ tipo: 'contratos-periodo', ...periodo }), 'Erro ao buscar os contratos do período');
+
+type LinhaCentro = NonNullable<DashboardData['receitasDespesas']['agrupadoPor']>[number];
+
+/** Receitas / despesas by cost centre of a date range (Resultado consolidado). */
+export interface ReceitasDespesasPeriodo {
+  periodo: FaixaDatas;
+  receitasAgrupadoPorCentros: Array<LinhaCentro & { tipoMovimento: 'C' }>;
+  agrupadoPor: LinhaCentro[];
+  semCentroCustos: { receitas: number; despesas: number };
+  totalReceitas: number;
+  totalDespesas: number;
+}
+
+export const getReceitasDespesasPeriodo = async (periodo: FaixaDatas, contas: number[] = []): Promise<ReceitasDespesasPeriodo> => {
+  const params = new URLSearchParams({ ...periodo });
+  if (contas.length) params.set('contas', contas.join(','));
+  return getJson('/api/dashboard/periodo', params, 'Erro ao buscar o resultado do período');
+};
+
+/** Movement behind a value of the "Detalhamento" (detail modal). */
+export interface MovimentoDashboard {
+  id: number;
+  data: string;
+  historico: string;
+  conta: string;
+  valor: number;
+}
+
+export const getMovimentosDashboard = async (args: {
+  tipo: 'C' | 'D';
+  centros: number[];
+  periodo: FaixaDatas;
+  contas?: number[];
+}): Promise<MovimentoDashboard[]> => {
+  const params = new URLSearchParams({ tipo: args.tipo, centros: args.centros.join(','), ...args.periodo });
+  if (args.contas?.length) params.set('contas', args.contas.join(','));
+  return getJson('/api/dashboard/detalhar', params, 'Erro ao buscar os lançamentos');
 };
