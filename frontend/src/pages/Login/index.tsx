@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "./AuthContext";
-import logoFazenda from "../../assets/img/logo-FazendaLageado.svg";
-import bgPasto from "../../assets/img/loginBg-grass.jpg";
+// Artwork chosen by the client: farm triptych (crop, dairy cow, cattle) with the logo and "FINANCEIRO" built in
+import arteLageado from "../../assets/img/loginBg-lageado.webp";
 
 // Palette taken from the farm's logo: pasture green, field green, straw yellow.
 const COR = {
@@ -55,34 +55,20 @@ const Login: React.FC = () => {
         @media (prefers-reduced-motion: reduce) { .login-v3 * { transition: none !important; animation: none !important; } }
       `}</style>
 
-      {/* Pasture photo: the one memorable element. Short band on mobile, full height on desktop. */}
+      {/* Client's artwork (already carries the logo and "FINANCEIRO"): whole picture on mobile, full height on desktop.
+          Centered crop keeps the logo, which sits in the middle third of the image. */}
       <section
-        className="relative h-44 md:h-auto md:min-h-screen md:w-[56%] overflow-hidden"
-        style={{ backgroundImage: `url(${bgPasto})`, backgroundSize: "cover", backgroundPosition: "center 70%" }}
-        aria-hidden="true"
-      >
-        <div
-          className="absolute inset-0"
-          style={{ background: `linear-gradient(180deg, rgba(30,77,43,0) 20%, rgba(30,77,43,.55) 60%, ${COR.pasto} 100%)` }}
-        />
-        <div className="absolute left-0 right-0 bottom-0 px-6 pb-5 md:px-14 md:pb-14">
-          <div className="hidden md:block mb-5" style={{ width: 56, height: 4, background: COR.palha, borderRadius: 2 }} />
-          <h1 className="slab text-white leading-[0.95] font-semibold text-[34px] md:text-[64px]" style={{ letterSpacing: "-0.01em" }}>
-            Financeiro
-            <br className="hidden md:block" /> Lageado
-          </h1>
-          <p className="hidden md:block mt-4 max-w-md text-[17px] leading-relaxed" style={{ color: "rgba(255,255,255,.88)" }}>
-            Conciliação bancária, fluxo de caixa e financiamentos da fazenda em um só lugar.
-          </p>
-        </div>
-      </section>
+        role="img"
+        aria-label="Fazenda Lageado — Financeiro: lavoura de milho, vaca leiteira e gado de corte"
+        className="relative w-full aspect-[3/2] md:aspect-auto md:min-h-screen md:w-[58%] overflow-hidden"
+        style={{ backgroundImage: `url(${arteLageado})`, backgroundSize: "cover", backgroundPosition: "center top", backgroundColor: COR.pasto }}
+      />
 
       {/* Sign-in form */}
       <main className="flex-1 flex flex-col px-6 py-10 md:px-16">
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-[380px]">
-            <img src={logoFazenda} alt="Fazenda Lageado — Pecuária leiteira" className="w-44 md:w-52 mb-10 select-none" draggable={false} />
-
+            {/* The logo is in the artwork beside the form: not repeated here */}
             <h2 className="slab text-[30px] font-semibold leading-tight">Entrar</h2>
             <p className="mt-1 mb-8 text-[15px]" style={{ color: COR.texto2 }}>
               Use o usuário ou e-mail cadastrado no sistema.

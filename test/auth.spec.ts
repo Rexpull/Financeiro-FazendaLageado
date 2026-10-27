@@ -296,6 +296,15 @@ describe('login', () => {
 		}
 	});
 
+	it('login ignores upper/lower case in the username and e-mail', async () => {
+		const controller = new AuthController(new SessionRepository(db));
+		for (const identificador of ['Ana', 'ANA', ' ana ', 'Ana@Fazenda.Test']) {
+			const result = await controller.login(identificador, 'senhaAna1', { JWT_SECRET: SECRET });
+			expect(result.ok, identificador).toBe(true);
+		}
+		expect((await controller.login('Ana', 'errada', { JWT_SECRET: SECRET })).ok).toBe(false);
+	});
+
 	it('active user gets a 12h HS256 token accepted by the guard; session check never returns senha/token', async () => {
 		const controller = new AuthController(new SessionRepository(db));
 		const result = await controller.login('ana@fazenda.test', 'senhaAna1', { JWT_SECRET: SECRET });
