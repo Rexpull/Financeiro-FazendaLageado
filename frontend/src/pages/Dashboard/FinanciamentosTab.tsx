@@ -3,8 +3,9 @@ import { Paper, Typography, Box, CircularProgress } from "@mui/material";
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import type { ResumoSaldoDevedorMes } from "../../services/dashboardService";
 import { saldoDevedorPeriodo } from "./saldoDevedorPeriodo";
-import { rotuloMesGrafico, ultimoDiaDoIntervalo, type IntervaloDashboard } from "./periodoDashboard";
+import { mesAnterior, rotuloFimDeMes, rotuloMesGrafico, ultimoDiaDoIntervalo, type IntervaloDashboard } from "./periodoDashboard";
 import ModalContratosPeriodo, { type AbaContratos } from "./ModalContratosPeriodo";
+import EvolucaoSaldoDevedorChart from "./EvolucaoSaldoDevedorChart";
 import { formatarDataISO } from "../../Utils/dataSemFuso";
 import { brl, brlCompacto } from "../../Utils/formatos";
 
@@ -61,14 +62,16 @@ export const ValorContratos: React.FC<{ valor: number; cor: string; onClick: () 
 );
 
 interface FinanciamentosTabProps {
-  /** Period filter (ano inteiro, trimestre, semestre, últimos 12 meses) */
+  /** Period filter (ano inteiro, trimestre, semestre, últimos 12 meses or one month) */
   intervalo: IntervaloDashboard;
   resumo: ResumoSaldoDevedorMes[] | null;
 }
 
 /**
  * Saldo devedor = every registered parcela not liquidated (the value of each parcela already includes
- * the interest). Saldo final = saldo inicial − quitados + créditos novos.
+ * the interest). One convention everywhere: positions at the END of a month (month closed). Saldo no
+ * início do período = end of the month before it; saldo no fim = end of its last month
+ * = início − quitados + créditos novos (also the last point of the evolution chart).
  */
 const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo }) => {
   const [modalContratos, setModalContratos] = useState<AbaContratos | null>(null);
@@ -87,20 +90,28 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo
   const categorias = resumo.map((r, i) =>
     rotuloMesGrafico({ ano: r.ano ?? intervalo.meses[i]?.ano ?? 0, mes: r.mes }, variosAnos),
   );
+  // Closed months: the period starts at the end of the month before it and ends at the end of its last month
+  const primeiroMes = intervalo.meses[0];
+  const ultimoMes = intervalo.meses[intervalo.meses.length - 1];
+  const dataInicial = formatarDataISO(ultimoDiaDoIntervalo(intervalo.inicio));
+  const dataFinal = formatarDataISO(ultimoDiaDoIntervalo(intervalo.fim));
+  const fimMesAnterior = primeiroMes ? ` (${rotuloFimDeMes(mesAnterior(primeiroMes))})` : '';
+  const fimUltimoMes = ultimoMes ? ` (${rotuloFimDeMes(ultimoMes)})` : '';
+  const faixaDatas = `de ${formatarDataISO(intervalo.inicio)} a ${dataFinal}`;
 
   const quadros = periodo
     ? [
         {
-          titulo: 'Saldo devedor inicial',
+          titulo: 'Saldo devedor no início do período',
           valor: periodo.saldoInicial,
           cor: 'text.primary',
-          nota: `Parcelas em aberto em ${formatarDataISO(intervalo.inicio)}`,
+          nota: `Em ${dataInicial}${fimMesAnterior}: parcelas em aberto`,
         },
         {
           titulo: 'Quitados',
           valor: periodo.quitados,
           cor: 'success.main',
-          nota: `Parcelas amortizadas e liquidadas em ${rotulo}`,
+          nota: `Parcelas liquidadas ${faixaDatas}`,
           aba: 'quitados' as const,
         },
         {
@@ -109,15 +120,15 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo
           cor: 'info.main',
           nota:
             periodo.contratosNovos > 0
-              ? `${periodo.contratosNovos} contrato(s), valor contratado ${brl(periodo.valorContratadoNovos)}`
-              : `Nenhum contrato novo em ${rotulo}`,
+              ? `${periodo.contratosNovos} contrato(s) assinado(s) ${faixaDatas}, valor contratado ${brl(periodo.valorContratadoNovos)}`
+              : `Nenhum contrato assinado ${faixaDatas}`,
           aba: 'novos' as const,
         },
         {
-          titulo: 'Saldo devedor final',
+          titulo: 'Saldo devedor no fim do período',
           valor: periodo.saldoFinal,
           cor: 'warning.dark',
-          nota: `Em ${formatarDataISO(ultimoDiaDoIntervalo(intervalo.fim))} (inicial − quitados + créditos novos)`,
+          nota: `Em ${dataFinal}${fimUltimoMes} = início − quitados + créditos novos`,
           destaque: true,
         },
       ]
@@ -191,35 +202,7 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo
           )}
         </Paper>
 
-        <Paper sx={{ p: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-            Evolução do saldo devedor — {rotulo}
-          </Typography>
-          {/* Every registered parcela not liquidated is part of the saldo devedor (no projection) */}
-          {resumo.some((r) => r.saldoFinal) ? (
-            <Suspense fallback={<CircularProgress />}>
-              <Chart
-                options={{
-                  chart: { type: 'line', toolbar: { show: false }, zoom: { enabled: false } },
-                  stroke: { curve: 'straight', width: 3 },
-                  xaxis: { categories: categorias },
-                  yaxis: { labels: { formatter: (val: number) => brlCompacto(val), minWidth: 70 } },
-                  tooltip: { y: { formatter: (val: number) => brl(val) } },
-                  colors: ['#ff9800'],
-                  markers: { size: 5 },
-                  legend: { show: false },
-                  dataLabels: { enabled: false },
-                }}
-                series={[{ name: 'Saldo devedor no fim do mês', data: resumo.map((r) => r.saldoFinal) }]}
-                type="line"
-                height={350}
-                width="100%"
-              />
-            </Suspense>
-          ) : (
-            <NoData message={`Nenhum saldo devedor em ${rotulo}.`} />
-          )}
-        </Paper>
+        <EvolucaoSaldoDevedorChart intervalo={intervalo} resumo={resumo} />
       </Box>
 
       <ModalContratosPeriodo aberto={modalContratos} periodo={intervalo} onClose={() => setModalContratos(null)} />

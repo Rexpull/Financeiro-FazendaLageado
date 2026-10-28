@@ -92,3 +92,35 @@ describe('contratosDoPeriodo (contratos dos quadros Créditos novos / Quitados)'
 		expect(quitados[0].valorNoPeriodo).toBe(300);
 	});
 });
+
+describe('saldo devedor em mês fechado (cards x gráfico de evolução)', () => {
+	const f = [
+		{ id: 1, dataContrato: '2026-06-30', valor: 2000 },
+		{ id: 2, dataContrato: '2026-07-01', valor: 8000 },
+		{ id: 3, dataContrato: '2026-10-01', valor: 9000 },
+	];
+	const p = [
+		{ idFinanciamento: 1, valor: 1000, status: 'Liquidado', dt_vencimento: '2026-07-15', dt_liquidacao: '2026-07-01' },
+		{ idFinanciamento: 1, valor: 1000, status: 'Liquidado', dt_vencimento: '2026-10-01', dt_liquidacao: '2026-10-01' },
+		{ idFinanciamento: 2, valor: 5000, status: 'Liquidado', dt_vencimento: '2026-09-30', dt_liquidacao: null },
+		{ idFinanciamento: 2, valor: 5000, status: 'Aberto', dt_vencimento: '2027-07-01', dt_liquidacao: null },
+		{ idFinanciamento: 3, valor: 9000, status: 'Aberto', dt_vencimento: '2027-10-01', dt_liquidacao: null },
+	];
+
+	it('trimestre: início = fim de junho, fim = fim de setembro, início − quitados + novos = fim', () => {
+		const t3 = resumoSaldoDevedorMeses(mesesDoIntervalo('2026-07-01', '2026-10-01'), f, p);
+		const soma = (k: 'quitados' | 'creditosNovos') => t3.reduce((s, m) => s + m[k], 0);
+		expect(t3[0].saldoInicial).toBe(2000); // C-3 inteiro: a parcela paga em 01/07 ainda estava em aberto em 30/06
+		expect(soma('quitados')).toBe(6000);
+		expect(soma('creditosNovos')).toBe(10000); // F-6 (01/10) fica de fora
+		expect(t3[2].saldoFinal).toBe(t3[0].saldoInicial - soma('quitados') + soma('creditosNovos'));
+	});
+
+	it('o mesmo mês tem o mesmo saldo em qualquer intervalo (o ano e o trimestre concordam)', () => {
+		const ano = resumoSaldoDevedor(2026, f, p);
+		const t3 = resumoSaldoDevedorMeses(mesesDoIntervalo('2026-07-01', '2026-10-01'), f, p);
+		expect(ano[5].saldoFinal).toBe(t3[0].saldoInicial); // fim de junho
+		expect(ano[8].saldoFinal).toBe(t3[2].saldoFinal); // fim de setembro
+		expect(ano.slice(6, 9)).toEqual(t3);
+	});
+});

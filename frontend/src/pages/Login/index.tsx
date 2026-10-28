@@ -33,7 +33,10 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="login-v3 min-h-screen w-full flex flex-col md:flex-row bg-white" style={{ color: COR.terra }}>
+    <div
+      className="login-v3 min-h-screen w-full flex items-center justify-center p-4 md:p-8"
+      style={{ color: COR.terra, background: "linear-gradient(160deg, #EEF3EA 0%, #E1EAD9 100%)" }}
+    >
       <style>{`
         .login-v3 { font-family: "Nunito Sans", system-ui, sans-serif; }
         .login-v3 .slab { font-family: "Zilla Slab", Georgia, serif; }
@@ -55,29 +58,30 @@ const Login: React.FC = () => {
         @media (prefers-reduced-motion: reduce) { .login-v3 * { transition: none !important; animation: none !important; } }
       `}</style>
 
-      {/* Client's artwork (already carries the logo and "FINANCEIRO"): whole picture on mobile, full height on desktop.
-          Centered crop keeps the logo, which sits in the middle third of the image. */}
-      <section
-        role="img"
-        aria-label="Fazenda Lageado — Financeiro: lavoura de milho, vaca leiteira e gado de corte"
-        className="relative w-full aspect-[3/2] md:aspect-auto md:min-h-screen md:w-[58%] overflow-hidden"
-        style={{ backgroundImage: `url(${arteLageado})`, backgroundSize: "cover", backgroundPosition: "center top", backgroundColor: COR.pasto }}
-      />
+      {/* One card: the client's artwork shown WHOLE (no crop, 3:2) with the form beside it; stacked on phones.
+          The card width is capped by the screen height so the picture never needs scrolling on a laptop. */}
+      <div
+        className="w-full flex flex-col md:flex-row overflow-hidden rounded-2xl bg-white shadow-xl"
+        style={{ maxWidth: "min(1180px, calc((100vh - 4rem) * 1.5 + 380px))" }}
+      >
+        <img
+          src={arteLageado}
+          alt="Fazenda Lageado — Financeiro: lavoura de milho, vaca leiteira e gado de corte"
+          className="block w-full md:w-[66%] h-auto aspect-[3/2] object-cover select-none"
+          draggable={false}
+        />
 
-      {/* Sign-in form */}
-      <main className="flex-1 flex flex-col px-6 py-10 md:px-16">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-full max-w-[380px]">
+        {/* Sign-in form */}
+        <main className="flex-1 flex flex-col justify-center px-6 py-8 md:px-10">
+          <div className="w-full max-w-[340px] mx-auto">
             {/* The logo is in the artwork beside the form: not repeated here */}
-            <h2 className="slab text-[30px] font-semibold leading-tight">Entrar</h2>
-            <p className="mt-1 mb-8 text-[15px]" style={{ color: COR.texto2 }}>
-              Use o usuário ou e-mail cadastrado no sistema.
-            </p>
+            {/* Wording requested by the client: Bem-vindo! / Usuário / Senha / Entrar */}
+            <h2 className="slab text-[30px] font-semibold leading-tight mb-8">Bem-vindo!</h2>
 
             <form onSubmit={handleLogin} noValidate={false} className="flex flex-col gap-5">
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="login-usuario" className="text-[14px] font-bold">
-                  Usuário ou e-mail
+                  Usuário
                 </label>
                 <input
                   id="login-usuario"
@@ -141,12 +145,8 @@ const Login: React.FC = () => {
               </button>
             </form>
           </div>
-        </div>
-
-        <p className="mt-10 text-[13px] text-center md:text-left" style={{ color: COR.texto2 }}>
-          Fazenda Lageado, pecuária leiteira
-        </p>
-      </main>
+        </main>
+      </div>
     </div>
   );
 };

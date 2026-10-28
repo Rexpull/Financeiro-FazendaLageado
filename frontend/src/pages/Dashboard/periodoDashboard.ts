@@ -1,8 +1,10 @@
 // Period filter of the Dashboard ("Resultado consolidado" and "Financiamentos"): year, quarter,
-// semester or the last 12 months, always as a [inicio, fim) range of AAAA-MM-DD (fim exclusive),
-// the same shape the backend expects (?inicio=&fim=).
+// semester, the last 12 months or a single month, always as a [inicio, fim) range of AAAA-MM-DD
+// (fim exclusive), the same shape the backend expects (?inicio=&fim=).
 
-export type TipoPeriodo = 'ano' | 't1' | 't2' | 't3' | 't4' | 's1' | 's2' | '12m';
+/** A single month of the chosen year: 'm1' (Janeiro) … 'm12' (Dezembro). */
+export type TipoMes = `m${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12}`;
+export type TipoPeriodo = 'ano' | 't1' | 't2' | 't3' | 't4' | 's1' | 's2' | '12m' | TipoMes;
 
 export const OPCOES_PERIODO: ReadonlyArray<{ valor: TipoPeriodo; rotulo: string }> = [
 	{ valor: 'ano', rotulo: 'Ano inteiro' },
@@ -16,6 +18,19 @@ export const OPCOES_PERIODO: ReadonlyArray<{ valor: TipoPeriodo; rotulo: string 
 ];
 
 export const MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+export const MESES_LONGOS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+/** Month options of the Período select (Janeiro … Dezembro of the chosen year), listed after OPCOES_PERIODO. */
+export const OPCOES_MES_PERIODO: ReadonlyArray<{ valor: TipoMes; rotulo: string }> = MESES_LONGOS.map((rotulo, i) => ({
+	valor: `m${i + 1}` as TipoMes,
+	rotulo,
+}));
+
+const mesDoTipo = (tipo: TipoPeriodo): number => {
+	const m = /^m(\d{1,2})$/.exec(tipo);
+	const n = m ? Number(m[1]) : 0;
+	return n >= 1 && n <= 12 ? n : 0;
+};
 
 /** First year with data in the system (same as the Fluxo de Caixa). */
 export const PRIMEIRO_ANO_DASHBOARD = 2024;
@@ -54,8 +69,16 @@ export function rotuloMesGrafico(m: MesAno, variosAnos: boolean): string {
 	return variosAnos ? `${MESES_CURTOS[m.mes - 1]}/${String(m.ano).slice(-2)}` : MESES_CURTOS[m.mes - 1];
 }
 
+/** "fim de jul/2026": a saldo devedor position is always the END of a month (month closed). */
+export const rotuloFimDeMes = ({ ano, mes }: MesAno) => `fim de ${MESES_CURTOS[mes - 1].toLowerCase()}/${ano}`;
+
+/** Month before `m` (Jan/2026 → Dez/2025). */
+export const mesAnterior = (m: MesAno): MesAno => somarMeses(m, -1);
+
 /** Range of the period filter. "Últimos 12 meses" ends with the current month (it ignores `ano`). */
 export function intervaloPeriodo(ano: number, tipo: TipoPeriodo, hoje: Date = new Date()): IntervaloDashboard {
+	const mes = mesDoTipo(tipo);
+	if (mes) return intervaloDeMeses({ ano, mes }, 1, `${MESES_LONGOS[mes - 1]} de ${ano}`);
 	switch (tipo) {
 		case 't1':
 		case 't2':
@@ -83,6 +106,31 @@ export function intervaloPeriodo(ano: number, tipo: TipoPeriodo, hoje: Date = ne
 export function ultimoDiaDoIntervalo(fim: string): string {
 	const d = new Date(Date.UTC(Number(fim.slice(0, 4)), Number(fim.slice(5, 7)) - 1, Number(fim.slice(8, 10)) - 1));
 	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/**
+ * Period of the "Evolução do saldo devedor" chart, chosen on the chart itself:
+ * - periodo: the same months as the tab filter (default)
+ * - ano: January to December of the year where the filtered period ends
+ * - semestre / 12m: the 6 / 12 months that end with the last month of the filtered period
+ */
+export type PeriodoGrafico = 'periodo' | 'ano' | 'semestre' | '12m';
+
+export const OPCOES_PERIODO_GRAFICO: ReadonlyArray<{ valor: PeriodoGrafico; rotulo: string }> = [
+	{ valor: 'periodo', rotulo: 'Período' },
+	{ valor: 'ano', rotulo: 'Ano' },
+	{ valor: 'semestre', rotulo: 'Último semestre' },
+	{ valor: '12m', rotulo: 'Últimos 12 meses' },
+];
+
+export function intervaloGrafico(periodo: IntervaloDashboard, tipo: PeriodoGrafico): IntervaloDashboard {
+	const ultimo = periodo.meses[periodo.meses.length - 1];
+	if (!ultimo || tipo === 'periodo') return periodo;
+	if (tipo === 'ano') return intervaloDeMeses({ ano: ultimo.ano, mes: 1 }, 12, String(ultimo.ano));
+	const n = tipo === 'semestre' ? 6 : 12;
+	const inicio = somarMeses(ultimo, -(n - 1));
+	const nome = tipo === 'semestre' ? 'Último semestre' : 'Últimos 12 meses';
+	return intervaloDeMeses(inicio, n, `${nome} (${rotuloMesAno(inicio)} a ${rotuloMesAno(ultimo)})`);
 }
 
 /** Month filter of "Receitas e despesas": one month (mesIdx 0..11) or the whole year (-1). */

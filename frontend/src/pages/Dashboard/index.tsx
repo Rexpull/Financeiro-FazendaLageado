@@ -12,6 +12,7 @@ import {
   Tab,
   Tooltip,
   Alert,
+  ListSubheader,
 } from "@mui/material";
 import BreadCrumb from "../../components/BreadCrumb";
 import {
@@ -27,7 +28,7 @@ import ReceitasDespesasTab from './ReceitasDespesasTab';
 import ResultadoConsolidadoTab from './ResultadoConsolidadoTab';
 import FinanciamentosTab from './FinanciamentosTab';
 import { CaixaTab } from './CaixaTab';
-import { anosDashboard, intervaloPeriodo, MESES_CURTOS, OPCOES_PERIODO, type TipoPeriodo } from './periodoDashboard';
+import { anosDashboard, intervaloPeriodo, MESES_CURTOS, OPCOES_MES_PERIODO, OPCOES_PERIODO, type TipoPeriodo } from './periodoDashboard';
 
 /** Account as returned by GET /api/contas (only the fields the filter shows). */
 type ContaFiltro = { id: number; responsavel?: string; bancoNome?: string; numConta?: string; numCartao?: string; ativo?: boolean | number };
@@ -61,7 +62,7 @@ type Marcado<T> = { chave: string; data: T };
 const Dashboard = () => {
   const [anoSelecionado, setAnoSelecionado] = useState(anoAtual);
   const [mesSelecionado, setMesSelecionado] = useState<string>(mesAtual);
-  // Period of "Resultado consolidado" and "Financiamentos" (ano inteiro, trimestre, semestre, últimos 12 meses)
+  // Period of "Resultado consolidado" and "Financiamentos" (ano inteiro, trimestre, semestre, últimos 12 meses, um mês)
   const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodo>('ano');
   const [activeDashboardTab, setActiveDashboardTab] = useState<AbaDashboard>('receitas-despesas');
   const [tipoDetalhamento, setTipoDetalhamento] = useState<'receitas' | 'despesas'>('despesas');
@@ -263,8 +264,14 @@ const Dashboard = () => {
                   label="Período"
                   sx={{backgroundColor: 'white'}}
                   onChange={e => setTipoPeriodo(e.target.value as TipoPeriodo)}
+                  MenuProps={{ PaperProps: { sx: { maxHeight: 420 } } }}
                 >
                   {OPCOES_PERIODO.map(o => (
+                    <MenuItem key={o.valor} value={o.valor}>{o.rotulo}</MenuItem>
+                  ))}
+                  {/* One month of the chosen year: what was contracted and paid month by month */}
+                  <ListSubheader sx={{ lineHeight: '32px', fontWeight: 700 }}>Mês de {anoSelecionado}</ListSubheader>
+                  {OPCOES_MES_PERIODO.map(o => (
                     <MenuItem key={o.valor} value={o.valor}>{o.rotulo}</MenuItem>
                   ))}
                 </Select>

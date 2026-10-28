@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { anosDashboard, emMilhares, intervaloMes, intervaloPeriodo, rotuloMesGrafico, ultimoDiaDoIntervalo } from './periodoDashboard';
+import {
+	anosDashboard,
+	emMilhares,
+	intervaloGrafico,
+	intervaloMes,
+	intervaloPeriodo,
+	mesAnterior,
+	OPCOES_MES_PERIODO,
+	rotuloFimDeMes,
+	rotuloMesGrafico,
+	ultimoDiaDoIntervalo,
+} from './periodoDashboard';
 
 const hoje = new Date(2026, 9, 27); // 27/10/2026
 
@@ -61,5 +72,33 @@ describe('emMilhares (rótulos das barras)', () => {
 	it('valores abaixo de mil mantêm uma casa (não viram zero)', () => {
 		expect(emMilhares(450)).toBe('0,5');
 		expect(emMilhares(82)).toBe('0,1');
+	});
+});
+
+describe('filtro de um mês e período do gráfico de evolução', () => {
+	it('um mês do ano escolhido (Janeiro … Dezembro)', () => {
+		expect(intervaloPeriodo(2026, 'm7', hoje)).toMatchObject({
+			inicio: '2026-07-01',
+			fim: '2026-08-01',
+			rotulo: 'Julho de 2026',
+			meses: [{ ano: 2026, mes: 7 }],
+		});
+		expect(intervaloPeriodo(2026, 'm12', hoje)).toMatchObject({ inicio: '2026-12-01', fim: '2027-01-01', rotulo: 'Dezembro de 2026' });
+		expect(OPCOES_MES_PERIODO.map((o) => o.valor)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10', 'm11', 'm12']);
+		expect(OPCOES_MES_PERIODO[2].rotulo).toBe('Março');
+	});
+
+	it('rótulo de posição em fim de mês e mês anterior', () => {
+		expect(rotuloFimDeMes({ ano: 2026, mes: 7 })).toBe('fim de jul/2026');
+		expect(mesAnterior({ ano: 2026, mes: 1 })).toEqual({ ano: 2025, mes: 12 });
+	});
+
+	it('gráfico: ano, último semestre e últimos 12 meses terminam no último mês do filtro', () => {
+		const t3 = intervaloPeriodo(2026, 't3', hoje);
+		expect(intervaloGrafico(t3, 'periodo')).toBe(t3);
+		expect(intervaloGrafico(t3, 'ano')).toMatchObject({ inicio: '2026-01-01', fim: '2027-01-01', rotulo: '2026' });
+		expect(intervaloGrafico(t3, 'semestre')).toMatchObject({ inicio: '2026-04-01', fim: '2026-10-01', rotulo: 'Último semestre (Abr/2026 a Set/2026)' });
+		expect(intervaloGrafico(t3, '12m')).toMatchObject({ inicio: '2025-10-01', fim: '2026-10-01', rotulo: 'Últimos 12 meses (Out/2025 a Set/2026)' });
+		expect(intervaloGrafico(intervaloPeriodo(2026, 'm2', hoje), 'semestre')).toMatchObject({ inicio: '2025-09-01', fim: '2026-03-01' });
 	});
 });

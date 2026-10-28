@@ -7,7 +7,8 @@ import ModalContratosPeriodo, { type AbaContratos } from './ModalContratosPeriod
 import { ValorContratos } from './FinanciamentosTab';
 import { totaisPorCentros } from './totaisPorCentros';
 import { saldoDevedorPeriodo } from './saldoDevedorPeriodo';
-import type { IntervaloDashboard } from './periodoDashboard';
+import { ultimoDiaDoIntervalo, type IntervaloDashboard } from './periodoDashboard';
+import { formatarDataISO } from '../../Utils/dataSemFuso';
 import { brl } from '../../Utils/formatos';
 
 interface ResultadoConsolidadoTabProps {
@@ -18,12 +19,14 @@ interface ResultadoConsolidadoTabProps {
 	onTentarResumoNovamente: () => void;
 }
 
-/** Accumulated values of the period (year, quarter, semester or last 12 months), same rules as "Receitas e despesas". */
+/** Accumulated values of the period (year, quarter, semester, last 12 months or one month), same rules as "Receitas e despesas". */
 const ResultadoConsolidadoTab: React.FC<ResultadoConsolidadoTabProps> = ({ dados, intervalo, resumo, erroResumo, onTentarResumoNovamente }) => {
 	const [modalContratos, setModalContratos] = useState<AbaContratos | null>(null);
 	// Centros de custo (custeio = operacionais; investimento inclui aplicações financeiras)
 	const t = totaisPorCentros(dados);
+	// Only what happened inside the filtered period: `resumo` holds exactly its months (same range as the modal)
 	const fin = saldoDevedorPeriodo(resumo ?? [], -1);
+	const faixaDatas = `de ${formatarDataISO(intervalo.inicio)} a ${formatarDataISO(ultimoDiaDoIntervalo(intervalo.fim))}`;
 
 	const linhaFin = (rotulo: string, dica: string, valor: number, cor: string, aba: AbaContratos) => (
 		<Tooltip arrow title={dica} placement="top-start">
@@ -50,18 +53,18 @@ const ResultadoConsolidadoTab: React.FC<ResultadoConsolidadoTabProps> = ({ dados
 					sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', borderLeft: '4px solid', borderLeftColor: 'info.main' }}
 				>
 					<Typography variant="subtitle2" sx={{ color: 'info.dark', fontWeight: 700, mb: 0.5 }}>
-						Financiamentos
+						Financiamentos — {intervalo.rotulo}
 					</Typography>
 					<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.25 }}>
-						Ficam fora do resultado acima. Clique nos valores para ver os contratos.
+						Somente contratos assinados e parcelas liquidadas {faixaDatas}. Ficam fora do resultado acima. Clique nos valores para ver os contratos.
 					</Typography>
 					{fin ? (
 						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-							{linhaFin('Créditos novos', 'Parcelas dos contratos assinados no período', fin.creditosNovos, 'info.dark', 'novos')}
-							{linhaFin('Quitados / amortizados', 'Parcelas liquidadas no período', fin.quitados, 'success.dark', 'quitados')}
+							{linhaFin('Créditos novos', `Parcelas dos contratos assinados ${faixaDatas}`, fin.creditosNovos, 'info.dark', 'novos')}
+							{linhaFin('Quitados / amortizados', `Parcelas liquidadas ${faixaDatas}`, fin.quitados, 'success.dark', 'quitados')}
 							{fin.contratosNovos > 0 && (
 								<Typography variant="caption" color="text.secondary">
-									{fin.contratosNovos} contrato(s) novo(s), valor contratado {brl(fin.valorContratadoNovos)}
+									{fin.contratosNovos} contrato(s) novo(s) em {intervalo.rotulo}, valor contratado {brl(fin.valorContratadoNovos)}
 								</Typography>
 							)}
 						</Box>

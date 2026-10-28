@@ -42,10 +42,14 @@ async function seed() {
 	await db
 		.prepare(`INSERT INTO MovimentoCentroCustos (idMovimentoBancario, idCentroCustos, valor) VALUES (3, 40, 300), (3, 50, 200)`)
 		.run();
+	// C-3…G-7: contracts and liquidations right at the edges of the 3º trimestre de 2026 [2026-07-01, 2026-10-01)
 	await db
 		.prepare(
 			`INSERT INTO Financiamento (id, idBanco, responsavel, dataContrato, valor, numeroContrato) VALUES
-			 (1, 1, 'GJN', '2025-06-06', 1000, 'A-1'), (2, 1, 'JPT', '2026-02-15', 5000, 'B-2')`,
+			 (1, 1, 'GJN', '2025-06-06', 1000, 'A-1'), (2, 1, 'JPT', '2026-02-15', 5000, 'B-2'),
+			 (3, 1, 'GJN', '2026-06-30', 2000, 'C-3'), (4, 1, 'GJN', '2026-07-01', 8000, 'D-4'),
+			 (5, 1, 'JPT', '2026-09-30', 1500, 'E-5'), (6, 1, 'JPT', '2026-10-01', 9999, 'F-6'),
+			 (7, 1, 'GJN', '2026-04-10', 700, 'G-7')`,
 		)
 		.run();
 	await db
@@ -54,7 +58,16 @@ async function seed() {
 			 (1, 300, 'Liquidado', 1, '2026-03-15', '2026-03-10'),
 			 (1, 450, 'Aberto', 2, '2027-06-15', NULL),
 			 (2, 3000, 'Aberto', 1, '2027-02-15', NULL),
-			 (2, 3000, 'Aberto', 2, '2028-02-15', NULL)`,
+			 (2, 3000, 'Aberto', 2, '2028-02-15', NULL),
+			 (3, 1000, 'Liquidado', 1, '2026-07-15', '2026-07-01'),
+			 (3, 1000, 'Liquidado', 2, '2026-10-01', '2026-10-01'),
+			 (3, 1000, 'Aberto', 3, '2027-06-30', NULL),
+			 (4, 5000, 'Liquidado', 1, '2026-09-30', NULL),
+			 (4, 5000, 'Aberto', 2, '2027-07-01', NULL),
+			 (5, 2000, 'Aberto', 1, '2027-09-30', NULL),
+			 (6, 9999, 'Aberto', 1, '2027-10-01', NULL),
+			 (7, 700, 'Liquidado', 1, '2026-06-30', '2026-06-30'),
+			 (7, 700, 'Aberto', 2, '2027-04-10', NULL)`,
 		)
 		.run();
 }
@@ -144,5 +157,60 @@ describe('dashboard: filtro de período e detalhamentos', () => {
 		expect(c.novos.reduce((s, x) => s + x.valorNoPeriodo, 0)).toBe(soma('creditosNovos'));
 		expect(c.quitados.map((x) => [x.numeroContrato, x.valorNoPeriodo, x.parcelas.length])).toEqual([['A-1', 300, 1]]);
 		expect(c.quitados.reduce((s, x) => s + x.valorNoPeriodo, 0)).toBe(soma('quitados'));
+	});
+
+	// Resultado consolidado / Financiamentos filtered by "3º trimestre": only contracts signed and parcelas
+	// liquidated inside [2026-07-01, 2026-10-01) count, and the saldo devedor uses closed months.
+	it('3º trimestre: créditos novos e quitados só do trimestre; saldos em fim de mês fechado', async () => {
+		type Mes = {
+			ano: number; mes: number; saldoInicial: number; quitados: number; creditosNovos: number;
+			valorContratadoNovos: number; contratosNovos: number; saldoFinal: number;
+		};
+		const t3 = await getJson<Mes[]>(`/api/dashboard/financiamentos?tipo=saldo-devedor&inicio=2026-07-01&fim=2026-10-01`);
+		expect(t3.map((m) => m.mes)).toEqual([7, 8, 9]);
+		const soma = (k: 'quitados' | 'creditosNovos' | 'valorContratadoNovos' | 'contratosNovos') => t3.reduce((s, m) => s + m[k], 0);
+
+		// Créditos novos: D-4 (01/07) and E-5 (30/09); C-3 (30/06) and F-6 (01/10) are outside
+		expect(soma('creditosNovos')).toBe(10000 + 2000);
+		expect(soma('contratosNovos')).toBe(2);
+		expect(soma('valorContratadoNovos')).toBe(8000 + 1500);
+		// Quitados: C-3 liquidated 01/07 and D-4 (no dt_liquidacao → vencimento 30/09);
+		// G-7 (30/06) and C-3 (01/10) are outside
+		expect(soma('quitados')).toBe(1000 + 5000);
+
+		// Saldo no início = end of June; no fim = end of September; início − quitados + novos = fim
+		const inicial = t3[0].saldoInicial;
+		const final = t3[2].saldoFinal;
+		expect(inicial).toBe(450 + 6000 + 3000 + 700);
+		expect(final).toBe(16150);
+		expect(final).toBe(inicial - soma('quitados') + soma('creditosNovos'));
+		expect(t3.map((m) => m.saldoFinal)).toEqual([19150, 19150, 16150]);
+
+		// Same positions on a longer chart (últimos 12 meses ending in September): end of June = saldo inicial
+		const doze = await getJson<Mes[]>(`/api/dashboard/financiamentos?tipo=saldo-devedor&inicio=2025-10-01&fim=2026-10-01`);
+		expect(doze.find((m) => m.ano === 2026 && m.mes === 6)?.saldoFinal).toBe(inicial);
+		expect(doze.at(-1)?.saldoFinal).toBe(final);
+		for (let i = 1; i < doze.length; i++) expect(doze[i].saldoInicial).toBe(doze[i - 1].saldoFinal);
+
+		// The modal lists exactly the same contracts and adds up to the box
+		type Contrato = { numeroContrato: string; valorNoPeriodo: number; parcelas: Array<{ dt_liquidacao: string | null }> };
+		const c = await getJson<{ novos: Contrato[]; quitados: Contrato[] }>(
+			`/api/dashboard/financiamentos?tipo=contratos-periodo&inicio=2026-07-01&fim=2026-10-01`,
+		);
+		expect(c.novos.map((x) => [x.numeroContrato, x.valorNoPeriodo])).toEqual([['D-4', 10000], ['E-5', 2000]]);
+		expect(c.quitados.map((x) => [x.numeroContrato, x.valorNoPeriodo])).toEqual([['D-4', 5000], ['C-3', 1000]]);
+		expect(c.novos.reduce((s, x) => s + x.valorNoPeriodo, 0)).toBe(soma('creditosNovos'));
+		expect(c.quitados.reduce((s, x) => s + x.valorNoPeriodo, 0)).toBe(soma('quitados'));
+	});
+
+	it('um mês (julho de 2026): só o que foi contratado e pago no mês', async () => {
+		type Mes = { mes: number; saldoInicial: number; quitados: number; creditosNovos: number; contratosNovos: number; saldoFinal: number };
+		const jul = await getJson<Mes[]>(`/api/dashboard/financiamentos?tipo=saldo-devedor&inicio=2026-07-01&fim=2026-08-01`);
+		expect(jul).toEqual([expect.objectContaining({ mes: 7, saldoInicial: 10150, quitados: 1000, creditosNovos: 10000, contratosNovos: 1, saldoFinal: 19150 })]);
+		const c = await getJson<{ novos: Array<{ numeroContrato: string }>; quitados: Array<{ numeroContrato: string; valorNoPeriodo: number }> }>(
+			`/api/dashboard/financiamentos?tipo=contratos-periodo&inicio=2026-07-01&fim=2026-08-01`,
+		);
+		expect(c.novos.map((x) => x.numeroContrato)).toEqual(['D-4']);
+		expect(c.quitados.map((x) => [x.numeroContrato, x.valorNoPeriodo])).toEqual([['C-3', 1000]]);
 	});
 });

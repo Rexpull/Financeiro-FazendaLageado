@@ -1,5 +1,11 @@
 import type { ResumoSaldoDevedorMes } from '../../services/dashboardService';
+import { mesAnterior, type MesAno } from './periodoDashboard';
 
+/**
+ * Saldo devedor of a period, always in positions at the END of a month (month closed):
+ * saldoInicial = end of the month before the period, saldoFinal = end of the last month of the period,
+ * and saldoFinal = saldoInicial − quitados + creditosNovos.
+ */
 export type SaldoDevedorPeriodo = {
 	saldoInicial: number;
 	quitados: number;
@@ -24,4 +30,22 @@ export function saldoDevedorPeriodo(resumo: ResumoSaldoDevedorMes[], mesIdx: num
 		contratosNovos: soma('contratosNovos'),
 		saldoFinal: meses[meses.length - 1].saldoFinal,
 	};
+}
+
+/** One point of the "Evolução do saldo devedor" chart: the position at the END of a month (month closed). */
+export type PontoSaldoDevedor = { ano: number; mes: number; saldo: number };
+
+/**
+ * Points of the evolution chart for the months of `resumo` (the months of the range, in order):
+ * the end of the month BEFORE the range (= saldo inicial of the cards) followed by the end of each month
+ * (the last one = saldo final of the cards). The backend's saldoInicial of a month is the position before
+ * anything of that month happens, i.e. the end of the previous month.
+ */
+export function pontosEvolucaoSaldoDevedor(resumo: ResumoSaldoDevedorMes[], meses: MesAno[]): PontoSaldoDevedor[] {
+	if (!resumo.length) return [];
+	const mesDe = (i: number): MesAno => ({ ano: resumo[i].ano ?? meses[i]?.ano ?? 0, mes: resumo[i].mes });
+	return [
+		{ ...mesAnterior(mesDe(0)), saldo: resumo[0].saldoInicial },
+		...resumo.map((r, i) => ({ ...mesDe(i), saldo: r.saldoFinal })),
+	];
 }
