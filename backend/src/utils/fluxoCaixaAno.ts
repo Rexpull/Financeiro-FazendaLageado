@@ -14,7 +14,7 @@ import type { Financiamento } from '../models/Financiamento';
 import type { ParcelaFinanciamento } from '../models/ParcelaFinanciamento';
 import { excluirMovimentoReceitasDespesasFluxo, type PlanosFinanciamentoParametros } from './isMovimentoFinanciamento';
 import { calcularSaldoFinalFluxo } from './fluxoSaldoFinal';
-import { liquidacaoEfetiva } from './saldoDevedor';
+import { liquidacaoEfetiva, parcelasComRenegociacoes, type RenegociacaoSaldoRow } from './saldoDevedor';
 
 export type TipoAgrupamentoFluxo = 'planos' | 'centros';
 
@@ -28,7 +28,8 @@ export type FinanciamentosMesCentros = { pagos: Record<string, ValorCredor>; con
 
 type Nomeado = { id: number; nome: string };
 export type FinanciamentoFluxo = Pick<Financiamento, 'id' | 'idPessoa' | 'idBanco' | 'responsavel' | 'numeroContrato' | 'dataContrato'> & {
-	parcelasList?: Array<Pick<ParcelaFinanciamento, 'valor' | 'status' | 'dt_vencimento' | 'dt_liquidacao'>>;
+	idFinanciamentoOrigem?: number | null;
+	parcelasList?: Array<Pick<ParcelaFinanciamento, 'valor' | 'status' | 'dt_vencimento' | 'dt_liquidacao'> & { id?: number; numParcela?: number }>;
 };
 
 /** Lender key/label: pessoa, then banco; a contract without lender counts on its own (f_<id>, label = responsável). */
@@ -64,7 +65,9 @@ function mesNoAno(data: string | null | undefined, ano: string): number | null {
  * Financiamentos of the Fluxo (centros), month by month. Same rules as the Dashboard (utils/saldoDevedor)
  * and the Fluxo detail (GET /api/fluxoCaixa/detalhar?planoId=todos):
  * - pagos ("Quitados"): parcelas liquidated in the month (status Liquidado; dt_liquidacao, or dt_vencimento when missing)
- * - contratados ("Créditos novos"): all parcelas of the contracts whose dataContrato is in the month
+ * - contratados ("Créditos novos"): all parcelas of the contracts whose dataContrato is in the month, as the
+ *   saldo devedor history sees them (parcelas replaced by a renegotiation still count, aditivo ones do not;
+ *   contracts born from a renegotiation are not new credit)
  * Every contract counts, with or without banco/pessoa. Financing is not tied to bank accounts.
  */
 export function financiamentosMensaisFluxo(
@@ -72,6 +75,7 @@ export function financiamentosMensaisFluxo(
 	financiamentos: FinanciamentoFluxo[],
 	pessoas: Nomeado[],
 	bancos: Nomeado[],
+	renegociacoes: RenegociacaoSaldoRow[] = [],
 ): FinanciamentosMesCentros[] {
 	const anoTxt = String(ano);
 	// Summed in cents (like the Dashboard) so the cell matches the detail to the cent
@@ -79,15 +83,34 @@ export function financiamentosMensaisFluxo(
 	const descricoes = new Map<string, string>();
 	const somar = (mapa: Map<string, number>, key: string, valor: number) => mapa.set(key, (mapa.get(key) ?? 0) + valor);
 
+	const historico = parcelasComRenegociacoes(
+		financiamentos.flatMap((f) =>
+			(f.parcelasList ?? []).map((p) => ({
+				...p,
+				dt_liquidacao: p.dt_liquidacao ?? null,
+				idFinanciamento: f.id,
+				id: p.id ?? 0,
+				numParcela: p.numParcela ?? 0,
+			})),
+		),
+		renegociacoes,
+	);
+	const contratadas = new Map<number, number[]>();
+	for (const p of historico) {
+		if ('entrada' in p && p.entrada) continue;
+		const lista = contratadas.get(p.idFinanciamento) ?? [];
+		lista.push(Math.round((Number(p.valor) || 0) * 100));
+		contratadas.set(p.idFinanciamento, lista);
+	}
+
 	for (const f of financiamentos) {
 		const credor = credorDoFinanciamento(f, pessoas, bancos);
 		descricoes.set(credor.key, credor.descricao);
-		const mesContrato = mesNoAno(f.dataContrato, anoTxt);
+		const mesContrato = f.idFinanciamentoOrigem != null ? null : mesNoAno(f.dataContrato, anoTxt);
+		if (mesContrato !== null) for (const valor of contratadas.get(f.id) ?? []) somar(centavos[mesContrato].contratados, credor.key, valor);
 		for (const p of f.parcelasList ?? []) {
-			const valor = Math.round((Number(p.valor) || 0) * 100);
-			if (mesContrato !== null) somar(centavos[mesContrato].contratados, credor.key, valor);
 			const mesQuitado = mesNoAno(liquidacaoEfetiva(p), anoTxt);
-			if (mesQuitado !== null) somar(centavos[mesQuitado].pagos, credor.key, valor);
+			if (mesQuitado !== null) somar(centavos[mesQuitado].pagos, credor.key, Math.round((Number(p.valor) || 0) * 100));
 		}
 	}
 
@@ -130,6 +153,8 @@ export type EntradaFluxoCaixaAno = {
 	pessoas: Nomeado[];
 	bancos: Nomeado[];
 	planosFinanciamento: PlanosFinanciamentoParametros;
+	/** financiamentoRenegociacao rows (history of renegotiations), for "Créditos novos" */
+	renegociacoes?: RenegociacaoSaldoRow[];
 	hoje?: Date;
 };
 
@@ -198,7 +223,7 @@ export function montarFluxoCaixaAno(e: EntradaFluxoCaixaAno): FluxoCaixaAno {
 			}
 		}
 
-		const financiamentosMes = financiamentosMensaisFluxo(ano, e.financiamentos, e.pessoas, e.bancos);
+		const financiamentosMes = financiamentosMensaisFluxo(ano, e.financiamentos, e.pessoas, e.bancos, e.renegociacoes);
 		financiamentosMes.forEach((f, i) => (dadosMensais[i].financiamentos = f));
 	} else {
 		// Planos de contas (legacy layout, not reachable from the UI)

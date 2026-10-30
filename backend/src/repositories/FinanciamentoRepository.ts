@@ -1,6 +1,12 @@
 import { Financiamento } from "../models/Financiamento";
 import { ParcelaFinanciamento } from "../models/ParcelaFinanciamento";
 import { garantirSemUso, plural } from "../utils/verificarUsoRegistro";
+import { garantirSchemaRenegociacao, RenegociacaoRepository } from "./RenegociacaoRepository";
+import type { RenegociacaoSaldoRow } from "../utils/saldoDevedor";
+import { infoRenegociacoes, type RenegociacaoRow } from "../utils/renegociacao";
+
+const SQL_HISTORICO_RENEGOCIACAO = `SELECT idFinanciamento, tipo, dataRenegociacao, idFinanciamentoNovo
+	FROM financiamentoRenegociacao ORDER BY id`;
 
 // PRAGMA/ALTER check runs at most once per worker instance (not on every request).
 let colunasVerificadas: Promise<void> | null = null;
@@ -68,10 +74,12 @@ export class FinanciamentoRepository {
 	async getAll(): Promise<Financiamento[]> {
 		try {
 			await this.ensureColumnsExist();
-			// 2 queries in one round trip (was 1 + one per contract).
-			const [financiamentos, parcelas] = await this.db.batch([
+			await garantirSchemaRenegociacao(this.db);
+			// 3 queries in one round trip (was 1 + one per contract).
+			const [financiamentos, parcelas, historico] = await this.db.batch([
 				this.db.prepare(`SELECT * FROM Financiamento`),
 				this.db.prepare(`SELECT * FROM parcelaFinanciamento ORDER BY idFinanciamento, numParcela`),
+				this.db.prepare(SQL_HISTORICO_RENEGOCIACAO),
 			]);
 
 			const parcelasPorFinanciamento = new Map<number, ParcelaFinanciamento[]>();
@@ -82,10 +90,16 @@ export class FinanciamentoRepository {
 				else parcelasPorFinanciamento.set(parcela.idFinanciamento, [parcela]);
 			}
 
-			return (financiamentos.results as Record<string, unknown>[]).map((result) => {
+			const contratos = financiamentos.results as Record<string, unknown>[];
+			const renegociacoes = infoRenegociacoes(
+				contratos as unknown as Array<{ id: number; numeroContrato: string; idFinanciamentoOrigem?: number | null }>,
+				(historico.results ?? []) as RenegociacaoRow[],
+			);
+			return contratos.map((result) => {
 				const parcelasList = parcelasPorFinanciamento.get(result.id as number) ?? [];
 				return {
 					...result,
+					...renegociacoes.get(Number(result.id)),
 					parcelasList,
 					totalParcelas: parcelasList.length
 				} as unknown as Financiamento;
@@ -312,11 +326,22 @@ export class FinanciamentoRepository {
 		);
 	}
 
+	/** Renegotiation history for the saldo devedor / "Créditos novos" rules (utils/saldoDevedor). */
+	listarRenegociacoesSaldo(): Promise<RenegociacaoSaldoRow[]> {
+		return new RenegociacaoRepository(this.db).listarParaSaldo();
+	}
+
 	/** Deletes the contract and its parcelas atomically; refuses (409) when movements are linked. */
 	async deleteById(id: number): Promise<void> {
 		await this.assertPodeExcluir(id);
+		await garantirSchemaRenegociacao(this.db);
 		await this.db.batch([
 			this.db.prepare(`DELETE FROM parcelaFinanciamento WHERE idFinanciamento = ?`).bind(id),
+			// renegotiation links have no FOREIGN KEY: clean them here (the history of this contract goes with
+			// it; a contract renegotiated INTO this one stays "Renegociado", without the new number)
+			this.db.prepare(`DELETE FROM financiamentoRenegociacao WHERE idFinanciamento = ?`).bind(id),
+			this.db.prepare(`UPDATE financiamentoRenegociacao SET idFinanciamentoNovo = NULL WHERE idFinanciamentoNovo = ?`).bind(id),
+			this.db.prepare(`UPDATE Financiamento SET idFinanciamentoOrigem = NULL WHERE idFinanciamentoOrigem = ?`).bind(id),
 			this.db.prepare(`DELETE FROM Financiamento WHERE id = ?`).bind(id),
 		]);
 	}

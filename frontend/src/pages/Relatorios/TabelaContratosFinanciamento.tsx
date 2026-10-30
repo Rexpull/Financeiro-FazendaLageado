@@ -245,7 +245,7 @@ const TabelaContratosFinanciamento: React.FC<{
 										<td className={`${td} ${num} font-bold text-gray-900`}>
 											{brl(l.valor)}
 											{mostrarSituacao && (
-												<span className={`block text-xs font-medium ${l.quitado ? 'text-green-700' : 'text-gray-500'}`}>{situacaoLiquidado(l)}</span>
+												<span className={`block text-xs font-medium ${l.renegociado ? 'text-purple-700' : l.quitado ? 'text-green-700' : 'text-gray-500'}`}>{situacaoLiquidado(l)}</span>
 											)}
 										</td>
 									)}

@@ -339,6 +339,8 @@ export interface ResumoSaldoDevedorMes {
   creditosNovos: number;
   valorContratadoNovos: number;
   contratosNovos: number;
+  /** Net effect of renegotiations in the month: new parcelas − replaced ones (not new credit, not paid) */
+  renegociacoes?: number;
   saldoFinal: number;
 }
 

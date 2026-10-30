@@ -43,14 +43,14 @@ export function intervaloRelatorio(ano: number, periodo: PeriodoRelatorio, hoje:
 	return intervaloPeriodo(ano, periodo as TipoPeriodo, hoje);
 }
 
-export type LinhaContrato = { contrato: ContratoRelatorioFinanciamentos; valor: number; quitado?: boolean };
+export type LinhaContrato = { contrato: ContratoRelatorioFinanciamentos; valor: number; quitado?: boolean; renegociado?: boolean };
 
 /** Joins the {idFinanciamento, valor} references of a view/bar with the contract data. */
 export function linhasDe(contratos: ContratoRelatorioFinanciamentos[], refs: ValorContratoFinanciamento[]): LinhaContrato[] {
 	const porId = new Map(contratos.map((c) => [c.idFinanciamento, c]));
 	return refs.flatMap((r) => {
 		const contrato = porId.get(r.idFinanciamento);
-		return contrato ? [{ contrato, valor: r.valor, quitado: r.quitado }] : [];
+		return contrato ? [{ contrato, valor: r.valor, quitado: r.quitado, ...(r.renegociado ? { renegociado: true } : {}) }] : [];
 	});
 }
 
@@ -77,8 +77,11 @@ export const rotuloModalidade = (c: Pick<ContratoRelatorioFinanciamentos, 'modal
 	return c.modalidade === 'PARTICULAR' && c.nomeModalidadeParticular ? `${label} - ${c.nomeModalidadeParticular}` : label;
 };
 
-export const situacaoLiquidado = (l: Pick<LinhaContrato, 'contrato' | 'quitado'>) =>
-	l.quitado ? `Quitado em ${formatarDataISO(l.contrato.dataQuitacao)}` : 'Amortizado';
+export const situacaoLiquidado = (l: Pick<LinhaContrato, 'contrato' | 'quitado' | 'renegociado'>) => {
+	// renegotiated into another contract: what was left to pay went there, so it is not "Quitado"
+	if (l.renegociado) return `Renegociado em ${formatarDataISO(l.contrato.renegociadoEm)}`;
+	return l.quitado ? `Quitado em ${formatarDataISO(l.contrato.dataQuitacao)}` : 'Amortizado';
+};
 
 export type PlanilhaExcel = { nome: string; linhas: Array<Record<string, string | number>> };
 

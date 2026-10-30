@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { resumoSaldoDevedor, resumoSaldoDevedorMeses, mesesDoIntervalo, contratosDoPeriodo } from './saldoDevedor';
+import {
+	resumoSaldoDevedor,
+	resumoSaldoDevedorMeses,
+	mesesDoIntervalo,
+	contratosDoPeriodo,
+	parcelasComRenegociacoes,
+	comValorOriginal,
+} from './saldoDevedor';
 
 const fin = [
 	{ id: 1, dataContrato: '2025-06-06', valor: 1000 }, // contrato antigo
@@ -122,5 +129,82 @@ describe('saldo devedor em mês fechado (cards x gráfico de evolução)', () =>
 		expect(ano[5].saldoFinal).toBe(t3[0].saldoInicial); // fim de junho
 		expect(ano[8].saldoFinal).toBe(t3[2].saldoFinal); // fim de setembro
 		expect(ano.slice(6, 9)).toEqual(t3);
+	});
+});
+
+describe('renegociações no saldo devedor', () => {
+	const aberta = (id: number, idFinanciamento: number, numParcela: number, valor: number, dt_vencimento: string) => ({
+		id, idFinanciamento, numParcela, valor, status: 'Aberto', dt_vencimento, dt_liquidacao: null,
+	});
+	const fecha = (meses: ReturnType<typeof resumoSaldoDevedor>) => {
+		for (const m of meses) expect(m.saldoFinal).toBeCloseTo(m.saldoInicial - m.quitados + m.creditosNovos + m.renegociacoes, 2);
+	};
+
+	it('aditivo: meses anteriores não mudam e a diferença aparece em "renegociações" no mês dele', () => {
+		const f = [{ id: 1, dataContrato: '2026-02-10', valor: 1000 }];
+		const antes = resumoSaldoDevedor(2026, f, [aberta(1, 1, 1, 500, '2027-02-10'), aberta(2, 1, 2, 500, '2028-02-10')]);
+		// aditivo em 15/06: parcelas 1 e 2 (1000) viram 1, 2, 3 (1200)
+		const atuais = [aberta(3, 1, 1, 400, '2027-06-15'), aberta(4, 1, 2, 400, '2028-06-15'), aberta(5, 1, 3, 400, '2029-06-15')];
+		const reneg = [{
+			id: 1, idFinanciamento: 1, tipo: 'ADITIVO', dataRenegociacao: '2026-06-15',
+			parcelasAnteriores: JSON.stringify([{ numParcela: 1, dt_vencimento: '2027-02-10', valor: 500 }, { numParcela: 2, dt_vencimento: '2028-02-10', valor: 500 }]),
+			parcelasNovas: '[1,2,3]',
+		}];
+		const depois = resumoSaldoDevedor(2026, f, parcelasComRenegociacoes(atuais, reneg));
+		expect(depois.slice(0, 5)).toEqual(antes.slice(0, 5).map((m) => ({ ...m, renegociacoes: 0 })));
+		expect(depois[5]).toMatchObject({ saldoInicial: 1000, creditosNovos: 0, quitados: 0, renegociacoes: 200, saldoFinal: 1200 });
+		expect(depois[1].creditosNovos).toBe(1000); // fevereiro: o crédito assumido na assinatura continua lá
+		fecha(depois);
+	});
+
+	it('dois aditivos seguidos: cada parcela entra e sai do saldo uma vez só', () => {
+		const f = [{ id: 1, dataContrato: '2026-01-05', valor: 1000 }];
+		const reneg = [
+			{ id: 1, idFinanciamento: 1, tipo: 'ADITIVO', dataRenegociacao: '2026-04-01', parcelasAnteriores: [{ numParcela: 1, dt_vencimento: '2027-01-05', valor: 1000 }], parcelasNovas: [1, 2] },
+			{ id: 2, idFinanciamento: 1, tipo: 'ADITIVO', dataRenegociacao: '2026-08-01', parcelasAnteriores: [{ numParcela: 1, dt_vencimento: '2027-04-01', valor: 600 }, { numParcela: 2, dt_vencimento: '2028-04-01', valor: 600 }], parcelasNovas: [1] },
+		];
+		const r = resumoSaldoDevedor(2026, f, parcelasComRenegociacoes([aberta(9, 1, 1, 1500, '2028-08-01')], reneg));
+		expect(r.map((m) => m.saldoFinal)).toEqual([1000, 1000, 1000, 1200, 1200, 1200, 1200, 1500, 1500, 1500, 1500, 1500]);
+		expect(r[3].renegociacoes).toBe(200);
+		expect(r[7].renegociacoes).toBe(300);
+		fecha(r);
+	});
+
+	it('novo contrato: o contrato novo não conta como crédito novo e os meses anteriores não mudam', () => {
+		const f = [
+			{ id: 1, dataContrato: '2025-05-01', valor: 1000 },
+			{ id: 2, dataContrato: '2026-09-20', valor: 1000, idFinanciamentoOrigem: 1 },
+		];
+		const contratos = f.map((c) => ({ ...c, numeroContrato: `C-${c.id}` }));
+		const reneg = [{ id: 1, idFinanciamento: 1, tipo: 'NOVO_CONTRATO', dataRenegociacao: '2026-09-20', parcelasAnteriores: '[{"numParcela":2,"dt_vencimento":"2026-12-01","valor":800}]' }];
+		const parc = parcelasComRenegociacoes([aberta(7, 2, 1, 450, '2027-09-20'), aberta(8, 2, 2, 450, '2028-09-20')], reneg);
+		const r = resumoSaldoDevedor(2026, f, parc);
+		expect(r.slice(0, 8).every((m) => m.saldoFinal === 800 && m.renegociacoes === 0)).toBe(true);
+		expect(r[8]).toMatchObject({ saldoInicial: 800, creditosNovos: 0, contratosNovos: 0, renegociacoes: 100, saldoFinal: 900 });
+		fecha(r);
+		expect(contratosDoPeriodo('2026-09-01', '2026-10-01', contratos, parc).novos).toEqual([]);
+	});
+
+	it('renegociação com data antes do contrato e parcela paga antes do aditivo: cada mês continua fechando', () => {
+		const f = [{ id: 1, dataContrato: '2026-05-10', valor: 100 }];
+		const reneg = [{ id: 1, idFinanciamento: 1, tipo: 'ADITIVO', dataRenegociacao: '2026-03-01', parcelasAnteriores: [{ numParcela: 1, dt_vencimento: '2027-01-01', valor: 100 }], parcelasNovas: [1, 2] }];
+		const atuais = [
+			aberta(5, 1, 1, 60, '2027-03-01'),
+			{ id: 6, idFinanciamento: 1, numParcela: 2, valor: 60, status: 'Liquidado', dt_vencimento: '2026-04-01', dt_liquidacao: '2026-02-15' },
+		];
+		const r = resumoSaldoDevedor(2026, f, parcelasComRenegociacoes(atuais, reneg));
+		fecha(r);
+		expect(r[11].saldoFinal).toBe(60);
+		expect(r.reduce((s, m) => s + m.quitados, 0)).toBe(60); // paid once, never before it entered the saldo
+	});
+
+	it('valor contratado do mês de assinatura: o de antes do primeiro aditivo', () => {
+		const f = [{ id: 1, dataContrato: '2026-02-10', valor: 1500 }, { id: 2, dataContrato: '2026-02-11', valor: 300 }];
+		const reneg = [
+			{ id: 1, idFinanciamento: 1, tipo: 'ADITIVO', dataRenegociacao: '2026-06-01', parcelasAnteriores: '[]', condicoesAnteriores: '{"valor":1000}' },
+			{ id: 2, idFinanciamento: 1, tipo: 'ADITIVO', dataRenegociacao: '2026-07-01', parcelasAnteriores: '[]', condicoesAnteriores: '{"valor":1200}' },
+		];
+		expect(comValorOriginal(f, reneg).map((c) => c.valor)).toEqual([1000, 300]);
+		expect(resumoSaldoDevedor(2026, comValorOriginal(f, reneg), [])[1].valorContratadoNovos).toBe(1300);
 	});
 });

@@ -27,5 +27,20 @@ export interface Financiamento {
   criadoEm?: string;
   atualizadoEm?: string;
 
+  /** Contract this one came from (renegotiation as "novo contrato"). */
+  idFinanciamentoOrigem?: number | null;
+
+  // ---- read-only, filled by GET /api/financiamento (renegotiation history) ----
+  /** Date this contract was closed as renegotiated into another contract (latest NOVO_CONTRATO). */
+  renegociadoEm?: string | null;
+  idFinanciamentoNovo?: number | null;
+  numeroContratoNovo?: string | null;
+  /** numeroContrato of idFinanciamentoOrigem. */
+  numeroContratoOrigem?: string | null;
+  /** Renegotiations of this contract (aditivos + novo contrato). */
+  qtdRenegociacoes?: number;
+  /** Date of the latest aditivo. */
+  ultimoAditivoEm?: string | null;
+
   parcelasList?: ParcelaFinanciamento[];
 }

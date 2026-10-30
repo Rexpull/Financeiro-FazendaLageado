@@ -8,7 +8,8 @@
  *
  * Visões (o cliente escolhe quais quer ver; todas respeitam os filtros de contrato — tomador, banco, ...):
  * - ativos: posição de hoje (situação das parcelas), independe do período.
- * - contratados: contratos ATIVOS com data do contrato dentro do período.
+ * - contratados: contratos ATIVOS com data do contrato dentro do período (sem os nascidos de renegociação:
+ *   não são crédito novo, mesma regra do Dashboard).
  * - liquidados: contratos com parcelas liquidadas dentro do período (amortizados ou quitados).
  *   Valor = parcelas liquidadas no período; quitado = todas liquidadas e a última liquidação no período.
  * - porTomador: contratos ativos agrupados pelo tomador (Financiamento.responsavel).
@@ -47,6 +48,11 @@ export type ContratoRow = {
 	modalidade?: string | null;
 	nomeModalidadeParticular?: string | null;
 	numeroGarantia?: string | null;
+	/** Latest renegotiation of this contract into ANOTHER contract (financiamentoRenegociacao NOVO_CONTRATO) */
+	renegociadoEm?: string | null;
+	/** Contract this one came from (renegotiation as "novo contrato"): not new credit */
+	idFinanciamentoOrigem?: number | null;
+	numeroContratoNovo?: string | null;
 };
 
 export type ParcelaRow = {
@@ -99,13 +105,16 @@ export type ContratoRelatorio = {
 	/** Soma das parcelas liquidadas (até hoje) */
 	valorPago: number;
 	parcelasAbertas: number;
-	/** Última liquidação, quando todas as parcelas estão liquidadas */
+	/** Última liquidação, quando todas as parcelas estão liquidadas (não vale para renegociados) */
 	dataQuitacao?: string;
+	/** Encerrado por renegociação em outro contrato (sem parcelas a vencer): não é "Quitado" */
+	renegociadoEm?: string;
+	numeroContratoNovo?: string;
 	parcelas: ParcelaRelatorio[];
 };
 
 /** Contrato dentro de uma visão ou barra de gráfico, com o valor que ele soma ali. */
-export type ValorContrato = { idFinanciamento: number; valor: number; quitado?: boolean };
+export type ValorContrato = { idFinanciamento: number; valor: number; quitado?: boolean; renegociado?: boolean };
 
 export type BlocoContratos = {
 	quantidade: number;
@@ -114,7 +123,7 @@ export type BlocoContratos = {
 	contratos: ValorContrato[];
 };
 
-export type BlocoLiquidados = BlocoContratos & { quitados: number; amortizados: number; valorVincendo: number };
+export type BlocoLiquidados = BlocoContratos & { quitados: number; amortizados: number; renegociados: number; valorVincendo: number };
 
 export type GrupoTomador = {
 	tomador: string;
@@ -256,9 +265,23 @@ export function montarRelatorioFinanciamentos(
 	parcelasRows: ParcelaRow[],
 	filtros: FiltrosRelatorio,
 	hoje: string,
+	/**
+	 * Parcelas as the saldo devedor history sees them (saldoDevedor.parcelasComRenegociacoes: the ones replaced
+	 * by renegotiations come back, aditivo ones carry `entrada`). Used by the "novos" chart so it matches the
+	 * Dashboard; defaults to `parcelasRows`.
+	 */
+	parcelasHistorico?: Array<Pick<ParcelaRow, 'idFinanciamento' | 'valor'> & { entrada?: string | null }>,
 ): RelatorioFinanciamentos {
 	const { inicio, fim } = periodoDoFiltro(filtros);
 	const noPeriodo = (d: string | null | undefined) => !!d && d >= inicio && d < fim;
+	const deRenegociacao = new Set(contratosRows.filter((c) => c.idFinanciamentoOrigem != null).map((c) => c.id));
+	const historicoPorContrato = new Map<number, number[]>();
+	for (const p of parcelasHistorico ?? parcelasRows) {
+		if ('entrada' in p && p.entrada) continue; // aditivo parcela: enters with the renegotiation, not new credit
+		const lista = historicoPorContrato.get(p.idFinanciamento) ?? [];
+		lista.push(centavos(p.valor));
+		historicoPorContrato.set(p.idFinanciamento, lista);
+	}
 
 	const parcelasPorContrato = new Map<number, ParcelaRow[]>();
 	for (const p of parcelasRows) {
@@ -288,8 +311,11 @@ export function montarRelatorioFinanciamentos(
 				abertas++;
 			}
 		}
+		// Renegociado em outro contrato e sem parcelas a vencer: encerrado como "Renegociado" (as parcelas em
+		// aberto foram para o contrato novo), nunca "Quitado"
+		const renegociado = !!c.renegociadoEm && abertas === 0;
 		// Sem parcelas cadastradas: continua ATIVO (dívida ainda não parcelada no sistema), com R$ 0 a vencer
-		const ativo = abertas > 0 || ps.length === 0;
+		const ativo = abertas > 0 || (ps.length === 0 && !renegociado);
 		contratos.push({
 			idFinanciamento: c.id,
 			numeroContrato: String(c.numeroContrato ?? ''),
@@ -306,7 +332,9 @@ export function montarRelatorioFinanciamentos(
 			valorVincendo: reais(vincendo),
 			valorPago: reais(pago),
 			parcelasAbertas: abertas,
-			dataQuitacao: !ativo ? ultimaLiquidacao : undefined,
+			dataQuitacao: !ativo && !renegociado ? ultimaLiquidacao : undefined,
+			renegociadoEm: renegociado ? dia(c.renegociadoEm) : undefined,
+			numeroContratoNovo: renegociado ? c.numeroContratoNovo || undefined : undefined,
 			parcelas: ps.map((p) => ({
 				idParcela: p.id,
 				numParcela: p.numParcela,
@@ -338,24 +366,29 @@ export function montarRelatorioFinanciamentos(
 	const ativosLista = contratos.filter((c) => c.ativo);
 	const ativos = bloco(ativosLista.map((c) => ({ idFinanciamento: c.idFinanciamento, valor: c.valorVincendo })));
 	const contratados = bloco(
-		ativosLista.filter((c) => noPeriodo(c.dataContrato)).map((c) => ({ idFinanciamento: c.idFinanciamento, valor: c.valorVincendo })),
+		ativosLista
+			.filter((c) => noPeriodo(c.dataContrato) && !deRenegociacao.has(c.idFinanciamento))
+			.map((c) => ({ idFinanciamento: c.idFinanciamento, valor: c.valorVincendo })),
 	);
 
 	const liquidadosLista: ValorContrato[] = [];
 	for (const c of contratos) {
 		const pagasNoPeriodo = c.parcelas.filter((p) => noPeriodo(liquidacaoEfetiva(p)));
 		if (!pagasNoPeriodo.length) continue;
+		const renegociado = !c.ativo && !!c.renegociadoEm;
 		liquidadosLista.push({
 			idFinanciamento: c.idFinanciamento,
 			valor: reais(pagasNoPeriodo.reduce((s, p) => s + centavos(p.valor), 0)),
-			quitado: !c.ativo && noPeriodo(c.dataQuitacao),
+			quitado: !c.ativo && !renegociado && noPeriodo(c.dataQuitacao),
+			...(renegociado ? { renegociado: true } : {}),
 		});
 	}
 	const blocoLiq = bloco(liquidadosLista);
 	const liquidados: BlocoLiquidados = {
 		...blocoLiq,
 		quitados: liquidadosLista.filter((l) => l.quitado).length,
-		amortizados: liquidadosLista.filter((l) => !l.quitado).length,
+		amortizados: liquidadosLista.filter((l) => !l.quitado && !l.renegociado).length,
+		renegociados: liquidadosLista.filter((l) => l.renegociado).length,
 		valorVincendo: reais(liquidadosLista.reduce((s, l) => s + centavos(porId.get(l.idFinanciamento)?.valorVincendo), 0)),
 	};
 
@@ -388,10 +421,10 @@ export function montarRelatorioFinanciamentos(
 	const compromissosAno = new Map<number, Acumulador>();
 
 	for (const c of contratos) {
-		const novo = novosMes.get(chaveMes(c.dataContrato));
+		const novo = deRenegociacao.has(c.idFinanciamento) ? undefined : novosMes.get(chaveMes(c.dataContrato));
 		if (novo) {
 			novo.somar(c.idFinanciamento, 0); // contrato sem parcelas ainda aparece na lista
-			for (const p of c.parcelas) novo.somar(c.idFinanciamento, centavos(p.valor));
+			for (const v of historicoPorContrato.get(c.idFinanciamento) ?? []) novo.somar(c.idFinanciamento, v);
 		}
 		for (const p of c.parcelas) {
 			const liq = liquidacaoEfetiva(p);

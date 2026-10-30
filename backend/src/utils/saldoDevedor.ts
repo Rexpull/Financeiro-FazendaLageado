@@ -7,16 +7,23 @@
  * - quitados: parcelas liquidadas (dt_liquidacao) dentro do mês
  * - creditosNovos: parcelas dos contratos com dataContrato no mês (dívida assumida)
  * - valorContratadoNovos: valor de contrato desses contratos novos (informativo)
- * - saldoFinal: saldo no início do mês seguinte (= inicial − quitados + novos)
+ * - renegociacoes: efeito líquido das renegociações do mês (parcelas novas − parcelas substituídas)
+ * - saldoFinal: saldo no início do mês seguinte (= inicial − quitados + novos + renegociações)
+ * Renegociação: as parcelas substituídas (guardadas no histórico) continuam no saldo até a data da
+ * renegociação, e as do aditivo / contrato novo entram nessa data — assim os meses anteriores não mudam.
  * Datas comparadas como texto AAAA-MM-DD.
  */
-export type FinanciamentoRow = { id: number; dataContrato: string; valor: number };
+export type FinanciamentoRow = { id: number; dataContrato: string; valor: number; idFinanciamentoOrigem?: number | null };
 export type ParcelaRow = {
 	idFinanciamento: number;
 	valor: number;
 	status: string;
 	dt_vencimento: string;
 	dt_liquidacao: string | null;
+	/** Aditivo parcela: enters the saldo on the renegotiation date instead of the contract date */
+	entrada?: string | null;
+	/** Parcela replaced by a renegotiation (only in its history): leaves the saldo on that date */
+	renegociadaEm?: string | null;
 };
 
 export type ResumoSaldoDevedorMes = {
@@ -27,6 +34,7 @@ export type ResumoSaldoDevedorMes = {
 	creditosNovos: number;
 	valorContratadoNovos: number;
 	contratosNovos: number;
+	renegociacoes: number;
 	saldoFinal: number;
 };
 
@@ -47,6 +55,104 @@ export function liquidacaoEfetiva(p: Pick<ParcelaRow, 'status' | 'dt_vencimento'
 	if (p.status !== 'Liquidado') return null;
 	// Data liquidada sem data registrada: assume o vencimento
 	return dia(p.dt_liquidacao) || dia(p.dt_vencimento);
+}
+
+/** Row of financiamentoRenegociacao (JSON columns as stored). */
+export type RenegociacaoSaldoRow = {
+	id: number;
+	idFinanciamento: number;
+	tipo: string;
+	dataRenegociacao: string;
+	parcelasAnteriores: unknown;
+	parcelasNovas?: unknown;
+	condicoesAnteriores?: unknown;
+};
+
+const listaJson = <T,>(raw: unknown): T[] => {
+	if (Array.isArray(raw)) return raw as T[];
+	if (typeof raw !== 'string' || !raw) return [];
+	try {
+		const v = JSON.parse(raw);
+		return Array.isArray(v) ? (v as T[]) : [];
+	} catch {
+		return [];
+	}
+};
+
+/**
+ * Contracts with the value they were signed with ("valor contratado" of the month they count as new): an aditivo
+ * may change Financiamento.valor, and the first one keeps the original value in its history.
+ */
+export function comValorOriginal<F extends FinanciamentoRow>(financiamentos: F[], renegociacoes: RenegociacaoSaldoRow[]): F[] {
+	const original = new Map<number, number>();
+	for (const r of [...renegociacoes].sort((a, b) => a.id - b.id)) {
+		if (r.tipo !== 'ADITIVO' || original.has(r.idFinanciamento)) continue;
+		let cond: { valor?: unknown } | null = null;
+		try {
+			cond = typeof r.condicoesAnteriores === 'string' ? JSON.parse(r.condicoesAnteriores) : (r.condicoesAnteriores as typeof cond);
+		} catch {
+			cond = null;
+		}
+		const v = Number(cond?.valor);
+		if (Number.isFinite(v) && v > 0) original.set(r.idFinanciamento, v);
+	}
+	return financiamentos.map((f) => (original.has(f.id) ? { ...f, valor: original.get(f.id)! } : f));
+}
+
+/**
+ * Parcelas as the saldo devedor sees them across renegotiations: the current ones (aditivo parcelas with
+ * `entrada` = renegotiation date) plus the replaced ones from each history (`renegociadaEm`), so months
+ * before a renegotiation keep the debt they had. Replaced parcelas get negative ids.
+ */
+export function parcelasComRenegociacoes<P extends ParcelaRow & { id: number; numParcela: number }>(
+	parcelas: P[],
+	renegociacoes: RenegociacaoSaldoRow[],
+): Array<P | (ParcelaRow & { id: number; numParcela: number })> {
+	// (contract, numParcela) -> date that parcela entered with an aditivo
+	const entrada = new Map<string, string>();
+	const chave = (idFinanciamento: number, n: number) => `${idFinanciamento}:${n}`;
+	const substituidas: Array<ParcelaRow & { id: number; numParcela: number }> = [];
+	for (const r of [...renegociacoes].sort((a, b) => a.id - b.id)) {
+		const data = dia(r.dataRenegociacao);
+		for (const a of listaJson<{ numParcela: number; dt_vencimento: string; valor: number }>(r.parcelasAnteriores)) {
+			substituidas.push({
+				id: -(substituidas.length + 1),
+				idFinanciamento: r.idFinanciamento,
+				numParcela: Number(a.numParcela) || 0,
+				valor: Number(a.valor) || 0,
+				status: 'Renegociada',
+				dt_vencimento: dia(a.dt_vencimento),
+				dt_liquidacao: null,
+				entrada: entrada.get(chave(r.idFinanciamento, Number(a.numParcela))) ?? null,
+				renegociadaEm: data,
+			});
+		}
+		if (r.tipo === 'ADITIVO') for (const n of listaJson<number>(r.parcelasNovas)) entrada.set(chave(r.idFinanciamento, Number(n)), data);
+	}
+	const atuais = parcelas.map((p) => {
+		const e = entrada.get(chave(p.idFinanciamento, p.numParcela));
+		return e ? { ...p, entrada: e } : p;
+	});
+	return [...atuais, ...substituidas];
+}
+
+/**
+ * When the parcela is in the saldo: from `entrada` (contract date, or the aditivo date) until `saida` (paid, or
+ * replaced by a renegotiation), exclusive. One paid or replaced BEFORE it entered (e.g. a renegotiation dated
+ * before the contract) enters and leaves on the same day, so every month still adds up.
+ * null = never in the saldo (contract without date).
+ */
+function janelaNoSaldo(p: ParcelaRow, dataContrato: string | undefined): { entrada: string; saida: string | null } | null {
+	if (!dataContrato) return null;
+	const entrada = dia(p.entrada) || dataContrato;
+	const saida = liquidacaoEfetiva(p) ?? (dia(p.renegociadaEm) || null);
+	return { entrada, saida: saida && saida < entrada ? entrada : saida };
+}
+
+/** Date the parcela counts in "Quitados" (liquidacaoEfetiva, never before it entered the saldo); null = not paid. */
+export function quitacaoNoSaldo(p: ParcelaRow, dataContrato: string | undefined): string | null {
+	const liq = liquidacaoEfetiva(p);
+	return liq ? (janelaNoSaldo(p, dataContrato)?.saida ?? liq) : null;
 }
 
 /** Every month (ano, mes 1..12) from `inicio` (inclusive) to `fim` (exclusive), both AAAA-MM-DD. */
@@ -84,14 +190,13 @@ export function resumoSaldoDevedorMeses(
 	parcelas: ParcelaRow[],
 ): ResumoSaldoDevedorMes[] {
 	const dataContrato = new Map(financiamentos.map((f) => [f.id, dia(f.dataContrato)]));
+	const deRenegociacao = new Set(financiamentos.filter((f) => f.idFinanciamentoOrigem != null).map((f) => f.id));
 
 	const saldoEm = (limite: string) => {
 		let total = 0;
 		for (const p of parcelas) {
-			const dc = dataContrato.get(p.idFinanciamento);
-			if (!dc || dc >= limite) continue;
-			const liq = liquidacaoEfetiva(p);
-			if (liq && liq < limite) continue;
+			const j = janelaNoSaldo(p, dataContrato.get(p.idFinanciamento));
+			if (!j || j.entrada >= limite || (j.saida && j.saida < limite)) continue;
 			total += centavos(p.valor);
 		}
 		return total;
@@ -105,11 +210,20 @@ export function resumoSaldoDevedorMeses(
 
 		let quitados = 0;
 		let creditosNovos = 0;
+		let renegociacoes = 0;
 		for (const p of parcelas) {
-			if (noMes(liquidacaoEfetiva(p))) quitados += centavos(p.valor);
-			if (noMes(dataContrato.get(p.idFinanciamento) ?? null)) creditosNovos += centavos(p.valor);
+			const valor = centavos(p.valor);
+			const dc = dataContrato.get(p.idFinanciamento);
+			if (noMes(quitacaoNoSaldo(p, dc))) quitados += valor;
+			const j = janelaNoSaldo(p, dc);
+			if (!j) continue;
+			if (p.renegociadaEm && noMes(j.saida)) renegociacoes -= valor;
+			if (!noMes(j.entrada)) continue;
+			// aditivo parcelas and contracts born from a renegotiation are not new credit
+			if (p.entrada || deRenegociacao.has(p.idFinanciamento)) renegociacoes += valor;
+			else creditosNovos += valor;
 		}
-		const novos = financiamentos.filter((f) => noMes(dia(f.dataContrato)));
+		const novos = financiamentos.filter((f) => noMes(dia(f.dataContrato)) && f.idFinanciamentoOrigem == null);
 
 		out.push({
 			ano,
@@ -119,6 +233,7 @@ export function resumoSaldoDevedorMeses(
 			creditosNovos: creditosNovos / 100,
 			valorContratadoNovos: novos.reduce((s, f) => s + centavos(f.valor), 0) / 100,
 			contratosNovos: novos.length,
+			renegociacoes: renegociacoes / 100,
 			saldoFinal: saldoEm(fim) / 100,
 		});
 	}
@@ -184,9 +299,10 @@ export function contratosDoPeriodo(
 	const quitados: ContratoDoPeriodo[] = [];
 	for (const f of financiamentos) {
 		const lista = porContrato.get(f.id) ?? [];
-		// A contract without parcelas still shows (valor 0): it counts in "N contrato(s) novo(s)"
-		if (noPeriodo(dia(f.dataContrato))) novos.push(montar(f, lista));
-		const pagas = lista.filter((p) => noPeriodo(liquidacaoEfetiva(p)));
+		// A contract without parcelas still shows (valor 0): it counts in "N contrato(s) novo(s)".
+		// Same rule as the card: contracts born from a renegotiation and aditivo parcelas are not new credit.
+		if (noPeriodo(dia(f.dataContrato)) && f.idFinanciamentoOrigem == null) novos.push(montar(f, lista.filter((p) => !p.entrada)));
+		const pagas = lista.filter((p) => noPeriodo(quitacaoNoSaldo(p, dia(f.dataContrato))));
 		if (pagas.length) quitados.push(montar(f, pagas));
 	}
 	const ordem = (a: ContratoDoPeriodo, b: ContratoDoPeriodo) => b.valorNoPeriodo - a.valorNoPeriodo || a.numeroContrato.localeCompare(b.numeroContrato);

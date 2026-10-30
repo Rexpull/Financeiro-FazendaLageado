@@ -1,5 +1,6 @@
 import { Financiamento } from "../../../backend/src/models/Financiamento";
 import { ParcelaFinanciamento } from "../../../backend/src/models/ParcelaFinanciamento";
+import type { RenegociacaoHistorico } from "../../../backend/src/repositories/RenegociacaoRepository";
 import { statusParcelaEmAberto } from "../pages/Financeiro/Financiamento/parcelaRegras";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -67,4 +68,34 @@ export const excluirFinanciamento = async (id: number): Promise<void> => {
     const data = (await res.json().catch(() => null)) as { error?: string; details?: string } | null;
     throw new Error(data?.error || data?.details || "Erro ao excluir financiamento");
   }
+};
+
+/** Body of POST /api/financiamento/:id/renegociar (see renegociacaoRegras.montarPayload). */
+export type RenegociacaoPayload = Record<string, unknown> & { tipo: 'ADITIVO' | 'NOVO_CONTRATO' };
+
+export interface ResultadoRenegociacao {
+  idFinanciamento: number;
+  idFinanciamentoNovo: number | null;
+  parcelasRemovidas: number;
+  valorRemovido: number;
+  parcelasCriadas: number;
+  valorCriado: number;
+}
+
+/** One transaction in the API; 400/409 come with a message for the client in `error`. */
+export const renegociarFinanciamento = async (id: number, payload: RenegociacaoPayload): Promise<ResultadoRenegociacao> => {
+  const res = await fetch(`${API_URL}/api/financiamento/${id}/renegociar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => null)) as (ResultadoRenegociacao & { error?: string }) | null;
+  if (!res.ok || !data) throw new Error(data?.error || "Erro ao renegociar o contrato");
+  return data;
+};
+
+export const listarRenegociacoes = async (id: number): Promise<RenegociacaoHistorico[]> => {
+  const res = await fetch(`${API_URL}/api/financiamento/${id}/renegociacoes`);
+  if (!res.ok) throw new Error("Erro ao carregar o histórico de renegociações");
+  return res.json();
 };

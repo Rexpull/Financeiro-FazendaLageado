@@ -484,11 +484,13 @@ const RelatorioFinanciamentos: React.FC = () => {
 					<Kpi
 						rotulo="Contratos"
 						valor={String(l.quantidade)}
-						detalhe={`${plural(l.quitados, 'quitado', 'quitados')} · ${plural(l.amortizados, 'amortizado', 'amortizados')}`}
+						detalhe={`${plural(l.quitados, 'quitado', 'quitados')} · ${plural(l.amortizados, 'amortizado', 'amortizados')}${
+							l.renegociados ? ` · ${plural(l.renegociados, 'renegociado', 'renegociados')}` : ''
+						}`}
 						onClick={() =>
 							abrir({ titulo: `Liquidados em ${intervalo.rotulo}`, dica: 'Contratos com parcelas pagas no período.', colunaValor: 'Pago no período', mostrarSituacao: true, refs: l.contratos })
 						}
-						dica="Quitado: última parcela paga no período. Amortizado: pagou parcelas e ainda tem a vencer."
+						dica="Quitado: última parcela paga no período. Amortizado: pagou parcelas e ainda tem a vencer. Renegociado: o que faltava pagar foi para outro contrato."
 					/>
 					<Kpi
 						rotulo="Pago no período"

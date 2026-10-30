@@ -78,7 +78,7 @@ export class MovimentoBancarioController {
 
 	/** Loads one year and builds the Fluxo de Caixa (same engine for POST /api/fluxoCaixa and /anoAnterior). */
 	private async gerarFluxoCaixaAno(ano: string, contas: number[], tipoAgrupamento: TipoAgrupamentoFluxo): Promise<FluxoCaixaAno> {
-		const [movimentos, parcelasDoAno, planos, financiamentos, pessoas, bancos, centrosCustos, planosFinanciamento] = await Promise.all([
+		const [movimentos, parcelasDoAno, planos, financiamentos, pessoas, bancos, centrosCustos, planosFinanciamento, renegociacoes] = await Promise.all([
 			contas.length > 0 ? this.movBancarioRepository.getAllFiltrado(ano, contas) : Promise.resolve([]),
 			this.parcelaRepo.getParcelasDoAno(ano),
 			this.planoContaRepository.getAll(),
@@ -87,6 +87,7 @@ export class MovimentoBancarioController {
 			this.bancoRepo.getAll(),
 			tipoAgrupamento === 'centros' ? this.centroCustosRepository.getAll() : Promise.resolve([]),
 			this.planosFinanciamentoFromParametros(),
+			tipoAgrupamento === 'centros' ? this.financiamentoRepo.listarRenegociacoesSaldo() : Promise.resolve([]),
 		]);
 		return montarFluxoCaixaAno({
 			ano,
@@ -100,6 +101,7 @@ export class MovimentoBancarioController {
 			bancos,
 			centrosCustos,
 			planosFinanciamento,
+			renegociacoes,
 		});
 	}
 

@@ -16,6 +16,7 @@ import {
 	faUndo,
 	faMoneyBillWave,
 	faTriangleExclamation,
+	faHandshake,
 } from '@fortawesome/free-solid-svg-icons';
 import defaultIcon from '../../../assets/img/icon-Bancos/default.png';
 import noData from '/frontend/src/assets/img/noData.svg';
@@ -29,14 +30,12 @@ import { toast } from 'react-toastify';
 import { formatarDataISO, hojeISO } from '../../../Utils/dataSemFuso';
 import { brl } from '../../../Utils/formatos';
 import {
-	avisoDiferencaParcelas,
 	descricaoParcela,
 	descricaoParcelamento,
 	mensagemEstorno,
 	mensagemExcluirContrato,
 	reabrirParcela,
 	resumoParcelas,
-	type ResumoParcelas,
 } from './parcelaRegras';
 import { listarBancos } from '../../../services/bancoService';
 import { listarPessoas } from '../../../services/pessoaService';
@@ -44,6 +43,13 @@ import { Banco } from '../../../../../backend/src/models/Banco';
 import { Pessoa } from '../../../../../backend/src/models/Pessoa';
 import DialogModal from '../../../components/DialogModal';
 import ModalParcelas from './ModalParcelas';
+import ModalRenegociacao from './ModalRenegociacao';
+import {
+	podeRenegociar,
+	renegociadoEncerrado,
+	rotuloOrigem,
+	rotuloRenegociado,
+} from './renegociacaoRegras';
 
 // Importando logos dos bancos
 import bancoBrasil from '../../../assets/img/icon-Bancos/banco-brasil.svg';
@@ -94,10 +100,6 @@ const periodoParcelas = (parcelas: ParcelaFinanciamento[] | undefined) => {
 	return datas.length > 0 ? `${formatarDataISO(datas[0])} a ${formatarDataISO(datas[datas.length - 1])}` : 'Sem parcelas';
 };
 
-/** Short form of the "parcelas ≠ contratado + juros" warning (the full text goes in the tooltip). */
-const avisoCurto = (r: ResumoParcelas) =>
-	`Parcelas somam ${brl(Math.abs(r.diferenca))} ${r.diferenca > 0 ? 'a mais' : 'a menos'} que contratado + juros`;
-
 const ListFinanciamentos: React.FC = () => {
 	const [searchTerm, setSearchTerm] = useState('');
 	const [modalFinanciamento, setModalFinanciamento] = useState(false);
@@ -118,6 +120,7 @@ const ListFinanciamentos: React.FC = () => {
 	const [selectedFinanciamento, setSelectedFinanciamento] = useState<Financiamento | null>(null);
 	const [parcelaToEstornar, setParcelaToEstornar] = useState<ParcelaFinanciamento | null>(null);
 	const [showCompleted, setShowCompleted] = useState(false);
+	const [contratoRenegociar, setContratoRenegociar] = useState<Financiamento | null>(null);
 	const menuRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
 
 	useEffect(() => {
@@ -212,8 +215,10 @@ const ListFinanciamentos: React.FC = () => {
 		);
 	};
 
-	// a contract without installments (e.g. incomplete) is NOT liquidated ([].every() is true)
-	const isCompleto = (f: Financiamento) => (f.parcelasList?.length ?? 0) > 0 && f.parcelasList!.every((p) => p.status === 'Liquidado');
+	// a contract without installments (e.g. incomplete) is NOT liquidated ([].every() is true);
+	// a contract renegotiated into another one, with nothing left to pay, is closed too ("Renegociado")
+	const isCompleto = (f: Financiamento) =>
+		renegociadoEncerrado(f) || ((f.parcelasList?.length ?? 0) > 0 && f.parcelasList!.every((p) => p.status === 'Liquidado'));
 
 	const filtered = financiamentos.filter((f) => {
 		if (!matchesSearch(f) || isCompleto(f)) return false;
@@ -222,6 +227,7 @@ const ListFinanciamentos: React.FC = () => {
 
 	// Separa os financiamentos completados
 	const financiamentosCompletos = financiamentos.filter((f) => matchesSearch(f) && isCompleto(f));
+	const temRenegociadosEncerrados = financiamentosCompletos.some(renegociadoEncerrado);
 
 	const qtdComVencidas = financiamentos.filter((f) => financiamentoTemParcelasVencidas(f.parcelasList)).length;
 
@@ -327,6 +333,35 @@ const ListFinanciamentos: React.FC = () => {
 			/>
 		);
 
+	/** "Renegociado → nº novo", "Origem: nº antigo", "Aditivo em dd/mm/aaaa". */
+	const renderBadgesRenegociacao = (fin: Financiamento) => {
+		const renegociado = rotuloRenegociado(fin);
+		const origem = rotuloOrigem(fin);
+		if (!renegociado && !origem && !fin.ultimoAditivoEm) return null;
+		return (
+			<span className="flex flex-wrap gap-1 mt-1">
+				{renegociado && (
+					<span
+						className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-800"
+						title={`Renegociado em ${formatarDataISO(fin.renegociadoEm)}: as parcelas que estavam a vencer foram para o novo contrato`}
+					>
+						{renegociado}
+					</span>
+				)}
+				{origem && (
+					<span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" title="Contrato criado na renegociação deste">
+						{origem}
+					</span>
+				)}
+				{fin.ultimoAditivoEm && (
+					<span className="px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800" title="Último aditivo deste contrato">
+						Aditivo em {formatarDataISO(fin.ultimoAditivoEm)}
+					</span>
+				)}
+			</span>
+		);
+	};
+
 	const renderTabelaParcelas = (fin: Financiamento) => (
 		<div className="border-t">
 			<div className="p-4 overflow-x-auto">
@@ -401,7 +436,6 @@ const ListFinanciamentos: React.FC = () => {
 	/** One contract in the "Visão de Parcelas" (expandable row with its installments). */
 	const renderLinhaContrato = (fin: Financiamento, liquidado: boolean) => {
 		const resumo = resumoParcelas(fin, fin.parcelasList);
-		const aviso = avisoDiferencaParcelas(resumo);
 		const expandido = expandedFinanciamentos.includes(fin.id);
 		return (
 			<div key={fin.id} className="bg-white border rounded-lg shadow-md">
@@ -416,13 +450,13 @@ const ListFinanciamentos: React.FC = () => {
 							<p className="text-sm text-gray-600">
 								Contrato: {fin.numeroContrato} | Responsável: {fin.responsavel}
 							</p>
+							{renderBadgesRenegociacao(fin)}
 						</div>
 					</div>
 					<div className="flex items-center gap-4">
 						<div className="text-right">
 							<div className="flex items-center justify-end gap-2">
 								{!liquidado && renderIconeVencidas(fin, 'cursor-help')}
-								{aviso && <FontAwesomeIcon icon={faTriangleExclamation} className="text-amber-500 cursor-help" title={aviso} />}
 								<p className="font-semibold text-primary" title="Valor contratado">
 									{brl(resumo.contratado)}
 								</p>
@@ -442,6 +476,19 @@ const ListFinanciamentos: React.FC = () => {
 						>
 							<FontAwesomeIcon icon={faMoneyCheckAlt} />
 						</button>
+						{podeRenegociar(fin) && (
+							<button
+								onClick={(e) => {
+									e.stopPropagation();
+									setContratoRenegociar(fin);
+								}}
+								className="text-primary text-lg hover:text-orange-600"
+								title="Renegociar contrato"
+								aria-label={`Renegociar o contrato ${fin.numeroContrato}`}
+							>
+								<FontAwesomeIcon icon={faHandshake} />
+							</button>
+						)}
 						<button
 							onClick={(e) => {
 								e.stopPropagation();
@@ -487,7 +534,6 @@ const ListFinanciamentos: React.FC = () => {
 	/** One contract card ("Visão de Cards"). */
 	const renderCard = (fin: Financiamento, liquidado: boolean) => {
 		const resumo = resumoParcelas(fin, fin.parcelasList);
-		const aviso = avisoDiferencaParcelas(resumo);
 		const menuAberto = activeMenu === fin.id;
 		return (
 			<div key={fin.id} className="bg-white relative border rounded-lg pb-0 p-4 shadow-md hover:bg-gray-50 transition">
@@ -509,10 +555,24 @@ const ListFinanciamentos: React.FC = () => {
 					</button>
 					{menuAberto && (
 						<div
-							className="absolute font-medium right-0 bg-white shadow-md rounded-md w-28 mt-2 z-10"
+							className="absolute font-medium right-0 bg-white shadow-md rounded-md w-36 mt-2 z-10"
 							role="menu"
 							onClick={(e) => e.stopPropagation()}
 						>
+							{podeRenegociar(fin) && (
+								<button
+									role="menuitem"
+									className="block w-full text-left px-3 py-2 hover:bg-gray-100"
+									onClick={(e) => {
+										e.stopPropagation();
+										setActiveMenu(null);
+										setContratoRenegociar(fin);
+									}}
+								>
+									<FontAwesomeIcon icon={faHandshake} className="mr-2" />
+									Renegociar
+								</button>
+							)}
 							<button
 								role="menuitem"
 								className="block w-full text-left px-3 py-2 hover:bg-gray-100"
@@ -546,6 +606,7 @@ const ListFinanciamentos: React.FC = () => {
 					<div>
 						<p className="font-bold text-lg text-primary">{nomeCredor(fin)}</p>
 						<p className="text-sm text-gray-600">Contrato: {fin.numeroContrato}</p>
+						{renderBadgesRenegociacao(fin)}
 					</div>
 				</div>
 
@@ -589,18 +650,18 @@ const ListFinanciamentos: React.FC = () => {
 						<span className="font-semibold">{fin.responsavel}</span>
 					</div>
 
-					{aviso && (
-						<p className="text-xs text-amber-700 flex items-start gap-1" title={aviso}>
-							<FontAwesomeIcon icon={faTriangleExclamation} className="mt-0.5" />
-							<span>{avisoCurto(resumo)}</span>
-						</p>
-					)}
+					{/* No "parcelas ≠ contratado + juros" warning here: contracts imported from the spreadsheet only have the
+					    parcelas still due, so it would show on almost every card. It stays in Gerenciar parcelas / edit. */}
 				</div>
 
 				<button
 					onClick={() => abrirParcelas(fin)}
 					className={`mt-4 py-2 border-t w-full hover:underline text-sm font-semibold ${
-						liquidado ? 'text-green-600 border-green-300' : 'text-orange-600'
+						renegociadoEncerrado(fin)
+							? 'text-purple-700 border-purple-200'
+							: liquidado
+							? 'text-green-600 border-green-300'
+							: 'text-orange-600'
 					}`}
 				>
 					Ver parcelas
@@ -618,7 +679,8 @@ const ListFinanciamentos: React.FC = () => {
 					className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded flex items-center gap-2"
 				>
 					<FontAwesomeIcon icon={faCheck} />
-					Ver {financiamentosCompletos.length} Contrato{financiamentosCompletos.length > 1 ? 's' : ''} Liquidado
+					Ver {financiamentosCompletos.length} Contrato{financiamentosCompletos.length > 1 ? 's' : ''}{' '}
+					{temRenegociadosEncerrados ? 'Encerrado' : 'Liquidado'}
 					{financiamentosCompletos.length > 1 ? 's' : ''}
 				</button>
 			</div>
@@ -627,7 +689,9 @@ const ListFinanciamentos: React.FC = () => {
 	const renderTituloLiquidados = () => (
 		<div className="flex items-center gap-4 mb-4">
 			<div className="h-px bg-gray-300 flex-1"></div>
-			<h2 className="text-lg font-semibold text-gray-700 whitespace-nowrap">Contratos Liquidados</h2>
+			<h2 className="text-lg font-semibold text-gray-700 whitespace-nowrap">
+				{temRenegociadosEncerrados ? 'Contratos encerrados (liquidados ou renegociados)' : 'Contratos Liquidados'}
+			</h2>
 			<div className="h-px bg-gray-300 flex-1"></div>
 		</div>
 	);
@@ -802,6 +866,20 @@ const ListFinanciamentos: React.FC = () => {
 					onSave={() => undefined}
 					bancos={bancos}
 					pessoas={pessoas}
+				/>
+			)}
+
+			{contratoRenegociar && (
+				<ModalRenegociacao
+					isOpen
+					onClose={() => setContratoRenegociar(null)}
+					onSaved={() => {
+						carregarFinanciamentos(true);
+					}}
+					financiamento={contratoRenegociar}
+					bancos={bancos}
+					pessoas={pessoas}
+					nomeCredor={nomeCredor(contratoRenegociar)}
 				/>
 			)}
 

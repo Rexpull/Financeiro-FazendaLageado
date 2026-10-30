@@ -21,7 +21,6 @@ import DialogModal from '../../../components/DialogModal';
 import { NumericFormat } from 'react-number-format';
 import { salvarParcelaFinanciamento, excluirParcelaFinanciamento } from '../../../services/parcelaFinanciamentoService';
 import {
-	avisoDiferencaParcelas,
 	descricaoParcela,
 	descricaoParcelamento,
 	mensagemEstorno,
@@ -36,6 +35,15 @@ import {
 	semIdTemporario,
 	type ResultadoRecalculo,
 } from './parcelaRegras';
+import {
+	avisoDiferencaContrato,
+	descricaoHistorico,
+	linhasSnapshot,
+	rotuloOrigem,
+	rotuloRenegociado,
+	type RenegociacaoHistorico,
+} from './renegociacaoRegras';
+import { listarRenegociacoes } from '../../../services/financiamentoService';
 import defaultIcon from '../../../assets/img/icon-Bancos/default.png';
 
 // Importando logos dos bancos
@@ -89,6 +97,23 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 	const [parcelasToDelete, setParcelasToDelete] = useState<number[]>([]);
 	// Installments as stored in the database (updated by Liquidar/Estornar, which save immediately)
 	const gravadasRef = useRef<ParcelaFinanciamento[]>([]);
+	const [renegociacoes, setRenegociacoes] = useState<RenegociacaoHistorico[]>([]);
+
+	// Renegotiation history (aditivos, novo contrato, or where this contract came from)
+	const temHistorico = (financiamento.qtdRenegociacoes ?? 0) > 0 || financiamento.idFinanciamentoOrigem != null;
+	useEffect(() => {
+		setRenegociacoes([]);
+		if (!isOpen || !temHistorico) return;
+		let ativo = true;
+		listarRenegociacoes(financiamento.id)
+			.then((lista) => {
+				if (ativo) setRenegociacoes(lista);
+			})
+			.catch((error) => console.error('Erro ao carregar renegociações:', error));
+		return () => {
+			ativo = false;
+		};
+	}, [isOpen, financiamento.id, temHistorico]);
 
 	useEffect(() => {
 		if (isOpen && financiamento.parcelasList) {
@@ -329,7 +354,9 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 	};
 
 	const resumo = resumoParcelas(financiamento, parcelas);
-	const avisoDiferenca = avisoDiferencaParcelas(resumo);
+	const avisoDiferenca = avisoDiferencaContrato(financiamento, resumo);
+	const badgeRenegociado = rotuloRenegociado(financiamento);
+	const badgeOrigem = rotuloOrigem(financiamento);
 
 	return (
 		<>
@@ -416,6 +443,39 @@ const ModalParcelas: React.FC<Props> = ({ isOpen, onClose, financiamento, onSave
 							</p>
 						)}
 					</div>
+
+					{(badgeRenegociado || badgeOrigem || renegociacoes.length > 0) && (
+						<div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-4">
+							<h3 className="font-semibold text-purple-900 flex flex-wrap items-center gap-2">
+								Renegociações
+								{badgeRenegociado && <span className="px-2 py-0.5 rounded text-xs bg-purple-200 text-purple-900">{badgeRenegociado}</span>}
+								{badgeOrigem && <span className="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800">{badgeOrigem}</span>}
+							</h3>
+							<ul className="mt-2 space-y-3 text-sm">
+								{renegociacoes.map((h) => {
+									const { titulo, detalhe } = descricaoHistorico(h, financiamento.id);
+									const removidas = linhasSnapshot(h);
+									return (
+										<li key={h.id}>
+											<p className="font-semibold text-gray-800">{titulo}</p>
+											<p className="text-gray-700">{detalhe}</p>
+											{h.observacao && <p className="text-gray-600 italic">{h.observacao}</p>}
+											{removidas.length > 0 && (
+												<details className="mt-1 text-xs text-gray-600">
+													<summary className="cursor-pointer">Parcelas que estavam em aberto antes</summary>
+													<ul className="ml-4 list-disc">
+														{removidas.map((linha, i) => (
+															<li key={i}>{linha}</li>
+														))}
+													</ul>
+												</details>
+											)}
+										</li>
+									);
+								})}
+							</ul>
+						</div>
+					)}
 
 					{/* Lista de Parcelas */}
 					<div className="mb-4 flex flex-wrap gap-2 justify-between items-center border-t border-gray-200 pt-4">

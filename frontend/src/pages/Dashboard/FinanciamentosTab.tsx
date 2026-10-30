@@ -128,7 +128,9 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo
           titulo: 'Saldo devedor no fim do período',
           valor: periodo.saldoFinal,
           cor: 'warning.dark',
-          nota: `Em ${dataFinal}${fimUltimoMes} = início − quitados + créditos novos`,
+          nota: `Em ${dataFinal}${fimUltimoMes} = início − quitados + créditos novos${
+            periodo.renegociacoes ? ` ${periodo.renegociacoes > 0 ? '+' : '−'} ${brl(Math.abs(periodo.renegociacoes))} de renegociações` : ''
+          }`,
           destaque: true,
         },
       ]

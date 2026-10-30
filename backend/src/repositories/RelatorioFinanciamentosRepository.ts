@@ -7,6 +7,8 @@ import {
   type FiltrosRelatorio,
   type RelatorioFinanciamentos,
 } from '../utils/relatorioFinanciamentos';
+import { garantirSchemaRenegociacao } from './RenegociacaoRepository';
+import { parcelasComRenegociacoes, type RenegociacaoSaldoRow } from '../utils/saldoDevedor';
 
 export type {
   ContratoRelatorio as ContratoRelatorioFinanciamentos,
@@ -53,8 +55,9 @@ export class RelatorioFinanciamentosRepository {
     hoje: string = hojeISO(),
   ): Promise<RelatorioFinanciamentos> {
     await this.ensureColumnsExist();
+    await garantirSchemaRenegociacao(this.db);
 
-    const [contratosResult, parcelasResult] = await Promise.all([
+    const [contratosResult, parcelasResult, renegResult] = await Promise.all([
       this.db.prepare(`
         SELECT
           f.id,
@@ -68,23 +71,38 @@ export class RelatorioFinanciamentosRepository {
           f.modalidade,
           f.nomeModalidadeParticular,
           f.numeroGarantia,
+          f.idFinanciamentoOrigem,
           b.nome AS banco,
-          p.nome AS pessoa
+          p.nome AS pessoa,
+          rn.dataRenegociacao AS renegociadoEm,
+          fn.numeroContrato AS numeroContratoNovo
         FROM Financiamento f
         LEFT JOIN Banco b ON f.idBanco = b.id
         LEFT JOIN Pessoa p ON f.idPessoa = p.id
+        -- última renegociação deste contrato em OUTRO contrato (encerra como "Renegociado")
+        LEFT JOIN financiamentoRenegociacao rn ON rn.id = (
+          SELECT r.id FROM financiamentoRenegociacao r
+          WHERE r.idFinanciamento = f.id AND r.tipo = 'NOVO_CONTRATO'
+          ORDER BY r.dataRenegociacao DESC, r.id DESC LIMIT 1
+        )
+        LEFT JOIN Financiamento fn ON fn.id = rn.idFinanciamentoNovo
       `).all<ContratoRow>(),
       this.db.prepare(`
         SELECT id, idFinanciamento, numParcela, valor, status, dt_vencimento, dt_liquidacao
         FROM parcelaFinanciamento
       `).all<ParcelaRow>(),
+      this.db
+        .prepare(`SELECT id, idFinanciamento, tipo, dataRenegociacao, parcelasAnteriores, parcelasNovas FROM financiamentoRenegociacao`)
+        .all<RenegociacaoSaldoRow>(),
     ]);
 
+    const parcelas = parcelasResult.results ?? [];
     return montarRelatorioFinanciamentos(
       contratosResult.results ?? [],
-      parcelasResult.results ?? [],
+      parcelas,
       filtros,
       hoje,
+      parcelasComRenegociacoes(parcelas, renegResult.results ?? []),
     );
   }
 }

@@ -4,13 +4,16 @@ import {
   resumoSaldoDevedorMeses,
   mesesDoIntervalo,
   contratosDoPeriodo,
+  parcelasComRenegociacoes,
+  comValorOriginal,
   type FinanciamentoRow,
-  type ParcelaRow,
   type ResumoSaldoDevedorMes,
+  type RenegociacaoSaldoRow,
   type ContratoDetalheRow,
   type ParcelaDetalheRow,
   type ContratoDoPeriodo,
 } from "../utils/saldoDevedor";
+import { garantirSchemaRenegociacao } from "./RenegociacaoRepository";
 
 /** Date range [inicio, fim) as AAAA-MM-DD (fim exclusive): quarter, semester, last 12 months… */
 export type PeriodoDashboard = { inicio: string; fim: string };
@@ -1554,43 +1557,45 @@ export class DashboardRepository {
   // Novo método: Contratos novos por mês/ano
   /** Saldo devedor mês a mês (parcelas não liquidadas), quitados e créditos novos — ver utils/saldoDevedor. */
   async getResumoSaldoDevedor(ano: number): Promise<ResumoSaldoDevedorMes[]> {
-    const [fin, parc] = await Promise.all([
-      this.db.prepare(`SELECT id, dataContrato, valor FROM Financiamento`).all<FinanciamentoRow>(),
-      this.db
-        .prepare(`SELECT idFinanciamento, valor, status, dt_vencimento, dt_liquidacao FROM parcelaFinanciamento`)
-        .all<ParcelaRow>(),
-    ]);
-    return resumoSaldoDevedor(ano, fin.results ?? [], parc.results ?? []);
+    const { fin, parc } = await this.contratosParcelasSaldo();
+    return resumoSaldoDevedor(ano, fin, parc);
   }
 
   /** Same as getResumoSaldoDevedor for every month of [inicio, fim) — e.g. "últimos 12 meses". */
   async getResumoSaldoDevedorPeriodo(periodo: PeriodoDashboard): Promise<ResumoSaldoDevedorMes[]> {
-    const [fin, parc] = await Promise.all([
-      this.db.prepare(`SELECT id, dataContrato, valor FROM Financiamento`).all<FinanciamentoRow>(),
-      this.db
-        .prepare(`SELECT idFinanciamento, valor, status, dt_vencimento, dt_liquidacao FROM parcelaFinanciamento`)
-        .all<ParcelaRow>(),
+    const { fin, parc } = await this.contratosParcelasSaldo();
+    return resumoSaldoDevedorMeses(mesesDoIntervalo(periodo.inicio, periodo.fim), fin, parc);
+  }
+
+  /** Contracts and parcelas for the saldo devedor, with the parcelas replaced by renegotiations (history). */
+  private async contratosParcelasSaldo<F extends FinanciamentoRow = FinanciamentoRow>(
+    sqlContratos = `SELECT id, dataContrato, valor, idFinanciamentoOrigem FROM Financiamento`,
+  ): Promise<{ fin: F[]; parc: ParcelaDetalheRow[] }> {
+    await garantirSchemaRenegociacao(this.db);
+    const [fin, parc, reneg] = await this.db.batch([
+      this.db.prepare(sqlContratos),
+      this.db.prepare(`SELECT id, idFinanciamento, numParcela, valor, status, dt_vencimento, dt_liquidacao FROM parcelaFinanciamento`),
+      this.db.prepare(
+        `SELECT id, idFinanciamento, tipo, dataRenegociacao, parcelasAnteriores, parcelasNovas, condicoesAnteriores FROM financiamentoRenegociacao`,
+      ),
     ]);
-    return resumoSaldoDevedorMeses(mesesDoIntervalo(periodo.inicio, periodo.fim), fin.results ?? [], parc.results ?? []);
+    const renegociacoes = (reneg.results ?? []) as RenegociacaoSaldoRow[];
+    return {
+      fin: comValorOriginal((fin.results ?? []) as F[], renegociacoes),
+      parc: parcelasComRenegociacoes((parc.results ?? []) as ParcelaDetalheRow[], renegociacoes),
+    };
   }
 
   /** Contracts behind "Créditos novos" and "Quitados" of the period (same rules and totals as the cards). */
   async getContratosDoPeriodo(periodo: PeriodoDashboard): Promise<{ novos: ContratoDoPeriodo[]; quitados: ContratoDoPeriodo[] }> {
-    const [fin, parc] = await Promise.all([
-      this.db
-        .prepare(
-          `SELECT f.id, f.dataContrato, f.valor, f.numeroContrato, f.responsavel AS tomador,
-                  COALESCE(b.nome, p.nome) AS credor
-           FROM Financiamento f
-           LEFT JOIN banco b ON f.idBanco = b.id
-           LEFT JOIN pessoa p ON f.idPessoa = p.id`,
-        )
-        .all<ContratoDetalheRow>(),
-      this.db
-        .prepare(`SELECT id, idFinanciamento, numParcela, valor, status, dt_vencimento, dt_liquidacao FROM parcelaFinanciamento`)
-        .all<ParcelaDetalheRow>(),
-    ]);
-    return contratosDoPeriodo(periodo.inicio, periodo.fim, fin.results ?? [], parc.results ?? []);
+    const { fin, parc } = await this.contratosParcelasSaldo<ContratoDetalheRow>(
+      `SELECT f.id, f.dataContrato, f.valor, f.idFinanciamentoOrigem, f.numeroContrato, f.responsavel AS tomador,
+              COALESCE(b.nome, p.nome) AS credor
+       FROM Financiamento f
+       LEFT JOIN banco b ON f.idBanco = b.id
+       LEFT JOIN pessoa p ON f.idPessoa = p.id`,
+    );
+    return contratosDoPeriodo(periodo.inicio, periodo.fim, fin, parc);
   }
 
   /**

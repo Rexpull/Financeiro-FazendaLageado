@@ -4,7 +4,7 @@ import { mesAnterior, type MesAno } from './periodoDashboard';
 /**
  * Saldo devedor of a period, always in positions at the END of a month (month closed):
  * saldoInicial = end of the month before the period, saldoFinal = end of the last month of the period,
- * and saldoFinal = saldoInicial − quitados + creditosNovos.
+ * and saldoFinal = saldoInicial − quitados + creditosNovos + renegociacoes.
  */
 export type SaldoDevedorPeriodo = {
 	saldoInicial: number;
@@ -12,6 +12,7 @@ export type SaldoDevedorPeriodo = {
 	creditosNovos: number;
 	valorContratadoNovos: number;
 	contratosNovos: number;
+	renegociacoes: number;
 	saldoFinal: number;
 };
 
@@ -20,7 +21,7 @@ export function saldoDevedorPeriodo(resumo: ResumoSaldoDevedorMes[], mesIdx: num
 	if (!resumo.length) return null;
 	const meses = mesIdx >= 0 ? resumo.filter((r) => r.mes === mesIdx + 1) : resumo;
 	if (!meses.length) return null;
-	const soma = (k: 'quitados' | 'creditosNovos' | 'valorContratadoNovos' | 'contratosNovos') =>
+	const soma = (k: 'quitados' | 'creditosNovos' | 'valorContratadoNovos' | 'contratosNovos' | 'renegociacoes') =>
 		Math.round(meses.reduce((s, r) => s + (Number(r[k]) || 0), 0) * 100) / 100;
 	return {
 		saldoInicial: meses[0].saldoInicial,
@@ -28,6 +29,7 @@ export function saldoDevedorPeriodo(resumo: ResumoSaldoDevedorMes[], mesIdx: num
 		creditosNovos: soma('creditosNovos'),
 		valorContratadoNovos: soma('valorContratadoNovos'),
 		contratosNovos: soma('contratosNovos'),
+		renegociacoes: soma('renegociacoes'),
 		saldoFinal: meses[meses.length - 1].saldoFinal,
 	};
 }

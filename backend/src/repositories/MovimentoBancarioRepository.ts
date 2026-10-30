@@ -2,6 +2,8 @@ import { MovimentoBancario } from '../models/MovimentoBancario';
 import { ResultadoRepository } from './ResultadoRepository';
 import { MovimentoDetalhado } from '../models/MovimentoDetalhado';
 import { FinanciamentoDetalhadoDTO } from '../models/FinanciamentoDetalhadoDTO';
+import { RenegociacaoRepository } from './RenegociacaoRepository';
+import { parcelasComRenegociacoes } from '../utils/saldoDevedor';
 import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository';
 import { MovimentoCentroCustosRepository } from './MovimentoCentroCustosRepository';
 import {
@@ -1821,10 +1823,12 @@ export class MovimentoBancarioRepository {
 		const pad = (n: number) => String(n).padStart(2, '0');
 		const inicio = `${ano}-${pad(mes + 1)}-01`;
 		const fim = mes === 11 ? `${ano + 1}-01-01` : `${ano}-${pad(mes + 2)}-01`;
-		const filtro =
-			subtipo === 'pagos'
-				? `pf.status = 'Liquidado' AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) >= ? AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) < ?`
-				: `f.dataContrato >= ? AND f.dataContrato < ?`;
+		const contratados = subtipo === 'contratados';
+		// "Créditos novos": contracts born from a renegotiation are not new credit (same rule as the cell / Dashboard)
+		const renegociacoes = contratados ? await new RenegociacaoRepository(this.db).listarParaSaldo() : [];
+		const filtro = contratados
+			? `f.dataContrato >= ? AND f.dataContrato < ? AND f.idFinanciamentoOrigem IS NULL`
+			: `pf.status = 'Liquidado' AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) >= ? AND COALESCE(pf.dt_liquidacao, pf.dt_vencimento) < ?`;
 
 		const { results } = await this.db
 			.prepare(
@@ -1833,8 +1837,8 @@ export class MovimentoBancarioRepository {
 					f.id as idFinanciamento, f.numeroContrato, f.valor as valorFinanciamento, f.responsavel,
 					p.nome as nomePessoa, b.nome as nomeBanco,
 					pf.id as idParcela, pf.numParcela, pf.valor as valorParcela, pf.dt_vencimento, pf.dt_liquidacao, pf.status
-				FROM parcelaFinanciamento pf
-				JOIN Financiamento f ON pf.idFinanciamento = f.id
+				FROM Financiamento f
+				${contratados ? 'LEFT JOIN' : 'JOIN'} parcelaFinanciamento pf ON pf.idFinanciamento = f.id
 				LEFT JOIN Pessoa p ON f.idPessoa = p.id
 				LEFT JOIN Banco b ON f.idBanco = b.id
 				WHERE ${filtro}
@@ -1844,8 +1848,43 @@ export class MovimentoBancarioRepository {
 			.bind(inicio, fim)
 			.all();
 
+		let linhas = results as any[];
+		if (contratados) {
+			// Parcelas as the saldo devedor history sees them: the ones replaced by a renegotiation still count,
+			// aditivo ones do not (utils/saldoDevedor.parcelasComRenegociacoes, like the Fluxo cell)
+			const contrato = new Map(linhas.map((r) => [r.idFinanciamento as number, r]));
+			const ordem = [...contrato.keys()];
+			const historico = parcelasComRenegociacoes(
+				linhas
+					.filter((r) => r.idParcela != null)
+					.map((r) => ({
+						id: r.idParcela,
+						idFinanciamento: r.idFinanciamento,
+						numParcela: r.numParcela,
+						valor: r.valorParcela,
+						status: r.status,
+						dt_vencimento: r.dt_vencimento,
+						dt_liquidacao: r.dt_liquidacao,
+					})),
+				renegociacoes.filter((r) => contrato.has(r.idFinanciamento)),
+			);
+			linhas = historico
+				.filter((p) => !('entrada' in p && p.entrada))
+				// keep the SQL order of the contracts (banco, número)
+				.sort((a, b) => ordem.indexOf(a.idFinanciamento) - ordem.indexOf(b.idFinanciamento) || a.numParcela - b.numParcela)
+				.map((p) => ({
+					...contrato.get(p.idFinanciamento),
+					idParcela: p.id,
+					numParcela: p.numParcela,
+					valorParcela: p.valor,
+					dt_vencimento: p.dt_vencimento,
+					dt_liquidacao: p.dt_liquidacao,
+					status: p.status,
+				}));
+		}
+
 		const porContrato = new Map<number, FinanciamentoDetalhadoDTO>();
-		for (const row of results as any[]) {
+		for (const row of linhas) {
 			if (!porContrato.has(row.idFinanciamento)) {
 				porContrato.set(row.idFinanciamento, {
 					id: row.idFinanciamento,

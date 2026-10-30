@@ -87,6 +87,13 @@ describe('linhasDe / somarPorContrato', () => {
 		expect(situacaoLiquidado(l[0])).toBe('Quitado em 01/02/2026');
 	});
 
+	it('contrato renegociado em outro aparece como "Renegociado", não como quitado', () => {
+		const renegociado = contrato({ idFinanciamento: 7, ativo: false, renegociadoEm: '2026-10-15', numeroContratoNovo: 'C-8' });
+		const [l] = linhasDe([renegociado], [{ idFinanciamento: 7, valor: 50, quitado: false, renegociado: true }]);
+		expect(l).toMatchObject({ valor: 50, quitado: false, renegociado: true });
+		expect(situacaoLiquidado(l)).toBe('Renegociado em 15/10/2026');
+	});
+
 	it('soma barras contrato a contrato, em centavos, maior primeiro', () => {
 		const s = somarPorContrato([
 			[{ idFinanciamento: 1, valor: 0.1 }, { idFinanciamento: 2, valor: 5 }],

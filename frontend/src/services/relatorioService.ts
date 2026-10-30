@@ -219,6 +219,9 @@ export interface ContratoRelatorioFinanciamentos {
 	valorPago: number;
 	parcelasAbertas: number;
 	dataQuitacao?: string;
+	/** Closed by renegotiation into another contract (nothing left to pay here): never "Quitado" */
+	renegociadoEm?: string;
+	numeroContratoNovo?: string;
 	parcelas: ParcelaRelatorioFinanciamentos[];
 }
 
@@ -227,6 +230,7 @@ export interface ValorContratoFinanciamento {
 	idFinanciamento: number;
 	valor: number;
 	quitado?: boolean;
+	renegociado?: boolean;
 }
 
 export interface BlocoContratosFinanciamento {
@@ -248,7 +252,7 @@ export interface RelatorioFinanciamentosData {
 	contratos: ContratoRelatorioFinanciamentos[];
 	ativos: BlocoContratosFinanciamento;
 	contratados: BlocoContratosFinanciamento;
-	liquidados: BlocoContratosFinanciamento & { quitados: number; amortizados: number; valorVincendo: number };
+	liquidados: BlocoContratosFinanciamento & { quitados: number; amortizados: number; renegociados?: number; valorVincendo: number };
 	porTomador: {
 		grupos: Array<{ tomador: string; quantidade: number; valor: number; valorContratos: number; contratos: ValorContratoFinanciamento[] }>;
 		quantidade: number;
