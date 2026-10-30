@@ -6,6 +6,10 @@ import {
 	avisoDiferencaContrato,
 	descricaoHistorico,
 	erroLinhas,
+	erroTaxa,
+	limparTaxa,
+	linhaInvalida,
+	mudancasCondicoes,
 	gerarParcelas,
 	linhasSnapshot,
 	mensagemConfirmacao,
@@ -87,7 +91,14 @@ describe('novas parcelas', () => {
 	});
 
 	it('gera com (valor + juros) ÷ quantidade, centavos na última, vencimentos pela periodicidade', () => {
-		const r = gerarParcelas({ quantidade: '3', primeiroVencimento: '2027-01-31', periodicidade: 'mensal', valor: 1000, juros: 0.01, numeroInicial: 3 });
+		const r = gerarParcelas({
+			quantidade: '3',
+			primeiroVencimento: '2027-01-31',
+			periodicidade: 'mensal',
+			valor: 1000,
+			juros: 0.01,
+			numeroInicial: 3,
+		});
 		expect(r).toEqual({
 			ok: true,
 			linhas: [
@@ -96,12 +107,26 @@ describe('novas parcelas', () => {
 				{ chave: 3, numParcela: 5, dt_vencimento: '2027-03-31', valor: 333.35 },
 			],
 		});
-		const anual = gerarParcelas({ quantidade: 2, primeiroVencimento: '2027-06-10', periodicidade: 'anual', valor: 100, juros: 0, numeroInicial: 1 });
+		const anual = gerarParcelas({
+			quantidade: 2,
+			primeiroVencimento: '2027-06-10',
+			periodicidade: 'anual',
+			valor: 100,
+			juros: 0,
+			numeroInicial: 1,
+		});
 		expect(anual.ok && anual.linhas.map((l) => l.dt_vencimento)).toEqual(['2027-06-10', '2028-06-10']);
 	});
 
 	it('recusa gerar sem quantidade, vencimento ou valor', () => {
-		const base = { quantidade: '2', primeiroVencimento: '2027-01-10', periodicidade: 'mensal' as const, valor: 100, juros: 0, numeroInicial: 1 };
+		const base = {
+			quantidade: '2',
+			primeiroVencimento: '2027-01-10',
+			periodicidade: 'mensal' as const,
+			valor: 100,
+			juros: 0,
+			numeroInicial: 1,
+		};
 		expect(gerarParcelas({ ...base, quantidade: '0' })).toMatchObject({ ok: false });
 		expect(gerarParcelas({ ...base, primeiroVencimento: '' })).toEqual({ ok: false, erro: 'Informe o 1º vencimento.' });
 		expect(gerarParcelas({ ...base, valor: 0 })).toEqual({ ok: false, erro: 'Informe o valor a parcelar (maior que zero).' });
@@ -127,7 +152,9 @@ describe('novas parcelas', () => {
 	it('valida a tabela', () => {
 		expect(erroLinhas([])).toBe('Gere ou adicione ao menos uma parcela nova.');
 		expect(erroLinhas([{ chave: 1, numParcela: 3, dt_vencimento: '', valor: 1 }])).toBe('Parcela 3: informe a data de vencimento.');
-		expect(erroLinhas([{ chave: 1, numParcela: 3, dt_vencimento: '2027-01-01', valor: 0 }])).toBe('Parcela 3: o valor deve ser maior que zero.');
+		expect(erroLinhas([{ chave: 1, numParcela: 3, dt_vencimento: '2027-01-01', valor: 0 }])).toBe(
+			'Parcela 3: o valor deve ser maior que zero.',
+		);
 		expect(erroLinhas([{ chave: 1, numParcela: 3, dt_vencimento: '2027-01-01', valor: 1 }])).toBeNull();
 	});
 });
@@ -143,7 +170,12 @@ describe('confirmação e envio', () => {
 		expect(txt(msg)).toBe(
 			'As 7 parcelas em aberto (R$ 1.260.000,00) deste contrato serão substituídas por 8 novas (R$ 1.410.000,00). As parcelas pagas continuam como estão.',
 		);
-		const um = mensagemConfirmacao({ tipo: 'ADITIVO', situacao: { qtdAbertas: 1, valorAberto: 10, qtdPagas: 0 }, qtdNovas: 1, valorNovas: 12 });
+		const um = mensagemConfirmacao({
+			tipo: 'ADITIVO',
+			situacao: { qtdAbertas: 1, valorAberto: 10, qtdPagas: 0 },
+			qtdNovas: 1,
+			valorNovas: 12,
+		});
 		expect(txt(um)).toBe('A parcela em aberto (R$ 10,00) deste contrato será substituída por 1 nova (R$ 12,00).');
 	});
 
@@ -218,7 +250,14 @@ describe('histórico', () => {
 			{ numParcela: 2, dt_vencimento: '2027-03-01', valor: 50000, status: 'Aberto' },
 			{ numParcela: 3, dt_vencimento: '2028-03-01', valor: 50000, status: 'Aberto' },
 		],
-		condicoesAnteriores: { valor: 150000, taxaJurosAnual: 10, totalJuros: null, modalidade: 'INVESTIMENTO', numeroContrato: 'SIC-200', numeroGarantia: null },
+		condicoesAnteriores: {
+			valor: 150000,
+			taxaJurosAnual: 10,
+			totalJuros: null,
+			modalidade: 'INVESTIMENTO',
+			numeroContrato: 'SIC-200',
+			numeroGarantia: null,
+		},
 		observacao: null,
 		criadoEm: null,
 	};
@@ -234,5 +273,41 @@ describe('histórico', () => {
 		expect(aditivo.titulo).toBe('15/10/2026 · Aditivo');
 		expect(txt(aditivo.detalhe)).toBe('Substituídas: 2 parcelas em aberto (R$ 100.000,00). Antes: valor R$ 150.000,00, taxa 10% ao ano.');
 		expect(txt(linhasSnapshot(base)[0])).toBe('Parcela 2 · 01/03/2027 · R$ 50.000,00');
+	});
+});
+
+describe('regras do modal (vencimento, taxa, confirmação)', () => {
+	const inicio = { data: '2026-10-29', rotulo: 'do aditivo' };
+	it('blocks a new parcela due before the renegotiation date', () => {
+		const linhas = [
+			{ chave: 1, numParcela: 2, dt_vencimento: '2027-01-01', valor: 10 },
+			{ chave: 2, numParcela: 3, dt_vencimento: '2026-10-28', valor: 10 },
+		];
+		expect(erroLinhas(linhas, inicio)).toBe('Parcela 3: vence em 28/10/2026, antes da data do aditivo (29/10/2026).');
+		expect(erroLinhas(linhas)).toBeNull();
+		expect(erroLinhas([{ chave: 1, numParcela: 1, dt_vencimento: '2026-10-29', valor: 10 }], inicio)).toBeNull();
+		expect(linhas.map((l) => linhaInvalida(l, inicio))).toEqual([false, true]);
+		expect(linhaInvalida({ chave: 1, numParcela: 1, dt_vencimento: '', valor: 10 })).toBe(true);
+		expect(linhaInvalida({ chave: 1, numParcela: 1, dt_vencimento: '2027-01-01', valor: 0 })).toBe(true);
+	});
+
+	it('rate: keeps digits and one comma, up to 4 decimals; 0 to 100', () => {
+		expect(limparTaxa('abc')).toBe('');
+		expect(limparTaxa('12.5')).toBe('12,5');
+		expect(limparTaxa('-3')).toBe('3');
+		expect(limparTaxa('9,123456')).toBe('9,1234');
+		expect(limparTaxa('1,2,3')).toBe('1,23');
+		expect(limparTaxa(',5')).toBe('0,5');
+		expect(erroTaxa('')).toBeNull();
+		expect(erroTaxa('12,5')).toBeNull();
+		expect(erroTaxa('0')).toBeNull();
+		expect(erroTaxa('150')).toBe('A taxa deve ficar entre 0 e 100% ao ano.');
+	});
+
+	it('confirmation lists the changed terms only', () => {
+		expect(mudancasCondicoes({ taxaAtual: 9.5, taxaNova: 8.5, valorAtual: 480432.92, valorNovo: null })).toBe('Taxa: 9,5% → 8,5% ao ano.');
+		expect(mudancasCondicoes({ taxaAtual: 9.5, taxaNova: 9.5 })).toBe('');
+		expect(txt(mudancasCondicoes({ valorAtual: 100, valorNovo: 150 }))).toBe('Valor do contrato: R$ 100,00 → R$ 150,00.');
+		expect(mudancasCondicoes({ taxaAtual: 1500, taxaNova: 12 })).toBe('Taxa: 12% ao ano.');
 	});
 });

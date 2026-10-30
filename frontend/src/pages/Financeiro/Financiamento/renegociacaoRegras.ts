@@ -149,14 +149,82 @@ export function textoDiferenca(totalNovas: number, valorAberto: number): string 
 	return `Diferença em relação ao que estava a vencer: ${d > 0 ? '+' : '−'}${brl(Math.abs(d))}`;
 }
 
+/** The renegotiation date (aditivo / new contract): a new parcela cannot be due before it. */
+export interface InicioParcelas {
+	data: string;
+	/** "do aditivo" / "do novo contrato" */
+	rotulo: string;
+}
+
+const temData = (l: Pick<LinhaParcela, 'dt_vencimento'>) => /^\d{4}-\d{2}-\d{2}$/.test(String(l.dt_vencimento ?? ''));
+/** True when the row is due before the renegotiation date (it would be born overdue). */
+export const venceAntes = (l: Pick<LinhaParcela, 'dt_vencimento'>, inicio?: InicioParcelas | null) =>
+	!!inicio?.data && temData(l) && l.dt_vencimento < inicio.data;
+
+/** True when this row has a problem (to mark it in the table). */
+export function linhaInvalida(l: LinhaParcela, inicio?: InicioParcelas | null): boolean {
+	return !temData(l) || !(Number(l.valor) > 0) || venceAntes(l, inicio);
+}
+
 /** First problem of the table, or null. */
-export function erroLinhas(linhas: LinhaParcela[]): string | null {
+export function erroLinhas(linhas: LinhaParcela[], inicio?: InicioParcelas | null): string | null {
 	if (linhas.length === 0) return 'Gere ou adicione ao menos uma parcela nova.';
-	const semData = linhas.find((l) => !/^\d{4}-\d{2}-\d{2}$/.test(String(l.dt_vencimento ?? '')));
+	const semData = linhas.find((l) => !temData(l));
 	if (semData) return `Parcela ${semData.numParcela}: informe a data de vencimento.`;
 	const semValor = linhas.find((l) => !(Number(l.valor) > 0));
 	if (semValor) return `Parcela ${semValor.numParcela}: o valor deve ser maior que zero.`;
+	const antes = linhas.find((l) => venceAntes(l, inicio));
+	if (antes && inicio) {
+		return `Parcela ${antes.numParcela}: vence em ${formatarDataISO(antes.dt_vencimento)}, antes da data ${inicio.rotulo} (${formatarDataISO(inicio.data)}).`;
+	}
 	return null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Taxa de juros (% a.a.)
+// ---------------------------------------------------------------------------------------------
+
+/** Keeps what a rate can have while typing: digits and one comma ("." becomes ","), up to 4 decimals. */
+export function limparTaxa(texto: string): string {
+	const s = String(texto ?? '')
+		.replace(/\./g, ',')
+		.replace(/[^\d,]/g, '');
+	const i = s.indexOf(',');
+	if (i < 0) return s;
+	return `${s.slice(0, i) || '0'},${s
+		.slice(i + 1)
+		.replace(/,/g, '')
+		.slice(0, 4)}`;
+}
+
+/** Rate typed in the modal: empty is fine (keeps the current one); otherwise 0 to 100 % a.a. */
+export function erroTaxa(texto: string): string | null {
+	const t = String(texto ?? '').trim();
+	if (!t) return null;
+	const n = Number(t.replace(',', '.'));
+	if (!Number.isFinite(n)) return 'Taxa inválida (ex.: 12,5).';
+	if (n < 0 || n > 100) return 'A taxa deve ficar entre 0 e 100% ao ano.';
+	return null;
+}
+
+const taxaBR = (n: number) => `${String(n).replace('.', ',')}%`;
+
+/** Lines for the confirmation: what changes in the contract terms ("" when nothing). */
+export function mudancasCondicoes(r: {
+	taxaAtual?: number | null;
+	taxaNova?: number | null;
+	valorAtual?: number | null;
+	valorNovo?: number | null;
+}): string {
+	const linhas: string[] = [];
+	if (r.taxaNova != null && Number(r.taxaNova) !== Number(r.taxaAtual)) {
+		const atual = r.taxaAtual != null && Number(r.taxaAtual) <= 100 ? `${taxaBR(Number(r.taxaAtual))} → ` : '';
+		linhas.push(`Taxa: ${atual}${taxaBR(Number(r.taxaNova))} ao ano.`);
+	}
+	if (r.valorNovo != null && centavos(r.valorNovo) !== centavos(r.valorAtual)) {
+		linhas.push(`Valor do contrato: ${r.valorAtual != null ? `${brl(Number(r.valorAtual))} → ` : ''}${brl(Number(r.valorNovo))}.`);
+	}
+	return linhas.join('\n');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -173,12 +241,9 @@ export function mensagemConfirmacao(r: {
 }): string {
 	const { qtdAbertas, valorAberto, qtdPagas } = r.situacao;
 	const abertas =
-		qtdAbertas === 1
-			? `A parcela em aberto (${brl(valorAberto)})`
-			: `As ${qtdAbertas} parcelas em aberto (${brl(valorAberto)})`;
+		qtdAbertas === 1 ? `A parcela em aberto (${brl(valorAberto)})` : `As ${qtdAbertas} parcelas em aberto (${brl(valorAberto)})`;
 	const novas = `${plural(r.qtdNovas, 'parcela nova', 'parcelas novas')} (${brl(r.valorNovas)})`;
-	const pagas =
-		qtdPagas === 0 ? '' : qtdPagas === 1 ? ' A parcela paga continua como está.' : ' As parcelas pagas continuam como estão.';
+	const pagas = qtdPagas === 0 ? '' : qtdPagas === 1 ? ' A parcela paga continua como está.' : ' As parcelas pagas continuam como estão.';
 	if (r.tipo === 'ADITIVO') {
 		const verbo = qtdAbertas === 1 ? 'será substituída' : 'serão substituídas';
 		const porNovas = r.qtdNovas === 1 ? `por 1 nova (${brl(r.valorNovas)})` : `por ${r.qtdNovas} novas (${brl(r.valorNovas)})`;
@@ -215,11 +280,7 @@ export interface DadosAditivo {
 const textoOuNull = (s: string | null | undefined) => (s && s.trim() ? s.trim() : null);
 
 /** Body of POST /api/financiamento/:id/renegociar. */
-export function montarPayload(
-	tipo: TipoRenegociacao,
-	linhas: LinhaParcela[],
-	dados: { aditivo: DadosAditivo; novo: DadosNovoContrato },
-) {
+export function montarPayload(tipo: TipoRenegociacao, linhas: LinhaParcela[], dados: { aditivo: DadosAditivo; novo: DadosNovoContrato }) {
 	const parcelas = linhas.map((l) => ({ numParcela: l.numParcela, dt_vencimento: l.dt_vencimento, valor: l.valor }));
 	if (tipo === 'ADITIVO') {
 		const a = dados.aditivo;
@@ -277,7 +338,10 @@ export function descricaoHistorico(h: RenegociacaoHistorico, idAtual: number): {
 		};
 	}
 	const destino = h.numeroContratoNovo ? `o contrato ${h.numeroContratoNovo}` : 'um novo contrato (já excluído)';
-	return { titulo: `${data} · Novo contrato${h.numeroContratoNovo ? ` → ${h.numeroContratoNovo}` : ''}`, detalhe: `${parcelas} ${qtd === 1 ? 'foi' : 'foram'} para ${destino}.` };
+	return {
+		titulo: `${data} · Novo contrato${h.numeroContratoNovo ? ` → ${h.numeroContratoNovo}` : ''}`,
+		detalhe: `${parcelas} ${qtd === 1 ? 'foi' : 'foram'} para ${destino}.`,
+	};
 }
 
 /** Removed parcelas of the snapshot, for the history table: "Parcela 3 · 10/01/2027 · R$ 300.000,00". */
