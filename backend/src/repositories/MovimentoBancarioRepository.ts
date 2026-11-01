@@ -15,6 +15,7 @@ import {
 	contaSuffixRange,
 	escolherIdentificadorParaConta,
 	selecionarCandidatoFallbackOfx,
+	selecionarCandidatosConteudoOfx,
 	shouldReuseOfxMovimento,
 	stripContaSuffix,
 } from '../utils/ofxIdentificadorMatch';
@@ -178,6 +179,49 @@ export class MovimentoBancarioRepository {
 			identificadoresDoLote: opts.identificadoresDoLote,
 			fitidDiaRepetidoNoLote: opts.fitidDiaRepetidoNoLote,
 		});
+	}
+
+	/**
+	 * Re-import OFX from a bank that changes the identificador between exports: the earlier
+	 * import's row(s) of the same conta and day with the same valor and a compatible historico
+	 * (selecionarCandidatosConteudoOfx). Transfer rows created by the system are never candidates.
+	 */
+	async findByConteudoOfxConta(
+		mov: { dtMovimento: string; historico?: string | null; valor: number },
+		idContaCorrente: number,
+		opts: { idsJaUsados: Set<number>; identificadoresDoLote?: Set<string> },
+	): Promise<MovimentoBancario[]> {
+		const day = String(mov.dtMovimento ?? '').substring(0, 10);
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return [];
+		const { results } = await this.db
+			.prepare(
+				`
+				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
+					numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
+					criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
+					idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
+				FROM MovimentoBancario
+				WHERE idContaCorrente = ?
+				AND substr(dtMovimento, 1, 10) = ?
+				AND identificador_ofx IS NOT NULL
+				AND identificador_ofx NOT LIKE '%|saida' AND identificador_ofx NOT LIKE '%|entrada'
+				ORDER BY id ASC
+			`,
+			)
+			.bind(idContaCorrente, day)
+			.all();
+
+		const candidatos = (results as Record<string, unknown>[])
+			.map((row) => this.mapRowToMovimento(row))
+			.filter(
+				(c) =>
+					!opts.idsJaUsados.has(c.id!) &&
+					!opts.identificadoresDoLote?.has(stripContaSuffix(c.identificadorOfx ?? '')),
+			);
+		return selecionarCandidatosConteudoOfx(
+			{ historico: mov.historico, valor: Number(mov.valor) },
+			candidatos.map((c) => ({ ...c, id: c.id!, identificadorOfx: c.identificadorOfx ?? '', valor: Number(c.valor) })),
+		);
 	}
 
 	/**
@@ -598,6 +642,21 @@ export class MovimentoBancarioRepository {
 								fitidDiaRepetidoNoLote: chave ? (contagemFitidDia.get(chave) ?? 0) > 1 : false,
 							},
 						);
+					}
+					if (!movimentoExistente) {
+						// Same line already imported under another identificador: keep that row as it is
+						// (it may already be conciliated) and never update it from this file.
+						const mesmos = await this.findByConteudoOfxConta(mov, Number(mov.idContaCorrente), {
+							idsJaUsados,
+							identificadoresDoLote: identificadoresPorConta.get(Number(mov.idContaCorrente)),
+						});
+						if (mesmos.length) {
+							mesmos.forEach((m) => idsJaUsados.add(m.id!));
+							console.log(`📋 Movimento existente (mesmo dia/valor/histórico): ${mov.identificadorOfx} → ${mesmos.map((m) => m.id).join(',')}`);
+							movimentosProcessados.push((await this.getById(mesmos[0].id!)) ?? mesmos[0]);
+							existentes++;
+							continue;
+						}
 					}
 				}
 

@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
 	chaveFitidDia,
+	historicoCompativel,
 	contaSuffixRange,
 	escolherIdentificadorParaConta,
 	isFitidGenerico,
 	normalizeHistoricoOfx,
 	selecionarCandidatoFallbackOfx,
+	selecionarCandidatosConteudoOfx,
 	shouldReuseOfxMovimento,
 	stripContaSuffix,
 } from './ofxIdentificadorMatch';
@@ -161,5 +163,48 @@ describe('selecionarCandidatoFallbackOfx', () => {
 				candidatos: [cand(1, `FIT|2026-10-06T00:00:00.000Z|-100.00`), cand(2, ident('OTHER', -100))],
 			}),
 		).toBeNull();
+	});
+});
+
+describe('historicoCompativel', () => {
+	it('accepts the same text with other accents, case, spaces or punctuation', () => {
+		expect(historicoCompativel('Encargos c Gar  Iof Contr 5080726', 'ENCARGOS C GAR: IOF CONTR 5080726')).toBe(true);
+		expect(historicoCompativel('BB Cons - Agrupado (23 movimentos) - REF: 14033', 'BB Cons - Agrupado (23 movimentos) - REF: 14.033')).toBe(true);
+	});
+
+	it("accepts BB's new MEMO that prefixes the old one with the type", () => {
+		expect(historicoCompativel('13/10 11:31 GERALDO FERNANDES SANTAN', 'Transferência recebida - 13/10 11:31 GERALDO FERNANDES SANTAN')).toBe(true);
+		expect(historicoCompativel('Rende Facil', 'BB Rende Fácil - Rende Facil')).toBe(true);
+	});
+
+	it('rejects another card installment, another boleto and too-short or empty texts', () => {
+		expect(historicoCompativel('GEA EQUIPAMEN PARC 12/21 JAGUARIUNA  BR', 'GEA EQUIPAMEN PARC 13/21 JAGUARIUNA  BR')).toBe(false);
+		expect(historicoCompativel('Pagto Cobranca 070600216301110000bradesco Admin', 'Pagto Cobranca 070600217401110000bradesco Admin')).toBe(false);
+		expect(historicoCompativel('IOF', 'IOF CONTR 5080726')).toBe(false);
+		expect(historicoCompativel('', '')).toBe(false);
+	});
+});
+
+describe('selecionarCandidatosConteudoOfx', () => {
+	const c = (id: number, valor: number, historico: string) => ({ id, identificadorOfx: `X${id}|${DT}|${valor.toFixed(2)}`, historico, valor });
+
+	it('matches the same valor with a compatible historico, preferring the same historico', () => {
+		const candidatos = [c(1, -1562.11, 'Pagto Cobranca 0706002163011'), c(2, -1562.11, 'Pagto Cobranca 0706002174011')];
+		expect(selecionarCandidatosConteudoOfx({ valor: -1562.11, historico: 'Pagto Cobranca 0706002174011' }, candidatos).map((x) => x.id)).toEqual([2]);
+		expect(selecionarCandidatosConteudoOfx({ valor: -1562.11, historico: 'Pagto Cobranca 0706002999011' }, candidatos)).toEqual([]);
+	});
+
+	it('never matches another valor', () => {
+		expect(selecionarCandidatosConteudoOfx({ valor: -100.01, historico: 'TARIFA' }, [c(1, -100, 'TARIFA')])).toEqual([]);
+	});
+
+	it('matches a grouped line against the N individual rows of an earlier import that add up to it', () => {
+		const individuais = [c(1, -1595.07, 'BB ADMIN CONSÓRCIO SA'), c(2, -848.5, 'BB ADMIN CONSÓRCIO SA'), c(3, -1595.07, 'BB ADMIN CONSÓRCIO SA')];
+		const outros = [c(9, -4038.64, 'PIX ENVIADO')];
+		const agrupado = { valor: -4038.64, historico: 'BB Cons - Agrupado (3 movimentos) - REF: 14.033' };
+		expect(selecionarCandidatosConteudoOfx(agrupado, [...individuais, ...outros]).map((x) => x.id)).toEqual([1, 2, 3]);
+		// another count or another total → new line
+		expect(selecionarCandidatosConteudoOfx({ ...agrupado, historico: 'BB Cons - Agrupado (2 movimentos)' }, individuais)).toEqual([]);
+		expect(selecionarCandidatosConteudoOfx({ ...agrupado, valor: -4038.65 }, individuais)).toEqual([]);
 	});
 });

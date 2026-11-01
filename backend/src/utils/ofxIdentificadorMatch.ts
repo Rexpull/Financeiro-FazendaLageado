@@ -132,3 +132,72 @@ export function selecionarCandidatoFallbackOfx<T extends OfxFallbackCandidato>(a
 
 	return filtrados.length === 1 ? filtrados[0] : null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Content re-match (conta + day + valor + compatible historico).
+ * Some banks do not keep the identificador between exports: Bradesco numbers the FITID
+ * per file, Santander puts the export time in it, and BB changes REFNUM ("14033" →
+ * "14.033") and MEMO ("Rende Facil" → "BB Rende Fácil - Rende Facil") depending on the
+ * channel. Without this, re-importing a period creates the lines again as pending.
+ * The historico must still match: a card installment ("PARC 12/21" → "PARC 13/21") keeps
+ * the purchase date and valor every month and is a NEW line.
+ */
+
+/** Letters and digits only (no accents, case, spaces or punctuation). */
+function historicoCompacto(historico: string | null | undefined): string {
+	return normalizeHistoricoOfx(historico).replace(/[^A-Z0-9]/g, '');
+}
+
+/** Same historico, or one contains the other (BB's new MEMO prefixes the old one with the type). */
+export function historicoCompativel(a: string | null | undefined, b: string | null | undefined): boolean {
+	const x = historicoCompacto(a);
+	const y = historicoCompacto(b);
+	if (x === y) return x !== '';
+	const [curto, longo] = x.length <= y.length ? [x, y] : [y, x];
+	return curto.length >= 4 && longo.includes(curto);
+}
+
+export interface OfxConteudoCandidato {
+	id: number;
+	identificadorOfx: string;
+	historico?: string | null;
+	valor: number;
+}
+
+const valorCentavos = (v: number) => Math.round(Number(v) * 100);
+
+/**
+ * Existing row(s) of the same conta and day that are this incoming line, or [] (import as new).
+ * Candidates must already exclude rows matched by another line of the batch and rows whose
+ * identificador another line of the batch carries.
+ * - one row with the same valor and a compatible historico (same historico wins);
+ * - a line grouped by the parser ("… Agrupado (N movimentos) …") against the N individual
+ *   rows of an earlier import (same historico, same sign) whose sum is its valor.
+ */
+export function selecionarCandidatosConteudoOfx<T extends OfxConteudoCandidato>(
+	incoming: { historico?: string | null; valor: number },
+	candidatos: T[],
+): T[] {
+	const alvo = valorCentavos(incoming.valor);
+	const mesmoValor = candidatos.filter(
+		(c) => valorCentavos(c.valor) === alvo && historicoCompativel(c.historico, incoming.historico),
+	);
+	if (mesmoValor.length) {
+		const igual = historicoCompacto(incoming.historico);
+		return [mesmoValor.find((c) => historicoCompacto(c.historico) === igual) ?? mesmoValor[0]];
+	}
+
+	const agrupado = /Agrupado \((\d+) movimentos\)/i.exec(incoming.historico ?? '');
+	if (!agrupado) return [];
+	const n = Number(agrupado[1]);
+	const porHistorico = new Map<string, T[]>();
+	for (const c of candidatos) {
+		if (/Agrupado \(/i.test(c.historico ?? '') || Math.sign(c.valor) !== Math.sign(incoming.valor)) continue;
+		const chave = historicoCompacto(c.historico);
+		porHistorico.set(chave, [...(porHistorico.get(chave) ?? []), c]);
+	}
+	for (const grupo of porHistorico.values()) {
+		if (grupo.length === n && grupo.reduce((s, c) => s + valorCentavos(c.valor), 0) === alvo) return grupo;
+	}
+	return [];
+}

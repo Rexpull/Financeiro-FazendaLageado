@@ -422,7 +422,8 @@ export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBanc
 		const refNum = refNumMatch?.[1]?.trim() || undefined;
 		const checkNum = checkNumMatch?.[1]?.trim() || undefined;
 		const trnType = trnTypeMatch?.[1]?.trim() || undefined;
-		const isBBCons = /^BB\s+CONS/i.test(historico);
+		// "BB Consórcio…" or, from another BB channel, "BB ADMIN CONSÓRCIO SA"
+		const isBBCons = /^BB\s+(ADMIN\s+)?CONS/i.test(historico);
 
 		movimentosTemporarios.push({
 			dtMovimento,
