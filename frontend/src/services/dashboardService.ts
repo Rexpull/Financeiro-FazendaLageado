@@ -336,6 +336,10 @@ export interface ResumoSaldoDevedorMes {
   mes: number; // 1..12
   saldoInicial: number;
   quitados: number;
+  /** Part of quitados paid to contracts paid off in the month (the rest is amortizacoes) */
+  quitacoes?: number;
+  amortizacoes?: number;
+  contratosQuitados?: number;
   creditosNovos: number;
   valorContratadoNovos: number;
   contratosNovos: number;
@@ -393,6 +397,8 @@ export interface ContratoPeriodo {
   valorContratado: number;
   /** What the contract adds to the card: all its parcelas (créditos novos) or those liquidated in the period (quitados) */
   valorNoPeriodo: number;
+  /** In "quitados": date the contract was paid off, when it falls in the period (otherwise amortized) */
+  quitadoEm?: string;
   parcelas: ParcelaContratoPeriodo[];
 }
 

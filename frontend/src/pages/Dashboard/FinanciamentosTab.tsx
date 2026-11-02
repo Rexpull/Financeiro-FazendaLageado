@@ -108,9 +108,17 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo
           nota: `Em ${dataInicial}${fimMesAnterior}: parcelas em aberto`,
         },
         {
-          titulo: 'Quitados',
+          titulo: 'Quitados / amortizados',
           valor: periodo.quitados,
           cor: 'success.main',
+          detalhes: [
+            {
+              rotulo: `Quitados (${periodo.contratosQuitados})`,
+              dica: `${periodo.contratosQuitados} contrato(s) terminaram de ser pagos no período`,
+              valor: periodo.quitacoes,
+            },
+            { rotulo: 'Amortizações', dica: 'Parcelas pagas de contratos que ainda têm parcelas a pagar', valor: periodo.amortizacoes },
+          ],
           nota: `Parcelas liquidadas ${faixaDatas}`,
           aba: 'quitados' as const,
         },
@@ -128,7 +136,7 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo
           titulo: 'Saldo devedor no fim do período',
           valor: periodo.saldoFinal,
           cor: 'warning.dark',
-          nota: `Em ${dataFinal}${fimUltimoMes} = início − quitados + créditos novos${
+          nota: `Em ${dataFinal}${fimUltimoMes} = início − quitados/amortizados + créditos novos${
             periodo.renegociacoes ? ` ${periodo.renegociacoes > 0 ? '+' : '−'} ${brl(Math.abs(periodo.renegociacoes))} de renegociações` : ''
           }`,
           destaque: true,
@@ -160,6 +168,20 @@ const FinanciamentosTab: React.FC<FinanciamentosTabProps> = ({ intervalo, resumo
                 </Typography>
               )}
             </Box>
+            {'detalhes' in q && q.detalhes && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, mb: 0.75 }}>
+                {q.detalhes.map((d) => (
+                  <Box key={d.rotulo} title={d.dica} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1, fontSize: '0.85rem' }}>
+                    <Typography component="span" variant="body2" color="text.secondary" sx={{ fontSize: 'inherit' }}>
+                      {d.rotulo}
+                    </Typography>
+                    <Typography component="span" variant="body2" sx={{ fontSize: 'inherit', fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      {brl(d.valor)}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem', lineHeight: 1.35 }}>
               {q.nota}
             </Typography>

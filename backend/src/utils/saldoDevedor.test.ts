@@ -208,3 +208,41 @@ describe('renegociações no saldo devedor', () => {
 		expect(resumoSaldoDevedor(2026, comValorOriginal(f, reneg), [])[1].valorContratadoNovos).toBe(1300);
 	});
 });
+
+describe('quitados: contratos quitados x parcelas amortizadas', () => {
+	const f = [
+		{ id: 1, dataContrato: '2024-01-10', valor: 1000 }, // last parcela paid in October: paid off
+		{ id: 2, dataContrato: '2024-01-10', valor: 1000 }, // pays one parcela in October, still owes one
+	];
+	const parc = [
+		{ idFinanciamento: 1, valor: 400, status: 'Liquidado', dt_vencimento: '2026-04-10', dt_liquidacao: '2026-04-10' },
+		{ idFinanciamento: 1, valor: 600, status: 'Liquidado', dt_vencimento: '2026-10-10', dt_liquidacao: '2026-10-12' },
+		{ idFinanciamento: 2, valor: 250, status: 'Liquidado', dt_vencimento: '2026-10-15', dt_liquidacao: '2026-10-15' },
+		{ idFinanciamento: 2, valor: 250, status: 'Aberto', dt_vencimento: '2027-10-15', dt_liquidacao: null },
+	];
+	const r = resumoSaldoDevedor(2026, f, parc);
+
+	it('o pagamento que encerra o contrato é quitação; o resto é amortização', () => {
+		expect(r[9]).toMatchObject({ quitados: 850, quitacoes: 600, amortizacoes: 250, contratosQuitados: 1 });
+		// in April contract 1 still owed a parcela
+		expect(r[3]).toMatchObject({ quitados: 400, quitacoes: 0, amortizacoes: 400, contratosQuitados: 0 });
+	});
+
+	it('a lista do período marca só o contrato quitado nele', () => {
+		const contratos = f.map((c) => ({ ...c, numeroContrato: `C${c.id}` }));
+		const comId = parc.map((p, i) => ({ ...p, id: i + 1, numParcela: i + 1 }));
+		const { quitados } = contratosDoPeriodo('2026-10-01', '2026-11-01', contratos, comId);
+		expect(quitados.map((c) => [c.numeroContrato, c.quitadoEm ?? null])).toEqual([
+			['C1', '2026-10-12'],
+			['C2', null],
+		]);
+	});
+
+	it('contrato renegociado em um contrato novo não conta como quitado', () => {
+		const reneg = [{ id: 1, idFinanciamento: 2, tipo: 'NOVO_CONTRATO', dataRenegociacao: '2026-11-05', parcelasAnteriores: '[{"numParcela":2,"dt_vencimento":"2027-10-15","valor":250}]' }];
+		const atuais = parc.filter((p) => !(p.idFinanciamento === 2 && p.status === 'Aberto')).map((p, i) => ({ ...p, id: i + 1, numParcela: p.idFinanciamento === 2 ? 1 : i + 1 }));
+		const m = resumoSaldoDevedor(2026, f, parcelasComRenegociacoes(atuais, reneg));
+		expect(m[9].contratosQuitados).toBe(1);
+		expect(m[10].contratosQuitados).toBe(0);
+	});
+});

@@ -4,7 +4,8 @@
  *
  * Para cada mês do ano:
  * - saldoInicial: parcelas de contratos já existentes no início do mês e não liquidadas antes dele
- * - quitados: parcelas liquidadas (dt_liquidacao) dentro do mês
+ * - quitados: parcelas liquidadas (dt_liquidacao) dentro do mês, separadas em
+ *   quitacoes (as do contrato que terminou de ser pago no mês: contratosQuitados) e amortizacoes (o resto)
  * - creditosNovos: parcelas dos contratos com dataContrato no mês (dívida assumida)
  * - valorContratadoNovos: valor de contrato desses contratos novos (informativo)
  * - renegociacoes: efeito líquido das renegociações do mês (parcelas novas − parcelas substituídas)
@@ -31,6 +32,12 @@ export type ResumoSaldoDevedorMes = {
 	mes: number; // 1..12
 	saldoInicial: number;
 	quitados: number;
+	/** Part of quitados paid to contracts that were paid off in the month */
+	quitacoes: number;
+	/** quitados − quitacoes: parcelas of contracts that still owe something */
+	amortizacoes: number;
+	/** Contracts paid off in the month (last open parcela liquidated) */
+	contratosQuitados: number;
 	creditosNovos: number;
 	valorContratadoNovos: number;
 	contratosNovos: number;
@@ -155,6 +162,33 @@ export function quitacaoNoSaldo(p: ParcelaRow, dataContrato: string | undefined)
 	return liq ? (janelaNoSaldo(p, dataContrato)?.saida ?? liq) : null;
 }
 
+/**
+ * Date each contract was paid off (AAAA-MM-DD): no parcela left open and the last payment after its last
+ * renegotiation (a contract renegotiated into a new one ends as renegotiated, not paid off). Contracts
+ * without parcelas or with an open parcela are not in the map.
+ */
+export function datasQuitacaoContratos(parcelas: ParcelaRow[], dataContrato: Map<number, string>): Map<number, string> {
+	const ultimaPaga = new Map<number, string>();
+	const ultimaRenegociacao = new Map<number, string>();
+	const emAberto = new Set<number>();
+	for (const p of parcelas) {
+		const id = p.idFinanciamento;
+		if (p.renegociadaEm) {
+			const d = dia(p.renegociadaEm);
+			if (d > (ultimaRenegociacao.get(id) ?? '')) ultimaRenegociacao.set(id, d);
+			continue;
+		}
+		const paga = quitacaoNoSaldo(p, dataContrato.get(id));
+		if (!paga) emAberto.add(id);
+		else if (paga > (ultimaPaga.get(id) ?? '')) ultimaPaga.set(id, paga);
+	}
+	const out = new Map<number, string>();
+	for (const [id, d] of ultimaPaga) {
+		if (!emAberto.has(id) && d > (ultimaRenegociacao.get(id) ?? '')) out.set(id, d);
+	}
+	return out;
+}
+
 /** Every month (ano, mes 1..12) from `inicio` (inclusive) to `fim` (exclusive), both AAAA-MM-DD. */
 export function mesesDoIntervalo(inicio: string, fim: string): Array<{ ano: number; mes: number }> {
 	const out: Array<{ ano: number; mes: number }> = [];
@@ -191,6 +225,7 @@ export function resumoSaldoDevedorMeses(
 ): ResumoSaldoDevedorMes[] {
 	const dataContrato = new Map(financiamentos.map((f) => [f.id, dia(f.dataContrato)]));
 	const deRenegociacao = new Set(financiamentos.filter((f) => f.idFinanciamentoOrigem != null).map((f) => f.id));
+	const quitadoEm = datasQuitacaoContratos(parcelas, dataContrato);
 
 	const saldoEm = (limite: string) => {
 		let total = 0;
@@ -209,12 +244,16 @@ export function resumoSaldoDevedorMeses(
 		const noMes = (d: string | null) => !!d && d >= ini && d < fim;
 
 		let quitados = 0;
+		let quitacoes = 0;
 		let creditosNovos = 0;
 		let renegociacoes = 0;
 		for (const p of parcelas) {
 			const valor = centavos(p.valor);
 			const dc = dataContrato.get(p.idFinanciamento);
-			if (noMes(quitacaoNoSaldo(p, dc))) quitados += valor;
+			if (noMes(quitacaoNoSaldo(p, dc))) {
+				quitados += valor;
+				if (noMes(quitadoEm.get(p.idFinanciamento) ?? null)) quitacoes += valor;
+			}
 			const j = janelaNoSaldo(p, dc);
 			if (!j) continue;
 			if (p.renegociadaEm && noMes(j.saida)) renegociacoes -= valor;
@@ -230,6 +269,9 @@ export function resumoSaldoDevedorMeses(
 			mes: m,
 			saldoInicial: saldoEm(ini) / 100,
 			quitados: quitados / 100,
+			quitacoes: quitacoes / 100,
+			amortizacoes: (quitados - quitacoes) / 100,
+			contratosQuitados: [...quitadoEm.values()].filter(noMes).length,
 			creditosNovos: creditosNovos / 100,
 			valorContratadoNovos: novos.reduce((s, f) => s + centavos(f.valor), 0) / 100,
 			contratosNovos: novos.length,
@@ -252,6 +294,8 @@ export type ContratoDoPeriodo = {
 	valorContratado: number;
 	/** Sum of the parcelas listed below: what this contract adds to the card (créditos novos or quitados) */
 	valorNoPeriodo: number;
+	/** In "quitados": date the contract was paid off, when it falls in the period (otherwise it was amortized) */
+	quitadoEm?: string;
 	parcelas: Array<{ id: number; numParcela: number; valor: number; status: string; dt_vencimento: string; dt_liquidacao: string | null }>;
 };
 
@@ -295,6 +339,7 @@ export function contratosDoPeriodo(
 		};
 	};
 
+	const quitadoEm = datasQuitacaoContratos(parcelas, new Map(financiamentos.map((f) => [f.id, dia(f.dataContrato)])));
 	const novos: ContratoDoPeriodo[] = [];
 	const quitados: ContratoDoPeriodo[] = [];
 	for (const f of financiamentos) {
@@ -303,7 +348,8 @@ export function contratosDoPeriodo(
 		// Same rule as the card: contracts born from a renegotiation and aditivo parcelas are not new credit.
 		if (noPeriodo(dia(f.dataContrato)) && f.idFinanciamentoOrigem == null) novos.push(montar(f, lista.filter((p) => !p.entrada)));
 		const pagas = lista.filter((p) => noPeriodo(quitacaoNoSaldo(p, dia(f.dataContrato))));
-		if (pagas.length) quitados.push(montar(f, pagas));
+		const dataQuitacao = quitadoEm.get(f.id) ?? null;
+		if (pagas.length) quitados.push({ ...montar(f, pagas), ...(noPeriodo(dataQuitacao) ? { quitadoEm: dataQuitacao! } : {}) });
 	}
 	const ordem = (a: ContratoDoPeriodo, b: ContratoDoPeriodo) => b.valorNoPeriodo - a.valorNoPeriodo || a.numeroContrato.localeCompare(b.numeroContrato);
 	return { novos: novos.sort(ordem), quitados: quitados.sort(ordem) };

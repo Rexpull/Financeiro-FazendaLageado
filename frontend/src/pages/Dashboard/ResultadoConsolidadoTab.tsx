@@ -62,6 +62,11 @@ const ResultadoConsolidadoTab: React.FC<ResultadoConsolidadoTabProps> = ({ dados
 						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
 							{linhaFin('Créditos novos', `Parcelas dos contratos assinados ${faixaDatas}`, fin.creditosNovos, 'info.dark', 'novos')}
 							{linhaFin('Quitados / amortizados', `Parcelas liquidadas ${faixaDatas}`, fin.quitados, 'success.dark', 'quitados')}
+							{fin.quitados > 0 && (
+								<Typography variant="caption" color="text.secondary">
+									Quitados ({fin.contratosQuitados} {fin.contratosQuitados === 1 ? 'contrato' : 'contratos'}) {brl(fin.quitacoes)} · amortizações {brl(fin.amortizacoes)}
+								</Typography>
+							)}
 							{fin.contratosNovos > 0 && (
 								<Typography variant="caption" color="text.secondary">
 									{fin.contratosNovos} contrato(s) novo(s) em {intervalo.rotulo}, valor contratado {brl(fin.valorContratadoNovos)}

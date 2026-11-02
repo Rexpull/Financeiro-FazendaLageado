@@ -39,14 +39,14 @@ const ABAS: Record<AbaContratos, { rotulo: string; coluna: string; dica: string 
 	quitados: {
 		rotulo: 'Quitados / amortizados',
 		coluna: 'Pago no período',
-		dica: 'Contratos com parcelas liquidadas no período. O valor é a soma dessas parcelas.',
+		dica: 'Contratos com parcelas liquidadas no período. O valor é a soma dessas parcelas. "Quitado" = o contrato terminou de ser pago no período; "Amortizado" = ainda tem parcelas a pagar.',
 	},
 };
 
 const corStatus = (status: string): 'success' | 'error' | 'warning' =>
 	status === 'Liquidado' ? 'success' : status === 'Vencido' ? 'error' : 'warning';
 
-const LinhaContrato: React.FC<{ c: ContratoPeriodo; temTomador: boolean }> = ({ c, temTomador }) => {
+const LinhaContrato: React.FC<{ c: ContratoPeriodo; temTomador: boolean; mostrarSituacao: boolean }> = ({ c, temTomador, mostrarSituacao }) => {
 	const [aberto, setAberto] = useState(false);
 	return (
 		<>
@@ -56,7 +56,18 @@ const LinhaContrato: React.FC<{ c: ContratoPeriodo; temTomador: boolean }> = ({ 
 						{aberto ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowRightIcon fontSize="small" />}
 					</IconButton>
 				</TableCell>
-				<TableCell sx={{ fontWeight: 600 }}>{c.numeroContrato}</TableCell>
+				<TableCell sx={{ fontWeight: 600 }}>
+					{c.numeroContrato}
+					{mostrarSituacao && (
+						<Chip
+							label={c.quitadoEm ? `Quitado em ${formatarDataISO(c.quitadoEm)}` : 'Amortizado'}
+							size="small"
+							color={c.quitadoEm ? 'success' : 'default'}
+							variant="outlined"
+							sx={{ ml: 1, height: 20, fontSize: '0.7rem', fontWeight: 600 }}
+						/>
+					)}
+				</TableCell>
 				<TableCell>{c.credor}</TableCell>
 				{temTomador && <TableCell>{c.tomador || '—'}</TableCell>}
 				<TableCell sx={{ whiteSpace: 'nowrap' }}>{formatarDataISO(c.dataContrato)}</TableCell>
@@ -216,7 +227,7 @@ const ModalContratosPeriodo: React.FC<{
 							</TableHead>
 							<TableBody>
 								{lista.map((c) => (
-									<LinhaContrato key={`${aba}-${c.id}`} c={c} temTomador={temTomador} />
+									<LinhaContrato key={`${aba}-${c.id}`} c={c} temTomador={temTomador} mostrarSituacao={aba === 'quitados'} />
 								))}
 							</TableBody>
 						</Table>

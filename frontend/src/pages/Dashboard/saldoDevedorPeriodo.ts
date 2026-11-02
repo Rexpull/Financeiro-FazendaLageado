@@ -9,6 +9,10 @@ import { mesAnterior, type MesAno } from './periodoDashboard';
 export type SaldoDevedorPeriodo = {
 	saldoInicial: number;
 	quitados: number;
+	/** quitados = quitacoes (contracts paid off) + amortizacoes */
+	quitacoes: number;
+	amortizacoes: number;
+	contratosQuitados: number;
 	creditosNovos: number;
 	valorContratadoNovos: number;
 	contratosNovos: number;
@@ -21,11 +25,17 @@ export function saldoDevedorPeriodo(resumo: ResumoSaldoDevedorMes[], mesIdx: num
 	if (!resumo.length) return null;
 	const meses = mesIdx >= 0 ? resumo.filter((r) => r.mes === mesIdx + 1) : resumo;
 	if (!meses.length) return null;
-	const soma = (k: 'quitados' | 'creditosNovos' | 'valorContratadoNovos' | 'contratosNovos' | 'renegociacoes') =>
-		Math.round(meses.reduce((s, r) => s + (Number(r[k]) || 0), 0) * 100) / 100;
+	const soma = (
+		k: 'quitados' | 'quitacoes' | 'contratosQuitados' | 'creditosNovos' | 'valorContratadoNovos' | 'contratosNovos' | 'renegociacoes',
+	) => Math.round(meses.reduce((s, r) => s + (Number(r[k]) || 0), 0) * 100) / 100;
+	const quitados = soma('quitados');
+	const quitacoes = soma('quitacoes');
 	return {
 		saldoInicial: meses[0].saldoInicial,
-		quitados: soma('quitados'),
+		quitados,
+		quitacoes,
+		amortizacoes: Math.round((quitados - quitacoes) * 100) / 100,
+		contratosQuitados: soma('contratosQuitados'),
 		creditosNovos: soma('creditosNovos'),
 		valorContratadoNovos: soma('valorContratadoNovos'),
 		contratosNovos: soma('contratosNovos'),
