@@ -371,8 +371,25 @@ export function decodeOfxBytes(input: ArrayBuffer | Uint8Array): string {
 	return tentarUtf8(bytes) ?? decodificar(bytes, 'windows-1252');
 }
 
+const dataOfxIso = (yyyymmdd: string) =>
+	new Date(`${yyyymmdd.substring(0, 4)}-${yyyymmdd.substring(4, 6)}-${yyyymmdd.substring(6, 8)}T00:00:00.000Z`).toISOString();
+
+/**
+ * Date of the card bill (LEDGERBAL DTASOF) in a credit card statement, or undefined for a bank statement.
+ * Card lines come with the purchase date (an installment "PARC 12/21" keeps the date of a purchase made a
+ * year earlier), but the money leaves with the bill: the Fluxo and the reports need them in the bill month.
+ */
+export function dataFaturaCartao(normalized: string): string | undefined {
+	if (!/<CCSTMTRS>|<CCACCTFROM>/i.test(normalized)) return undefined;
+	const dtAsOf = normalized.match(/<LEDGERBAL>.*?<DTASOF>(\d{8})/s)?.[1];
+	return dtAsOf ? dataOfxIso(dtAsOf) : undefined;
+}
+
+const dataBr = (iso: string) => `${iso.substring(8, 10)}/${iso.substring(5, 7)}/${iso.substring(0, 4)}`;
+
 export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBancario[]; totalizadores: TotalizadoresOFX } {
 	const normalized = normalizarOfx(ofxContent);
+	const dtFatura = dataFaturaCartao(normalized);
 
 	// Banco
 	const bankIdMatch = normalized.match(/<BANKID>(\d+)<\/BANKID>/);
@@ -406,10 +423,7 @@ export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBanc
 		const dateStr = dateMatch?.[1];
 		if (!amountStr || !dateStr) return;
 
-		const yyyy = dateStr.substring(0, 4);
-		const mm = dateStr.substring(4, 6);
-		const dd = dateStr.substring(6, 8);
-		const dtMovimento = new Date(`${yyyy}-${mm}-${dd}T00:00:00.000Z`).toISOString();
+		const dtMovimento = dataOfxIso(dateStr);
 
 		let historico = 'Sem descrição';
 		if (memo) historico = memo;
@@ -459,9 +473,12 @@ export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBanc
 	const movimentos: MovimentoBancario[] = movimentosProcessados.map((mov, idx) => {
 		const identificadorImportacao = identificadores[idx];
 		trnTypeByIdentificadorOfx.set(identificadorImportacao, mov.trnType);
+		// Card: the line goes to the bill date; the purchase date stays in the identificador (dedupe
+		// between exports of the same bill) and in the descricao.
+		const dtCartaoDiferente = dtFatura && dtFatura !== mov.dtMovimento;
 
 		return {
-			dtMovimento: mov.dtMovimento,
+			dtMovimento: dtFatura ?? mov.dtMovimento,
 			historico: mov.historico,
 			valor: mov.valor,
 			tipoMovimento: mov.tipoMovimento,
@@ -478,7 +495,7 @@ export function parseOFXContent(ofxContent: string): { movimentos: MovimentoBanc
 			idPlanoContas: undefined,
 			idPessoa: undefined,
 			idBanco: undefined,
-			descricao: undefined,
+			descricao: dtCartaoDiferente ? `Lançado no cartão em ${dataBr(mov.dtMovimento)}` : undefined,
 			transfOrigem: undefined,
 			transfDestino: undefined,
 			idUsuario: undefined,

@@ -495,3 +495,37 @@ describe("identificadorOfx for repeated lines in the same file", () => {
     ]);
   });
 });
+
+describe("credit card statement", () => {
+  const cartaoBB = [
+    "OFXHEADER:100", "DATA:OFXSGML", "<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>BRL",
+    "<CCACCTFROM><ACCTID>", "6550000000003010", "</ACCTID></CCACCTFROM>",
+    "<BANKTRANLIST><DTSTART>20251022</DTSTART><DTEND>20261006</DTEND>",
+    "<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20251022</DTPOSTED><TRNAMT>-11428.57</TRNAMT>",
+    "<FITID>2025102265500000000030100000000019</FITID><MEMO>GEA EQUIPAMEN PARC 12/21 JAGUARIUNA  BR</MEMO></STMTTRN>",
+    "<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20261005</DTPOSTED><TRNAMT>-28.93</TRNAMT>",
+    "<FITID>2026100565500000000030100000000009</FITID><MEMO>POSTO LUNASA           PATOS DE MINA BR</MEMO></STMTTRN>",
+    "</BANKTRANLIST><LEDGERBAL><BALAMT>-11457.50</BALAMT><DTASOF>20261020</DTASOF></LEDGERBAL>",
+    "</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>",
+  ].join("\n");
+
+  it("dates every line on the bill date and keeps the card date in the identificador and descricao", () => {
+    const { movimentos } = parseOFXContent(cartaoBB);
+
+    expect(movimentos.map((m) => m.dtMovimento)).toEqual(["2026-10-20T00:00:00.000Z", "2026-10-20T00:00:00.000Z"]);
+    const gea = movimentos.find((m) => m.historico.startsWith("GEA"));
+    expect(gea?.identificadorOfx).toBe("2025102265500000000030100000000019|2025-10-22T00:00:00.000Z|-11428.57");
+    expect(gea?.descricao).toBe("Lançado no cartão em 22/10/2025");
+  });
+
+  it("reads the SICOOB bill date with time and timezone", () => {
+    const sicoob = cartaoBB.replace("<DTASOF>20261020</DTASOF>", "<DTASOF>20261022120000[-3:BRT]");
+    expect(parseOFXContent(sicoob).movimentos[0].dtMovimento).toBe("2026-10-22T00:00:00.000Z");
+  });
+
+  it("keeps the posted date on a bank statement", () => {
+    const { movimentos } = parseOFXContent(OFX_CAIXA_MARCO);
+    expect(movimentos.every((m) => m.descricao === undefined)).toBe(true);
+    expect(movimentos[0].dtMovimento.startsWith("2026-03")).toBe(true);
+  });
+});
