@@ -228,6 +228,10 @@ export class DashboardController {
             // Contracts behind "Créditos novos" / "Quitados" of the period (detail modal)
             data = await this.repository.getContratosDoPeriodo(validarPeriodo(url.searchParams.get("inicio"), url.searchParams.get("fim")));
             break;
+          case "indicadores-periodo":
+            // Contract counts, renegotiations and vencimentos por ano of the period (Financiamentos tab)
+            data = await this.repository.getIndicadoresFinanciamentoPeriodo(validarPeriodo(url.searchParams.get("inicio"), url.searchParams.get("fim")));
+            break;
           default:
             return new Response(JSON.stringify({ error: "Tipo de filtro inválido" }), {
               status: 400,

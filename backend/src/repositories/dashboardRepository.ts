@@ -4,6 +4,7 @@ import {
   resumoSaldoDevedorMeses,
   mesesDoIntervalo,
   contratosDoPeriodo,
+  indicadoresFinanciamentoPeriodo,
   parcelasComRenegociacoes,
   comValorOriginal,
   type FinanciamentoRow,
@@ -12,6 +13,7 @@ import {
   type ContratoDetalheRow,
   type ParcelaDetalheRow,
   type ContratoDoPeriodo,
+  type IndicadoresFinanciamentoPeriodo,
 } from "../utils/saldoDevedor";
 import { garantirSchemaRenegociacao } from "./RenegociacaoRepository";
 
@@ -1596,6 +1598,14 @@ export class DashboardRepository {
        LEFT JOIN pessoa p ON f.idPessoa = p.id`,
     );
     return contratosDoPeriodo(periodo.inicio, periodo.fim, fin, parc);
+  }
+
+  /** Contract counts, renegotiations and vencimentos por ano of the period (Financiamentos tab). */
+  async getIndicadoresFinanciamentoPeriodo(periodo: PeriodoDashboard): Promise<IndicadoresFinanciamentoPeriodo> {
+    const { fin, parc } = await this.contratosParcelasSaldo<ContratoDetalheRow>(
+      `SELECT id, dataContrato, valor, idFinanciamentoOrigem, numeroContrato FROM Financiamento`,
+    );
+    return indicadoresFinanciamentoPeriodo(periodo.inicio, periodo.fim, fin, parc);
   }
 
   /**

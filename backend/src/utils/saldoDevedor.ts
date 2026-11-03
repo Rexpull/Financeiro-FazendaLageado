@@ -354,3 +354,94 @@ export function contratosDoPeriodo(
 	const ordem = (a: ContratoDoPeriodo, b: ContratoDoPeriodo) => b.valorNoPeriodo - a.valorNoPeriodo || a.numeroContrato.localeCompare(b.numeroContrato);
 	return { novos: novos.sort(ordem), quitados: quitados.sort(ordem) };
 }
+
+export type RenegociacaoDoPeriodo = {
+	/** Contract that was renegotiated */
+	numeroContrato: string;
+	/** Contract born from it (NOVO_CONTRATO); absent for an aditivo, which changes the same contract */
+	numeroContratoNovo?: string;
+	/** Parcelas that entered − parcelas replaced: positive, negative or zero */
+	variacao: number;
+};
+
+export type IndicadoresFinanciamentoPeriodo = {
+	/** Contracts with parcelas in the saldo at the start / end of the period */
+	contratosAtivosInicio: number;
+	contratosAtivosFim: number;
+	contratosNovos: number;
+	contratosQuitados: number;
+	/** Contracts with parcelas paid in the period that still owe something at its end */
+	contratosAmortizados: number;
+	renegociacoes: RenegociacaoDoPeriodo[];
+	/** Parcelas in the saldo at the end of the period, by year of dt_vencimento */
+	vencimentosPorAno: Array<{ ano: number; valor: number }>;
+};
+
+/**
+ * Counts and lists behind the Financiamentos cards of a period [inicio, fim), with the same rules as
+ * resumoSaldoDevedorMeses (a contract is active while any of its parcelas is in the saldo). Counted once per
+ * period, so a contract amortized in two months of a quarter counts one time.
+ */
+export function indicadoresFinanciamentoPeriodo(
+	inicio: string,
+	fim: string,
+	financiamentos: ContratoDetalheRow[],
+	parcelas: ParcelaRow[],
+): IndicadoresFinanciamentoPeriodo {
+	const noPeriodo = (d: string | null) => !!d && d >= inicio && d < fim;
+	const dataContrato = new Map(financiamentos.map((f) => [f.id, dia(f.dataContrato)]));
+	const porId = new Map(financiamentos.map((f) => [f.id, f]));
+	const quitadoEm = datasQuitacaoContratos(parcelas, dataContrato);
+
+	const ativosInicio = new Set<number>();
+	const ativosFim = new Set<number>();
+	const pagos = new Set<number>();
+	const vencimentos = new Map<number, number>();
+	// renegotiated contract -> { centavos, contrato novo }
+	const reneg = new Map<number, { variacao: number; novo?: number }>();
+	const variar = (id: number, v: number, novo?: number) => {
+		const r = reneg.get(id) ?? { variacao: 0 };
+		r.variacao += v;
+		if (novo != null) r.novo = novo;
+		reneg.set(id, r);
+	};
+
+	for (const p of parcelas) {
+		const id = p.idFinanciamento;
+		const dc = dataContrato.get(id);
+		const j = janelaNoSaldo(p, dc);
+		if (!j) continue;
+		const noSaldoEm = (limite: string) => j.entrada < limite && !(j.saida && j.saida < limite);
+		if (noSaldoEm(inicio)) ativosInicio.add(id);
+		if (noSaldoEm(fim)) {
+			ativosFim.add(id);
+			const ano = Number(dia(p.dt_vencimento).slice(0, 4));
+			if (ano) vencimentos.set(ano, (vencimentos.get(ano) ?? 0) + centavos(p.valor));
+		}
+		if (noPeriodo(quitacaoNoSaldo(p, dc))) pagos.add(id);
+		// Same split as the "renegociacoes" of resumoSaldoDevedorMeses
+		if (p.renegociadaEm && noPeriodo(j.saida)) variar(id, -centavos(p.valor));
+		if (!noPeriodo(j.entrada)) continue;
+		const origem = porId.get(id)?.idFinanciamentoOrigem;
+		if (p.entrada) variar(id, centavos(p.valor));
+		else if (origem != null) variar(origem, centavos(p.valor), id);
+	}
+
+	const quitadosNoPeriodo = [...quitadoEm].filter(([, d]) => noPeriodo(d)).map(([id]) => id);
+	const numero = (id: number) => porId.get(id)?.numeroContrato || `Contrato ${id}`;
+	return {
+		contratosAtivosInicio: ativosInicio.size,
+		contratosAtivosFim: ativosFim.size,
+		contratosNovos: financiamentos.filter((f) => noPeriodo(dia(f.dataContrato)) && f.idFinanciamentoOrigem == null).length,
+		contratosQuitados: quitadosNoPeriodo.length,
+		contratosAmortizados: [...pagos].filter((id) => !quitadosNoPeriodo.includes(id)).length,
+		renegociacoes: [...reneg]
+			.map(([id, r]) => ({
+				numeroContrato: numero(id),
+				...(r.novo != null ? { numeroContratoNovo: numero(r.novo) } : {}),
+				variacao: r.variacao / 100,
+			}))
+			.sort((a, b) => Math.abs(b.variacao) - Math.abs(a.variacao)),
+		vencimentosPorAno: [...vencimentos].sort(([a], [b]) => a - b).map(([ano, v]) => ({ ano, valor: v / 100 })),
+	};
+}

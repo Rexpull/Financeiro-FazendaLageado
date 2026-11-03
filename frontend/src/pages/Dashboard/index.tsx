@@ -12,7 +12,8 @@ import {
   Tab,
   Tooltip,
   Alert,
-  ListSubheader,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import BreadCrumb from "../../components/BreadCrumb";
 import {
@@ -28,7 +29,7 @@ import ReceitasDespesasTab from './ReceitasDespesasTab';
 import ResultadoConsolidadoTab from './ResultadoConsolidadoTab';
 import FinanciamentosTab from './FinanciamentosTab';
 import { CaixaTab } from './CaixaTab';
-import { anosDashboard, intervaloPeriodo, MESES_CURTOS, OPCOES_MES_PERIODO, OPCOES_PERIODO, type TipoPeriodo } from './periodoDashboard';
+import { anosDashboard, MESES_CURTOS, OPCOES_GRANULARIDADE, opcaoComMes, opcoesPeriodo, type Granularidade } from './periodoDashboard';
 
 /** Account as returned by GET /api/contas (only the fields the filter shows). */
 type ContaFiltro = { id: number; responsavel?: string; bancoNome?: string; numConta?: string; numCartao?: string; ativo?: boolean | number };
@@ -62,8 +63,9 @@ type Marcado<T> = { chave: string; data: T };
 const Dashboard = () => {
   const [anoSelecionado, setAnoSelecionado] = useState(anoAtual);
   const [mesSelecionado, setMesSelecionado] = useState<string>(mesAtual);
-  // Period of "Resultado consolidado" and "Financiamentos" (ano inteiro, trimestre, semestre, últimos 12 meses, um mês)
-  const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodo>('ano');
+  // Period of "Resultado consolidado" and "Financiamentos": the kind (mês, trimestre, semestre, ano), then which one
+  const [granularidade, setGranularidade] = useState<Granularidade>('mes');
+  const [periodoEscolhido, setPeriodoEscolhido] = useState<string>(() => opcaoComMes('mes', undefined).valor);
   const [activeDashboardTab, setActiveDashboardTab] = useState<AbaDashboard>('receitas-despesas');
   const [tipoDetalhamento, setTipoDetalhamento] = useState<'receitas' | 'despesas'>('despesas');
   const [resumo, setResumo] = useState<Marcado<ResumoSaldoDevedorMes[]> | null>(null);
@@ -102,7 +104,14 @@ const Dashboard = () => {
   }, [carregarContas]);
 
   const usaPeriodo = activeDashboardTab === 'resultado' || activeDashboardTab === 'financiamentos';
-  const intervalo = useMemo(() => intervaloPeriodo(anoSelecionado, tipoPeriodo), [anoSelecionado, tipoPeriodo]);
+  const opcoesDoPeriodo = useMemo(() => opcoesPeriodo(granularidade), [granularidade]);
+  const intervalo = (opcoesDoPeriodo.find((o) => o.valor === periodoEscolhido) ?? opcoesDoPeriodo[0]).intervalo;
+
+  const trocarGranularidade = (g: Granularidade) => {
+    // Keep the months in view: Outubro → 4º trimestre that contains it
+    setGranularidade(g);
+    setPeriodoEscolhido(opcaoComMes(g, intervalo.meses[intervalo.meses.length - 1]).valor);
+  };
 
   // "Receitas e despesas": month (or whole year) of the heavy /api/dashboard query
   const chaveDashboard = `rd|${anoSelecionado}|${mesSelecionado}|${contasSelecionadas.join(',')}`;
@@ -168,8 +177,6 @@ const Dashboard = () => {
 
   // Financiamentos and Caixa tabs don't depend on accounts.
   const filtroContaNaoSeAplica = activeDashboardTab === 'financiamentos' || activeDashboardTab === 'caixa';
-  // "Últimos 12 meses" ends with the current month, whatever the year
-  const filtroAnoNaoSeAplica = usaPeriodo && tipoPeriodo === '12m';
 
   const handleDashboardTabChange = (_event: React.SyntheticEvent, newValue: AbaDashboard) => {
     setActiveDashboardTab(newValue);
@@ -178,7 +185,8 @@ const Dashboard = () => {
   const limparFiltros = () => {
     setAnoSelecionado(anoAtual());
     setMesSelecionado(mesAtual());
-    setTipoPeriodo('ano');
+    setGranularidade('mes');
+    setPeriodoEscolhido(opcaoComMes('mes', undefined).valor);
     setContaSelecionada("");
   };
 
@@ -235,10 +243,43 @@ const Dashboard = () => {
           </Tabs>
 
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Tooltip arrow title={filtroAnoNaoSeAplica ? 'Os últimos 12 meses terminam no mês atual' : ''}>
-              {/* span wrapper: a disabled control does not fire the events the Tooltip needs */}
-              <Box component="span" sx={{ display: 'inline-flex' }}>
-                <FormControl sx={{ minWidth: 110 }} size="small" disabled={filtroAnoNaoSeAplica}>
+            {usaPeriodo ? (
+              <>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={granularidade}
+                  onChange={(_e, v: Granularidade | null) => { if (v) trocarGranularidade(v); }}
+                  aria-label="Tipo de período"
+                  sx={{
+                    backgroundColor: 'white',
+                    '& .MuiToggleButton-root': { textTransform: 'none', px: 2, py: 0.75, fontSize: '0.875rem' },
+                    '& .MuiToggleButton-root.Mui-selected': { bgcolor: '#e8f0fe', color: 'primary.main', fontWeight: 600 },
+                  }}
+                >
+                  {OPCOES_GRANULARIDADE.map(o => (
+                    <ToggleButton key={o.valor} value={o.valor}>{o.rotulo}</ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+                <FormControl sx={{ minWidth: 220 }} size="small">
+                  <InputLabel id="dashboard-filtro-periodo">{OPCOES_GRANULARIDADE.find(o => o.valor === granularidade)?.rotulo}</InputLabel>
+                  <Select
+                    labelId="dashboard-filtro-periodo"
+                    value={opcoesDoPeriodo.some(o => o.valor === periodoEscolhido) ? periodoEscolhido : opcoesDoPeriodo[0].valor}
+                    label={OPCOES_GRANULARIDADE.find(o => o.valor === granularidade)?.rotulo}
+                    sx={{backgroundColor: 'white'}}
+                    onChange={e => setPeriodoEscolhido(String(e.target.value))}
+                  >
+                    {/* From outubro/2026 (início do controle) up to the current month */}
+                    {opcoesDoPeriodo.map(o => (
+                      <MenuItem key={o.valor} value={o.valor}>{o.intervalo.rotulo}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </>
+            ) : (
+              <>
+                <FormControl sx={{ minWidth: 110 }} size="small">
                   <InputLabel id="dashboard-filtro-ano">Ano</InputLabel>
                   <Select
                     labelId="dashboard-filtro-ano"
@@ -253,48 +294,25 @@ const Dashboard = () => {
                     ))}
                   </Select>
                 </FormControl>
-              </Box>
-            </Tooltip>
-            {usaPeriodo ? (
-              <FormControl sx={{ minWidth: 170 }} size="small">
-                <InputLabel id="dashboard-filtro-periodo">Período</InputLabel>
-                <Select
-                  labelId="dashboard-filtro-periodo"
-                  value={tipoPeriodo}
-                  label="Período"
-                  sx={{backgroundColor: 'white'}}
-                  onChange={e => setTipoPeriodo(e.target.value as TipoPeriodo)}
-                  MenuProps={{ PaperProps: { sx: { maxHeight: 420 } } }}
-                >
-                  {OPCOES_PERIODO.map(o => (
-                    <MenuItem key={o.valor} value={o.valor}>{o.rotulo}</MenuItem>
-                  ))}
-                  {/* One month of the chosen year: what was contracted and paid month by month */}
-                  <ListSubheader sx={{ lineHeight: '32px', fontWeight: 700 }}>Mês de {anoSelecionado}</ListSubheader>
-                  {OPCOES_MES_PERIODO.map(o => (
-                    <MenuItem key={o.valor} value={o.valor}>{o.rotulo}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : (
-              <FormControl sx={{ minWidth: 120 }} size="small">
-                <InputLabel id="dashboard-filtro-mes" shrink>Mês</InputLabel>
-                <Select
-                  labelId="dashboard-filtro-mes"
-                  value={mesSelecionado}
-                  label="Mês"
-                  notched
-                  displayEmpty
-                  sx={{backgroundColor: 'white'}}
-                  onChange={e => setMesSelecionado(e.target.value)}
-                  renderValue={v => v || 'Todos'}
-                >
-                  <MenuItem value="">Todos</MenuItem>
-                  {MESES.map(mes => (
-                    <MenuItem key={mes} value={mes}>{mes}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+                <FormControl sx={{ minWidth: 120 }} size="small">
+                  <InputLabel id="dashboard-filtro-mes" shrink>Mês</InputLabel>
+                  <Select
+                    labelId="dashboard-filtro-mes"
+                    value={mesSelecionado}
+                    label="Mês"
+                    notched
+                    displayEmpty
+                    sx={{backgroundColor: 'white'}}
+                    onChange={e => setMesSelecionado(e.target.value)}
+                    renderValue={v => v || 'Todos'}
+                  >
+                    <MenuItem value="">Todos</MenuItem>
+                    {MESES.map(mes => (
+                      <MenuItem key={mes} value={mes}>{mes}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </>
             )}
             <Tooltip arrow title={filtroContaNaoSeAplica ? 'O filtro de conta não se aplica a esta aba' : ''}>
               {/* span wrapper: a disabled control does not fire the events the Tooltip needs */}
@@ -333,7 +351,7 @@ const Dashboard = () => {
               color="inherit"
               size="small"
               onClick={limparFiltros}
-              title="Volta para o ano e o mês atuais, o ano inteiro e todas as contas. Não apaga dados do sistema."
+              title="Volta para o mês atual e todas as contas. Não apaga dados do sistema."
             >
               Limpar filtros
             </Button>

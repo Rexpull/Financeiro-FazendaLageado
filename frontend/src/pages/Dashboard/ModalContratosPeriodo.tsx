@@ -32,14 +32,14 @@ export type AbaContratos = 'novos' | 'quitados';
 
 const ABAS: Record<AbaContratos, { rotulo: string; coluna: string; dica: string }> = {
 	novos: {
-		rotulo: 'Créditos novos',
+		rotulo: 'Novos financiamentos',
 		coluna: 'Parcelas do contrato',
-		dica: 'Contratos assinados no período. O valor é a soma de todas as parcelas do contrato (já com os juros).',
+		dica: 'Contratos assinados no período. O valor é a soma de todas as parcelas do contrato (já com os juros). Renegociações não entram aqui.',
 	},
 	quitados: {
-		rotulo: 'Quitados / amortizados',
+		rotulo: 'Liquidações e amortizações',
 		coluna: 'Pago no período',
-		dica: 'Contratos com parcelas liquidadas no período. O valor é a soma dessas parcelas. "Quitado" = o contrato terminou de ser pago no período; "Amortizado" = ainda tem parcelas a pagar.',
+		dica: 'Contratos com parcelas pagas no período. O valor é a soma dessas parcelas. "Quitado" = o contrato terminou de ser pago no período; "Amortizado" = ainda tem parcelas a pagar.',
 	},
 };
 
@@ -205,7 +205,7 @@ const ModalContratosPeriodo: React.FC<{
 					</Box>
 				) : lista.length === 0 ? (
 					<Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
-						{aba === 'novos' ? 'Nenhum contrato novo' : 'Nenhuma parcela quitada'} em {periodo.rotulo}.
+						{aba === 'novos' ? 'Nenhum contrato novo' : 'Nenhuma parcela paga'} em {periodo.rotulo}.
 					</Typography>
 				) : (
 					<TableContainer sx={{ maxHeight: '55vh', border: 1, borderColor: 'divider', borderRadius: 1 }}>
@@ -237,7 +237,7 @@ const ModalContratosPeriodo: React.FC<{
 			<DialogActions sx={{ px: 3, justifyContent: 'flex-end', gap: 2 }}>
 				{carregado && (
 					<Typography sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-						Total {aba === 'novos' ? 'de créditos novos' : 'quitado'}: {brl(total)}
+						Total {aba === 'novos' ? 'de novos financiamentos' : 'pago'}: {brl(total)}
 					</Typography>
 				)}
 				<Button onClick={onClose} variant="outlined" color="inherit">

@@ -56,15 +56,20 @@ const ResultadoConsolidadoTab: React.FC<ResultadoConsolidadoTabProps> = ({ dados
 						Financiamentos — {intervalo.rotulo}
 					</Typography>
 					<Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.25 }}>
-						Somente contratos assinados e parcelas liquidadas {faixaDatas}. Ficam fora do resultado acima. Clique nos valores para ver os contratos.
+						Somente contratos assinados e parcelas pagas {faixaDatas}. Ficam fora do resultado acima. Clique nos valores para ver os contratos.
 					</Typography>
 					{fin ? (
 						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-							{linhaFin('Créditos novos', `Parcelas dos contratos assinados ${faixaDatas}`, fin.creditosNovos, 'info.dark', 'novos')}
-							{linhaFin('Quitados / amortizados', `Parcelas liquidadas ${faixaDatas}`, fin.quitados, 'success.dark', 'quitados')}
+							{linhaFin('Novos financiamentos', `Parcelas dos contratos assinados ${faixaDatas}`, fin.creditosNovos, 'info.dark', 'novos')}
+							{linhaFin('Liquidações e amortizações', `Parcelas pagas ${faixaDatas}`, fin.quitados, 'success.dark', 'quitados')}
 							{fin.quitados > 0 && (
 								<Typography variant="caption" color="text.secondary">
-									Quitados ({fin.contratosQuitados} {fin.contratosQuitados === 1 ? 'contrato' : 'contratos'}) {brl(fin.quitacoes)} · amortizações {brl(fin.amortizacoes)}
+									{fin.contratosQuitados} {fin.contratosQuitados === 1 ? 'contrato quitado' : 'contratos quitados'}: {brl(fin.quitacoes)}. Parcelas amortizadas: {brl(fin.amortizacoes)}
+								</Typography>
+							)}
+							{fin.renegociacoes !== 0 && (
+								<Typography variant="caption" color="text.secondary">
+									Variação nas renegociações: {fin.renegociacoes > 0 ? '+' : '−'} {brl(Math.abs(fin.renegociacoes))}
 								</Typography>
 							)}
 							{fin.contratosNovos > 0 && (

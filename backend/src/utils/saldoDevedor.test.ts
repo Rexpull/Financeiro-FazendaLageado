@@ -6,6 +6,7 @@ import {
 	contratosDoPeriodo,
 	parcelasComRenegociacoes,
 	comValorOriginal,
+	indicadoresFinanciamentoPeriodo,
 } from './saldoDevedor';
 
 const fin = [
@@ -244,5 +245,49 @@ describe('quitados: contratos quitados x parcelas amortizadas', () => {
 		const m = resumoSaldoDevedor(2026, f, parcelasComRenegociacoes(atuais, reneg));
 		expect(m[9].contratosQuitados).toBe(1);
 		expect(m[10].contratosQuitados).toBe(0);
+	});
+});
+
+describe('indicadoresFinanciamentoPeriodo (contagem de contratos do quadro de financiamentos)', () => {
+	// 1: paid off in October; 2: amortized in October and November; 3: renegotiated into 4 on 15/10; 5: new in October
+	const f = [
+		{ id: 1, dataContrato: '2024-01-10', valor: 1000, numeroContrato: 'C1' },
+		{ id: 2, dataContrato: '2024-01-10', valor: 1000, numeroContrato: 'C2' },
+		{ id: 3, dataContrato: '2026-01-12', valor: 800, numeroContrato: 'C3' },
+		{ id: 4, dataContrato: '2026-10-15', valor: 900, idFinanciamentoOrigem: 3, numeroContrato: 'C4' },
+		{ id: 5, dataContrato: '2026-10-26', valor: 500, numeroContrato: 'C5' },
+	];
+	const reneg = [{ id: 1, idFinanciamento: 3, tipo: 'NOVO_CONTRATO', dataRenegociacao: '2026-10-15', parcelasAnteriores: '[{"numParcela":1,"dt_vencimento":"2028-01-05","valor":810}]' }];
+	const parc = parcelasComRenegociacoes(
+		[
+			{ id: 1, idFinanciamento: 1, numParcela: 1, valor: 600, status: 'Liquidado', dt_vencimento: '2026-10-10', dt_liquidacao: '2026-10-12' },
+			{ id: 2, idFinanciamento: 2, numParcela: 1, valor: 250, status: 'Liquidado', dt_vencimento: '2026-10-15', dt_liquidacao: '2026-10-15' },
+			{ id: 3, idFinanciamento: 2, numParcela: 2, valor: 250, status: 'Liquidado', dt_vencimento: '2026-11-15', dt_liquidacao: '2026-11-15' },
+			{ id: 4, idFinanciamento: 2, numParcela: 3, valor: 250, status: 'Aberto', dt_vencimento: '2027-11-15', dt_liquidacao: null },
+			{ id: 5, idFinanciamento: 4, numParcela: 1, valor: 918, status: 'Aberto', dt_vencimento: '2027-10-15', dt_liquidacao: null },
+			{ id: 6, idFinanciamento: 5, numParcela: 1, valor: 570, status: 'Aberto', dt_vencimento: '2027-10-26', dt_liquidacao: null },
+		],
+		reneg,
+	);
+
+	it('outubro: ativos no início e no fim, novos, quitados, amortizados e a variação da renegociação', () => {
+		expect(indicadoresFinanciamentoPeriodo('2026-10-01', '2026-11-01', f, parc)).toEqual({
+			contratosAtivosInicio: 3,
+			contratosAtivosFim: 3,
+			contratosNovos: 1,
+			contratosQuitados: 1,
+			contratosAmortizados: 1,
+			renegociacoes: [{ numeroContrato: 'C3', numeroContratoNovo: 'C4', variacao: 108 }],
+			vencimentosPorAno: [
+				{ ano: 2026, valor: 250 },
+				{ ano: 2027, valor: 1738 },
+			],
+		});
+	});
+
+	it('trimestre: um contrato amortizado em dois meses conta uma vez', () => {
+		const t = indicadoresFinanciamentoPeriodo('2026-10-01', '2027-01-01', f, parc);
+		expect(t.contratosAmortizados).toBe(1);
+		expect(t.vencimentosPorAno).toEqual([{ ano: 2027, valor: 1738 }]);
 	});
 });

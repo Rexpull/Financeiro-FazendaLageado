@@ -406,6 +406,20 @@ export interface ContratoPeriodo {
 export const getContratosPeriodo = async (periodo: FaixaDatas): Promise<{ novos: ContratoPeriodo[]; quitados: ContratoPeriodo[] }> =>
   getJson('/api/dashboard/financiamentos', new URLSearchParams({ tipo: 'contratos-periodo', ...periodo }), 'Erro ao buscar os contratos do período');
 
+/** Same as backend IndicadoresFinanciamentoPeriodo (utils/saldoDevedor). */
+export interface IndicadoresFinanciamentoPeriodo {
+  contratosAtivosInicio: number;
+  contratosAtivosFim: number;
+  contratosNovos: number;
+  contratosQuitados: number;
+  contratosAmortizados: number;
+  renegociacoes: Array<{ numeroContrato: string; numeroContratoNovo?: string; variacao: number }>;
+  vencimentosPorAno: Array<{ ano: number; valor: number }>;
+}
+
+export const getIndicadoresFinanciamentoPeriodo = async (periodo: FaixaDatas): Promise<IndicadoresFinanciamentoPeriodo> =>
+  getJson('/api/dashboard/financiamentos', new URLSearchParams({ tipo: 'indicadores-periodo', ...periodo }), 'Erro ao buscar os indicadores de financiamentos');
+
 type LinhaCentro = NonNullable<DashboardData['receitasDespesas']['agrupadoPor']>[number];
 
 /** Receitas / despesas by cost centre of a date range (Resultado consolidado). */
