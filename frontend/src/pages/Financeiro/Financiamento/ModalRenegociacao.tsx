@@ -656,6 +656,7 @@ const ModalRenegociacao: React.FC<Props> = ({ isOpen, onClose, onSaved, financia
 											<option value="INVESTIMENTO">Investimento</option>
 											<option value="CUSTEIO">Custeio</option>
 											<option value="PARTICULAR">Particular</option>
+											<option value="ROTATIVO">Rotativo</option>
 										</select>
 									</Campo>
 									{modalidade === 'PARTICULAR' && (

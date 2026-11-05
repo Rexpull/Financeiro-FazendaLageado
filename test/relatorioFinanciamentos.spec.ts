@@ -4,6 +4,7 @@ import { env, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll } from 'vitest';
 import schemaSql from './fixtures/schema.sql?raw';
 import migrationSql from '../migration_financiamento_modalidade_renegociacao.sql?raw';
+import migrationRotativoSql from '../migration_financiamento_modalidade_rotativo.sql?raw';
 
 const BASE = 'https://worker.test';
 const db = (env as unknown as { DB: D1Database }).DB;
@@ -184,7 +185,7 @@ describe('migration_financiamento_modalidade_renegociacao.sql', () => {
 	it('reconstrói Financiamento com o CHECK novo preservando linhas, ids, FKs e sqlite_sequence', async () => {
 		const checkAntigo = "CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR'))";
 		const schemaAntigo = schemaSql.replace(
-			"CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO'))",
+			"CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'))",
 			checkAntigo,
 		);
 		expect(schemaAntigo).toContain(checkAntigo);
@@ -225,6 +226,50 @@ describe('migration_financiamento_modalidade_renegociacao.sql', () => {
 
 		const novo = await db
 			.prepare(`INSERT INTO Financiamento (responsavel, dataContrato, valor, numeroContrato, modalidade) VALUES ('MLF', '2026-08-01', 8000, 'R-1', 'RENEGOCIACAO') RETURNING id`)
+			.first<{ id: number }>();
+		expect(novo?.id).toBe(10);
+		await expect(
+			db.prepare(`INSERT INTO Financiamento (responsavel, dataContrato, valor, numeroContrato, modalidade) VALUES ('X', '2026-01-01', 1, 'X', 'OUTRA')`).run(),
+		).rejects.toThrow();
+	});
+});
+
+describe('migration_financiamento_modalidade_rotativo.sql', () => {
+	it('aceita ROTATIVO preservando linhas, ids, idFinanciamentoOrigem, FKs e sqlite_sequence', async () => {
+		const checkAntigo = "CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO'))";
+		const schemaAntigo = schemaSql.replace(
+			"CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'))",
+			checkAntigo,
+		);
+		expect(schemaAntigo).toContain(checkAntigo);
+		await applySchema(schemaAntigo);
+		// production has the column (added by RenegociacaoRepository)
+		await db.prepare(`ALTER TABLE Financiamento ADD COLUMN idFinanciamentoOrigem INTEGER`).run();
+		await seedFinanciamentos(false);
+		await db.prepare(`UPDATE Financiamento SET idFinanciamentoOrigem = 1 WHERE id = 2`).run();
+		await expect(
+			db.prepare(`INSERT INTO Financiamento (responsavel, dataContrato, valor, numeroContrato, modalidade) VALUES ('X', '2026-01-01', 1, 'X', 'ROTATIVO')`).run(),
+		).rejects.toThrow();
+		await db
+			.prepare(`INSERT INTO Financiamento (id, responsavel, dataContrato, valor, numeroContrato, modalidade) VALUES (9, 'Y', '2026-01-01', 1, 'Y', 'CUSTEIO')`)
+			.run();
+		await db.prepare(`DELETE FROM Financiamento WHERE id = 9`).run();
+		const antes = await db.prepare(`SELECT * FROM Financiamento ORDER BY id`).all();
+
+		await db.batch(splitSql(migrationRotativoSql).map((s) => db.prepare(s)));
+
+		const ddl = await db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'Financiamento'`).first<{ sql: string }>();
+		expect(ddl?.sql).toContain("'ROTATIVO'");
+		expect(ddl?.sql).toContain('idFinanciamentoOrigem');
+		const depois = await db.prepare(`SELECT * FROM Financiamento ORDER BY id`).all();
+		expect(depois.results).toEqual(antes.results);
+		const fk = await db.prepare(`PRAGMA foreign_key_check(parcelaFinanciamento)`).all();
+		expect(fk.results).toHaveLength(0);
+		const seq = await db.prepare(`SELECT name, seq FROM sqlite_sequence WHERE name LIKE 'Financiamento%'`).all();
+		expect(seq.results).toEqual([{ name: 'Financiamento', seq: 9 }]);
+
+		const novo = await db
+			.prepare(`INSERT INTO Financiamento (responsavel, dataContrato, valor, numeroContrato, modalidade) VALUES ('BB', '2026-11-05', 50000, 'ROT-1', 'ROTATIVO') RETURNING id`)
 			.first<{ id: number }>();
 		expect(novo?.id).toBe(10);
 		await expect(

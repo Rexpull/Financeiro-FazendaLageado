@@ -52,7 +52,7 @@ export class FinanciamentoRepository {
 			if (needsModalidade) {
 				console.log('🔧 Adicionando coluna modalidade à tabela Financiamento...');
 				await this.db.prepare(`
-					ALTER TABLE Financiamento ADD COLUMN modalidade TEXT CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO'))
+					ALTER TABLE Financiamento ADD COLUMN modalidade TEXT CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'))
 				`).run();
 				console.log('✅ Coluna modalidade adicionada com sucesso');
 			}

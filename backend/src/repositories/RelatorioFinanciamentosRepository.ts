@@ -32,7 +32,7 @@ export class RelatorioFinanciamentosRepository {
 
       if (needsModalidade) {
         await this.db.prepare(`
-          ALTER TABLE Financiamento ADD COLUMN modalidade TEXT CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO'))
+          ALTER TABLE Financiamento ADD COLUMN modalidade TEXT CHECK(modalidade IN ('INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'))
         `).run();
       }
 

@@ -70,6 +70,7 @@ const MODALIDADES: Record<string, string> = {
 	CUSTEIO: 'Custeio',
 	PARTICULAR: 'Particular',
 	RENEGOCIACAO: 'Renegociação',
+	ROTATIVO: 'Rotativo',
 };
 
 export const rotuloModalidade = (c: Pick<ContratoRelatorioFinanciamentos, 'modalidade' | 'nomeModalidadeParticular'>) => {
@@ -334,7 +335,7 @@ export const preferenciasPadrao = (anoAtual: number): PreferenciasFinanciamentos
 	compromissos: 'ano',
 });
 
-const MODALIDADES_VALIDAS = ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO'];
+const MODALIDADES_VALIDAS = ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'];
 const FAIXAS_VALIDAS = ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15'];
 
 /** Reads the saved preferences (localStorage text), ignoring anything invalid. Never throws. */

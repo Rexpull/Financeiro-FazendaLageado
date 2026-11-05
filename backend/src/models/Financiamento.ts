@@ -21,7 +21,7 @@ export interface Financiamento {
   dataVencimentoUltimaParcela?: string | null;
   totalJuros?: number | null;
 
-  modalidade?: 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR' | 'RENEGOCIACAO' | null;
+  modalidade?: 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR' | 'RENEGOCIACAO' | 'ROTATIVO' | null;
   nomeModalidadeParticular?: string | null;
 
   criadoEm?: string;

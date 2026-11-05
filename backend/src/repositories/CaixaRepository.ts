@@ -29,7 +29,7 @@ export interface CaixaParcela {
 	contrato: string | null;
 	tomador: string | null;
 	banco: string | null;
-	/** modalidade do financiamento (INVESTIMENTO, CUSTEIO, PARTICULAR, RENEGOCIACAO) */
+	/** modalidade do financiamento (INVESTIMENTO, CUSTEIO, PARTICULAR, RENEGOCIACAO, ROTATIVO) */
 	modalidade: string | null;
 	/** entra na apuração do saldo (escolha gravada ou padrão pelo status) */
 	considerada: boolean;

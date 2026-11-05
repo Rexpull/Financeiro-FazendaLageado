@@ -174,7 +174,7 @@ export const exportRelatorioItensClassificadosPDF = async (
 	return res.blob();
 };
 
-export type ModalidadeFinanciamento = 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR' | 'RENEGOCIACAO';
+export type ModalidadeFinanciamento = 'INVESTIMENTO' | 'CUSTEIO' | 'PARTICULAR' | 'RENEGOCIACAO' | 'ROTATIVO';
 
 /** Tomador value that selects the contracts without responsável (same constant as the backend) */
 export const SEM_TOMADOR_FINANCIAMENTO = 'Sem tomador';

@@ -18,6 +18,7 @@ export const MODALIDADES: Array<{ value: ModalidadeFinanciamento; label: string 
 	{ value: 'CUSTEIO', label: 'Custeio' },
 	{ value: 'PARTICULAR', label: 'Particular' },
 	{ value: 'RENEGOCIACAO', label: 'Renegociação' },
+	{ value: 'ROTATIVO', label: 'Rotativo' },
 ];
 
 export const FAIXAS_JUROS = [

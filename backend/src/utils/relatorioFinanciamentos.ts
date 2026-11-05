@@ -27,7 +27,7 @@
  */
 import { liquidacaoEfetiva } from './saldoDevedor';
 
-export const MODALIDADES_FINANCIAMENTO = ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO'] as const;
+export const MODALIDADES_FINANCIAMENTO = ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'] as const;
 export type ModalidadeFinanciamento = (typeof MODALIDADES_FINANCIAMENTO)[number];
 
 export const FAIXAS_JUROS = ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15'] as const;
