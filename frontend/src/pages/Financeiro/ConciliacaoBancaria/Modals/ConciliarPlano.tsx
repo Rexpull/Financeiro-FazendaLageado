@@ -27,6 +27,8 @@ import { CentroCustos } from '../../../../../../backend/src/models/CentroCustos'
 import { Resultado } from '../../../../../../backend/src/models/Resultado';
 import ModalRateioCentroCustos from './ModalRateioCentroCustos';
 import ModalRateioPlano from './ModalRateioPlano';
+import ModalDetalharItens from './ModalDetalharItens';
+import type { TotalPorId } from './detalharItens';
 import ModalFinanciamento from '../../Financiamento/ModalFinanciamento';
 import { listarFinanciamentos } from '../../../../services/financiamentoService';
 import { Financiamento } from '../../../../../../backend/src/models/Financiamento';
@@ -166,6 +168,7 @@ const ConciliaPlanoContasModal: React.FC<
 	const [liquidationDate, setLiquidationDate] = useState('');
 	const [liquidationValor, setLiquidationValor] = useState<string>('');
 	const [mostrarMaisOpcoes, setMostrarMaisOpcoes] = useState(false);
+	const [detalharItensAberto, setDetalharItensAberto] = useState(false);
 
 	const [formData, setFormData] = useState<FormData>({
 		idPlanoContas: null,
@@ -586,6 +589,38 @@ const ConciliaPlanoContasModal: React.FC<
 		setRateiosPlanos([]);
 		setRateiosPlanosPorcentagem([]);
 		setRateioPlanosModalAberto(false);
+	};
+
+	// "Detalhar por itens" starts from what the line has now: the draft, else the saved split, else the single field
+	const totalLinha = Math.abs(Number(movimento?.valor) || 0);
+	const planosAtuaisDetalhe: TotalPorId[] =
+		rateiosPlanos.length > 0
+			? rateiosPlanos.map((r) => ({ id: r.idPlano, valor: r.valor }))
+			: formData.idPlanoContas
+				? [{ id: Number(formData.idPlanoContas), valor: totalLinha }]
+				: (movimento?.resultadoList ?? []).map((r) => ({ id: r.idPlanoContas, valor: Math.abs(r.valor) }));
+	const centrosAtuaisDetalhe: TotalPorId[] =
+		rateiosCentros.length > 0
+			? rateiosCentros.map((r) => ({ id: r.idCentro, valor: r.valor }))
+			: formData.idCentroCustos
+				? [{ id: Number(formData.idCentroCustos), valor: totalLinha }]
+				: (movimento?.centroCustosList ?? []).map((c) => ({ id: c.idCentroCustos, valor: Math.abs(c.valor) }));
+
+	/** Items → total per plano and per centro, in R$ (same drafts the rateio modals fill). */
+	const aplicarDetalheItens = (planosItens: TotalPorId[], centrosItens: TotalPorId[]) => {
+		if (planosItens.length > 0) {
+			aplicarRateioPlanosComoResultadoList(
+				planosItens.map((p) => ({
+					idPlanoContas: p.id,
+					valor: p.valor,
+					tipo: movimento.tipoMovimento ?? 'D',
+					idContaCorrente: movimento.idContaCorrente,
+					dtMovimento: movimento.dtMovimento,
+				})),
+			);
+		}
+		aplicarRateioCentrosComoCentroCustosList(centrosItens.map((c) => ({ idMovimentoBancario: movimento.id, idCentroCustos: c.id, valor: c.valor })));
+		setDetalharItensAberto(false);
 	};
 
 	// Fechar dropdowns ao clicar fora
@@ -1440,6 +1475,21 @@ const ConciliaPlanoContasModal: React.FC<
 						</div>
 					</div>
 
+					{unico && (
+						<div className="-mt-2 mb-2 flex flex-wrap items-center gap-x-2 text-sm">
+							<button
+								type="button"
+								className="font-semibold text-blue-600 hover:text-blue-800 underline-offset-2 hover:underline"
+								onClick={() => setDetalharItensAberto(true)}
+							>
+								Detalhar por itens
+							</button>
+							<span className="text-gray-500">
+								{isReceita ? 'valor e centro em cada item' : 'valor, plano e centro em cada item (ex.: fatura de cartão)'}
+							</span>
+						</div>
+					)}
+
 					<hr className="border-gray-200 my-3" />
 					<div className="mb-2">
 						<button
@@ -1832,6 +1882,18 @@ const ConciliaPlanoContasModal: React.FC<
 				setRateios={setRateiosPlanos}
 				movimentosMultiplos={movimentosSelecionados.length > 1 ? movimentosSelecionados : undefined}
 			/>
+			{movimentosSelecionados.length <= 1 && (
+				<ModalDetalharItens
+					isOpen={detalharItensAberto}
+					onClose={() => setDetalharItensAberto(false)}
+					movimento={movimento}
+					planos={planos}
+					centros={centroCustos}
+					planosAtuais={planosAtuaisDetalhe}
+					centrosAtuais={centrosAtuaisDetalhe}
+					onConfirmar={aplicarDetalheItens}
+				/>
+			)}
 			<ModalFinanciamento
 				isOpen={modalFinanciamentoOpen}
 				onClose={(gravacaoIncompleta?: boolean) => {

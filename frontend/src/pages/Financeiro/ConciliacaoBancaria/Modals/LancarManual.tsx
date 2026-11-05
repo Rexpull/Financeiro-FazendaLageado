@@ -536,6 +536,9 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
               value={`${conta?.bancoNome} | ${conta?.numConta} | ${conta?.responsavel}`}
               disabled
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Para lançar em outra conta, feche e troque a conta no topo da Conciliação.
+            </p>
           </div>
 
           {/* Plano de Contas */}
