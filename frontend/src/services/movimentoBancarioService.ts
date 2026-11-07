@@ -239,6 +239,10 @@ export const salvarMovimentoBancario = async (
 			if (movimento.limparConciliacao) {
 				camposAlterados.limparConciliacao = true;
 			}
+			// "Lembrar esta classificação": true = remember, false = forget, absent = memory untouched
+			if (typeof movimento.lembrarClassificacao === 'boolean') {
+				camposAlterados.lembrarClassificacao = movimento.lembrarClassificacao;
+			}
 			if (movimento.centroCustosList !== undefined) {
 				camposAlterados.centroCustosList = movimento.centroCustosList;
 			}
@@ -258,7 +262,17 @@ export const salvarMovimentoBancario = async (
 			
 			// O backend agora retorna o movimento completo com centroCustosList
 			const movimentoAtualizado = await res.json() as MovimentoBancario;
-			if (!opts.silencioso) toast.success(`Movimento atualizado com sucesso!`);
+			const memoria = movimentoAtualizado.memoriaResultado;
+			if (memoria?.acao === 'salva') {
+				toast.success('Classificação salva. Nas próximas importações desta conta, este lançamento já vem classificado.');
+			} else if (memoria?.acao === 'esquecida') {
+				toast.success('Classificação salva. A conta não lembra mais este lançamento.');
+			} else if (!opts.silencioso) {
+				toast.success(`Movimento atualizado com sucesso!`);
+			}
+			if (memoria?.acao === 'recusada') {
+				toast.warning(`A classificação foi salva, mas não será lembrada: ${memoria.motivo ?? ''}`.trim(), { autoClose: 8000 });
+			}
 			return movimentoAtualizado;
 		} else {
 			// Se for uma criação (POST), enviar todos os campos necessários
@@ -295,9 +309,10 @@ export const salvarMovimentosOFX = async (
 	idContaCorrente: number,
 	setCurrentIndex?: (i: number) => void,
 	setNovosExistentes?: (novos: number, existentes: number) => void
-): Promise<{ movimentos: MovimentoBancario[], novos: number, existentes: number }> => {
+): Promise<{ movimentos: MovimentoBancario[], novos: number, existentes: number, classificadosPorMemoria: number }> => {
 	const movimentosFinal: MovimentoBancario[] = [];
 	let novos = 0;
+	let classificadosPorMemoria = 0;
 	let encontrados = 0;
 	const BATCH_SIZE = 10; // Processa 10 movimentos por vez
 
@@ -368,6 +383,7 @@ export const salvarMovimentosOFX = async (
 				existentes?: number;
 				erros?: number;
 				detalhesErros?: unknown[];
+				classificadosPorMemoria?: number;
 			};
 			console.log(`✅ Lote processado:`, batchResult);
 
@@ -381,6 +397,7 @@ export const salvarMovimentosOFX = async (
 				movimentosFinal.push(...batchResult.movimentos);
 				novos += batchResult.novos || 0;
 				encontrados += batchResult.existentes || 0;
+				classificadosPorMemoria += batchResult.classificadosPorMemoria || 0;
 			}
 
 			// Atualizar progresso
@@ -402,7 +419,7 @@ export const salvarMovimentosOFX = async (
 	}
 
 	console.log(`🎉 Processamento concluído: ${novos} novos, ${encontrados} existentes`);
-	return { movimentos: movimentosFinal, novos, existentes: encontrados };
+	return { movimentos: movimentosFinal, novos, existentes: encontrados, classificadosPorMemoria };
 };
 
 export const buscarMovimentoBancarioById = async (id: number): Promise<MovimentoBancario> => {

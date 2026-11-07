@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import EtiquetaMemoria from './EtiquetaMemoria';
 import * as XLSX from 'xlsx';
 import DialogModal from '../../../components/DialogModal';
 import LancamentoManual from './Modals/LancarManual';
@@ -26,7 +27,9 @@ import {
 	faInfo,
 	faInfoCircle,
 	faUndo,
+	faBrain,
 } from '@fortawesome/free-solid-svg-icons';
+import MemoriasConta from './Modals/MemoriasConta';
 import {
 	listarMovimentosBancarios,
 	listarMovimentosBancariosPaginado,
@@ -83,6 +86,7 @@ const MovimentoBancarioTable: React.FC = () => {
 	const [filteredMovimentos, setFilteredMovimentos] = useState<MovimentoBancario[]>([]);
 	const [modalIsOpen, setModalIsOpen] = useState(false);
 	const [acoesMenu, setAcoesMenu] = useState(false);
+	const [memoriasAberto, setMemoriasAberto] = useState(false);
 	const [modalImportOFXIsOpen, setModalImportOFXIsOpen] = useState(false);
 	const [modalFiltroMovimentosIsOpen, setModalFiltroMovimentosIsOpen] = useState(false);
 	const [modalContaIsOpen, setModalContaIsOpen] = useState(false);
@@ -955,7 +959,9 @@ const MovimentoBancarioTable: React.FC = () => {
 			linhas.push(`Até: ${fmtData(dataFim)}`);
 		}
 
-		linhas.push(statusFiltro === 'pendentes' ? 'Status: só pendentes' : 'Status: todos');
+		linhas.push(
+			statusFiltro === 'pendentes' ? 'Status: só pendentes' : statusFiltro === 'memoria' ? 'Status: classificados pela memória' : 'Status: todos',
+		);
 
 		if (planosFiltroIds?.length) {
 			const nomes = planosFiltroIds.map((id) => planos.find((p) => p.id === id)?.descricao).filter(Boolean) as string[];
@@ -1021,12 +1027,27 @@ const MovimentoBancarioTable: React.FC = () => {
 						{acoesMenu && (
 							<div
 								className="absolute flex flex-col bg-white shadow-md font-medium rounded-md border p-1 mt-2 z-10"
-								style={{ width: '9rem' }}
+								style={{ width: '11.5rem' }}
 							>
 								<button onClick={() => setModalTransferirIsOpen(true)}>
 									<p className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100">
 										<FontAwesomeIcon icon={faExchange} className="mr-2" />
 										Transferir
+									</p>
+								</button>
+								<button
+									onClick={() => {
+										setAcoesMenu(false);
+										setMemoriasAberto(true);
+									}}
+									disabled={!contaSelecionada?.id}
+								>
+									<p
+										className="font-bold text-sm rounded text-left text-gray-800 mb-1 px-2 py-1 hover:bg-gray-100"
+										title="Classificações que esta conta lembra nas próximas importações"
+									>
+										<FontAwesomeIcon icon={faBrain} className="mr-2" />
+										Memórias da conta
 									</p>
 								</button>
 								<button onClick={exportarParaPDF} disabled={filteredMovimentos && filteredMovimentos.length <= 0}>
@@ -1263,7 +1284,8 @@ const MovimentoBancarioTable: React.FC = () => {
 														onClick={() => openModalConcilia(movBancario)}
 														title="Movimentações sem efeito — clique para editar a conciliação"
 													>
-														{textoPlanoTransferencia(movBancario, planos)}
+														<EtiquetaMemoria mov={movBancario} />
+{textoPlanoTransferencia(movBancario, planos)}
 													</td>
 												) : isFinanciamentoVinculadoContrato(movBancario) ? (
 													<td
@@ -1316,7 +1338,8 @@ const MovimentoBancarioTable: React.FC = () => {
 																		: ''
 															}
 														>
-															{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
+															{movBancario.tipoMovimento === 'D' && <EtiquetaMemoria mov={movBancario} />}
+{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
 														</td>
 														{/* Coluna Centro de Custos */}
 														<td
@@ -1341,7 +1364,8 @@ const MovimentoBancarioTable: React.FC = () => {
 																	: undefined
 															}
 														>
-															{textoCentroPadrao(movBancario, centrosDisponiveis)}
+															{movBancario.tipoMovimento === 'C' && <EtiquetaMemoria mov={movBancario} />}
+{textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</td>
 													</>
 												)}
@@ -1478,7 +1502,8 @@ const MovimentoBancarioTable: React.FC = () => {
 														onClick={() => openModalConcilia(movBancario)}
 														title="Movimentações sem efeito — clique para editar a conciliação"
 													>
-														{textoPlanoTransferencia(movBancario, planos)}
+														<EtiquetaMemoria mov={movBancario} />
+{textoPlanoTransferencia(movBancario, planos)}
 													</div>
 												</div>
 											) : isFinanciamentoVinculadoContrato(movBancario) ? (
@@ -1533,7 +1558,8 @@ const MovimentoBancarioTable: React.FC = () => {
 																		: ''
 															}
 														>
-															{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
+															{movBancario.tipoMovimento === 'D' && <EtiquetaMemoria mov={movBancario} />}
+{movBancario.tipoMovimento === 'D' ? textoPlanoDespesa(movBancario, planos) : '-'}
 														</div>
 													</div>
 													{/* Centro de Custos */}
@@ -1560,7 +1586,8 @@ const MovimentoBancarioTable: React.FC = () => {
 																	: undefined
 															}
 														>
-															{textoCentroPadrao(movBancario, centrosDisponiveis)}
+															{movBancario.tipoMovimento === 'C' && <EtiquetaMemoria mov={movBancario} />}
+{textoCentroPadrao(movBancario, centrosDisponiveis)}
 														</div>
 													</div>
 												</div>
@@ -1783,6 +1810,14 @@ const MovimentoBancarioTable: React.FC = () => {
 			/>
 
 			<SelectContaCorrente isOpen={modalContaIsOpen} onClose={() => setModalContaIsOpen(false)} onSelect={handleSelectConta} />
+			<MemoriasConta
+				isOpen={memoriasAberto}
+				onClose={() => setMemoriasAberto(false)}
+				conta={contaSelecionada}
+				planos={planos}
+				centros={centrosDisponiveis}
+				onExcluida={() => fetchMovimentos(currentPage).catch(() => undefined)}
+			/>
 
 			<Transferir isOpen={modalTransferirIsOpen} onClose={() => setModalTransferirIsOpen(false)} onTransferir={handleTransferir} />
 

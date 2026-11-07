@@ -29,6 +29,8 @@ export interface DadosConciliacao {
 	parcelado?: boolean;
 	resultadoList?: Resultado[];
 	centroCustosList?: CentroCustosRateio[];
+	/** "Lembrar esta classificação" (individual only): true = remember, false = forget, undefined = untouched */
+	lembrarClassificacao?: boolean;
 }
 
 type MovimentoConciliado = MovimentoBancarioEdicao;
@@ -58,6 +60,7 @@ export function montarMovimentoConciliacaoIndividual(base: MovimentoBancario, da
 		modalidadeMovimento: data.modalidadeMovimento,
 		idPessoa: data.idPessoa ?? null,
 		idCentroCustos: data.idCentroCustos ?? null,
+		lembrarClassificacao: data.lembrarClassificacao,
 	};
 
 	// Use the plan split chosen in the modal ([] = single plano via idPlanoContas);

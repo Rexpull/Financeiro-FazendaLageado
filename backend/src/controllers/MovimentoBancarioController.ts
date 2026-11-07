@@ -11,6 +11,8 @@ import { ParametroRepository } from '../repositories/ParametroRepository';
 import { PlanosFinanciamentoParametros } from '../utils/isMovimentoFinanciamento';
 import { montarFluxoCaixaAno, normalizarTipoAgrupamento, type FluxoCaixaAno, type TipoAgrupamentoFluxo } from '../utils/fluxoCaixaAno';
 import { TransferenciaInvalidaError, validarTransferencia } from '../utils/transferencia';
+import { MemoriaConciliacaoRepository, type ResultadoLembrar } from '../repositories/MemoriaConciliacaoRepository';
+import { assinaturaClassificacao } from '../utils/memoriaConciliacao';
 
 export class MovimentoBancarioController {
 	private movBancarioRepository: MovimentoBancarioRepository;
@@ -22,6 +24,7 @@ export class MovimentoBancarioController {
 	private bancoRepo: BancoRepository;
 	private centroCustosRepository: CentroCustosRepository;
 	private parametroRepository: ParametroRepository;
+	private memoriaRepository: MemoriaConciliacaoRepository;
 
 	constructor(
 		movBancarioRepository: MovimentoBancarioRepository,
@@ -33,6 +36,7 @@ export class MovimentoBancarioController {
 		bancoRepo: BancoRepository,
 		centroCustosRepository: CentroCustosRepository,
 		parametroRepository: ParametroRepository,
+		memoriaRepository: MemoriaConciliacaoRepository,
 	) {
 		this.movBancarioRepository = movBancarioRepository;
 		this.planoContaRepository = planoContaRepository;
@@ -43,6 +47,7 @@ export class MovimentoBancarioController {
 		this.bancoRepo = bancoRepo;
 		this.centroCustosRepository = centroCustosRepository;
 		this.parametroRepository = parametroRepository;
+		this.memoriaRepository = memoriaRepository;
 	}
 
 	/** Query of /api/movBancario/export(-pdf): the same parameters as /paginado, so the file matches the list on screen. */
@@ -620,21 +625,37 @@ export class MovimentoBancarioController {
 
 			if (method === 'PUT' && pathname.startsWith('/api/movBancario/')) {
 				const id = parseInt(pathname.split('/')[3]);
-				const body: MovimentoBancario = await req.json();
+				const { lembrarClassificacao, ...body }: MovimentoBancario = await req.json();
 				console.log(`✏️ Atualizando movimento ID ${id}`, JSON.stringify(body, null, 2));
+				// A line classified by a memory keeps the "memória" tag only while its classification is the same
+				const antes = await this.movBancarioRepository.getById(id);
 				await this.movBancarioRepository.update(id, body);
 				console.log('✅ Atualização realizada com sucesso');
 
 				// Buscar o movimento atualizado com centroCustosList
-				const movimentoAtualizado = await this.movBancarioRepository.getById(id);
+				let movimentoAtualizado = await this.movBancarioRepository.getById(id);
 				if (!movimentoAtualizado) {
 					return new Response(JSON.stringify({ error: 'Movimento não encontrado após atualização' }), {
 						status: 404,
 						headers: corsHeaders,
 					});
 				}
+				if (antes?.idMemoriaConciliacao && assinaturaClassificacao(antes) !== assinaturaClassificacao(movimentoAtualizado)) {
+					await this.memoriaRepository.desmarcarMovimento(id);
+					movimentoAtualizado = { ...movimentoAtualizado, idMemoriaConciliacao: null };
+				}
 
-				return new Response(JSON.stringify(movimentoAtualizado), {
+				// "Lembrar esta classificação": remember (true) or forget (false) this line's text for the conta;
+				// the outcome goes back so the screen can say it (a memory can be refused)
+				let memoriaResultado: ResultadoLembrar | undefined;
+				if (lembrarClassificacao === true) {
+					memoriaResultado = await this.memoriaRepository.salvarDoMovimento(movimentoAtualizado);
+				} else if (lembrarClassificacao === false) {
+					memoriaResultado = await this.memoriaRepository.excluirDoMovimento(movimentoAtualizado);
+					movimentoAtualizado = (await this.movBancarioRepository.getById(id)) ?? movimentoAtualizado;
+				}
+
+				return new Response(JSON.stringify(memoriaResultado ? { ...movimentoAtualizado, memoriaResultado } : movimentoAtualizado), {
 					status: 200,
 					headers: corsHeaders,
 				});

@@ -29,6 +29,7 @@ import ModalRateioCentroCustos from './ModalRateioCentroCustos';
 import ModalRateioPlano from './ModalRateioPlano';
 import ModalDetalharItens from './ModalDetalharItens';
 import type { TotalPorId } from './detalharItens';
+import { analisarMemoriaDoMovimento, type AnaliseMemoria } from '../../../../services/memoriaConciliacaoService';
 import ModalFinanciamento from '../../Financiamento/ModalFinanciamento';
 import { listarFinanciamentos } from '../../../../services/financiamentoService';
 import { Financiamento } from '../../../../../../backend/src/models/Financiamento';
@@ -169,6 +170,36 @@ const ConciliaPlanoContasModal: React.FC<
 	const [liquidationValor, setLiquidationValor] = useState<string>('');
 	const [mostrarMaisOpcoes, setMostrarMaisOpcoes] = useState(false);
 	const [detalharItensAberto, setDetalharItensAberto] = useState(false);
+	// "Lembrar esta classificação nos próximos extratos": ticked when the conta already remembers this line's text
+	const [lembrar, setLembrar] = useState(false);
+	const [lembrarInicial, setLembrarInicial] = useState(false);
+	// null while loading (the box stays disabled, so a click cannot be lost when the answer arrives)
+	const [analiseMemoria, setAnaliseMemoria] = useState<AnaliseMemoria | null>(null);
+	const [analiseMemoriaFalhou, setAnaliseMemoriaFalhou] = useState(false);
+	const modoIndividual = movimentosSelecionados.length <= 1;
+
+	useEffect(() => {
+		setLembrar(false);
+		setLembrarInicial(false);
+		setAnaliseMemoria(null);
+		setAnaliseMemoriaFalhou(false);
+		if (!isOpen || !modoIndividual || !movimento?.id) return;
+		let ativo = true;
+		analisarMemoriaDoMovimento(movimento.id)
+			.then((analise) => {
+				if (!ativo) return;
+				setAnaliseMemoria(analise);
+				setLembrar(!!analise.memoria);
+				setLembrarInicial(!!analise.memoria);
+			})
+			.catch(() => {
+				// without the answer the box stays unticked and saving leaves the memory as it is
+				if (ativo) setAnaliseMemoriaFalhou(true);
+			});
+		return () => {
+			ativo = false;
+		};
+	}, [isOpen, modoIndividual, movimento?.id]);
 
 	const [formData, setFormData] = useState<FormData>({
 		idPlanoContas: null,
@@ -985,6 +1016,10 @@ const ConciliaPlanoContasModal: React.FC<
 				);
 				await onConciliaMultiplos(movimentosLote);
 			} else {
+				// Financing lines are never remembered; untouched box = memory untouched
+				if (modalidadeMovimento !== 'financiamento') {
+					dados.lembrarClassificacao = lembrar ? true : lembrarInicial ? false : undefined;
+				}
 				await handleConcilia(dados as DadosConciliacao);
 			}
 			// Fecha só depois que o salvamento terminou com sucesso
@@ -1845,7 +1880,18 @@ const ConciliaPlanoContasModal: React.FC<
 					{renderCampos()}
 				</div>
 
-				<div className="sticky bottom-0 z-10 flex justify-end border-t bg-white px-4 py-3 rounded-b-lg">
+				<div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 border-t bg-white px-4 py-3 rounded-b-lg">
+					{modoIndividual && modalidadeMovimento !== 'financiamento' && (
+						<CaixaLembrar
+							analise={analiseMemoria}
+							falhou={analiseMemoriaFalhou}
+							lembrar={lembrar}
+							lembrarInicial={lembrarInicial}
+							onChange={setLembrar}
+							disabled={isSaving}
+							historico={movimento.historico ?? ''}
+						/>
+					)}
 					<button
 						className={`font-semibold px-5 py-2 rounded flex items-center gap-2 transition ${
 							isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'
@@ -2044,6 +2090,67 @@ const ConciliaPlanoContasModal: React.FC<
 				</div>
 			</Modal>
 		</>
+	);
+};
+
+/**
+ * "Lembrar esta classificação nos próximos extratos" with what it means for THIS line: the text that will be
+ * recognized, a warning when that text was classified in different ways before, and what unticking does.
+ */
+const CaixaLembrar: React.FC<{
+	analise: AnaliseMemoria | null;
+	falhou: boolean;
+	lembrar: boolean;
+	lembrarInicial: boolean;
+	onChange: (v: boolean) => void;
+	disabled: boolean;
+	historico: string;
+}> = ({ analise, falhou, lembrar, lembrarInicial, onChange, disabled, historico }) => {
+	const carregando = !analise && !falhou;
+	const semTexto = !!analise && !analise.chave;
+	const bloqueada = disabled || carregando || falhou || semTexto;
+	const direcao = analise?.tipoMovimento === 'C' ? 'entradas' : 'saídas';
+	let nota: React.ReactNode = null;
+	if (falhou) nota = <span className="text-gray-500">Não foi possível verificar a memória deste lançamento.</span>;
+	else if (semTexto) nota = <span className="text-gray-500">O histórico deste lançamento não tem texto para reconhecer.</span>;
+	else if (analise && lembrar)
+		nota = (
+			<>
+				<span className="text-gray-500">
+					{/\d/.test(historico) ? (
+						<>
+							Vale para as próximas {direcao} desta conta com <span className="font-medium text-gray-700">“{analise.chave}”</span> (datas e
+							números são ignorados).
+						</>
+					) : (
+						<>Vale para as próximas {direcao} desta conta com este mesmo histórico.</>
+					)}
+				</span>
+				{analise.variacoes > 1 && (
+					<span className="block text-amber-800">
+						Atenção: este histórico já foi lançado em {analise.variacoes} planos diferentes nesta conta. Com a memória, todos virão neste plano.
+					</span>
+				)}
+			</>
+		);
+	else if (analise && lembrarInicial && !lembrar) nota = <span className="text-amber-800">Ao salvar, a conta deixa de lembrar este lançamento.</span>;
+	return (
+		<div className="mr-auto min-w-0 flex-1 basis-64 text-sm">
+			<label className={`inline-flex items-center gap-2 select-none ${bloqueada ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer'}`}>
+				<input
+					type="checkbox"
+					className="h-4 w-4 accent-orange-500 cursor-pointer disabled:cursor-not-allowed"
+					checked={lembrar}
+					onChange={(e) => onChange(e.target.checked)}
+					disabled={bloqueada}
+				/>
+				<span>
+					Lembrar esta classificação nos próximos extratos
+					{lembrarInicial && <span className="ml-1 text-xs font-medium text-orange-700">(já lembrado)</span>}
+				</span>
+			</label>
+			{nota && <p className="mt-0.5 ml-6 text-xs leading-snug">{nota}</p>}
+		</div>
 	);
 };
 

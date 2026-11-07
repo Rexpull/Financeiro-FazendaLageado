@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import EtiquetaMemoria from './EtiquetaMemoria';
 import Modal from 'react-modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheck, faEquals, faMinus, faSearch, faSort, faSortDown, faSortUp, faTimes } from '@fortawesome/free-solid-svg-icons';
@@ -858,7 +859,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 														onClick={() => openModalConcilia(mov)}
 														title="Movimentações sem efeito — clique para editar a conciliação"
 													>
-														{textoPlanoTransferencia(mov, planos)}
+														<EtiquetaMemoria mov={mov} />
+{textoPlanoTransferencia(mov, planos)}
 													</td>
 												) : isFinanciamentoVinculadoContrato(mov) ? (
 													<td
@@ -907,7 +909,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 																		: ''
 															}
 														>
-															{mov.tipoMovimento === 'D' ? textoPlanoDespesa(mov, planos) : '-'}
+															{mov.tipoMovimento === 'D' && <EtiquetaMemoria mov={mov} />}
+{mov.tipoMovimento === 'D' ? textoPlanoDespesa(mov, planos) : '-'}
 														</td>
 														{/* Coluna Centro de Custos */}
 														<td
@@ -929,7 +932,8 @@ const ConciliacaoOFXModal = ({ isOpen, onClose, movimentos, totalizadores, idCon
 																	: undefined
 															}
 														>
-															{textoCentroPadrao(mov, centrosDisponiveis)}
+															{mov.tipoMovimento === 'C' && <EtiquetaMemoria mov={mov} />}
+{textoCentroPadrao(mov, centrosDisponiveis)}
 														</td>
 													</>
 												)}

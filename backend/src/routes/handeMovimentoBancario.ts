@@ -8,8 +8,11 @@ import { PessoaRepository } from "../repositories/PessoaRepository";
 import { BancoRepository } from "../repositories/BancoRepository";
 import { CentroCustosRepository } from "../repositories/CentroCustosRepository";
 import { ParametroRepository } from "../repositories/ParametroRepository";
+import { MemoriaConciliacaoRepository, garantirSchemaMemoriaUmaVez } from "../repositories/MemoriaConciliacaoRepository";
 
 export async function handleRequest(req: Request, DB: D1Database): Promise<Response> {
+    // MovimentoBancario.idMemoriaConciliacao is read by getById/getPaginado: make sure it exists first
+    await garantirSchemaMemoriaUmaVez(DB);
     const repository = new MovimentoBancarioRepository(DB);
     const planoContaRepository = new PlanoContaRepository(DB)
     const parcelaFinanciamentoRepository = new ParcelaFinanciamentoRepository(DB);
@@ -29,7 +32,8 @@ export async function handleRequest(req: Request, DB: D1Database): Promise<Respo
         pessoaRepository,
         bancoRepository,
         centroCustosRepository,
-        parametroRepository
+        parametroRepository,
+        new MemoriaConciliacaoRepository(DB)
     );
     return controller.handleRequest(req);
 }

@@ -29,4 +29,10 @@ export interface MovimentoBancario {
     centroCustosList?: MovimentoCentroCustos[];
     /** PUT only: "Limpar conciliação" — removes every plan and cost-centre split (also rateios) */
     limparConciliacao?: boolean;
+    /** Line classified by a "memória de conciliação" on import (shows the "memória" tag); null after a manual change */
+    idMemoriaConciliacao?: number | null;
+    /** PUT only: true = remember this classification for the next imports of the conta; false = forget it */
+    lembrarClassificacao?: boolean;
+    /** PUT response only: what happened to the memory (saved, forgotten, or refused with the reason) */
+    memoriaResultado?: { acao: 'salva' | 'esquecida' | 'recusada'; motivo?: string };
 }

@@ -12,6 +12,7 @@ import { handleRequest as handleNotificacaoRequest } from "./routes/handleNotifi
 import { handleRequest as handleCentroCustosRequest } from "./routes/handleCentroCustos";
 import { handleRequest as handleRelatorioFinanciamentosRequest } from "./routes/handleRelatorioFinanciamentos";
 import { handleRequest as handleCaixaRequest } from "./routes/handleCaixa";
+import { handleMemoriaConciliacao } from "./routes/handleMemoriaConciliacao";
 import scheduler from "./workers/scheduler";
 import { exigeAutenticacao } from "./utils/authGuard";
 
@@ -68,6 +69,8 @@ export default {
         return handleBancoRequest(req, env.DB);
       case pathname.startsWith("/api/auth"):
         return handleAuthRequest(req, env, env.DB);
+      case pathname.startsWith("/api/memoriaConciliacao"):
+        return handleMemoriaConciliacao(req, env.DB);
       case pathname.startsWith("/api/caixa"):
         return handleCaixaRequest(req, env.DB);
       case pathname.startsWith("/api/dashboard"):

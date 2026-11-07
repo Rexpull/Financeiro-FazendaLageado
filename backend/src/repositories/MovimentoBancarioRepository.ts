@@ -6,6 +6,9 @@ import { RenegociacaoRepository } from './RenegociacaoRepository';
 import { parcelasComRenegociacoes } from '../utils/saldoDevedor';
 import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository';
 import { MovimentoCentroCustosRepository } from './MovimentoCentroCustosRepository';
+import { MemoriaConciliacaoRepository, classificacaoDaMemoria, direcao } from './MemoriaConciliacaoRepository';
+import { chaveMemoria } from '../utils/memoriaConciliacao';
+import type { MemoriaConciliacao } from '../models/MemoriaConciliacao';
 import {
 	coerceMonetaryValue,
 	parseOfxIdentificadorParts,
@@ -66,12 +69,14 @@ export class MovimentoBancarioRepository {
 	private resultadoRepo: ResultadoRepository;
 	private parcelaRepo: ParcelaFinanciamentoRepository;
 	private movimentoCentroCustosRepo: MovimentoCentroCustosRepository;
+	private memoriaRepo: MemoriaConciliacaoRepository;
 
 	constructor(db: D1Database) {
 		this.db = db;
 		this.resultadoRepo = new ResultadoRepository(db);
 		this.parcelaRepo = new ParcelaFinanciamentoRepository(db);
 		this.movimentoCentroCustosRepo = new MovimentoCentroCustosRepository(db);
+		this.memoriaRepo = new MemoriaConciliacaoRepository(db);
 	}
 
 	private normalizeIncomingMovimento(movimento: MovimentoBancario): MovimentoBancario {
@@ -113,6 +118,7 @@ export class MovimentoBancarioRepository {
 			parcelado: result.parcelado === 1 || result.parcelado === true,
 			idFinanciamento: result.idFinanciamento as number | undefined,
 			idCentroCustos: result.idCentroCustos as number | undefined,
+			idMemoriaConciliacao: (result.idMemoriaConciliacao as number | null | undefined) ?? null,
 			...extras,
 		};
 	}
@@ -585,9 +591,24 @@ export class MovimentoBancarioRepository {
 		existentes: number;
 		erros: number;
 		detalhesErros: string[];
+		classificadosPorMemoria: number;
 	}> {
 		const movimentosProcessados: MovimentoBancario[] = [];
 		let novos = 0;
+		let classificadosPorMemoria = 0;
+		// Memórias de conciliação of each conta of the batch, loaded once (key: C|D + chave)
+		await this.memoriaRepo.ensureSchema();
+		const memoriasPorConta = new Map<number, Map<string, MemoriaConciliacao>>();
+		const memoriaPara = async (m: MovimentoBancario): Promise<MemoriaConciliacao | null> => {
+			const conta = Number(m.idContaCorrente);
+			const chave = chaveMemoria(m.historico);
+			if (!conta || !chave) return null;
+			if (!memoriasPorConta.has(conta)) {
+				const lista = await this.memoriaRepo.listarPorConta(conta);
+				memoriasPorConta.set(conta, new Map(lista.map((x) => [`${x.tipoMovimento}|${x.chave}`, x])));
+			}
+			return memoriasPorConta.get(conta)!.get(`${direcao(m)}|${chave}`) ?? null;
+		};
 		let existentes = 0;
 		let erros = 0;
 		const detalhesErros: string[] = [];
@@ -698,9 +719,14 @@ export class MovimentoBancarioRepository {
 					continue;
 				}
 
-				// Criar novo movimento
-				const idMov = await this.create(mov);
+				// Criar novo movimento — already classified when the conta remembers this text (never a financing line)
+				const memoria = mov.modalidadeMovimento === 'financiamento' || Number(mov.idFinanciamento) > 0 ? null : await memoriaPara(mov);
+				const idMov = await this.create(memoria ? { ...mov, ...classificacaoDaMemoria(memoria, mov) } : mov);
 				idsJaUsados.add(idMov);
+				if (memoria) {
+					await this.memoriaRepo.registrarUso(idMov, memoria.id);
+					classificadosPorMemoria++;
+				}
 				console.log(`✅ Novo movimento criado: ID ${idMov}`);
 
 				// Buscar o movimento completo criado
@@ -721,7 +747,7 @@ export class MovimentoBancarioRepository {
 		}
 
 		console.log(`🎉 Lote processado: ${novos} novos, ${existentes} existentes, ${erros} erros`);
-		return { movimentos: movimentosProcessados, novos, existentes, erros, detalhesErros };
+		return { movimentos: movimentosProcessados, novos, existentes, erros, detalhesErros, classificadosPorMemoria };
 	}
 
 	/** Drops rateio lines without a valid centro (MovimentoCentroCustos.idCentroCustos is NOT NULL). */
@@ -1779,7 +1805,7 @@ export class MovimentoBancarioRepository {
 				SELECT id, dtMovimento, historico, idPlanoContas, idContaCorrente, valor, saldo, ideagro,
 					   numero_documento, descricao, transf_origem, transf_destino, identificador_ofx,
 					   criado_em, atualizado_em, idUsuario, tipoMovimento, modalidadeMovimento,
-					   idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos
+					   idBanco, idPessoa, parcelado, idFinanciamento, idCentroCustos, idMemoriaConciliacao
 				FROM MovimentoBancario
 				WHERE id = ?
 			`,
@@ -2113,11 +2139,13 @@ export class MovimentoBancarioRepository {
 	private sqlFiltroStatus(status: string | undefined, alias = 'mb'): string | null {
 		if (status === 'pendentes') return sqlMovimentoPendente(alias);
 		if (status === 'conciliados') return sqlMovimentoClassificado(alias);
+		// lines that came classified by a memória de conciliação (and were not reclassified by hand)
+		if (status === 'memoria') return `${alias}.idMemoriaConciliacao IS NOT NULL`;
 		return null;
 	}
 
-	private statusFiltroNome(status: string | undefined): 'Pendentes' | 'Conciliados' | 'Todos' {
-		return status === 'pendentes' ? 'Pendentes' : status === 'conciliados' ? 'Conciliados' : 'Todos';
+	private statusFiltroNome(status: string | undefined): 'Pendentes' | 'Conciliados' | 'Pela memória' | 'Todos' {
+		return status === 'pendentes' ? 'Pendentes' : status === 'conciliados' ? 'Conciliados' : status === 'memoria' ? 'Pela memória' : 'Todos';
 	}
 
 	/** Plan descriptions of the movement: own plan, else the Resultado plans (split) joined by ' / '. */
@@ -2145,7 +2173,7 @@ export class MovimentoBancarioRepository {
 	}
 
 	private statusExportacaoConciliacao(status: string | undefined): string {
-		return status === 'pendentes' ? 'Apenas Pendentes' : status === 'conciliados' ? 'Apenas Conciliados' : 'Todos os Movimentos';
+		return status === 'pendentes' ? 'Apenas Pendentes' : status === 'conciliados' ? 'Apenas Conciliados' : status === 'memoria' ? 'Classificados pela memória' : 'Todos os Movimentos';
 	}
 
 	async getPaginado(filters: {
@@ -2298,6 +2326,7 @@ export class MovimentoBancarioRepository {
 						parcelado: result.parcelado === 1,
 						idFinanciamento: result.idFinanciamento as number | undefined,
 						idCentroCustos: result.idCentroCustos as number | undefined,
+						idMemoriaConciliacao: (result.idMemoriaConciliacao as number | null | undefined) ?? null,
 						resultadoList: resultadoList,
 						centroCustosList: centroCustosList,
 					};

@@ -186,7 +186,7 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
       <div className="p-4">
 
         {/* 🔹 Filtro por Status */}
-        <div className="flex items-center justify-center gap-6 mb-4 mt-2">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mb-4 mt-2">
           <label className={`flex items-center gap-2 cursor-pointer transition-all ${status === "todos" ? "" : "text-gray-500"}`}>
             <input type="radio" name="status" value="todos" checked={status === "todos"} onChange={() => setStatus("todos")} className="hidden" />
             <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "todos" ? "bg-orange-600 border-orange-600" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
@@ -201,6 +201,17 @@ const FiltroMovimentosModal: React.FC<FiltroMovimentosModalProps> = ({
               {status === "pendentes" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck}/></span>}
             </div>
             <span>Pendentes de conciliação</span>
+          </label>
+
+          <label
+            className={`flex items-center gap-2 cursor-pointer transition-all ${status === "memoria" ? "" : "text-gray-500"}`}
+            title="Lançamentos que vieram classificados pela memória da conta e ainda não foram mudados"
+          >
+            <input type="radio" name="status" value="memoria" checked={status === "memoria"} onChange={() => setStatus("memoria")} className="hidden" />
+            <div className={`w-3 h-3 flex items-center justify-center rounded-full border-2 ${status === "memoria" ? "bg-orange-600 border-orange-600" : "border-gray-400"}`} style={{padding: '0.60rem'}}>
+              {status === "memoria" && <span className="text-white text-md"><FontAwesomeIcon icon={faCheck}/></span>}
+            </div>
+            <span>Classificados pela memória</span>
           </label>
         </div>
 
