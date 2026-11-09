@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { ContratoRelatorioFinanciamentos, RelatorioFinanciamentosData } from '../../services/relatorioService';
 import {
 	anosDisponiveis,
+	algumFiltroEmUso,
 	contarFiltrosExtras,
 	graficosExportados,
 	intervaloRelatorio,
@@ -230,7 +231,10 @@ describe('lerPreferencias', () => {
 			graficos: { ativos: true },
 			compromissos: 'porAno',
 		});
-		expect(contarFiltrosExtras(p.refinos)).toBe(2);
+		expect(contarFiltrosExtras(p.refinos)).toBe(1); // banco (juros and garantia are on the toolbar now)
+		expect(algumFiltroEmUso(p.refinos)).toBe(true);
+		expect(algumFiltroEmUso({})).toBe(false);
+		expect(lerPreferencias(JSON.stringify({ visao: "emAtraso", refinos: { faixaJuros: "sem" } }), 2026)).toMatchObject({ visao: "emAtraso", refinos: { faixaJuros: "sem" } });
 		expect(lerPreferencias(JSON.stringify({ visao: 'outra', periodo: 'm13', ano: 1800 }), 2026)).toMatchObject({ visao: 'ativos', periodo: 'ano', ano: 2026 });
 	});
 });

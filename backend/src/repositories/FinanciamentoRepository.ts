@@ -2,6 +2,7 @@ import { Financiamento } from "../models/Financiamento";
 import { ParcelaFinanciamento } from "../models/ParcelaFinanciamento";
 import { garantirSemUso, plural } from "../utils/verificarUsoRegistro";
 import { garantirSchemaRenegociacao, RenegociacaoRepository } from "./RenegociacaoRepository";
+import { normalizarGarantia } from "../utils/matriculas";
 import type { RenegociacaoSaldoRow } from "../utils/saldoDevedor";
 import { infoRenegociacoes, type RenegociacaoRow } from "../utils/renegociacao";
 
@@ -140,7 +141,7 @@ export class FinanciamentoRepository {
 				taxaJurosAnual = null,
 				taxaJurosMensal = null,
 				numeroContrato,
-				numeroGarantia = null,
+				numeroGarantia: garantiaInformada = null,
 				observacao = null,
 				dataVencimentoPrimeiraParcela = null,
 				dataVencimentoUltimaParcela = null,
@@ -148,6 +149,8 @@ export class FinanciamentoRepository {
 				modalidade = null,
 				nomeModalidadeParticular = null
 			} = financiamento;
+			// matrículas always in the same form ("2319, 21175"), so the report filters match exactly
+			const numeroGarantia = normalizarGarantia(garantiaInformada);
 
 			console.log("Dados para inserção:", {
 				idBanco, idPessoa, responsavel, dataContrato, valor,
@@ -202,7 +205,7 @@ export class FinanciamentoRepository {
 				taxaJurosAnual = null,
 				taxaJurosMensal = null,
 				numeroContrato,
-				numeroGarantia = null,
+				numeroGarantia: garantiaInformada = null,
 				observacao = null,
 				dataVencimentoPrimeiraParcela = null,
 				dataVencimentoUltimaParcela = null,
@@ -210,6 +213,8 @@ export class FinanciamentoRepository {
 				modalidade = null,
 				nomeModalidadeParticular = null
 			} = financiamento;
+			// matrículas always in the same form ("2319, 21175"), so the report filters match exactly
+			const numeroGarantia = normalizarGarantia(garantiaInformada);
 
 			console.log("Dados para atualização:", {
 				id,

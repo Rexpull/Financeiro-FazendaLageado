@@ -1,10 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Popover } from '@mui/material';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFileExcel, faSliders, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { SEM_TOMADOR_FINANCIAMENTO, type ModalidadeFinanciamento } from '../../services/relatorioService';
 import type { Banco } from '../../../../backend/src/models/Banco';
+import type { Matricula } from '../../../../backend/src/models/Matricula';
+import { formatarMatricula, normalizarMatricula } from '../../../../backend/src/utils/matriculas';
 import {
+	algumFiltroEmUso,
 	contarFiltrosExtras,
 	OPCOES_PERIODO_RELATORIO,
 	VISOES,
@@ -27,6 +30,7 @@ export const FAIXAS_JUROS = [
 	{ value: '>10<=12', label: 'Mais de 10% até 12%' },
 	{ value: '>12<=15', label: 'Mais de 12% até 15%' },
 	{ value: '>15', label: 'Mais de 15%' },
+	{ value: 'sem', label: 'Sem taxa informada' },
 ];
 
 const foco = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
@@ -76,19 +80,13 @@ const AbasVisao: React.FC<{ visao: VisaoFinanciamentos; onVisao: (v: VisaoFinanc
 	);
 };
 
-/** "Mais filtros": banco, modalidade, garantia and juros in a popover, with a count of the ones in use. */
+/** "Mais filtros": banco and modalidade in a popover, with a count of the ones in use. */
 const MaisFiltros: React.FC<{
 	refinos: RefinosFinanciamentos;
 	onRefinos: (r: Partial<RefinosFinanciamentos>) => void;
 	bancos: Banco[];
 }> = ({ refinos, onRefinos, bancos }) => {
 	const [ancora, setAncora] = useState<HTMLElement | null>(null);
-	const [garantia, setGarantia] = useState(refinos.numeroGarantia ?? '');
-	useEffect(() => setGarantia(refinos.numeroGarantia ?? ''), [refinos.numeroGarantia]);
-	const aplicarGarantia = () => {
-		const v = garantia.trim() || undefined;
-		if (v !== refinos.numeroGarantia) onRefinos({ numeroGarantia: v });
-	};
 	const ativos = contarFiltrosExtras(refinos);
 	return (
 		<>
@@ -113,10 +111,7 @@ const MaisFiltros: React.FC<{
 			<Popover
 				open={!!ancora}
 				anchorEl={ancora}
-				onClose={() => {
-					aplicarGarantia();
-					setAncora(null);
-				}}
+				onClose={() => setAncora(null)}
 				anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
 				transformOrigin={{ vertical: 'top', horizontal: 'left' }}
 				slotProps={{ paper: { sx: { mt: 1, borderRadius: 2 } } }}
@@ -159,58 +154,19 @@ const MaisFiltros: React.FC<{
 								))}
 							</select>
 						</div>
-						<div>
-							<label className={labelPopover} htmlFor="fin-garantia">
-								Garantia (nº da matrícula)
-							</label>
-							<input
-								id="fin-garantia"
-								type="text"
-								value={garantia}
-								onChange={(e) => setGarantia(e.target.value)}
-								onBlur={aplicarGarantia}
-								onKeyDown={(e) => e.key === 'Enter' && aplicarGarantia()}
-								placeholder="Digite e tecle Enter"
-								className={`${select} w-full`}
-							/>
-						</div>
-						<div>
-							<label className={labelPopover} htmlFor="fin-juros">
-								Juros ao ano
-							</label>
-							<select
-								id="fin-juros"
-								value={refinos.faixaJuros || ''}
-								onChange={(e) => onRefinos({ faixaJuros: e.target.value || undefined })}
-								className={`${select} w-full`}
-							>
-								<option value="">Todas as faixas</option>
-								{FAIXAS_JUROS.map((f) => (
-									<option key={f.value} value={f.value}>
-										{f.label}
-									</option>
-								))}
-							</select>
-						</div>
 					</div>
 					<div className="flex justify-between items-center mt-4">
 						<button
 							type="button"
-							disabled={!ativos && !garantia}
-							onClick={() => {
-								setGarantia('');
-								onRefinos({ idBanco: undefined, modalidade: undefined, numeroGarantia: undefined, faixaJuros: undefined });
-							}}
+							disabled={!ativos}
+							onClick={() => onRefinos({ idBanco: undefined, modalidade: undefined })}
 							className={`text-sm text-gray-600 hover:text-gray-900 disabled:text-gray-300 rounded px-1 ${foco}`}
 						>
 							Limpar estes filtros
 						</button>
 						<button
 							type="button"
-							onClick={() => {
-								aplicarGarantia();
-								setAncora(null);
-							}}
+							onClick={() => setAncora(null)}
 							className={`h-9 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 ${foco}`}
 						>
 							Pronto
@@ -223,8 +179,8 @@ const MaisFiltros: React.FC<{
 };
 
 /**
- * Toolbar of the report (one row on a laptop, wraps on phones): view tabs, período, tomador,
- * "Mais filtros" and Excel. The período only applies to Contratados / Liquidados.
+ * Toolbar of the report (wraps on smaller screens): view tabs, período, tomador, matrícula (garantia),
+ * faixa de juros, "Mais filtros" and Excel. The período only applies to Contratados / Liquidados.
  */
 const BarraFiltrosFinanciamentos: React.FC<{
 	visao: VisaoFinanciamentos;
@@ -238,6 +194,7 @@ const BarraFiltrosFinanciamentos: React.FC<{
 	onRefinos: (r: Partial<RefinosFinanciamentos>) => void;
 	onLimpar: () => void;
 	tomadores: string[];
+	matriculas: Matricula[];
 	bancos: Banco[];
 	carregando: boolean;
 	exportando: boolean;
@@ -250,7 +207,11 @@ const BarraFiltrosFinanciamentos: React.FC<{
 			? 'Últimos 12 meses termina no mês atual (o ano não se aplica)'
 			: 'Período dos contratos assinados / das parcelas pagas'
 		: 'Esta visão mostra a posição de hoje; o período não se aplica';
-	const algumFiltro = !!p.refinos.tomador || contarFiltrosExtras(p.refinos) > 0;
+	const algumFiltro = algumFiltroEmUso(p.refinos);
+	const emUso = (v: unknown) => (v ? 'border-blue-300 bg-blue-50 text-blue-800' : '');
+	// a remembered matrícula that is no longer registered still shows as selected
+	const garantia = p.refinos.numeroGarantia ? normalizarMatricula(p.refinos.numeroGarantia) : '';
+	const opcoesMatricula: Matricula[] = garantia && !p.matriculas.some((m) => m.numero === garantia) ? [...p.matriculas, { id: -1, numero: garantia }] : p.matriculas;
 
 	return (
 		<div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-xl shadow-sm p-2">
@@ -304,6 +265,37 @@ const BarraFiltrosFinanciamentos: React.FC<{
 					</option>
 				))}
 				<option value={SEM_TOMADOR_FINANCIAMENTO}>{SEM_TOMADOR_FINANCIAMENTO}</option>
+			</select>
+
+			<select
+				aria-label="Garantia (matrícula)"
+				title="Garantia: contratos com esta matrícula"
+				value={garantia}
+				onChange={(e) => p.onRefinos({ numeroGarantia: e.target.value || undefined })}
+				className={`${select} max-w-[11rem] ${emUso(garantia)}`}
+			>
+				<option value="">Todas as matrículas</option>
+				{opcoesMatricula.map((m) => (
+					<option key={m.numero} value={m.numero}>
+						Matrícula {formatarMatricula(m.numero)}
+						{m.contratos ? ` (${m.contratos})` : ''}
+					</option>
+				))}
+			</select>
+
+			<select
+				aria-label="Juros ao ano"
+				title="Taxa de juros ao ano"
+				value={p.refinos.faixaJuros || ''}
+				onChange={(e) => p.onRefinos({ faixaJuros: e.target.value || undefined })}
+				className={`${select} max-w-[11rem] ${emUso(p.refinos.faixaJuros)}`}
+			>
+				<option value="">Todas as taxas</option>
+				{FAIXAS_JUROS.map((f) => (
+					<option key={f.value} value={f.value}>
+						{f.value === 'sem' ? f.label : `Juros ${f.label.toLowerCase()} a.a.`}
+					</option>
+				))}
 			</select>
 
 			<MaisFiltros refinos={p.refinos} onRefinos={p.onRefinos} bancos={p.bancos} />

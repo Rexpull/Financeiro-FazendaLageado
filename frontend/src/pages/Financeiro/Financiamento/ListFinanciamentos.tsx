@@ -1,6 +1,6 @@
 // frontend/src/pages/financeiro/financiamentos/ListFinanciamentos.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
 	faPlus,
@@ -104,6 +104,15 @@ const ListFinanciamentos: React.FC = () => {
 	const [searchTerm, setSearchTerm] = useState('');
 	const [modalFinanciamento, setModalFinanciamento] = useState(false);
 	const [financiamentos, setFinanciamentos] = useState<Financiamento[]>([]);
+	// Tomadores already registered (first spelling of each, sorted): the form picks from this list
+	const tomadores = useMemo(() => {
+		const porChave = new Map<string, string>();
+		for (const f of financiamentos) {
+			const t = String(f.responsavel ?? '').trim();
+			if (t && !porChave.has(t.toUpperCase())) porChave.set(t.toUpperCase(), t);
+		}
+		return [...porChave.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+	}, [financiamentos]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [bancos, setBancos] = useState<Banco[]>([]);
 	const [pessoas, setPessoas] = useState<Pessoa[]>([]);
@@ -849,6 +858,7 @@ const ListFinanciamentos: React.FC = () => {
 				onSave={handleSave}
 				pessoas={pessoas}
 				bancos={bancos}
+				tomadores={tomadores}
 				financiamentoData={editingFinanciamento}
 			/>
 

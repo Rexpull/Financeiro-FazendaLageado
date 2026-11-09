@@ -218,6 +218,11 @@ export interface ContratoRelatorioFinanciamentos {
 	valorVincendo: number;
 	valorPago: number;
 	parcelasAbertas: number;
+	/** Parcelas not liquidated that fell due before today */
+	parcelasAtrasadas: number;
+	valorAtrasado: number;
+	/** Due date of the oldest overdue parcela */
+	atrasadaDesde?: string;
 	dataQuitacao?: string;
 	/** Closed by renegotiation into another contract (nothing left to pay here): never "Quitado" */
 	renegociadoEm?: string;
@@ -253,6 +258,7 @@ export interface RelatorioFinanciamentosData {
 	ativos: BlocoContratosFinanciamento;
 	contratados: BlocoContratosFinanciamento;
 	liquidados: BlocoContratosFinanciamento & { quitados: number; amortizados: number; renegociados?: number; valorVincendo: number };
+	emAtraso: BlocoContratosFinanciamento & { parcelas: number };
 	porTomador: {
 		grupos: Array<{ tomador: string; quantidade: number; valor: number; valorContratos: number; contratos: ValorContratoFinanciamento[] }>;
 		quantidade: number;

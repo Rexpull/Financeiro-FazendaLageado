@@ -13,6 +13,7 @@
  * - liquidados: contratos com parcelas liquidadas dentro do período (amortizados ou quitados).
  *   Valor = parcelas liquidadas no período; quitado = todas liquidadas e a última liquidação no período.
  * - porTomador: contratos ativos agrupados pelo tomador (Financiamento.responsavel).
+ * - emAtraso: contratos com parcela vencida antes de hoje e não liquidada (valor = parcelas atrasadas).
  *
  * Gráficos:
  * - novosXLiquidados (mês a mês do período): novos = soma das parcelas dos contratos assinados no mês
@@ -26,11 +27,13 @@
  * (liquidacaoEfetiva, mesma regra do Dashboard e do Fluxo de Caixa).
  */
 import { liquidacaoEfetiva } from './saldoDevedor';
+import { garantiaInclui } from './matriculas';
 
 export const MODALIDADES_FINANCIAMENTO = ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'] as const;
 export type ModalidadeFinanciamento = (typeof MODALIDADES_FINANCIAMENTO)[number];
 
-export const FAIXAS_JUROS = ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15'] as const;
+/** 'sem' = contract without an interest rate (empty or 0) */
+export const FAIXAS_JUROS = ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15', 'sem'] as const;
 
 export const SEM_TOMADOR = 'Sem tomador';
 
@@ -74,6 +77,7 @@ export type FiltrosRelatorio = {
 	idBanco?: number;
 	tomador?: string; // Financiamento.responsavel
 	modalidade?: string;
+	/** one matrícula: contracts whose guarantee includes it (exact match) */
 	numeroGarantia?: string;
 	faixaJuros?: string;
 };
@@ -105,6 +109,11 @@ export type ContratoRelatorio = {
 	/** Soma das parcelas liquidadas (até hoje) */
 	valorPago: number;
 	parcelasAbertas: number;
+	/** Parcelas não liquidadas que venceram antes de hoje */
+	parcelasAtrasadas: number;
+	valorAtrasado: number;
+	/** Vencimento da parcela atrasada mais antiga */
+	atrasadaDesde?: string;
 	/** Última liquidação, quando todas as parcelas estão liquidadas (não vale para renegociados) */
 	dataQuitacao?: string;
 	/** Encerrado por renegociação em outro contrato (sem parcelas a vencer): não é "Quitado" */
@@ -122,6 +131,8 @@ export type BlocoContratos = {
 	valorContratos: number; // soma do valor dos contratos (informativo)
 	contratos: ValorContrato[];
 };
+
+export type BlocoAtraso = BlocoContratos & { parcelas: number };
 
 export type BlocoLiquidados = BlocoContratos & { quitados: number; amortizados: number; renegociados: number; valorVincendo: number };
 
@@ -151,6 +162,7 @@ export type RelatorioFinanciamentos = {
 	contratados: BlocoContratos;
 	liquidados: BlocoLiquidados;
 	porTomador: { grupos: GrupoTomador[]; quantidade: number; valor: number; valorContratos: number };
+	emAtraso: BlocoAtraso;
 	graficos: GraficosRelatorio;
 };
 
@@ -198,10 +210,13 @@ function mesesDoPeriodo(inicio: string, fim: string): Array<{ ano: number; mes: 
 }
 
 function atendeFaixaJuros(taxa: number | null | undefined, faixa: string): boolean {
-	const t = taxa == null ? null : Number(taxa);
+	// 0 or empty = no rate registered: only in "sem", never in "≤ 8"
+	const t = taxa == null || !Number(taxa) ? null : Number(taxa);
 	switch (faixa) {
+		case 'sem':
+			return t == null;
 		case '<=8':
-			return t == null || t <= 8;
+			return t != null && t <= 8;
 		case '>8<=10':
 			return t != null && t > 8 && t <= 10;
 		case '>10<=12':
@@ -224,10 +239,7 @@ function atendeFiltrosContrato(c: ContratoRow, f: FiltrosRelatorio): boolean {
 		if (alvo === normalizarTomador(SEM_TOMADOR) ? tomador !== '' : tomador !== alvo) return false;
 	}
 	if (f.modalidade && String(c.modalidade ?? '').toUpperCase() !== f.modalidade.toUpperCase()) return false;
-	if (f.numeroGarantia) {
-		const busca = f.numeroGarantia.trim().toLowerCase();
-		if (busca && !String(c.numeroGarantia ?? '').toLowerCase().includes(busca)) return false;
-	}
+	if (f.numeroGarantia?.trim() && !garantiaInclui(c.numeroGarantia, f.numeroGarantia)) return false;
 	if (f.faixaJuros && !atendeFaixaJuros(c.taxaJurosAnual, f.faixaJuros)) return false;
 	return true;
 }
@@ -301,6 +313,9 @@ export function montarRelatorioFinanciamentos(
 		let pago = 0;
 		let abertas = 0;
 		let ultimaLiquidacao = '';
+		let atrasado = 0;
+		let atrasadas = 0;
+		let atrasadaDesde = '';
 		for (const p of ps) {
 			const liq = liquidacaoEfetiva(p);
 			if (liq) {
@@ -309,6 +324,12 @@ export function montarRelatorioFinanciamentos(
 			} else {
 				vincendo += centavos(p.valor);
 				abertas++;
+				const venc = dia(p.dt_vencimento);
+				if (venc && venc < dia(hoje)) {
+					atrasado += centavos(p.valor);
+					atrasadas++;
+					if (!atrasadaDesde || venc < atrasadaDesde) atrasadaDesde = venc;
+				}
 			}
 		}
 		// Renegociado em outro contrato e sem parcelas a vencer: encerrado como "Renegociado" (as parcelas em
@@ -332,6 +353,9 @@ export function montarRelatorioFinanciamentos(
 			valorVincendo: reais(vincendo),
 			valorPago: reais(pago),
 			parcelasAbertas: abertas,
+			parcelasAtrasadas: atrasadas,
+			valorAtrasado: reais(atrasado),
+			atrasadaDesde: atrasadaDesde || undefined,
 			dataQuitacao: !ativo && !renegociado ? ultimaLiquidacao : undefined,
 			renegociadoEm: renegociado ? dia(c.renegociadoEm) : undefined,
 			numeroContratoNovo: renegociado ? c.numeroContratoNovo || undefined : undefined,
@@ -370,6 +394,12 @@ export function montarRelatorioFinanciamentos(
 			.filter((c) => noPeriodo(c.dataContrato) && !deRenegociacao.has(c.idFinanciamento))
 			.map((c) => ({ idFinanciamento: c.idFinanciamento, valor: c.valorVincendo })),
 	);
+
+	const atrasoLista = contratos.filter((c) => c.parcelasAtrasadas > 0);
+	const emAtraso: BlocoAtraso = {
+		...bloco(atrasoLista.map((c) => ({ idFinanciamento: c.idFinanciamento, valor: c.valorAtrasado }))),
+		parcelas: atrasoLista.reduce((s, c) => s + c.parcelasAtrasadas, 0),
+	};
 
 	const liquidadosLista: ValorContrato[] = [];
 	for (const c of contratos) {
@@ -477,6 +507,7 @@ export function montarRelatorioFinanciamentos(
 			valor: ativos.valor,
 			valorContratos: ativos.valorContratos,
 		},
+		emAtraso,
 		graficos,
 	};
 }

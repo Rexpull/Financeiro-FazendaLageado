@@ -9,6 +9,7 @@ export const ROTAS_PESQUISA: ReadonlyArray<RotaPesquisa> = [
 	{ path: "/cadastro/conta-corrente", label: "Conta Corrente", secao: "Cadastros" },
 	{ path: "/cadastro/plano-de-contas", label: "Plano de Contas", secao: "Cadastros" },
 	{ path: "/cadastro/centro-custos", label: "Centro de Custos", secao: "Cadastros" },
+	{ path: "/cadastro/matriculas", label: "Matrículas (garantias)", secao: "Cadastros" },
 	{ path: "/financeiro/conciliacao-bancaria", label: "Conciliação Bancária", secao: "Financeiro" },
 	{ path: "/financeiro/financiamento", label: "Financiamento", secao: "Financeiro" },
 	{ path: "/relatorios/fluxo-de-caixa", label: "Fluxo de Caixa", secao: "Relatórios" },

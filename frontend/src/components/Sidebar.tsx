@@ -188,6 +188,11 @@ const Sidebar = () => {
                     Centro de Custos
                   </li>
                 </Link>
+                <Link to="/cadastro/matriculas">
+                  <li className={`flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-200 rounded-md cursor-pointer sub-menu-item ${isActive('/cadastro/matriculas')}`}>
+                    Matrículas
+                  </li>
+                </Link>
               </ul>
               
             </li>

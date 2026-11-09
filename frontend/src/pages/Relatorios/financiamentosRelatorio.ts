@@ -9,7 +9,7 @@ import type {
 import { intervaloMes, intervaloPeriodo, MESES_CURTOS, OPCOES_PERIODO, type IntervaloDashboard, type TipoPeriodo } from '../Dashboard/periodoDashboard';
 import { formatarDataISO } from '../../Utils/dataSemFuso';
 
-export type VisaoFinanciamentos = 'ativos' | 'contratados' | 'liquidados' | 'porTomador';
+export type VisaoFinanciamentos = 'ativos' | 'contratados' | 'liquidados' | 'porTomador' | 'emAtraso';
 export type GraficoFinanciamentos = 'novosXLiquidados' | 'compromissosAno' | 'compromissosPorAno';
 
 /** Tabs of the screen (one view at a time). `curto` is the tab label; `rotulo` the title of the view. */
@@ -18,6 +18,7 @@ export const VISOES: ReadonlyArray<{ id: VisaoFinanciamentos; rotulo: string; cu
 	{ id: 'contratados', rotulo: 'Contratados no período', curto: 'Contratados', usaPeriodo: true },
 	{ id: 'liquidados', rotulo: 'Liquidados no período', curto: 'Liquidados', usaPeriodo: true },
 	{ id: 'porTomador', rotulo: 'Contratos por tomador', curto: 'Por tomador', usaPeriodo: false },
+	{ id: 'emAtraso', rotulo: 'Contratos em atraso', curto: 'Em atraso', usaPeriodo: false },
 ];
 
 export const GRAFICOS: ReadonlyArray<{ id: GraficoFinanciamentos; rotulo: (ano: number) => string }> = [
@@ -143,6 +144,17 @@ export function planilhasExcel(
 			})),
 		});
 		for (const g of dados.porTomador.grupos) contratosDe(g.contratos);
+	}
+	if (visoes.has('emAtraso')) {
+		planilhas.push({
+			nome: 'Em atraso',
+			linhas: contratosDe(dados.emAtraso.contratos).map((l) => ({
+				...colunasContrato(l),
+				'Parcelas atrasadas': l.contrato.parcelasAtrasadas,
+				'Valor em atraso': l.valor,
+				'Vencida desde': formatarDataISO(l.contrato.atrasadaDesde),
+			})),
+		});
 	}
 	if (graficos.has('novosXLiquidados')) {
 		planilhas.push({
@@ -311,8 +323,11 @@ export type RefinosFinanciamentos = {
 	faixaJuros?: string;
 };
 
-/** How many of the "Mais filtros" (banco, modalidade, garantia, juros) are in use. */
-export const contarFiltrosExtras = (r: RefinosFinanciamentos) => [r.idBanco, r.modalidade, r.numeroGarantia, r.faixaJuros].filter(Boolean).length;
+/** How many of the "Mais filtros" (banco, modalidade) are in use. */
+export const contarFiltrosExtras = (r: RefinosFinanciamentos) => [r.idBanco, r.modalidade].filter(Boolean).length;
+
+/** Any filter in use (toolbar ones included): shows "Limpar filtros". */
+export const algumFiltroEmUso = (r: RefinosFinanciamentos) => !!(r.tomador || r.numeroGarantia || r.faixaJuros) || contarFiltrosExtras(r) > 0;
 
 export type ModoCompromissos = 'ano' | 'porAno';
 
@@ -336,7 +351,7 @@ export const preferenciasPadrao = (anoAtual: number): PreferenciasFinanciamentos
 });
 
 const MODALIDADES_VALIDAS = ['INVESTIMENTO', 'CUSTEIO', 'PARTICULAR', 'RENEGOCIACAO', 'ROTATIVO'];
-const FAIXAS_VALIDAS = ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15'];
+const FAIXAS_VALIDAS = ['<=8', '>8<=10', '>10<=12', '>12<=15', '>15', 'sem'];
 
 /** Reads the saved preferences (localStorage text), ignoring anything invalid. Never throws. */
 export function lerPreferencias(texto: string | null | undefined, anoAtual: number): PreferenciasFinanciamentos {

@@ -9,12 +9,16 @@ import {
 	type ValorContratoFinanciamento,
 } from '../../services/relatorioService';
 import { listarBancos } from '../../services/bancoService';
+import { listarMatriculas } from '../../services/matriculaService';
+import type { Matricula } from '../../../../backend/src/models/Matricula';
+import { formatarMatricula } from '../../../../backend/src/utils/matriculas';
 import type { Banco } from '../../../../backend/src/models/Banco';
 import BreadCrumb from '../../components/BreadCrumb';
 import { brl, pct } from '../../Utils/formatos';
 import { formatarDataISO } from '../../Utils/dataSemFuso';
 import { MESES_CURTOS, rotuloMesGrafico, ultimoDiaDoIntervalo } from '../Dashboard/periodoDashboard';
 import {
+	algumFiltroEmUso,
 	anosDisponiveis,
 	graficosExportados,
 	intervaloRelatorio,
@@ -138,6 +142,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 	const mostrarGrafico = !!pref.graficos[visao];
 
 	const [bancos, setBancos] = useState<Banco[]>([]);
+	const [matriculas, setMatriculas] = useState<Matricula[]>([]);
 	const [dados, setDados] = useState<RelatorioFinanciamentosData | null>(null);
 	const [anosComDados, setAnosComDados] = useState<number[]>([]);
 	const [carregando, setCarregando] = useState(false);
@@ -155,7 +160,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 	const atualizar = (parcial: Partial<PreferenciasFinanciamentos>) => setPref((p) => ({ ...p, ...parcial }));
 	const atualizarRefinos = (r: Partial<RefinosFinanciamentos>) => setPref((p) => ({ ...p, refinos: { ...p.refinos, ...r } }));
 	const limparFiltros = () => atualizar({ refinos: {} });
-	const algumFiltro = !!refinos.tomador || !!(refinos.idBanco || refinos.modalidade || refinos.numeroGarantia || refinos.faixaJuros);
+	const algumFiltro = algumFiltroEmUso(refinos);
 
 	// Remember the last tab and filters (localStorage may be blocked: ignore)
 	useEffect(() => {
@@ -197,6 +202,9 @@ const RelatorioFinanciamentos: React.FC = () => {
 		listarBancos()
 			.then(setBancos)
 			.catch((e) => console.error('Erro ao carregar bancos:', e));
+		listarMatriculas()
+			.then(setMatriculas)
+			.catch((e) => console.error('Erro ao carregar matrículas:', e));
 	}, []);
 
 	// One request brings every view and chart; the tabs only switch what is shown.
@@ -243,7 +251,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 			['Tomador', refinos.tomador || 'Todos'],
 			['Banco', nomeBanco || 'Todos'],
 			['Modalidade', MODALIDADES.find((m) => m.value === refinos.modalidade)?.label || 'Todas'],
-			['Garantia', refinos.numeroGarantia || 'Todas'],
+			['Garantia', refinos.numeroGarantia ? `Matrícula ${formatarMatricula(refinos.numeroGarantia)}` : 'Todas'],
 			['Faixa de juros', FAIXAS_JUROS.find((f) => f.value === refinos.faixaJuros)?.label || 'Todas'],
 		];
 	};
@@ -280,13 +288,13 @@ const RelatorioFinanciamentos: React.FC = () => {
 		</>
 	);
 
-	const cabecalho = (subtitulo: string) => (
+	const cabecalho = (subtitulo: string, comGrafico = true) => (
 		<div className="flex flex-wrap items-end justify-between gap-2 mb-3">
 			<div className="min-w-0">
 				<h2 className="text-lg font-semibold text-gray-900">{rotuloVisao}</h2>
 				<p className="text-sm text-gray-500">{subtitulo}</p>
 			</div>
-			<button
+			{comGrafico && <button
 				type="button"
 				aria-pressed={mostrarGrafico}
 				onClick={() => setPref((p) => ({ ...p, graficos: { ...p.graficos, [visao]: !p.graficos[visao] } }))}
@@ -296,7 +304,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 			>
 				<FontAwesomeIcon icon={faChartColumn} aria-hidden />
 				{mostrarGrafico ? 'Esconder gráfico' : 'Mostrar gráfico'}
-			</button>
+			</button>}
 		</div>
 	);
 
@@ -642,11 +650,38 @@ const RelatorioFinanciamentos: React.FC = () => {
 		);
 	};
 
+	const visaoEmAtraso = (d: RelatorioFinanciamentosData) => {
+		const a = d.emAtraso;
+		const linhas = linhasDe(d.contratos, a.contratos);
+		const maisAntiga = linhas.reduce((m, l) => (l.contrato.atrasadaDesde && (!m || l.contrato.atrasadaDesde < m) ? l.contrato.atrasadaDesde : m), '');
+		const abrirAtraso = () =>
+			abrir({ titulo: 'Contratos em atraso', dica: `Parcelas vencidas e não pagas até ${hoje}.`, colunaValor: 'Em atraso', refs: a.contratos });
+		return (
+			<>
+				{cabecalho(`Contratos com parcela vencida e não paga · posição de hoje, ${hoje}`, false)}
+				<Kpis>
+					<Kpi rotulo="Contratos" valor={String(a.quantidade)} detalhe={plural(a.parcelas, 'parcela atrasada', 'parcelas atrasadas')} onClick={abrirAtraso} />
+					<Kpi rotulo="Em atraso" valor={brl(a.valor)} detalhe="soma das parcelas vencidas" destaque onClick={abrirAtraso} />
+					<Kpi rotulo="Mais antiga" valor={maisAntiga ? formatarDataISO(maisAntiga) : '—'} detalhe="vencimento da parcela mais atrasada" />
+				</Kpis>
+				{blocoTabela(
+					<TabelaContratosFinanciamento
+						linhas={linhas}
+						colunaValor="Em atraso"
+						vazio={vazio(algumFiltro ? 'Nenhum contrato em atraso com estes filtros.' : 'Nenhum contrato em atraso. Todas as parcelas vencidas estão pagas.')}
+						topoCabecalho={alturaBarra}
+					/>,
+				)}
+			</>
+		);
+	};
+
 	const VISAO_RENDER: Record<VisaoFinanciamentos, (d: RelatorioFinanciamentosData) => React.ReactNode> = {
 		ativos: visaoAtivos,
 		contratados: visaoContratados,
 		liquidados: visaoLiquidados,
 		porTomador: visaoPorTomador,
+		emAtraso: visaoEmAtraso,
 	};
 
 	return (
@@ -667,6 +702,7 @@ const RelatorioFinanciamentos: React.FC = () => {
 					onRefinos={atualizarRefinos}
 					onLimpar={limparFiltros}
 					tomadores={dados?.tomadores ?? []}
+					matriculas={matriculas}
 					bancos={bancos}
 					carregando={carregando && !!dados}
 					exportando={exportando}

@@ -28,6 +28,7 @@ import {
 import { ErroSalvamentoParcial, salvarContratoComParcelas, type EstadoSalvamento } from './salvarContrato';
 import { Pessoa } from '../../../../../backend/src/models/Pessoa';
 import DialogModal from '../../../components/DialogModal';
+import { CampoMatriculas, CampoTomador } from './CamposTomadorGarantia';
 
 interface Props {
 	/** `gravacaoIncompleta`: the user left after a partial save (contract created, some installments missing). */
@@ -37,6 +38,8 @@ interface Props {
 	isOpen: boolean;
 	bancos: Banco[];
 	pessoas: Pessoa[];
+	/** Tomadores already used in other contracts (picked from a list) */
+	tomadores?: string[];
 	/** Contract to edit (with id) or pre-filled data for a new one (without id). */
 	financiamentoData?: Financiamento | null;
 }
@@ -81,7 +84,7 @@ const assinatura = (f: FormFinanciamento) =>
 		parcelas: (f.parcelasList ?? []).map((p) => [p.id, p.numParcela, Number(p.valor) || 0, p.dt_vencimento]),
 	});
 
-const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, pessoas, financiamentoData }) => {
+const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, pessoas, tomadores = [], financiamentoData }) => {
 	const [tipoParcelamento, setTipoParcelamento] = useState<TipoParcelamento>('mensal');
 	const [dataVencimentoInicial, setDataVencimentoInicial] = useState('');
 	const [form, setForm] = useState<FormFinanciamento>({ parcelasList: [] });
@@ -192,7 +195,7 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 		const newErrors: { [key: string]: string } = {};
 		const parcelas = form.parcelasList ?? [];
 
-		if (!form.responsavel?.trim()) newErrors.responsavel = 'Informe o responsável.';
+		if (!form.responsavel?.trim()) newErrors.responsavel = 'Informe o tomador.';
 		if (!form.dataContrato) newErrors.dataContrato = 'Informe a data do contrato.';
 		if (!(lerValor(form.valor) > 0)) newErrors.valor = 'Informe o valor contratado (maior que zero).';
 		if (!form.numeroContrato?.trim()) newErrors.numeroContrato = 'Informe o número do contrato.';
@@ -418,16 +421,16 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:border-r lg:mr-4 lg:pr-6 w-full">
 						<div>
 							<label htmlFor="fin-responsavel" className="text-sm sm:text-base">
-								Responsável <span className="text-red-500">*</span>
+								Tomador <span className="text-red-500">*</span>
 							</label>
-							<input
+							<CampoTomador
 								id="fin-responsavel"
 								className={inputClass}
-								placeholder="Digite o nome do responsável"
 								value={form.responsavel || ''}
-								onChange={(e) => handleInputChange('responsavel', e.target.value)}
+								tomadores={tomadores}
+								onChange={(v) => handleInputChange('responsavel', v)}
+								erro={errors.responsavel}
 							/>
-							{errors.responsavel && <p className="text-red-500 text-xs">{errors.responsavel}</p>}
 						</div>
 
 						<div>
@@ -575,13 +578,13 @@ const ModalFinanciamento: React.FC<Props> = ({ onClose, onSave, isOpen, bancos, 
 						)}
 
 						<div>
-							<label htmlFor="fin-garantia" className="text-sm sm:text-base">Número da Garantia</label>
-							<input
+							<label htmlFor="fin-garantia" className="text-sm sm:text-base">Garantia (matrículas)</label>
+							<CampoMatriculas
 								id="fin-garantia"
 								className={inputClass}
-								value={form.numeroGarantia || ''}
-								placeholder="Digite o número da garantia"
-								onChange={(e) => handleInputChange('numeroGarantia', e.target.value)}
+								value={form.numeroGarantia}
+								aberto={isOpen}
+								onChange={(v) => handleInputChange('numeroGarantia', v)}
 							/>
 						</div>
 

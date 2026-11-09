@@ -1,5 +1,6 @@
 import { CaixaRepository } from './CaixaRepository';
 import { hojeISO } from '../utils/relatorioFinanciamentos';
+import { normalizarGarantia } from '../utils/matriculas';
 import {
 	anexarObservacao,
 	dataBR,
@@ -369,7 +370,7 @@ export class RenegociacaoRepository {
 						c?.taxaJurosAnual ?? contrato.taxaJurosAnual ?? null,
 						modalidade,
 						nomeParticular,
-						c?.numeroGarantia ?? contrato.numeroGarantia ?? null,
+						normalizarGarantia(c?.numeroGarantia ?? contrato.numeroGarantia ?? null),
 						anexarObservacao(contrato.observacao, linha),
 						datas[0] ?? null,
 						datas[datas.length - 1] ?? null,
@@ -428,7 +429,7 @@ export class RenegociacaoRepository {
 						novoContrato.valor,
 						novoContrato.taxaJurosAnual,
 						novoContrato.numeroContrato,
-						novoContrato.numeroGarantia,
+						normalizarGarantia(novoContrato.numeroGarantia),
 						observacaoNovo,
 						datas[0] ?? null,
 						datas[datas.length - 1] ?? null,

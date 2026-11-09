@@ -32,6 +32,7 @@ import {
 	type Periodicidade,
 	type TipoRenegociacao,
 } from './renegociacaoRegras';
+import { CampoMatriculas } from './CamposTomadorGarantia';
 
 interface Props {
 	isOpen: boolean;
@@ -631,14 +632,15 @@ const ModalRenegociacao: React.FC<Props> = ({ isOpen, onClose, onSaved, financia
 											}}
 										/>
 									</Campo>
-									<Campo id="ren-garantia" rotulo="Nº garantia">
-										<input
+									<Campo id="ren-garantia" rotulo="Garantia (matrículas)">
+										<CampoMatriculas
 											id="ren-garantia"
 											className={classeCampo()}
 											value={garantia}
-											onChange={(e) => {
+											aberto={isOpen}
+											onChange={(v) => {
 												marcar();
-												setGarantia(e.target.value);
+												setGarantia(v ?? '');
 											}}
 										/>
 									</Campo>

@@ -231,14 +231,42 @@ describe('Filtros de contrato (valem para todas as visões e gráficos)', () => 
 		expect(ids(rel({ ano: 2026, modalidade: 'RENEGOCIACAO' }).ativos.contratos)).toEqual([5]);
 		const juros = ids(rel({ ano: 2026, faixaJuros: '<=8' }).ativos.contratos);
 		expect(juros).not.toContain(2);
-		expect(juros).toContain(7); // taxa nula entra em <= 8
-		const garantia = montarRelatorioFinanciamentos(
-			[contrato({ id: 50, dataContrato: '2026-01-01', valor: 1, numeroGarantia: 'MAT-123' }), contrato({ id: 51, dataContrato: '2026-01-01', valor: 1 })],
-			[],
-			{ ano: 2026, numeroGarantia: 'mat-12' },
-			HOJE,
+		expect(juros).not.toContain(7); // sem taxa não entra em <= 8...
+		expect(ids(rel({ ano: 2026, faixaJuros: 'sem' }).ativos.contratos)).toContain(7); // ...e sim em "sem"
+		expect(ids(rel({ ano: 2026, faixaJuros: 'sem' }).ativos.contratos)).not.toContain(2);
+		const comGarantia = (numeroGarantia: string) =>
+			ids(
+				montarRelatorioFinanciamentos(
+					[
+						contrato({ id: 50, dataContrato: '2026-01-01', valor: 1, numeroGarantia: '2.319, 21.175 e 3041' }),
+						contrato({ id: 51, dataContrato: '2026-01-01', valor: 1, numeroGarantia: '113041' }),
+						contrato({ id: 52, dataContrato: '2026-01-01', valor: 1 }),
+					],
+					[],
+					{ ano: 2026, numeroGarantia },
+					HOJE,
+				).ativos.contratos,
+			);
+		expect(comGarantia('3041')).toEqual([50]); // exata: 113041 não entra
+		expect(comGarantia('2319')).toEqual([50]); // texto antigo com ponto de milhar
+		expect(comGarantia('113041')).toEqual([51]);
+	});
+
+	it('em atraso: parcelas vencidas antes de hoje e não liquidadas', () => {
+		const r = montarRelatorioFinanciamentos(
+			[contrato({ id: 60, dataContrato: '2025-01-01', valor: 300 }), contrato({ id: 61, dataContrato: '2025-01-01', valor: 100 })],
+			[
+				{ id: 1, idFinanciamento: 60, numParcela: 1, valor: 100, status: 'Vencido', dt_vencimento: '2026-01-10', dt_liquidacao: null },
+				{ id: 2, idFinanciamento: 60, numParcela: 2, valor: 100, status: 'Aberto', dt_vencimento: '2025-12-10', dt_liquidacao: null },
+				{ id: 3, idFinanciamento: 60, numParcela: 3, valor: 100, status: 'Aberto', dt_vencimento: '2099-01-10', dt_liquidacao: null },
+				{ id: 4, idFinanciamento: 61, numParcela: 1, valor: 100, status: 'Liquidado', dt_vencimento: '2025-06-10', dt_liquidacao: '2025-06-10' },
+			],
+			{ ano: 2026 },
+			'2026-06-01',
 		);
-		expect(ids(garantia.ativos.contratos)).toEqual([50]);
+		expect(r.emAtraso).toMatchObject({ quantidade: 1, valor: 200, parcelas: 2, contratos: [{ idFinanciamento: 60, valor: 200 }] });
+		expect(r.contratos.find((c) => c.idFinanciamento === 60)).toMatchObject({ parcelasAtrasadas: 2, valorAtrasado: 200, atrasadaDesde: '2025-12-10' });
+		expect(r.contratos.find((c) => c.idFinanciamento === 61)).toMatchObject({ parcelasAtrasadas: 0, valorAtrasado: 0 });
 	});
 
 	it('lista de tomadores vem de todos os contratos (ignora filtros), distinta e ordenada', () => {

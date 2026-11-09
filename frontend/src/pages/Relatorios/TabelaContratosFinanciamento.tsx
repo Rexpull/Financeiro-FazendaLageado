@@ -14,6 +14,12 @@ import {
 	type LinhaContrato,
 	type Ordem,
 } from './financiamentosRelatorio';
+import { formatarMatricula, separarMatriculas } from '../../../../backend/src/utils/matriculas';
+
+const textoGarantia = (g: string) => {
+	const lista = separarMatriculas(g).map(formatarMatricula);
+	return `${lista.length > 1 ? 'matrículas' : 'matrícula'} ${lista.join(', ')}`;
+};
 
 const BADGE_PARCELA: Record<string, string> = {
 	Liquidado: 'bg-green-100 text-green-800',
@@ -32,7 +38,7 @@ const ParcelasContrato: React.FC<{ linha: LinhaContrato }> = ({ linha }) => {
 		<div>
 			<p className="text-xs text-gray-600 mb-2">
 				{rotuloModalidade(c)} · contrato de {formatarDataISO(c.dataContrato)} · valor {brl(c.valorContrato)}
-				{c.numeroGarantia ? ` · garantia ${c.numeroGarantia}` : ''}
+				{c.numeroGarantia ? ` · garantia ${textoGarantia(c.numeroGarantia)}` : ''}
 				{c.taxaJurosAnual != null ? ` · juros ${String(c.taxaJurosAnual).replace('.', ',')}% a.a.` : ''}
 			</p>
 			{!c.parcelas.length ? (
