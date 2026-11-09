@@ -35,8 +35,23 @@ export type LinhaFluxo = {
 export const CATEGORIA_CUSTEIO = '1000';
 export const CATEGORIA_INVESTIMENTO = '2000';
 
-/** First year offered in the Fluxo filter. */
-export const PRIMEIRO_ANO_FLUXO = 2024;
+/**
+ * Início do controle, defined by the client on 2026-11-02: the Fluxo shows nothing before Oct/2026
+ * (contracts and parcelas registered with older dates stay out of it). Same month as the Dashboard
+ * (periodoDashboard.INICIO_CONTROLE).
+ */
+export const INICIO_FLUXO = { ano: 2026, mes: 10 };
+
+/** First year offered in the Fluxo filter (the year of the início do controle). */
+export const PRIMEIRO_ANO_FLUXO = INICIO_FLUXO.ano;
+
+/** Is month `idx` (0–11) of `ano` before the início do controle? */
+export const antesDoInicioFluxo = (ano: number | string, idx: number) => Number(ano) * 12 + idx < INICIO_FLUXO.ano * 12 + INICIO_FLUXO.mes - 1;
+
+/** The 12 months of a year with the ones before the início do controle emptied (shown blank, out of the totals). */
+export function cortarAntesDoInicioFluxo<T extends object>(meses: T[], ano: number | string): Array<T | Record<string, never>> {
+	return meses.map((m, idx) => (antesDoInicioFluxo(ano, idx) ? {} : m));
+}
 
 /** How many years ahead the filters offer (planning with future financing parcelas and forecasts). */
 export const ANOS_FUTUROS_FILTRO = 5;

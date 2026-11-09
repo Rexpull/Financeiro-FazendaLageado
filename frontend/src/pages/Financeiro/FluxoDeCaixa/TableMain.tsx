@@ -14,7 +14,7 @@ import ModalDetalhamentoFinanciamento from './ModalDetalhamentoFinanciamento';
 import { FinanciamentoDetalhadoDTO } from '../../../../../backend/src/models/FinanciamentoDetalhadoDTO';
 import FluxoCaixaGrafico from './FluxoCaixaGrafico';
 import FluxoMensalCentros, { GrupoCentros } from './FluxoMensalCentros';
-import { FluxoMesCentrosInput } from './fluxoMensalRegras';
+import { cortarAntesDoInicioFluxo, FluxoMesCentrosInput } from './fluxoMensalRegras';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -69,8 +69,9 @@ const MovimentoBancarioTable: React.FC = () => {
 				buscarFluxoCaixa(ano, contas),
 				buscarFluxoCaixaAnoAnterior(ano, contas),
 			]);
-			setDadosFluxo(dados.dadosMensais as unknown as FluxoMesCentrosInput[]);
-			setDadosFluxoAnterior(dadosAnterior as unknown as FluxoMesCentrosInput[]);
+			// Nothing before the início do controle (Oct/2026): those months stay blank and out of the totals
+			setDadosFluxo(cortarAntesDoInicioFluxo(dados.dadosMensais as unknown as FluxoMesCentrosInput[], ano));
+			setDadosFluxoAnterior(cortarAntesDoInicioFluxo(dadosAnterior as unknown as FluxoMesCentrosInput[], Number(ano) - 1));
 			setMeses(MESES.map((mes) => `${mes}/${ano}`));
 		} catch (e) {
 			console.error('Erro ao gerar fluxo de caixa:', e instanceof Error ? e.message : e);

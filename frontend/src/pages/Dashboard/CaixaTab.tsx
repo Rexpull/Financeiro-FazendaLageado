@@ -125,7 +125,8 @@ interface CaixaTabProps {
 
 /**
  * Caixa diário do mês: saldo inicial digitado − boletos (total por dia) − parcelas de financiamento
- * marcadas (Saldo), mais as movimentações previstas de entrada/saída (Saldo final). Acumulados dia a dia.
+ * marcadas (Saldo sem previsões), mais as movimentações previstas de entrada/saída (Saldo com previsões).
+ * Acumulados dia a dia.
  * O mês abre pelo filtro do Dashboard e pode ser navegado aqui até dez/2040.
  */
 export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSelecionado }) => {
@@ -456,7 +457,7 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
             bgcolor: finalNegativo ? alpha(theme.palette.error.main, 0.05) : "background.paper",
           })}
         >
-          {tituloQuadro("Saldo final")}
+          {tituloQuadro("Saldo final (com previsões)")}
           {valorQuadro(brl(totais.saldoFinal), finalNegativo ? "error.main" : "text.primary")}
           {semSaldoInicial ? (
             <Tooltip arrow title="Quanto precisa haver no caixa no início do mês para cobrir boletos, financiamentos e saídas previstas.">
@@ -606,9 +607,9 @@ const TabelaDias: React.FC<{
     { rotulo: "Data" },
     { rotulo: "Boletos (R$)", dica: "Digite o total dos boletos a pagar no dia. Salva ao pressionar Enter ou sair do campo; deixe vazio para zerar." },
     { rotulo: "Financiamento", dica: "Parcelas de financiamento com vencimento no dia marcadas para entrar no saldo. Clique para escolher." },
-    { rotulo: "Saldo", dica: "Saldo inicial − boletos − financiamentos, acumulado até o dia." },
+    { rotulo: "Saldo sem previsões", dica: "Saldo inicial − boletos − financiamentos, acumulado até o dia. Não inclui as movimentações previstas." },
     { rotulo: "Movimentações previstas", dica: "Entradas menos saídas previstas no dia. Passe o mouse para ver as descrições; clique para incluir ou editar." },
-    { rotulo: "Saldo final", dica: "Saldo + entradas previstas − saídas previstas, acumulado até o dia." },
+    { rotulo: "Saldo com previsões", dica: "Saldo sem previsões + entradas previstas − saídas previstas, acumulado até o dia. É a posição esperada do caixa." },
   ];
 
   return (
@@ -698,7 +699,10 @@ const TabelaDias: React.FC<{
                     </TableCell>
                   )}
 
-                  <TableCell align="right" sx={{ ...NUMERO_SX, fontWeight: 600, color: corSaldo(d.saldo, mudo) }}>
+                  <TableCell
+                    align="right"
+                    sx={{ ...NUMERO_SX, fontWeight: 400, color: d.saldo < 0 && !semSaldoInicial ? "error.light" : mudo ? "text.disabled" : "text.secondary" }}
+                  >
                     {brl(d.saldo)}
                   </TableCell>
 

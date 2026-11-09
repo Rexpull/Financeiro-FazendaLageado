@@ -1,9 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { anosFiltroFluxo, montarFluxoMensal } from './fluxoMensalRegras';
+import { anosFiltroFluxo, cortarAntesDoInicioFluxo, montarFluxoMensal } from './fluxoMensalRegras';
 
 describe('anosFiltroFluxo', () => {
-	it('goes from 2024 to five years ahead (2031 reachable in 2026)', () => {
-		expect(anosFiltroFluxo(new Date(2026, 9, 24))).toEqual(['2024', '2025', '2026', '2027', '2028', '2029', '2030', '2031']);
+	it('goes from the início do controle (2026) to five years ahead (2031 reachable in 2026)', () => {
+		expect(anosFiltroFluxo(new Date(2026, 9, 24))).toEqual(['2026', '2027', '2028', '2029', '2030', '2031']);
+	});
+
+	it('empties the months before Oct/2026 (início do controle)', () => {
+		const mes = { financiamentos: { pagos: { a: { valor: 10 } }, contratados: {} } };
+		const doze = Array.from({ length: 12 }, () => mes);
+		const cortado = cortarAntesDoInicioFluxo(doze, 2026);
+		expect(cortado.slice(0, 9).every((m) => Object.keys(m).length === 0)).toBe(true);
+		expect(cortado[9]).toBe(mes);
+		expect(montarFluxoMensal(cortado).total.quitados).toBe(30);
+		expect(cortarAntesDoInicioFluxo(doze, 2025).every((m) => Object.keys(m).length === 0)).toBe(true);
+		expect(cortarAntesDoInicioFluxo(doze, 2027)).toEqual(doze);
 		expect(anosFiltroFluxo(new Date(2030, 0, 1)).at(-1)).toBe('2035');
 	});
 });
