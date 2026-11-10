@@ -1,0 +1,24 @@
+# Runs the type check and the whole test suite (unit + worker/D1 integration, including the OFX import and
+# conciliação tests) on every push and pull request. A red run means something broke: do not deploy the worker.
+name: Testes
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tipos (tsc)
+        run: npx tsc -p tsconfig.ci.json
+      - name: Testes (vitest)
+        run: npx vitest run --exclude "e2e/**"

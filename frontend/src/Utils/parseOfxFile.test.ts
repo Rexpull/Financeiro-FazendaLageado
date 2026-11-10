@@ -529,3 +529,41 @@ describe("credit card statement", () => {
     expect(movimentos[0].dtMovimento.startsWith("2026-03")).toBe(true);
   });
 });
+
+describe("BB statement with many equal lines (BB GFS, 10/11/2026)", () => {
+  const consorcio = [2862.81, 862.93, 862.93, 862.93, 862.93, 862.93, 609.13, 862.93, ...Array(11).fill(792.58), 3637.88, 3637.88, 4850.5];
+  const seq = new Map<number, number>();
+  const trn = consorcio
+    .map((v) => {
+      const n = (seq.get(v) ?? 0) + 1;
+      seq.set(v, n);
+      const fitid = `202611101${Math.round(v * 100)}0${n > 1 ? n : ""}`;
+      return `<STMTTRN>\n<TRNTYPE>DEBIT\n<DTPOSTED>20261110120000[-3:BRT]\n<TRNAMT>-${v.toFixed(2)}\n<FITID>${fitid}\n<CHECKNUM>14033\n<MEMO>BB Consórcio - Prestação\n</STMTTRN>`;
+    })
+    .join("\n");
+  const ofx = `OFXHEADER:100\nDATA:OFXSGML\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM><BANKID>1<ACCTID>1</BANKACCTFROM><BANKTRANLIST>\n${trn}\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+
+  it("keeps the 22 installments as 22 lines (CHECKNUM is not a grouping key)", () => {
+    const { movimentos } = parseOFXContent(ofx);
+    expect(movimentos).toHaveLength(22);
+    expect(movimentos.every((m) => m.historico === "BB Consórcio - Prestação")).toBe(true);
+  });
+
+  it("gives every line its own identificador, so none can be taken for another", () => {
+    const { movimentos } = parseOFXContent(ofx);
+    expect(new Set(movimentos.map((m) => m.identificadorOfx)).size).toBe(22);
+  });
+
+  it("keeps the file total to the cent", () => {
+    const { movimentos } = parseOFXContent(ofx);
+    const total = movimentos.reduce((s, m) => s + Math.round(m.valor * 100), 0);
+    expect(total).toBe(-consorcio.reduce((s, v) => s + Math.round(v * 100), 0));
+  });
+
+  it("parses the same lines in any order to the same set of identificadores", () => {
+    const linhas = trn.split("\n<STMTTRN>").map((t, i) => (i ? `<STMTTRN>${t}` : t));
+    const invertido = ofx.replace(trn, [...linhas].reverse().join("\n"));
+    const ids = (s: string) => parseOFXContent(s).movimentos.map((m) => m.identificadorOfx).sort();
+    expect(ids(invertido)).toEqual(ids(ofx));
+  });
+});

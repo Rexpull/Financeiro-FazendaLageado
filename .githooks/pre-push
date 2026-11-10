@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs the type check and the whole test suite before every push; the push is cancelled when anything fails.
+# Enabled once per clone with:  git config core.hooksPath .githooks
+echo "pre-push: conferindo os tipos (tsc)..."
+if ! npx tsc -p tsconfig.ci.json; then
+	echo "pre-push: erro de tipos, push cancelado."
+	exit 1
+fi
+echo "pre-push: rodando os testes (vitest)..."
+if ! npx vitest run --exclude "e2e/**"; then
+	echo "pre-push: testes falharam, push cancelado."
+	exit 1
+fi
+echo "pre-push: tudo certo."

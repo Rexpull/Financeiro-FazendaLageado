@@ -1,0 +1,14 @@
+{
+	// Type check used by CI and the pre-push hook: the committed tsconfig.json plus the browser/Vite types
+	// the frontend needs, covering backend and frontend.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"lib": ["es2021", "dom", "dom.iterable"],
+		"moduleResolution": "bundler",
+		"types": ["@cloudflare/workers-types/2023-07-01", "node", "vite/client"],
+		"incremental": false,
+		"noEmit": true
+	},
+	"exclude": ["test", "node_modules", "dist", "e2e"],
+	"include": ["worker-configuration.d.ts", "backend/src/**/*.ts", "frontend/**/*.{ts,tsx,js,jsx}", "vite-env.d.ts", "main.tsx"]
+}
