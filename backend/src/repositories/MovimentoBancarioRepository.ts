@@ -585,7 +585,12 @@ export class MovimentoBancarioRepository {
 		return movimentos;
 	}
 
-	async createBatch(movimentos: MovimentoBancario[]): Promise<{
+	/**
+	 * `identificadoresArquivo`: identificadores of EVERY line of the OFX file (the screen sends the file in
+	 * batches of 10). Without them, a line equal to another one (same day, valor and historico, other FITID,
+	 * e.g. BB Consórcio installments) in a later batch was taken as the row the earlier batch had just created.
+	 */
+	async createBatch(movimentos: MovimentoBancario[], identificadoresArquivo: string[] = []): Promise<{
 		movimentos: MovimentoBancario[];
 		novos: number;
 		existentes: number;
@@ -617,15 +622,29 @@ export class MovimentoBancarioRepository {
 
 		// Batch context for the OFX fallback (per conta): bare identificadores of every line,
 		// FITID+day keys repeated in the batch, and rows already matched by a previous line.
+		// The whole file when the screen sends it (rows created by an earlier batch of the same file are
+		// never "the same line already imported"); otherwise just this batch.
 		const identificadoresPorConta = new Map<number, Set<string>>();
 		const contagemFitidDia = new Map<string, number>();
+		const doArquivo = identificadoresArquivo.filter((s): s is string => typeof s === 'string' && s.length > 0);
+		const contasDoLote = [...new Set(movimentos.map((m) => Number(m?.idContaCorrente)).filter((c) => c > 0))];
+		const linhas: Array<{ identificadorOfx: string; conta: number }> = doArquivo.length
+			? contasDoLote.flatMap((conta) => doArquivo.map((identificadorOfx) => ({ identificadorOfx, conta })))
+			: movimentos
+					.filter((m) => m?.identificadorOfx && Number(m?.idContaCorrente) > 0)
+					.map((m) => ({ identificadorOfx: m.identificadorOfx!, conta: Number(m.idContaCorrente) }));
+		for (const { identificadorOfx, conta } of linhas) {
+			if (!identificadoresPorConta.has(conta)) identificadoresPorConta.set(conta, new Set());
+			identificadoresPorConta.get(conta)!.add(stripContaSuffix(identificadorOfx));
+			const chave = chaveFitidDia(identificadorOfx, conta);
+			if (chave) contagemFitidDia.set(chave, (contagemFitidDia.get(chave) ?? 0) + 1);
+		}
+		// lines of this batch that are not in the file list (e.g. no identificador in the file)
 		for (const m of movimentos) {
 			const conta = Number(m?.idContaCorrente);
 			if (!m?.identificadorOfx || !conta) continue;
 			if (!identificadoresPorConta.has(conta)) identificadoresPorConta.set(conta, new Set());
 			identificadoresPorConta.get(conta)!.add(stripContaSuffix(m.identificadorOfx));
-			const chave = chaveFitidDia(m.identificadorOfx, conta);
-			if (chave) contagemFitidDia.set(chave, (contagemFitidDia.get(chave) ?? 0) + 1);
 		}
 		const idsJaUsados = new Set<number>();
 

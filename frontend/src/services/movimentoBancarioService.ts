@@ -315,6 +315,9 @@ export const salvarMovimentosOFX = async (
 	let classificadosPorMemoria = 0;
 	let encontrados = 0;
 	const BATCH_SIZE = 10; // Processa 10 movimentos por vez
+	// Every batch carries the identificadores of the whole file: a line equal to another one (same day,
+	// valor and historico) in a later batch must not be taken as the row an earlier batch just created.
+	const identificadoresArquivo = movimentos.map((m) => m.identificadorOfx).filter((s): s is string => !!s);
 
 	console.log(`🔄 Processando ${movimentos.length} movimentos em lotes de ${BATCH_SIZE}`);
 
@@ -370,7 +373,7 @@ export const salvarMovimentosOFX = async (
 			const response = await fetch(`${API_URL}/api/movBancario/batch`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ movimentos: batchPreparado }),
+				body: JSON.stringify({ movimentos: batchPreparado, identificadoresArquivo }),
 			});
 
 			if (!response.ok) {

@@ -468,7 +468,7 @@ export class MovimentoBancarioController {
 			// 📌 POST - Processar movimentos em batch
 			if (method === 'POST' && pathname === '/api/movBancario/batch') {
 				try {
-					const body: { movimentos: MovimentoBancario[] } = await req.json();
+					const body: { movimentos: MovimentoBancario[]; identificadoresArquivo?: unknown } = await req.json();
 					console.log(`📥 Processando lote de ${body.movimentos.length} movimentos`);
 
 					if (!body.movimentos || !Array.isArray(body.movimentos) || body.movimentos.length === 0) {
@@ -478,7 +478,11 @@ export class MovimentoBancarioController {
 						});
 					}
 
-					const resultado = await this.movBancarioRepository.createBatch(body.movimentos);
+					// identificadores of the whole OFX file (the screen sends it in batches)
+					const identificadoresArquivo = Array.isArray(body.identificadoresArquivo)
+						? body.identificadoresArquivo.filter((s): s is string => typeof s === 'string').slice(0, 20000)
+						: [];
+					const resultado = await this.movBancarioRepository.createBatch(body.movimentos, identificadoresArquivo);
 					console.log(`✅ Lote processado: ${resultado.novos} novos, ${resultado.existentes} existentes`);
 
 					return new Response(JSON.stringify(resultado), {
