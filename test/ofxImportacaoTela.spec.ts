@@ -8,6 +8,10 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import schemaSql from './fixtures/schema.sql?raw';
 import { parseOFXContent } from '../frontend/src/Utils/parseOfxFile';
 
+// Each test imports whole files (32+ lines, batches of 10) one or more times: well above the 5 s default on a
+// busy machine, and a timed-out test breaks the isolated storage of the tests after it.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warn: vi.fn(), warning: vi.fn() } }));
 
 const BASE = 'https://worker.test';
