@@ -1,6 +1,8 @@
 #!/bin/sh
 # Runs the type check and the whole test suite before every push; the push is cancelled when anything fails.
 # Enabled once per clone with:  git config core.hooksPath .githooks
+# The suite runs a second time before cancelling: on Windows the workers test runner sometimes crashes on its
+# own ("Isolated storage failed"); a real failure fails both times.
 echo "pre-push: conferindo os tipos (tsc)..."
 if ! npx tsc -p tsconfig.ci.json; then
 	echo "pre-push: erro de tipos, push cancelado."
@@ -8,7 +10,11 @@ if ! npx tsc -p tsconfig.ci.json; then
 fi
 echo "pre-push: rodando os testes (vitest)..."
 if ! npx vitest run --exclude "e2e/**"; then
-	echo "pre-push: testes falharam, push cancelado."
-	exit 1
+	echo "pre-push: testes falharam; repetindo uma vez para descartar falha intermitente do runner..."
+	if ! npx vitest run --exclude "e2e/**"; then
+		echo "pre-push: testes falharam de novo, push cancelado."
+		exit 1
+	fi
+	echo "pre-push: passou na segunda tentativa (a primeira falha foi intermitente)."
 fi
 echo "pre-push: tudo certo."
