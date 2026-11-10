@@ -74,11 +74,14 @@ describe('calcularCaixaDiario', () => {
 		expect(dia(5).saldoFinal).toBe(53999.5);
 
 		expect(dia(10).financiamento).toBe(42000);
-		expect(dia(10).saldo).toBe(-17000.5);
+		// parte do saldo com previsões do dia anterior (53.999,50), não do saldo sem previsões
+		expect(dia(10).saldo).toBe(11999.5);
 		expect(dia(10).saldoFinal).toBe(11999.5);
 
+		expect(dia(20).saldo).toBe(11999.5);
 		expect(dia(20).saldoFinal).toBe(-58000.5);
-		expect(dia(31).saldo).toBe(-17000.5);
+		expect(dia(21).saldo).toBe(-58000.5);
+		expect(dia(31).saldo).toBe(-58000.5);
 		expect(dia(31).saldoFinal).toBe(-58000.5);
 
 		expect(r.totais).toEqual({
@@ -87,18 +90,36 @@ describe('calcularCaixaDiario', () => {
 			previsaoC: 30000,
 			previsaoD: 71000,
 			previsao: -41000,
-			saldo: -17000.5,
+			saldo: -58000.5,
 			saldoFinal: -58000.5,
 		});
 
 		// necessidade mínima de caixa
-		expect(r.minimo.saldo).toEqual({ valor: -17000.5, data: '2026-10-10', aporteNecessario: 17000.5, caixaNecessario: 67000.5 });
+		expect(r.minimo.saldo).toEqual({ valor: -58000.5, data: '2026-10-21', aporteNecessario: 58000.5, caixaNecessario: 108000.5 });
 		expect(r.minimo.saldoFinal).toEqual({
 			valor: -58000.5,
 			data: '2026-10-20',
 			aporteNecessario: 58000.5,
 			caixaNecessario: 108000.5,
 		});
+	});
+
+	it('exemplo do cliente (09/11/2026): saldo sem previsões parte do saldo com previsões do dia anterior', () => {
+		const r = calcularCaixaDiario({
+			ano: 2026,
+			mes: 11,
+			saldoInicial: 600000,
+			lancamentos: [
+				{ tipo: 'BOLETO', natureza: 'D', data: '2026-11-09', valor: 380000 },
+				{ tipo: 'PREVISAO', natureza: 'C', data: '2026-11-09', valor: 150000 },
+				{ tipo: 'BOLETO', natureza: 'D', data: '2026-11-10', valor: 90000 },
+				{ tipo: 'PREVISAO', natureza: 'D', data: '2026-11-10', valor: 30000 },
+			],
+			parcelas: [{ data: '2026-11-10', valor: 170000 }],
+		});
+		expect(r.dias[8]).toMatchObject({ saldo: 220000, saldoFinal: 370000 });
+		// 370.000 − 90.000 − 170.000 = 110.000; − 30.000 de previsões = 80.000
+		expect(r.dias[9]).toMatchObject({ saldo: 110000, previsao: -30000, saldoFinal: 80000 });
 	});
 
 	it('o mínimo do saldo final pode cair no meio do mês e é o primeiro dia em que ocorre', () => {
@@ -117,8 +138,9 @@ describe('calcularCaixaDiario', () => {
 		expect(r.minimo.saldoFinal.aporteNecessario).toBe(2000);
 		expect(r.minimo.saldoFinal.caixaNecessario).toBe(3000);
 		expect(r.totais.saldoFinal).toBe(3000);
-		// sem saída, o saldo (sem previsões) fica no inicial desde o dia 01
-		expect(r.minimo.saldo).toEqual({ valor: 1000, data: '2026-10-01', aporteNecessario: 0, caixaNecessario: 0 });
+		// o saldo sem previsões só sente a previsão do dia 08 a partir do dia 09
+		expect(r.dias[7].saldo).toBe(1000);
+		expect(r.minimo.saldo).toEqual({ valor: -2000, data: '2026-10-09', aporteNecessario: 2000, caixaNecessario: 3000 });
 	});
 
 	it('ignora itens fora do mês e trata saldo inicial ausente como zero', () => {

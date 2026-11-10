@@ -134,7 +134,7 @@ describe('GET /api/caixa', () => {
 		expect(body.minimo.saldo).toMatchObject({ valor: 88500.5, data: '2026-10-15', aporteNecessario: 0, caixaNecessario: 11499.5 });
 	});
 
-	it('previsões C/D entram só no saldo final (acumulado)', async () => {
+	it('previsões do dia entram só no saldo final; o saldo do dia seguinte parte dele', async () => {
 		await call('PUT', '/api/caixa/saldo-inicial', { ano: 2026, mes: 10, valor: 20000 });
 		await call('POST', '/api/caixa/lancamentos', { tipo: 'PREVISAO', natureza: 'C', data: '2026-10-10', descricao: 'Venda de gado', valor: 5000 });
 		await call('POST', '/api/caixa/lancamentos', { tipo: 'PREVISAO', natureza: 'D', data: '2026-10-20', descricao: 'Compra de ração', valor: 30000 });
@@ -142,10 +142,11 @@ describe('GET /api/caixa', () => {
 		const { body } = await getOutubro();
 		const dia = (d: number) => body.dias[d - 1];
 		expect(dia(10)).toMatchObject({ saldo: 10000, previsaoC: 5000, previsaoD: 0, previsao: 5000, saldoFinal: 15000 });
-		expect(dia(15)).toMatchObject({ saldo: 9500.5, saldoFinal: 14500.5 });
-		expect(dia(20)).toMatchObject({ saldo: 9500.5, previsaoD: 30000, previsao: -30000, saldoFinal: -15499.5 });
-		expect(body.totais).toMatchObject({ previsaoC: 5000, previsaoD: 30000, previsao: -25000, saldo: 9500.5, saldoFinal: -15499.5 });
-		expect(body.minimo.saldo).toMatchObject({ valor: 9500.5, data: '2026-10-15' });
+		expect(dia(15)).toMatchObject({ saldo: 14500.5, saldoFinal: 14500.5 });
+		expect(dia(20)).toMatchObject({ saldo: 14500.5, previsaoD: 30000, previsao: -30000, saldoFinal: -15499.5 });
+		expect(dia(21)).toMatchObject({ saldo: -15499.5, saldoFinal: -15499.5 });
+		expect(body.totais).toMatchObject({ previsaoC: 5000, previsaoD: 30000, previsao: -25000, saldo: -15499.5, saldoFinal: -15499.5 });
+		expect(body.minimo.saldo).toMatchObject({ valor: -15499.5, data: '2026-10-21' });
 		expect(body.minimo.saldoFinal).toMatchObject({ valor: -15499.5, data: '2026-10-20', aporteNecessario: 15499.5, caixaNecessario: 35499.5 });
 		expect(body.lancamentos).toHaveLength(2);
 		expect(body.lancamentos[0]).toMatchObject({ tipo: 'PREVISAO', natureza: 'C', data: '2026-10-10', descricao: 'Venda de gado', valor: 5000 });

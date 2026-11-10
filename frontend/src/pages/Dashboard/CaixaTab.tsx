@@ -126,7 +126,7 @@ interface CaixaTabProps {
 /**
  * Caixa diário do mês: saldo inicial digitado − boletos (total por dia) − parcelas de financiamento
  * marcadas (Saldo sem previsões), mais as movimentações previstas de entrada/saída (Saldo com previsões).
- * Acumulados dia a dia.
+ * O saldo sem previsões de cada dia parte do saldo com previsões do dia anterior.
  * O mês abre pelo filtro do Dashboard e pode ser navegado aqui até dez/2040.
  */
 export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSelecionado }) => {
@@ -607,9 +607,9 @@ const TabelaDias: React.FC<{
     { rotulo: "Data" },
     { rotulo: "Boletos (R$)", dica: "Digite o total dos boletos a pagar no dia. Salva ao pressionar Enter ou sair do campo; deixe vazio para zerar." },
     { rotulo: "Financiamento", dica: "Parcelas de financiamento com vencimento no dia marcadas para entrar no saldo. Clique para escolher." },
-    { rotulo: "Saldo sem previsões", dica: "Saldo inicial − boletos − financiamentos, acumulado até o dia. Não inclui as movimentações previstas." },
+    { rotulo: "Saldo sem previsões", dica: "Saldo com previsões do dia anterior (no dia 1, o saldo inicial) − boletos − financiamentos do dia. Ainda sem as previsões do dia." },
     { rotulo: "Movimentações previstas", dica: "Entradas menos saídas previstas no dia. Passe o mouse para ver as descrições; clique para incluir ou editar." },
-    { rotulo: "Saldo com previsões", dica: "Saldo sem previsões + entradas previstas − saídas previstas, acumulado até o dia. É a posição esperada do caixa." },
+    { rotulo: "Saldo com previsões", dica: "Saldo sem previsões + entradas previstas − saídas previstas do dia. É a posição esperada do caixa." },
   ];
 
   return (

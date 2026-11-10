@@ -1,9 +1,12 @@
 /**
  * Caixa diário (previsão de posição de caixa dia a dia de um mês).
  *
- * Saldo       = saldo inicial − Σ boletos − Σ financiamento (acumulado até o dia, inclusive)
- *               (financiamento = só as parcelas marcadas como consideradas na apuração)
- * Saldo final = saldo + Σ previsões C − Σ previsões D (acumulado até o dia, inclusive)
+ * Saldo (sem previsões do dia) = saldo final do dia anterior (no dia 01, o saldo inicial)
+ *                                − boletos do dia − financiamento do dia
+ *                                (financiamento = só as parcelas marcadas como consideradas na apuração)
+ * Saldo final (com previsões)  = saldo do dia + previsões C do dia − previsões D do dia
+ * Regra do cliente (09/11/2026): o saldo sem previsões dá sequência ao saldo com previsões do dia
+ * anterior, ou seja, as previsões de dias passados já fazem parte dele.
  *
  * Datas são comparadas como strings 'YYYY-MM-DD' (só os 10 primeiros caracteres contam,
  * então '2026-10-05T03:00:00.000Z' cai no dia 05). Valores são somados em centavos
@@ -150,8 +153,8 @@ export function calcularCaixaDiario(args: {
 		const a = porDia.get(data)!;
 		const saida = a.boletos + a.financiamento;
 		const previsao = a.previsaoC - a.previsaoD;
-		saldo -= saida;
-		saldoFinal += previsao - saida;
+		saldo = saldoFinal - saida;
+		saldoFinal = saldo + previsao;
 
 		tot.boletos += a.boletos;
 		tot.financiamento += a.financiamento;
