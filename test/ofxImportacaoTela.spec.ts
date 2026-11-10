@@ -68,12 +68,16 @@ function ofx(linhas: Linha[], bankId = '1') {
 	return `OFXHEADER:100\nDATA:OFXSGML\nCHARSET:1252\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL<BANKACCTFROM><BANKID>${bankId}<ACCTID>123<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST>\n${trn}\n</BANKTRANLIST><LEDGERBAL><BALAMT>0<DTASOF>20261130</LEDGERBAL></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
 }
 
-/** The 22 consórcio installments of 10/11/2026 (bank order) + 10 other lines of the same day. */
-function extratoBB1011(): Linha[] {
+/**
+ * The 22 consórcio installments of 10/11/2026 (bank order) + 10 other lines of the same day. Without
+ * `referencia` the installments stay one by one (the equal-lines case); with it (CHECKNUM, as BB sent on
+ * 10/11) the parser groups them into one line.
+ */
+function extratoBB1011(referencia?: string): Linha[] {
 	const valores = [2862.81, ...Array(5).fill(862.93), 609.13, 862.93, ...Array(11).fill(792.58), 3637.88, 3637.88, 4850.5];
 	const outros = [-1378, -3900.27, -13680.75, -30825.02, -321.13, -565.25, -41.51, -275.7, -84.76, -516.26];
 	return linhasBB([
-		...valores.map((v) => ({ dia: '2026-11-10', valor: -v, memo: CONSORCIO, checkNum: '14033' })),
+		...valores.map((v) => ({ dia: '2026-11-10', valor: -v, memo: CONSORCIO, checkNum: referencia })),
 		...outros.map((v, i) => ({ dia: '2026-11-10', valor: v, memo: `Pagamento de boleto ${i + 1}`, checkNum: String(111001 + i) })),
 	]);
 }
@@ -172,7 +176,7 @@ describe('OFX import through the screen: every line once', () => {
 	});
 
 	it.each([1, 2, 9, 10, 11, 19, 20, 21, 25, 31])('%i equal lines (same day, valor and histórico) are all saved, then re-import adds none', async (n) => {
-		const linhas = linhasBB(Array.from({ length: n }, () => ({ dia: '2026-11-10', valor: -792.58, memo: CONSORCIO, checkNum: '14033' })));
+		const linhas = linhasBB(Array.from({ length: n }, () => ({ dia: '2026-11-10', valor: -792.58, memo: CONSORCIO })));
 		expect(await importarArquivo(linhas)).toMatchObject({ novos: n, existentes: 0 });
 		await esperarArquivoCompleto(linhas);
 		expect(await importarArquivo(linhas)).toMatchObject({ novos: 0, existentes: n });
@@ -192,7 +196,7 @@ describe('OFX import through the screen: every line once', () => {
 		const dias = ['2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'];
 		const linhas = linhasBB(
 			dias.flatMap((dia) => [
-				...Array.from({ length: 7 }, () => ({ dia, valor: -862.93, memo: CONSORCIO, checkNum: '14033' })),
+				...Array.from({ length: 7 }, () => ({ dia, valor: -862.93, memo: CONSORCIO })),
 				{ dia, valor: -1.5, memo: 'Tarifa pacote de serviços' },
 				...Array.from({ length: 4 }, () => ({ dia, valor: -4.9, memo: 'Tarifa Pix enviado' })),
 			]),
@@ -264,7 +268,7 @@ describe('OFX import through the screen: accounts and classification', () => {
 	});
 
 	it('the memória de conciliação classifies every equal line, in every batch', async () => {
-		const primeira = linhasBB([{ dia: '2026-11-03', valor: -792.58, memo: CONSORCIO, checkNum: '14033' }]);
+		const primeira = linhasBB([{ dia: '2026-11-03', valor: -792.58, memo: CONSORCIO }]);
 		await importarArquivo(primeira);
 		const [row] = await noBanco();
 		const res = await SELF.fetch(`${BASE}/api/movBancario/${row.id}`, {
@@ -320,5 +324,44 @@ describe('OFX import through the screen: other banks', () => {
 		expect(await importarArquivo(linhas, CONTA, '756')).toMatchObject({ novos: 30 });
 		await esperarArquivoCompleto(linhas);
 		expect(await importarArquivo(linhas, CONTA, '756')).toMatchObject({ novos: 0, existentes: 30 });
+	});
+});
+
+describe('OFX import through the screen: BB consórcio grouped by its reference', () => {
+	const AGRUPADO = 'BB Cons - Agrupado (22 movimentos) - REF: 14033';
+
+	it('the 22 installments with their reference (CHECKNUM 14033) arrive as one line with the exact total', async () => {
+		const linhas = extratoBB1011('14033');
+		const r = await importarArquivo(linhas);
+		expect(r.parseados).toHaveLength(11);
+		expect(r).toMatchObject({ novos: 11, existentes: 0 });
+		const rows = await noBanco();
+		const agrupada = rows.filter((x) => x.historico === AGRUPADO);
+		expect(agrupada).toHaveLength(1);
+		expect(Math.round(agrupada[0].valor * 100)).toBe(centavos(linhas.filter((l) => l.memo === CONSORCIO)));
+		expect(centavos(rows)).toBe(centavos(linhas));
+
+		expect(await importarArquivo(linhas)).toMatchObject({ novos: 0, existentes: 11 });
+		expect(await noBanco()).toHaveLength(11);
+	});
+
+	it('installments already imported one by one are recognised by the grouped file: nothing is duplicated', async () => {
+		// 10/11/2026: the 22 lines went in separately; after the grouping fix the same file arrives grouped
+		await importarArquivo(extratoBB1011());
+		const antes = await noBanco();
+		expect(antes).toHaveLength(32);
+
+		const r = await importarArquivo(extratoBB1011('14033'));
+		expect(r).toMatchObject({ novos: 0, existentes: 11 });
+		const depois = await noBanco();
+		expect(depois).toHaveLength(32);
+		expect(centavos(depois)).toBe(centavos(antes));
+	});
+
+	it('the REFNUM channel (14.033) and the CHECKNUM channel (14033) are the same grouped line', async () => {
+		const porRefnum = extratoBB1011().map((l) => (l.memo === CONSORCIO ? { ...l, refNum: '14.033' } : l));
+		await importarArquivo(porRefnum);
+		expect(await importarArquivo(extratoBB1011('14033'))).toMatchObject({ novos: 0 });
+		expect(await noBanco()).toHaveLength(11);
 	});
 });

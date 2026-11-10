@@ -196,25 +196,38 @@ function agruparMovimentosSantander(movimentos: MovimentoTemporario[]): Moviment
 	return saida;
 }
 
+/**
+ * Reference of a BB consórcio line: the group's number. Depending on the export channel BB sends it as
+ * REFNUM ("14.033") or only as CHECKNUM ("14033"); both must group (on 10/11/2026 a CHECKNUM-only file
+ * brought the 22 installments one by one).
+ */
+export function referenciaConsorcioBB(m: { refNum?: string; checkNum?: string }): string | undefined {
+	return m.refNum || m.checkNum || undefined;
+}
+
+/** BB consórcio installments of the same reference, day and direction become one line (sum in cents). */
 function agruparMovimentosBB(movimentos: MovimentoTemporario[]): MovimentoTemporario[] {
 	const movimentosAgrupados: MovimentoTemporario[] = [];
 	const porRef: Record<string, MovimentoTemporario[]> = {};
 	const naoBB: MovimentoTemporario[] = [];
 
 	movimentos.forEach((m) => {
-		if (m.isBBCons && m.refNum) {
-			if (!porRef[m.refNum]) porRef[m.refNum] = [];
-			porRef[m.refNum].push(m);
+		const ref = m.isBBCons ? referenciaConsorcioBB(m) : undefined;
+		if (ref) {
+			const chave = `${ref}|${m.dtMovimento.substring(0, 10)}|${m.tipoMovimento}`;
+			if (!porRef[chave]) porRef[chave] = [];
+			porRef[chave].push(m);
 		} else {
 			naoBB.push(m);
 		}
 	});
 
-	Object.keys(porRef).forEach((ref) => {
-		const grupo = porRef[ref];
+	Object.keys(porRef).forEach((chave) => {
+		const grupo = porRef[chave];
+		const ref = referenciaConsorcioBB(grupo[0])!;
 		if (grupo.length > 1) {
 			const primeiro = grupo[0];
-			const total = grupo.reduce((acc, g) => acc + g.valor, 0);
+			const total = grupo.reduce((acc, g) => acc + Math.round(g.valor * 100), 0) / 100;
 			const tipoMovimento: 'C' | 'D' = total >= 0 ? 'C' : 'D';
 
 			const agrupado: MovimentoTemporario = {
@@ -226,7 +239,7 @@ function agruparMovimentosBB(movimentos: MovimentoTemporario[]): MovimentoTempor
 
 			movimentosAgrupados.push(agrupado);
 
-			console.log(`🔄 BB Cons agrupado por REFNUM ${ref}:`, {
+			console.log(`🔄 BB Cons agrupado pela referência ${ref}:`, {
 				quantidade: grupo.length,
 				valorTotal: formatCurrency(total),
 				historico: agrupado.historico,

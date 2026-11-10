@@ -530,40 +530,109 @@ describe("credit card statement", () => {
   });
 });
 
-describe("BB statement with many equal lines (BB GFS, 10/11/2026)", () => {
+describe("BB statement with many equal consórcio lines (BB GFS, 10/11/2026)", () => {
   const consorcio = [2862.81, 862.93, 862.93, 862.93, 862.93, 862.93, 609.13, 862.93, ...Array(11).fill(792.58), 3637.88, 3637.88, 4850.5];
-  const seq = new Map<number, number>();
-  const trn = consorcio
-    .map((v) => {
-      const n = (seq.get(v) ?? 0) + 1;
-      seq.set(v, n);
-      const fitid = `202611101${Math.round(v * 100)}0${n > 1 ? n : ""}`;
-      return `<STMTTRN>\n<TRNTYPE>DEBIT\n<DTPOSTED>20261110120000[-3:BRT]\n<TRNAMT>-${v.toFixed(2)}\n<FITID>${fitid}\n<CHECKNUM>14033\n<MEMO>BB Consórcio - Prestação\n</STMTTRN>`;
-    })
-    .join("\n");
-  const ofx = `OFXHEADER:100\nDATA:OFXSGML\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM><BANKID>1<ACCTID>1</BANKACCTFROM><BANKTRANLIST>\n${trn}\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+  const totalCentavos = -consorcio.reduce((s, v) => s + Math.round(v * 100), 0);
+  type L = { v: number; dia?: string; ref?: string; campo?: "CHECKNUM" | "REFNUM"; memo?: string };
 
-  it("keeps the 22 installments as 22 lines (CHECKNUM is not a grouping key)", () => {
-    const { movimentos } = parseOFXContent(ofx);
-    expect(movimentos).toHaveLength(22);
-    expect(movimentos.every((m) => m.historico === "BB Consórcio - Prestação")).toBe(true);
+  /** BB-like file: FITID = date + '1' + centavos + '0' + occurrence; the reference in CHECKNUM or REFNUM. */
+  function ofxBB(linhas: L[]) {
+    const seq = new Map<string, number>();
+    const trn = linhas
+      .map(({ v, dia = "20261110", ref, campo = "CHECKNUM", memo = "BB Consórcio - Prestação" }) => {
+        const k = `${dia}|${v}`;
+        const n = (seq.get(k) ?? 0) + 1;
+        seq.set(k, n);
+        const fitid = `${dia}1${Math.round(Math.abs(v) * 100)}0${n > 1 ? n : ""}`;
+        const refTag = ref ? `<${campo}>${ref}
+` : "";
+        return `<STMTTRN>
+<TRNTYPE>${v < 0 ? "DEBIT" : "CREDIT"}
+<DTPOSTED>${dia}120000[-3:BRT]
+<TRNAMT>${v.toFixed(2)}
+<FITID>${fitid}
+${refTag}<MEMO>${memo}
+</STMTTRN>`;
+      })
+      .join("\n");
+    return `OFXHEADER:100
+DATA:OFXSGML
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM><BANKID>1<ACCTID>1</BANKACCTFROM><BANKTRANLIST>
+${trn}
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+  }
+  const do1011 = (extra: Partial<L>) => consorcio.map((v) => ({ v: -v, ...extra }));
+
+  it("groups the 22 installments when the reference comes only as CHECKNUM (file of 10/11)", () => {
+    const { movimentos } = parseOFXContent(ofxBB(do1011({ ref: "14033", campo: "CHECKNUM" })));
+    expect(movimentos).toHaveLength(1);
+    expect(movimentos[0].historico).toBe("BB Cons - Agrupado (22 movimentos) - REF: 14033");
+    expect(Math.round(movimentos[0].valor * 100)).toBe(totalCentavos);
+    expect(movimentos[0].valor).toBe(totalCentavos / 100); // exact cents, no 0.000000001 leftovers
   });
 
-  it("gives every line its own identificador, so none can be taken for another", () => {
-    const { movimentos } = parseOFXContent(ofx);
-    expect(new Set(movimentos.map((m) => m.identificadorOfx)).size).toBe(22);
+  it("groups them the same way when the reference comes as REFNUM (file of 13/10)", () => {
+    const { movimentos } = parseOFXContent(ofxBB(do1011({ ref: "14.033", campo: "REFNUM" })));
+    expect(movimentos).toHaveLength(1);
+    expect(movimentos[0].historico).toBe("BB Cons - Agrupado (22 movimentos) - REF: 14.033");
+    expect(movimentos[0].valor).toBe(totalCentavos / 100);
   });
 
-  it("keeps the file total to the cent", () => {
-    const { movimentos } = parseOFXContent(ofx);
-    const total = movimentos.reduce((s, m) => s + Math.round(m.valor * 100), 0);
-    expect(total).toBe(-consorcio.reduce((s, v) => s + Math.round(v * 100), 0));
+  it("also groups the 'BB ADMIN CONSÓRCIO SA' text of the other BB channel", () => {
+    const { movimentos } = parseOFXContent(ofxBB(do1011({ ref: "14033", memo: "BB ADMIN CONSÓRCIO SA" })));
+    expect(movimentos).toHaveLength(1);
+    expect(movimentos[0].valor).toBe(totalCentavos / 100);
   });
 
-  it("parses the same lines in any order to the same set of identificadores", () => {
-    const linhas = trn.split("\n<STMTTRN>").map((t, i) => (i ? `<STMTTRN>${t}` : t));
-    const invertido = ofx.replace(trn, [...linhas].reverse().join("\n"));
-    const ids = (s: string) => parseOFXContent(s).movimentos.map((m) => m.identificadorOfx).sort();
-    expect(ids(invertido)).toEqual(ids(ofx));
+  it("one group per day, per reference and per direction", () => {
+    const { movimentos } = parseOFXContent(
+      ofxBB([
+        { v: -792.58, ref: "14033" },
+        { v: -792.58, ref: "14033" },
+        { v: -792.58, ref: "14033", dia: "20261111" },
+        { v: -792.58, ref: "14033", dia: "20261111" },
+        { v: -500, ref: "20999" },
+        { v: -500, ref: "20999" },
+        { v: 332.79, ref: "14033", memo: "BB Consórcio-Carta Crédit" },
+      ]),
+    );
+    const resumo = movimentos.map((m) => `${m.dtMovimento.substring(0, 10)} ${m.valor} ${m.historico}`).sort();
+    expect(resumo).toEqual([
+      "2026-11-10 -1000 BB Cons - Agrupado (2 movimentos) - REF: 20999",
+      "2026-11-10 -1585.16 BB Cons - Agrupado (2 movimentos) - REF: 14033",
+      "2026-11-10 332.79 BB Consórcio-Carta Crédit",
+      "2026-11-11 -1585.16 BB Cons - Agrupado (2 movimentos) - REF: 14033",
+    ]);
+  });
+
+  it("a single installment of a reference stays as it came", () => {
+    const { movimentos } = parseOFXContent(ofxBB([{ v: -862.93, ref: "14033" }]));
+    expect(movimentos).toHaveLength(1);
+    expect(movimentos[0].historico).toBe("BB Consórcio - Prestação");
+  });
+
+  it("other BB lines with the same CHECKNUM are never grouped", () => {
+    const { movimentos } = parseOFXContent(ofxBB(Array.from({ length: 5 }, () => ({ v: -4.9, ref: "14033", memo: "Tarifa Pix enviado" }))));
+    expect(movimentos).toHaveLength(5);
+  });
+
+  describe("without a reference, the 22 lines stay one by one", () => {
+    const ofx = ofxBB(do1011({}));
+
+    it("22 lines, each with its own identificador, so none can be taken for another", () => {
+      const { movimentos } = parseOFXContent(ofx);
+      expect(movimentos).toHaveLength(22);
+      expect(new Set(movimentos.map((m) => m.identificadorOfx)).size).toBe(22);
+    });
+
+    it("keeps the file total to the cent", () => {
+      const { movimentos } = parseOFXContent(ofx);
+      expect(movimentos.reduce((s, m) => s + Math.round(m.valor * 100), 0)).toBe(totalCentavos);
+    });
+
+    it("parses the same lines in any order to the same set of identificadores", () => {
+      const ids = (s: string) => parseOFXContent(s).movimentos.map((m) => m.identificadorOfx).sort();
+      expect(ids(ofxBB([...do1011({})].reverse()))).toEqual(ids(ofx));
+    });
   });
 });

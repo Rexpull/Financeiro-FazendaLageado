@@ -48,7 +48,7 @@ function fitid(valor: number, seq: string) {
 
 function ofx() {
 	const linhas = [
-		...CONS.map(([v, s]) => ({ v, f: fitid(v, s), memo: 'BB Consórcio - Prestação', chk: '14033' })),
+		...CONS.map(([v, s]) => ({ v, f: fitid(v, s), memo: 'BB Consórcio - Prestação', chk: '' })),
 		...OUTROS.map((v, i) => ({ v, f: fitid(v, 'x' + i), memo: `Outro ${i}`, chk: String(111000 + i) })),
 	];
 	const trn = linhas
