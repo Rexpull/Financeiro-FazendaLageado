@@ -468,3 +468,65 @@ describe('regression guard — outside the rule', () => {
 		expect((await post(linha(-75, 'Lançamento manual - sem classificação'))).status).toBe(201);
 	});
 });
+
+describe('Relatório Itens Classificados — line with planos and centres of both types', () => {
+	type Item = { id: number; valor: number; idPlanoContas: number; idCentroCustos: number; subtipoDespesa?: string };
+	const res = (idPlanoContas: number, valor: number) => ({ dtMovimento: '2026-11-10T00:00:00.000Z', idPlanoContas, idContaCorrente: CONTA, valor, tipo: 'D' });
+	const relatorio = async (extra = '') =>
+		(await (await SELF.fetch(`${BASE}/api/relatorio/itens-classificados?dataInicio=2026-11-01&dataFim=2026-11-30${extra}`)).json()) as Item[];
+
+	// Production case of 14/11/2026 (movimento 16132): the bill was saved right, but the report showed
+	// R$ 1.873,75 of "Compra de máquinas" (investimento) in "Leite - Produção" (custeio).
+	it('each plano is shown only in the centres of its own type, with its full value', async () => {
+		const mov = await nova(-7991.09, 'DEB.CTA.FATURA-033220877');
+		const r = await put(mov.id, {
+			idPlanoContas: null,
+			resultadoList: [res(P_CUSTEIO_2, 3000), res(P_INVEST_2, 4991.09)],
+			idCentroCustos: null,
+			centroCustosList: [{ idCentroCustos: C_CUSTEIO, valor: 3000 }, { idCentroCustos: C_INVEST, valor: 4991.09 }],
+		});
+		expect(r.status).toBe(200);
+		const linhas = (await relatorio()).filter((i) => i.id === mov.id).map((i) => ({ plano: i.idPlanoContas, centro: i.idCentroCustos, valor: i.valor, tipo: i.subtipoDespesa }));
+		expect(linhas).toEqual([
+			{ plano: P_CUSTEIO_2, centro: C_CUSTEIO, valor: 3000, tipo: 'custeio' },
+			{ plano: P_INVEST_2, centro: C_INVEST, valor: 4991.09, tipo: 'investimento' },
+		]);
+		// the plano filter lists that plano's rows only
+		expect((await relatorio(`&planoContasId=${P_INVEST_2}`)).filter((i) => i.id === mov.id).map((i) => [i.idCentroCustos, i.valor])).toEqual([[C_INVEST, 4991.09]]);
+	});
+
+	it('a line classified before the rule keeps the split by share (there is no centre of the plano type)', async () => {
+		const id = await legadoComRateio(-1000); // investimento plano, custeio centres 600 / 400
+		await db.batch([
+			db.prepare(`UPDATE MovimentoBancario SET idPlanoContas = NULL WHERE id = ?`).bind(id),
+			db.prepare(`UPDATE Resultado SET valor = 500 WHERE idMovimentoBancario = ?`).bind(id),
+			db
+				.prepare(`INSERT INTO Resultado (dtMovimento, idMovimentoBancario, idPlanoContas, idContaCorrente, valor, tipo) VALUES ('2026-11-10T00:00:00.000Z', ?, ?, ?, 500, 'D')`)
+				.bind(id, P_INVEST_2, CONTA),
+		]);
+		const linhas = (await relatorio()).filter((i) => i.id === id);
+		expect(linhas.map((i) => [i.idPlanoContas, i.idCentroCustos, i.valor])).toEqual([
+			[P_INVEST, C_CUSTEIO, 300],
+			[P_INVEST, C_CUSTEIO_2, 200],
+			[P_INVEST_2, C_CUSTEIO, 300],
+			[P_INVEST_2, C_CUSTEIO_2, 200],
+		]);
+	});
+
+	it('several planos and centres inside each type: no row crosses the types and the line total is kept', async () => {
+		const mov = await nova(-12000, 'DEB.CTA.FATURA-CARTAO FAZENDA');
+		const r = await put(mov.id, {
+			idPlanoContas: null,
+			resultadoList: [res(P_CUSTEIO, 6000), res(P_CUSTEIO_2, 2000), res(P_INVEST, 3000), res(P_INVEST_2, 1000)],
+			idCentroCustos: null,
+			centroCustosList: [{ idCentroCustos: C_CUSTEIO, valor: 5000 }, { idCentroCustos: C_CUSTEIO_2, valor: 3000 }, { idCentroCustos: C_INVEST, valor: 4000 }],
+		});
+		expect(r.status).toBe(200);
+		const linhas = (await relatorio()).filter((i) => i.id === mov.id);
+		const custeio = [P_CUSTEIO, P_CUSTEIO_2];
+		expect(linhas.every((i) => custeio.includes(i.idPlanoContas) === [C_CUSTEIO, C_CUSTEIO_2].includes(i.idCentroCustos))).toBe(true);
+		expect(linhas).toHaveLength(6);
+		expect(Math.round(linhas.reduce((s, i) => s + i.valor, 0) * 100)).toBe(1200000);
+		expect(linhas.filter((i) => i.subtipoDespesa === 'investimento').reduce((s, i) => s + i.valor, 0)).toBe(4000);
+	});
+});

@@ -9,6 +9,7 @@ import { MovimentoCentroCustosRepository } from './MovimentoCentroCustosReposito
 import { MemoriaConciliacaoRepository, classificacaoDaMemoria, direcao } from './MemoriaConciliacaoRepository';
 import { chaveMemoria } from '../utils/memoriaConciliacao';
 import { classificacaoDe, type ItemClassificacao } from '../utils/regraTipoPlanoCentro';
+import { cruzarPlanosCentros } from '../utils/cruzamentoPlanoCentro';
 import { erroTipoPlanoCentroNoBanco } from './TipoPlanoCentroRepository';
 import type { MemoriaConciliacao } from '../models/MemoriaConciliacao';
 import {
@@ -3190,13 +3191,13 @@ export class MovimentoBancarioRepository {
 			});
 
 			// Plans of split movements (idPlanoContas NULL) live only in Resultado: batch-load them with descriptions
-			const planosPorMovimento = new Map<number, Array<{ idPlanoContas: number; valor: number; descricao: string | null }>>();
+			const planosPorMovimento = new Map<number, Array<{ idPlanoContas: number; valor: number; descricao: string | null; tipo?: string | null }>>();
 			const idsRateioPlano = (results as any[]).filter((r: any) => !r.idPlanoContas).map((r: any) => r.id as number);
 			for (let i = 0; i < idsRateioPlano.length; i += 100) {
 				const lote = idsRateioPlano.slice(i, i + 100);
 				const { results: resRows } = await this.db
 					.prepare(
-						`SELECT r.idMovimentoBancario, r.idPlanoContas, r.valor, pc.descricao
+						`SELECT r.idMovimentoBancario, r.idPlanoContas, r.valor, pc.descricao, pc.tipo
 						 FROM Resultado r LEFT JOIN PlanoContas pc ON pc.id = r.idPlanoContas
 						 WHERE r.idMovimentoBancario IN (${lote.map(() => '?').join(',')})
 						 ORDER BY r.id`,
@@ -3205,17 +3206,16 @@ export class MovimentoBancarioRepository {
 					.all();
 				for (const r of resRows as any[]) {
 					const lista = planosPorMovimento.get(r.idMovimentoBancario) ?? [];
-					lista.push({ idPlanoContas: r.idPlanoContas, valor: Math.abs(Number(r.valor)), descricao: r.descricao ?? null });
+					lista.push({ idPlanoContas: r.idPlanoContas, valor: Math.abs(Number(r.valor)), descricao: r.descricao ?? null, tipo: r.tipo ?? null });
 					planosPorMovimento.set(r.idMovimentoBancario, lista);
 				}
 			}
 
-			const arred = (v: number) => Math.round(v * 100) / 100;
 
 			// One row per plan × centre.
 			// Single plan (or none) → one row per centre with the centre value.
-			// Several plans (rateio) → each centre value split proportionally to the plan share
-			// (no centre rateio → the plan value itself), so totals per plan and per centre are kept.
+			// Several plans (rateio) → each plan split among the centres of its own type (utils/cruzamentoPlanoCentro;
+			// no centre rateio → the plan value itself), so totals per plan and per centre are kept.
 			const movimentosProcessados: any[] = [];
 
 			for (const mov of results as any[]) {
@@ -3230,10 +3230,9 @@ export class MovimentoBancarioRepository {
 				// report — it is in the Relatório de Centro de Custos
 				if (semPlano && tipoMov === 'C') continue;
 				// Debit without plan: one "Sem plano" row (pending classification)
-				const planos: Array<{ idPlanoContas: number | undefined; valor: number; descricao: string | null }> = semPlano
+				const planos: Array<{ idPlanoContas: number | undefined; valor: number; descricao: string | null; tipo?: string | null }> = semPlano
 					? [{ idPlanoContas: undefined, valor: Math.abs(Number(mov.valor)), descricao: null }]
 					: planosMov;
-				const somaPlanos = planos.reduce((s, p) => s + p.valor, 0);
 
 				type CentroLinha = { id?: number; descricao: string; tipo: string | null; valor: number; semCentro: boolean };
 				const centros: CentroLinha[] =
@@ -3255,25 +3254,22 @@ export class MovimentoBancarioRepository {
 								]
 							: [{ descricao: 'Sem centro', tipo: null, valor: Math.abs(Number(mov.valor)), semCentro: true }];
 
-				for (const plano of planos) {
+				// Several plans AND a centre rateio: valores[plano][centro], null = no row for that pair
+				const cruzado =
+					planos.length > 1 && centroCustosList.length > 0
+						? cruzarPlanosCentros(
+								planos.map((p) => ({ tipo: p.tipo, valor: p.valor })),
+								centros.map((c) => ({ tipo: c.tipo, valor: c.valor })),
+							)
+						: null;
+
+				planos.forEach((plano, idxPlano) => {
 					// Split across plans: with the plan filter only that plan's share is listed
-					if (filters.planoContasId && plano.idPlanoContas !== filters.planoContasId) continue;
-					const proporcao = planos.length === 1 || somaPlanos === 0 ? 1 : plano.valor / somaPlanos;
-					const valoresCentros =
-						planos.length === 1
-							? centros.map((c) => c.valor)
-							: centroCustosList.length > 0
-								? centros.map((c) => arred(c.valor * proporcao))
-								: [plano.valor];
-					// Rounding residue goes to the last centre so the plan total stays exact
-					if (planos.length > 1 && centroCustosList.length > 0) {
-						const somaCentros = centros.reduce((s, c) => s + c.valor, 0);
-						const alvo = arred(somaCentros * proporcao);
-						const parcial = valoresCentros.reduce((s, v) => s + v, 0);
-						valoresCentros[valoresCentros.length - 1] = arred(valoresCentros[valoresCentros.length - 1] + alvo - parcial);
-					}
+					if (filters.planoContasId && plano.idPlanoContas !== filters.planoContasId) return;
+					const valoresCentros: Array<number | null> = cruzado ? cruzado[idxPlano] : planos.length === 1 ? centros.map((c) => c.valor) : [plano.valor];
 
 					centros.forEach((centro, idx) => {
+						if (valoresCentros[idx] == null) return;
 						movimentosProcessados.push({
 							id: mov.id,
 							dtMovimento: mov.dtMovimento,
@@ -3300,7 +3296,7 @@ export class MovimentoBancarioRepository {
 								`${mov.bancoNome || ''}${mov.agencia ? ` - ${mov.agencia}` : ''}${mov.numConta ? ` - ${mov.numConta}` : ''}${mov.responsavel ? ` (${mov.responsavel})` : ''}`.trim(),
 						});
 					});
-				}
+				});
 			}
 
 			return movimentosProcessados;
