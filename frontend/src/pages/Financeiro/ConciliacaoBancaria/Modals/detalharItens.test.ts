@@ -113,3 +113,36 @@ describe('itensIniciais', () => {
 		).toEqual([{ valor: '2,00', idPlano: null, idCentro: null }]);
 	});
 });
+
+describe('agruparItens with the plano × centro type rule', () => {
+	const tipos = {
+		plano: (id: number) => ({ [ENERGIA]: 'custeio', [MAQUINAS]: 'investimento' })[id],
+		centro: (id: number) => ({ [LP_CUSTEIO]: 'CUSTEIO', [LR_CUSTEIO]: 'CUSTEIO', [LP_INVEST]: 'INVESTIMENTO' })[id],
+	};
+	const fatura = [
+		{ valor: '2.927,10', idPlano: ENERGIA, idCentro: LP_CUSTEIO },
+		{ valor: '1.254,47', idPlano: ENERGIA, idCentro: LR_CUSTEIO },
+		{ valor: '3.809,52', idPlano: MAQUINAS, idCentro: LP_INVEST },
+	];
+
+	it('accepts the bill with custeio and investimento, each item in a centre of its type', () => {
+		expect(agruparItens(fatura, -7991.09, true, tipos).ok).toBe(true);
+	});
+
+	it('names the item whose plano and centro have different types', () => {
+		const errada = [fatura[0], fatura[1], { ...fatura[2], idCentro: LP_CUSTEIO }];
+		expect(agruparItens(errada, -7991.09, true, tipos)).toEqual({
+			ok: false,
+			erro: 'Item 3: o plano é de investimento, escolha um centro de custos de investimento.',
+		});
+		expect(agruparItens([{ valor: '100,00', idPlano: ENERGIA, idCentro: LP_INVEST }], -100, true, tipos)).toEqual({
+			ok: false,
+			erro: 'Item 1: o plano é de custeio, escolha um centro de custos de custeio.',
+		});
+	});
+
+	it('does not apply to credits (no plano) nor to an id without a known type', () => {
+		expect(agruparItens([{ valor: '100,00', idPlano: null, idCentro: LP_INVEST }], 100, false, tipos).ok).toBe(true);
+		expect(agruparItens([{ valor: '100,00', idPlano: 999, idCentro: LP_INVEST }], -100, true, tipos).ok).toBe(true);
+	});
+});

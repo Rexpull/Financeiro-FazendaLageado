@@ -13,6 +13,7 @@ import { montarFluxoCaixaAno, normalizarTipoAgrupamento, type FluxoCaixaAno, typ
 import { TransferenciaInvalidaError, validarTransferencia } from '../utils/transferencia';
 import { MemoriaConciliacaoRepository, type ResultadoLembrar } from '../repositories/MemoriaConciliacaoRepository';
 import { assinaturaClassificacao } from '../utils/memoriaConciliacao';
+import { classificacaoAposPut, classificacaoDe, mesmaClassificacao } from '../utils/regraTipoPlanoCentro';
 
 export class MovimentoBancarioController {
 	private movBancarioRepository: MovimentoBancarioRepository;
@@ -448,6 +449,15 @@ export class MovimentoBancarioController {
 						}
 					}
 
+					const despesaPadrao =
+						(body.modalidadeMovimento ?? 'padrao') === 'padrao' && (body.tipoMovimento ?? (Number(body.valor) < 0 ? 'D' : 'C')) === 'D';
+					if (despesaPadrao) {
+						const erroTipo = await this.movBancarioRepository.erroTipoPlanoCentro(classificacaoDe(body));
+						if (erroTipo) {
+							return new Response(JSON.stringify({ error: erroTipo }), { status: 400, headers: corsHeaders });
+						}
+					}
+
 					const id = await this.movBancarioRepository.create(body);
 					console.log('✅ Movimento criado com sucesso, ID:', id);
 
@@ -633,6 +643,18 @@ export class MovimentoBancarioController {
 				console.log(`✏️ Atualizando movimento ID ${id}`, JSON.stringify(body, null, 2));
 				// A line classified by a memory keeps the "memória" tag only while its classification is the same
 				const antes = await this.movBancarioRepository.getById(id);
+				// Plano × centro by type (investimento → investimento, custeio → custeio). Checked only when this
+				// PUT changes the plano/centro of a padrão despesa: lines classified before the rule stay as they
+				// are until someone reclassifies them.
+				if (antes) {
+					const prevista = classificacaoAposPut(antes, body);
+					if (prevista && !mesmaClassificacao(prevista, classificacaoDe(antes))) {
+						const erroTipo = await this.movBancarioRepository.erroTipoPlanoCentro(prevista);
+						if (erroTipo) {
+							return new Response(JSON.stringify({ error: erroTipo }), { status: 400, headers: corsHeaders });
+						}
+					}
+				}
 				await this.movBancarioRepository.update(id, body);
 				console.log('✅ Atualização realizada com sucesso');
 

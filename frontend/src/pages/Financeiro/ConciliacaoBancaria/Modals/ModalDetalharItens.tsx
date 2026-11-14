@@ -7,7 +7,7 @@ import type { CentroCustos } from '../../../../../../backend/src/models/CentroCu
 import type { MovimentoBancario } from '../../../../../../backend/src/models/MovimentoBancario';
 import { formatarMoeda } from '../../../../Utils/formataMoeda';
 import { parseValorMonetario } from '../../../../Utils/valorMonetario';
-import { agruparItens, itensIniciais, somaItensCentavos, type ItemDetalhe, type TotalPorId } from './detalharItens';
+import { agruparItens, itensIniciais, somaItensCentavos, type ItemDetalhe, type TiposDetalhe, type TotalPorId } from './detalharItens';
 
 interface Props {
 	isOpen: boolean;
@@ -66,7 +66,27 @@ const ModalDetalharItens: React.FC<Props> = ({ isOpen, onClose, movimento, plano
 
 	const somaCentavos = somaItensCentavos(itens);
 	const difCentavos = totalCentavos - somaCentavos;
-	const resultado = agruparItens(itens, movimento.valor, exigePlano);
+	// Each item: plano and centro of the same type (investimento → investimento, custeio → custeio)
+	const tipos: TiposDetalhe = useMemo(
+		() => ({
+			plano: (id) => planos.find((p) => p.id === id)?.tipo,
+			centro: (id) => centros.find((c) => c.id === id)?.tipo,
+		}),
+		[planos, centros],
+	);
+	const resultado = agruparItens(itens, movimento.valor, exigePlano, tipos);
+	/** Type of the item's plano ('investimento' | 'custeio'), or null while no plano is chosen. */
+	const tipoDoItem = (it: ItemDetalhe): 'investimento' | 'custeio' | null =>
+		exigePlano && it.idPlano ? (ehInvestimento(tipos.plano(it.idPlano)) ? 'investimento' : 'custeio') : null;
+	/** Choosing a plano of another type drops the item's centro, which no longer fits. */
+	const escolherPlano = (i: number, idPlano: number | null) =>
+		setItens((prev) =>
+			prev.map((it, k) => {
+				if (k !== i) return it;
+				const centroServe = !idPlano || !it.idCentro || ehInvestimento(tipos.plano(idPlano)) === ehInvestimento(tipos.centro(it.idCentro));
+				return { ...it, idPlano, idCentro: centroServe ? it.idCentro : null };
+			}),
+		);
 
 	const alterar = (i: number, campo: Partial<ItemDetalhe>) => setItens((prev) => prev.map((it, k) => (k === i ? { ...it, ...campo } : it)));
 	const adicionar = () =>
@@ -127,6 +147,7 @@ const ModalDetalharItens: React.FC<Props> = ({ isOpen, onClose, movimento, plano
 			<div className="px-4 pt-3 pb-2 overflow-y-auto">
 				<p className="text-sm text-gray-600 mb-3">
 					Cada item com o seu valor, {exigePlano ? 'plano de contas e centro de custos' : 'e centro de custos'}. A soma dos itens tem que fechar com o valor da linha.
+					{exigePlano && ' Em cada item, o centro é do mesmo tipo do plano (custeio ou investimento).'}
 				</p>
 
 				<div className={`hidden sm:grid ${colunas} gap-2 px-1 mb-1 text-xs font-semibold text-gray-500 uppercase tracking-wide`}>
@@ -154,7 +175,7 @@ const ModalDetalharItens: React.FC<Props> = ({ isOpen, onClose, movimento, plano
 									aria-label={`Plano de contas do item ${i + 1}`}
 									className={campo}
 									value={it.idPlano ?? ''}
-									onChange={(e) => alterar(i, { idPlano: e.target.value ? Number(e.target.value) : null })}
+									onChange={(e) => escolherPlano(i, e.target.value ? Number(e.target.value) : null)}
 								>
 									<option value="">Escolha o plano...</option>
 									<optgroup label="Custeio">{opcoesPlano('custeio')}</optgroup>
@@ -170,8 +191,8 @@ const ModalDetalharItens: React.FC<Props> = ({ isOpen, onClose, movimento, plano
 								<option value="">Escolha o centro...</option>
 								{exigePlano ? (
 									<>
-										<optgroup label="Custeio">{opcoesCentro('custeio')}</optgroup>
-										<optgroup label="Investimento">{opcoesCentro('investimento')}</optgroup>
+										{tipoDoItem(it) !== 'investimento' && <optgroup label="Custeio">{opcoesCentro('custeio')}</optgroup>}
+										{tipoDoItem(it) !== 'custeio' && <optgroup label="Investimento">{opcoesCentro('investimento')}</optgroup>}
 									</>
 								) : (
 									opcoesCentro('custeio')

@@ -8,6 +8,8 @@ import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository
 import { MovimentoCentroCustosRepository } from './MovimentoCentroCustosRepository';
 import { MemoriaConciliacaoRepository, classificacaoDaMemoria, direcao } from './MemoriaConciliacaoRepository';
 import { chaveMemoria } from '../utils/memoriaConciliacao';
+import { classificacaoDe, type ItemClassificacao } from '../utils/regraTipoPlanoCentro';
+import { erroTipoPlanoCentroNoBanco } from './TipoPlanoCentroRepository';
 import type { MemoriaConciliacao } from '../models/MemoriaConciliacao';
 import {
 	coerceMonetaryValue,
@@ -585,6 +587,11 @@ export class MovimentoBancarioRepository {
 		return movimentos;
 	}
 
+	/** Plano × centro by type (utils/regraTipoPlanoCentro): the message when the classification breaks the rule, else null. */
+	erroTipoPlanoCentro(classificacao: { planos: ItemClassificacao[]; centros: ItemClassificacao[] }): Promise<string | null> {
+		return erroTipoPlanoCentroNoBanco(this.db, classificacao);
+	}
+
 	/**
 	 * `identificadoresArquivo`: identificadores of EVERY line of the OFX file (the screen sends the file in
 	 * batches of 10). Without them, a line equal to another one (same day, valor and historico, other FITID,
@@ -739,8 +746,16 @@ export class MovimentoBancarioRepository {
 				}
 
 				// Criar novo movimento — already classified when the conta remembers this text (never a financing line)
-				const memoria = mov.modalidadeMovimento === 'financiamento' || Number(mov.idFinanciamento) > 0 ? null : await memoriaPara(mov);
-				const idMov = await this.create(memoria ? { ...mov, ...classificacaoDaMemoria(memoria, mov) } : mov);
+				let memoria = mov.modalidadeMovimento === 'financiamento' || Number(mov.idFinanciamento) > 0 ? null : await memoriaPara(mov);
+				let classificado = memoria ? { ...mov, ...classificacaoDaMemoria(memoria, mov) } : mov;
+				// A memory saved before the plano × centro type rule may break it: the line then comes in unclassified
+				if (memoria && (classificado.modalidadeMovimento ?? 'padrao') === 'padrao' && direcao(mov) === 'D') {
+					if (await erroTipoPlanoCentroNoBanco(this.db, classificacaoDe(classificado))) {
+						memoria = null;
+						classificado = mov;
+					}
+				}
+				const idMov = await this.create(classificado);
 				idsJaUsados.add(idMov);
 				if (memoria) {
 					await this.memoriaRepo.registrarUso(idMov, memoria.id);

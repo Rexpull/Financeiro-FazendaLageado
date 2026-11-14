@@ -19,6 +19,7 @@ import { dividirValorEmParcelas, gerarDatasVencimento } from "../../../../Utils/
 import { hojeISO } from "../../../../Utils/dataSemFuso";
 import { diaDoValor } from "../../../../Utils/dataMovimento";
 import { PROPS_MOEDA_BRL, valorMonetarioPositivo } from "../../../../Utils/valorMonetario";
+import { erroTipoPlanoCentro, normalizarTipoClassificacao } from "../../../../../../backend/src/utils/regraTipoPlanoCentro";
 
 Modal.setAppElement("#root");
 
@@ -240,6 +241,14 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   // Receita é classificada pelo centro de custos (igual à Conciliação): o plano só é obrigatório na despesa
   const planoObrigatorio = tipoMovimento === "debito" || modalidadeMovimento === "financiamento";
 
+  // Plano × centro by type (rule of 13/11/2026): in a despesa the plano decides the type of the centres
+  const tipoDoPlano = (idPlano: string | number) => normalizarTipoClassificacao(planos.find((p) => p.id === Number(idPlano))?.tipo);
+  const tipoCentroDoPlano: "CUSTEIO" | "INVESTIMENTO" | null =
+    tipoMovimento === "debito" && modalidadeMovimento === "padrao" && formData.idPlanoContas
+      ? (tipoDoPlano(formData.idPlanoContas)?.toUpperCase() as "CUSTEIO" | "INVESTIMENTO" | undefined) ?? null
+      : null;
+  const tipoDoCentro = (id: number) => centros.find((c) => c.id === id)?.tipo;
+
   const validarFormulario = () => {
     const newErrors: { [key: string]: string } = {};
     if (planoObrigatorio && !formData.idPlanoContas) newErrors.idPlanoContas = "Selecione um plano de contas.";
@@ -259,6 +268,14 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
         }
       } else if (!formData.idCentroCustos || formData.idCentroCustos === "") {
         newErrors.idCentroCustos = "Selecione um centro de custos.";
+      }
+      if (tipoMovimento === "debito" && formData.idPlanoContas && !newErrors.idCentroCustos) {
+        const centrosEscolhidos =
+          rateiosCentros.length > 0
+            ? rateiosCentros.map((r) => ({ tipo: tipoDoCentro(r.idCentro), valor: r.valor }))
+            : [{ tipo: tipoDoCentro(Number(formData.idCentroCustos)), valor: valorNum }];
+        const erroTipo = erroTipoPlanoCentro([{ tipo: tipoDoPlano(formData.idPlanoContas), valor: valorNum }], centrosEscolhidos);
+        if (erroTipo) newErrors.idCentroCustos = erroTipo;
       }
     }
     setErrors(newErrors);
@@ -339,7 +356,12 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
 
   const selectPlano = (plano: { id: number; descricao: string }) => {
     setSearchPlano(plano.descricao);
-    setFormData((prev) => ({ ...prev, idPlanoContas: plano.id.toString() }));
+    // A plano of another type drops the centres that no longer fit (despesa only)
+    const tipo = tipoMovimento === "debito" && modalidadeMovimento === "padrao" ? tipoDoPlano(plano.id) : null;
+    const serve = (idCentro: number) => !tipo || normalizarTipoClassificacao(tipoDoCentro(idCentro)) === tipo;
+    const centroServe = !formData.idCentroCustos || serve(Number(formData.idCentroCustos));
+    if (rateiosCentros.some((r) => !serve(r.idCentro))) setRateiosCentros([]);
+    setFormData((prev) => ({ ...prev, idPlanoContas: plano.id.toString(), ...(centroServe ? {} : { idCentroCustos: "" }) }));
     setShowSuggestions(false);
   };
 
@@ -382,6 +404,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
   // (os de despesa repetem o nome em custeio e investimento, por isso o tipo vai no rótulo)
   const centrosDoTipo = centros
     .filter((c) => !c.tipoReceitaDespesa || c.tipoReceitaDespesa === (tipoMovimento === "credito" ? "RECEITA" : "DESPESA"))
+    .filter((c) => !tipoCentroDoPlano || !c.tipo || c.tipo === tipoCentroDoPlano)
     .sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "", "pt-BR"));
   const rotuloCentro = (c: CentroCustos) =>
     c.tipoReceitaDespesa === "DESPESA" && c.tipo ? `${c.descricao} · ${c.tipo === "INVESTIMENTO" ? "Investimento" : "Custeio"}` : c.descricao;
@@ -612,6 +635,11 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
                 </button>
               </div>
               {errors.idCentroCustos && <p className="text-red-500 text-xs mt-1">{errors.idCentroCustos}</p>}
+              {tipoCentroDoPlano && !errors.idCentroCustos && (
+                <p className="text-gray-500 text-xs mt-1">
+                  O plano de contas é de {tipoCentroDoPlano === "INVESTIMENTO" ? "investimento" : "custeio"}: só aparecem centros desse tipo.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -698,6 +726,7 @@ const LancamentoManual: React.FC<LancamentoManualProps> = ({
     onClose={() => setRateioCentrosModalAberto(false)}
     onConfirmar={aplicarRateioCentros}
     centrosDisponiveis={centros}
+    tipoExigido={tipoCentroDoPlano}
     movimento={movimentoSintetico}
     valorTotal={parseValorNumerico()}
     rateios={rateiosCentros}

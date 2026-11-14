@@ -36,6 +36,11 @@ interface ModalRateioCentroCustosProps {
 	onConfirmar: (centros: MovimentoCentroCustos[] | { idCentro: number; porcentagem: number }[]) => void;
 	onLimpar?: () => void;
 	movimentosMultiplos?: MovimentoBancario[];
+	/**
+	 * Centre type the planos of the line demand (investimento plano → investimento centres): the list only
+	 * offers that type. null/undefined = both types (no plano yet, or planos of both types).
+	 */
+	tipoExigido?: 'CUSTEIO' | 'INVESTIMENTO' | null;
 }
 
 const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
@@ -49,6 +54,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 	onConfirmar,
 	onLimpar,
 	movimentosMultiplos,
+	tipoExigido = null,
 }) => {
 	const [draftPct, setDraftPct] = useState<Record<string, string>>({});
 	const [filtroTipo, setFiltroTipo] = useState<FiltroTipoCentro>('TODOS');
@@ -65,7 +71,10 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 				const matchTipoMovimento =
 					(movimento.tipoMovimento === 'C' ? centro.tipoReceitaDespesa === 'RECEITA' : centro.tipoReceitaDespesa === 'DESPESA') ||
 					isPercentualPreenchido(draftPct[String(centro.id)] ?? '');
-				const matchTipo = !isDespesa || filtroTipo === 'TODOS' || centro.tipo === filtroTipo;
+				// A centre of the other type that already has a % stays visible, so it can be zeroed
+				const tipoFiltro = tipoExigido ?? filtroTipo;
+				const matchTipo =
+					!isDespesa || tipoFiltro === 'TODOS' || centro.tipo === tipoFiltro || (!!tipoExigido && isPercentualPreenchido(draftPct[String(centro.id)] ?? ''));
 				const matchBusca = !busca || centro.descricao.toLowerCase().includes(busca);
 				return matchTipoMovimento && matchTipo && matchBusca;
 			})
@@ -76,7 +85,7 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 				}
 				return a.descricao.localeCompare(b.descricao, 'pt-BR');
 			});
-	}, [centrosDisponiveis, movimento.tipoMovimento, isDespesa, filtroTipo, filtroDescricao, draftPct]);
+	}, [centrosDisponiveis, movimento.tipoMovimento, isDespesa, filtroTipo, tipoExigido, filtroDescricao, draftPct]);
 
 	const centrosById = useMemo(() => {
 		const map = new Map<number, CentroCustos>();
@@ -217,9 +226,11 @@ const ModalRateioCentroCustos: React.FC<ModalRateioCentroCustosProps> = ({
 						<div className="sm:w-40 flex-shrink-0">
 							<label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
 							<select
-								className="w-full h-10 px-2 border border-gray-300 rounded-md text-sm bg-white"
-								value={filtroTipo}
+								className="w-full h-10 px-2 border border-gray-300 rounded-md text-sm bg-white disabled:bg-gray-100 disabled:text-gray-600"
+								value={tipoExigido ?? filtroTipo}
 								onChange={(e) => setFiltroTipo(e.target.value as FiltroTipoCentro)}
+								disabled={!!tipoExigido}
+								title={tipoExigido ? 'O plano de contas define o tipo dos centros de custos' : undefined}
 							>
 								<option value="TODOS">Todos</option>
 								<option value="CUSTEIO">Custeio</option>

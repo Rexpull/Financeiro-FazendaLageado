@@ -2,6 +2,8 @@ import type { MovimentoBancario } from '../models/MovimentoBancario';
 import type { MemoriaConciliacao } from '../models/MemoriaConciliacao';
 import { chaveMemoria, percentuaisDe, valoresDe, type Fatia } from '../utils/memoriaConciliacao';
 import { isMovimentoPendenteConcilacao } from '../utils/isMovimentoPendenteConcilacao';
+import { classificacaoDe } from '../utils/regraTipoPlanoCentro';
+import { erroTipoPlanoCentroNoBanco } from './TipoPlanoCentroRepository';
 
 /** Outcome of "Lembrar" on a PUT, shown to the user (the memory can be refused). */
 export type ResultadoLembrar =
@@ -207,8 +209,13 @@ export class MemoriaConciliacaoRepository {
 		}
 		const planos = percentuaisDe(planosDoMovimento(mov));
 		const centros = modalidade === 'transferencia' ? [] : percentuaisDe(centrosDoMovimento(mov));
-		await this.ensureSchema();
 		const tipo = direcao(mov);
+		// A line classified before the plano × centro type rule is not worth remembering: imports would refuse it
+		if (modalidade === 'padrao' && tipo === 'D') {
+			const erroTipo = await erroTipoPlanoCentroNoBanco(this.db, classificacaoDe(mov));
+			if (erroTipo) return { acao: 'recusada', motivo: erroTipo };
+		}
+		await this.ensureSchema();
 		await this.db
 			.prepare(
 				`INSERT INTO memoriaConciliacao

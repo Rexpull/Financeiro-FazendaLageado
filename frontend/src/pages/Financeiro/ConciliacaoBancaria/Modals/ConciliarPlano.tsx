@@ -41,7 +41,7 @@ import { salvarParcelaFinanciamento } from '../../../../services/parcelaFinancia
 import { MovimentoCentroCustos } from '../../../../../../backend/src/models/MovimentoCentroCustos';
 import type { MovimentoBancarioEdicao } from '../../../../services/movimentoBancarioService';
 import { DadosConciliacao, montarMovimentosLote } from '../conciliacaoPayload';
-import { avisoTipoPlanoCentro, debitoFicaSemCentro } from '../conciliacaoValidacao';
+import { debitoFicaSemCentro, erroTipoPlanoCentroConciliacao, tipoCentroExigido, type EscolhaClassificacao } from '../conciliacaoValidacao';
 import CurrencyInput from 'react-currency-input-field';
 import { PROPS_MOEDA_BRL, valorMonetarioPositivo } from '../../../../Utils/valorMonetario';
 import { brl, pct } from '../../../../Utils/formatos';
@@ -676,6 +676,36 @@ const ConciliaPlanoContasModal: React.FC<
 
 	// Filtrar planos com busca interna
 	const isDespesa = movimento.tipoMovimento === 'D';
+
+	// Plano × centro by type (rule of 13/11/2026): what the modal has chosen on each side (null = each line
+	// keeps what it has), the centre type the planos demand, and the message that blocks the save.
+	const escolhaPlanos: EscolhaClassificacao =
+		rateiosPlanos.length > 0
+			? rateiosPlanos.map((r) => ({ id: r.idPlano, peso: r.valor }))
+			: rateiosPlanosPorcentagem.length > 0
+				? rateiosPlanosPorcentagem.map((r) => ({ id: r.idPlano, peso: r.porcentagem }))
+				: formData.idPlanoContas
+					? [{ id: Number(formData.idPlanoContas), peso: 1 }]
+					: null;
+	const escolhaCentros: EscolhaClassificacao =
+		rateiosCentros.length > 0
+			? rateiosCentros.map((r) => ({ id: r.idCentro, peso: r.valor }))
+			: rateiosCentrosPorcentagem.length > 0
+				? rateiosCentrosPorcentagem.map((r) => ({ id: r.idCentro, peso: r.porcentagem }))
+				: formData.idCentroCustos
+					? [{ id: Number(formData.idCentroCustos), peso: 1 }]
+					: null;
+	const regraTipo = {
+		escolhaPlanos,
+		movimentos: movimentosSelecionados.length > 1 ? movimentosSelecionados : [movimento],
+		tipoPlano: (id: number) => planos.find((p) => p.id === id)?.tipo,
+		tipoCentro: (id: number) => centroCustos.find((c) => c.id === id)?.tipo,
+	};
+	const regraTipoAtiva = modalidadeMovimento === 'padrao';
+	const tipoCentroDosPlanos = regraTipoAtiva ? tipoCentroExigido(regraTipo) : null;
+	const erroTipoPlanoCentro = regraTipoAtiva ? erroTipoPlanoCentroConciliacao({ ...regraTipo, escolhaCentros }) : null;
+	// The planos decide the centre type; without a plano the user's own filter applies
+	const tipoCentroFiltro = tipoCentroDosPlanos ?? tipoCentroSelecionado;
 	const planosFiltered = planos
 		.filter((plano) => {
 			const matchSearch = plano.descricao.toLowerCase().includes(planosSearchValue.toLowerCase());
@@ -698,7 +728,7 @@ const ConciliaPlanoContasModal: React.FC<
 			movimento.tipoMovimento === 'C' ? centro.tipoReceitaDespesa === 'RECEITA' : centro.tipoReceitaDespesa === 'DESPESA';
 
 		// Para despesas, filtrar também por tipo (CUSTEIO/INVESTIMENTO) se um tipo foi selecionado
-		const matchTipo = !isDespesa || !tipoCentroSelecionado || centro.tipo === tipoCentroSelecionado;
+		const matchTipo = !isDespesa || !tipoCentroFiltro || centro.tipo === tipoCentroFiltro;
 
 		return matchSearch && matchTipoMovimento && matchTipo;
 	});
@@ -775,6 +805,7 @@ const ConciliaPlanoContasModal: React.FC<
 				newErrors.idCentroCustos = 'Selecione um centro de custos ou defina múltiplos.';
 			}
 		}
+		if (erroTipoPlanoCentro) newErrors.tipoPlanoCentro = erroTipoPlanoCentro;
 		if (modalidadeMovimento === 'financiamento') {
 			if (!financiamentoSelecionado) {
 				newErrors.financiamento = 'Selecione um financiamento ou crie um novo.';
@@ -836,13 +867,28 @@ const ConciliaPlanoContasModal: React.FC<
 			setPlanosSearchValue('');
 		} else {
 			setSearchPlano(plano.descricao);
-			setFormData((prev: FormData) => ({ ...prev, idPlanoContas: plano.id }));
+			const tipoDoPlano = String(plano.tipo ?? '').toUpperCase();
+			const centroAtual = centroCustos.find((c) => c.id === Number(formData.idCentroCustos));
+			const centroNaoServe =
+				isDespesa &&
+				movimentosSelecionados.length <= 1 &&
+				!!centroAtual?.tipo &&
+				(tipoDoPlano === 'CUSTEIO' || tipoDoPlano === 'INVESTIMENTO') &&
+				centroAtual.tipo !== tipoDoPlano;
+			if (centroNaoServe) {
+				// The single centre chosen is of the other type: it cannot stay (rateios are kept and flagged)
+				setIdCentroCustos(null);
+				setSearchCentroCustos('');
+				toast.info(`O plano é de ${tipoDoPlano.toLowerCase()}: escolha um centro de custos de ${tipoDoPlano.toLowerCase()}.`);
+			}
+			setFormData((prev: FormData) => ({ ...prev, idPlanoContas: plano.id, ...(centroNaoServe ? { idCentroCustos: null } : {}) }));
 			setIdPlanoContas(plano.id);
 			setShowPlanoDropdown(false);
 			setPlanosSearchValue('');
 			setErrors((prev) => {
 				const next = { ...prev };
 				delete next.idPlanoContas;
+				delete next.tipoPlanoCentro;
 				return next;
 			});
 		}
@@ -1161,32 +1207,9 @@ const ConciliaPlanoContasModal: React.FC<
 						(ccl.length === 1 && Number(formData.idCentroCustos) === ccl[0].idCentroCustos
 							? centroCustos.find((c) => c.id === ccl[0].idCentroCustos)?.descricao || ''
 							: '');
-			// Non-blocking: plan type (investimento/custeio) × centre type. The Dashboard splits by centre, the
-			// plan-based views by plan, so a mismatch makes them disagree. Batch mode only looks at what was chosen.
 			const unico = movimentosSelecionados.length <= 1;
-			const tipoPlano = (id: number | null | undefined) => planos.find((p) => p.id === Number(id))?.tipo;
-			const tipoCentro = (id: number | null | undefined) => centroCustos.find((c) => c.id === Number(id))?.tipo;
-			const tiposPlanoEscolhidos =
-				rateiosPlanos.length > 0
-					? rateiosPlanos.map((r) => tipoPlano(r.idPlano))
-					: rateiosPlanosPorcentagem.length > 0
-						? rateiosPlanosPorcentagem.map((r) => tipoPlano(r.idPlano))
-						: formData.idPlanoContas
-							? [tipoPlano(formData.idPlanoContas)]
-							: unico
-								? rl.map((r) => tipoPlano(r.idPlanoContas))
-								: [];
-			const tiposCentroEscolhidos =
-				rateiosCentros.length > 0
-					? rateiosCentros.map((r) => tipoCentro(r.idCentro))
-					: rateiosCentrosPorcentagem.length > 0
-						? rateiosCentrosPorcentagem.map((r) => tipoCentro(r.idCentro))
-						: formData.idCentroCustos
-							? [tipoCentro(formData.idCentroCustos)]
-							: unico
-								? ccl.map((c) => tipoCentro(c.idCentroCustos))
-								: [];
-			const avisoTipo = isReceita ? null : avisoTipoPlanoCentro(tiposPlanoEscolhidos, tiposCentroEscolhidos);
+			// Blocking: plano type (investimento/custeio) × centre type, see erroTipoPlanoCentro above
+			const erroTipo = isReceita ? null : erroTipoPlanoCentro;
 			return (
 				<>
 					{/* Plano de Contas and Centro de Custos side by side (or only Centro if receita) */}
@@ -1390,7 +1413,7 @@ const ConciliaPlanoContasModal: React.FC<
 												setShowCentroCustosDropdown(next);
 												if (next) {
 													setShowPlanoDropdown(false);
-													if (isDespesa && tipoCentroSelecionado === null) {
+													if (isDespesa && tipoCentroSelecionado === null && !tipoCentroDosPlanos) {
 														setTipoCentroSelecionado('CUSTEIO');
 													}
 												}
@@ -1414,9 +1437,9 @@ const ConciliaPlanoContasModal: React.FC<
 								</button>
 							</div>
 							{errors.idCentroCustos && <p className="text-red-500 text-xs mt-1">{errors.idCentroCustos}</p>}
-							{avisoTipo && (
-								<p className="text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs mt-1" role="status">
-									{avisoTipo}
+							{erroTipo && (
+								<p className="text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1 text-xs mt-1" role="alert">
+									{erroTipo}
 								</p>
 							)}
 
@@ -1432,6 +1455,7 @@ const ConciliaPlanoContasModal: React.FC<
 											<div className="inline-flex w-full rounded-md border border-gray-200 overflow-hidden text-xs font-semibold">
 												<button
 													type="button"
+													disabled={tipoCentroDosPlanos === 'INVESTIMENTO'}
 													onClick={() => {
 														setTipoCentroSelecionado('CUSTEIO');
 														setIdCentroCustos(null);
@@ -1439,14 +1463,15 @@ const ConciliaPlanoContasModal: React.FC<
 														setFormData((prev: FormData) => ({ ...prev, idCentroCustos: null }));
 														setCentroCustosSearchValue('');
 													}}
-													className={`flex-1 px-2.5 py-1.5 ${
-														tipoCentroSelecionado === 'CUSTEIO' ? 'bg-yellow-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+													className={`flex-1 px-2.5 py-1.5 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-white ${
+														tipoCentroFiltro === 'CUSTEIO' ? 'bg-yellow-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
 													}`}
 												>
 													Custeio
 												</button>
 												<button
 													type="button"
+													disabled={tipoCentroDosPlanos === 'CUSTEIO'}
 													onClick={() => {
 														setTipoCentroSelecionado('INVESTIMENTO');
 														setIdCentroCustos(null);
@@ -1454,13 +1479,18 @@ const ConciliaPlanoContasModal: React.FC<
 														setFormData((prev: FormData) => ({ ...prev, idCentroCustos: null }));
 														setCentroCustosSearchValue('');
 													}}
-													className={`flex-1 px-2.5 py-1.5 border-l border-gray-200 ${
-														tipoCentroSelecionado === 'INVESTIMENTO' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+													className={`flex-1 px-2.5 py-1.5 border-l border-gray-200 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-white ${
+														tipoCentroFiltro === 'INVESTIMENTO' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
 													}`}
 												>
 													Investimento
 												</button>
 											</div>
+											{tipoCentroDosPlanos && (
+												<p className="mt-1.5 text-[11px] text-gray-500">
+													O plano de contas é de {tipoCentroDosPlanos === 'INVESTIMENTO' ? 'investimento' : 'custeio'}: só aparecem centros desse tipo.
+												</p>
+											)}
 										</div>
 									)}
 									<div className="p-2 border-b bg-gray-50 flex-shrink-0">
@@ -1910,6 +1940,7 @@ const ConciliaPlanoContasModal: React.FC<
 				onConfirmar={aplicarRateioCentrosComoCentroCustosList}
 				onLimpar={limparRateioCentros}
 				centrosDisponiveis={centroCustos}
+				tipoExigido={isDespesa ? tipoCentroDosPlanos : null}
 				movimento={movimento}
 				valorTotal={movimento.valor}
 				rateios={rateiosCentros}

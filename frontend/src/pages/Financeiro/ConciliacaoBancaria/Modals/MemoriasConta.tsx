@@ -28,6 +28,33 @@ function descreverFatias(fatias: Array<{ id: number; pct: number }>, nome: (id: 
 	return fatias.length === 1 ? { texto: nome(fatias[0].id), titulo: undefined } : { texto: `${multiplo} (${fatias.length})`, titulo: linhas };
 }
 
+/**
+ * Table cell of a memory's planos or centros: the name alone when there is one, or one line per entry
+ * with its percentage (the rateio must be readable without hovering).
+ */
+const CelulaFatias: React.FC<{ fatias: Array<{ id: number; pct: number }>; nome: (id: number) => string; rotulo: string }> = ({ fatias, nome, rotulo }) => {
+	if (fatias.length === 0) return <span>-</span>;
+	if (fatias.length === 1) {
+		return (
+			<span className="block truncate" title={nome(fatias[0].id)}>
+				{nome(fatias[0].id)}
+			</span>
+		);
+	}
+	return (
+		<ul className="space-y-0.5" aria-label={`${rotulo}: rateio entre ${fatias.length}`}>
+			{fatias.map((f) => (
+				<li key={f.id} className="flex items-baseline gap-2">
+					<span className="min-w-0 flex-1 truncate" title={nome(f.id)}>
+						{nome(f.id)}
+					</span>
+					<span className="shrink-0 tabular-nums text-gray-600">{pctTexto(f.pct)}</span>
+				</li>
+			))}
+		</ul>
+	);
+};
+
 /** 'AAAA-MM-DD HH:MM:SS' (UTC, from SQLite) → dd/mm/aaaa, read from the text. */
 const dataTexto = (s: string | null) => {
 	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s ?? '');
@@ -133,7 +160,8 @@ const MemoriasConta: React.FC<Props> = ({ isOpen, onClose, conta, planos, centro
 						<>
 							<div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
 								<p className="text-sm text-gray-500 flex-1">
-									Para mudar uma memória, reclassifique um lançamento com "Lembrar" marcado: a memória é substituída.
+									Quando há rateio, cada plano e cada centro aparece com o seu percentual. Para mudar uma memória, reclassifique um lançamento
+									com "Lembrar" marcado: a memória é substituída.
 								</p>
 								{memorias.length > 5 && (
 									<input
@@ -161,8 +189,6 @@ const MemoriasConta: React.FC<Props> = ({ isOpen, onClose, conta, planos, centro
 									</thead>
 									<tbody>
 										{visiveis.map((m) => {
-											const plano = descreverFatias(m.planos, nomePlano, 'Múltiplos planos');
-											const centro = descreverFatias(m.centros, nomeCentro, 'Múltiplos centros');
 											return (
 												<tr key={m.id} className="border-b align-top">
 													<td className="p-2 max-w-[18rem]">
@@ -181,15 +207,11 @@ const MemoriasConta: React.FC<Props> = ({ isOpen, onClose, conta, planos, centro
 													<td className={`p-2 text-center whitespace-nowrap ${m.tipoMovimento === 'C' ? 'text-green-700' : 'text-red-600'}`}>
 														{m.tipoMovimento === 'C' ? 'Entrada' : 'Saída'}
 													</td>
-													<td className="p-2 max-w-[14rem]">
-														<span className="block truncate" title={plano.titulo ?? plano.texto}>
-															{plano.texto}
-														</span>
+													<td className="p-2 max-w-[16rem]">
+														<CelulaFatias fatias={m.planos} nome={nomePlano} rotulo="Planos de contas" />
 													</td>
-													<td className="p-2 max-w-[14rem]">
-														<span className="block truncate" title={centro.titulo ?? centro.texto}>
-															{centro.texto}
-														</span>
+													<td className="p-2 max-w-[18rem]">
+														<CelulaFatias fatias={m.centros} nome={nomeCentro} rotulo="Centros de custos" />
 													</td>
 													<td className="p-2 text-center tabular-nums">{m.usos}</td>
 													<td className="p-2 text-center tabular-nums">{m.usos > 0 ? dataTexto(m.ultimoUsoEm) : '-'}</td>
