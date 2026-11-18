@@ -10,6 +10,7 @@ import {
 	previsoesDoDia,
 	resumoParcelas,
 	textoValorEditavel,
+	saldoAssinado,
 } from './caixaRegras';
 import type { CaixaLancamento, CaixaParcela } from '../../services/caixaService';
 
@@ -125,5 +126,22 @@ describe('data da previsão', () => {
 		expect(dataCaixaValida('2026-02-29')).toBe(false);
 		expect(dataCaixaValida('2041-01-01')).toBe(false);
 		expect(dataCaixaValida('31/12/2040')).toBe(false);
+	});
+});
+
+describe('saldoAssinado (saldo inicial positivo ou negativo)', () => {
+	it('the choice gives the sign, whatever sign the amount comes with', () => {
+		expect(saldoAssinado(80000, true)).toBe(-80000);
+		expect(saldoAssinado(-80000, true)).toBe(-80000);
+		expect(saldoAssinado(80000, false)).toBe(80000);
+		expect(saldoAssinado(-80000, false)).toBe(80000);
+		expect(saldoAssinado(0.01, true)).toBe(-0.01);
+	});
+
+	it('empty stays empty and zero has no sign', () => {
+		expect(saldoAssinado(undefined, true)).toBeUndefined();
+		expect(saldoAssinado(null, false)).toBeUndefined();
+		expect(saldoAssinado(NaN, true)).toBeUndefined();
+		expect(Object.is(saldoAssinado(0, true), 0)).toBe(true);
 	});
 });

@@ -68,6 +68,7 @@ import {
   periodoInicialCaixa,
   previsoesDoDia,
   resumoParcelas,
+  saldoAssinado,
   textoValorEditavel,
 } from "./caixaRegras";
 
@@ -137,6 +138,10 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
   const [erro, setErro] = useState<string | null>(null);
   const [saldoInput, setSaldoInput] = useState<number | undefined>(undefined);
   const [saldoStatus, setSaldoStatus] = useState<"salvando" | "erro" | null>(null);
+  // Sign of the saldo inicial ("Positivo / Negativo"); the field itself only holds the amount
+  const [saldoNegativo, setSaldoNegativo] = useState(false);
+  const saldoSalvo = useRef<number | null>(null);
+  const filaSaldo = useRef<Promise<void>>(Promise.resolve());
   const [previsoesDia, setPrevisoesDia] = useState<string | null>(null);
   const [parcelasDe, setParcelasDe] = useState<{ data: string | null } | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -158,6 +163,8 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
       if (id !== requisicao.current) return; // resposta de um mês que já foi trocado
       setDados(r);
       setSaldoInput(r.saldoInicial ?? undefined);
+      setSaldoNegativo((r.saldoInicial ?? 0) < 0);
+      saldoSalvo.current = r.saldoInicial;
     } catch (e) {
       if (id !== requisicao.current) return;
       setErro(e instanceof Error ? e.message : "Erro ao carregar o caixa");
@@ -273,17 +280,31 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
   const hoje = hojeISO();
   const saldoAlterado = (saldoInput ?? null) !== dados.saldoInicial;
 
-  const salvarSaldo = async () => {
-    if (!saldoAlterado || saldoStatus === "salvando") return;
-    setSaldoStatus("salvando");
-    try {
-      await salvarSaldoInicial(ano, mes, saldoInput ?? null);
-      await carregar(); // recalcula os saldos com o novo valor
-      setSaldoStatus(null);
-    } catch (e) {
-      setSaldoStatus("erro");
-      toast.error(e instanceof Error ? e.message : "Erro ao salvar o saldo inicial");
-    }
+  // One save at a time, in order: leaving the field and choosing the sign right after are two saves
+  const salvarSaldo = (valor: number | undefined = saldoInput) => {
+    filaSaldo.current = filaSaldo.current.then(async () => {
+      if ((valor ?? null) === saldoSalvo.current) return;
+      setSaldoStatus("salvando");
+      try {
+        await salvarSaldoInicial(ano, mes, valor ?? null);
+        await carregar(); // recalcula os saldos com o novo valor
+        setSaldoStatus(null);
+      } catch (e) {
+        setSaldoStatus("erro");
+        toast.error(e instanceof Error ? e.message : "Erro ao salvar o saldo inicial");
+      }
+    });
+    return filaSaldo.current;
+  };
+
+  /** "Positivo / Negativo": changes the sign of what is in the field and, when there is a value, saves it. */
+  const escolherSinal = (negativo: boolean) => {
+    if (negativo === saldoNegativo) return;
+    setSaldoNegativo(negativo);
+    if (saldoStatus === "erro") setSaldoStatus(null);
+    const novo = saldoAssinado(saldoInput, negativo);
+    setSaldoInput(novo);
+    if (novo) void salvarSaldo(novo);
   };
 
   const salvarBoleto = async (data: string, valor: number | null) => {
@@ -331,6 +352,8 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
   const semSaldoInicial = dados.saldoInicial === null;
   const resumoMes = resumoParcelas(dados.parcelas);
   const diasComBoleto = dados.dias.filter((d) => d.boletos > 0).length;
+  // The red frame of the "Saldo final" card is an alarm about the real position: it needs the saldo inicial.
+  // The numbers themselves are red whenever they are negative.
   const finalNegativo = !semSaldoInicial && totais.saldoFinal < 0;
   const menorNegativo = !semSaldoInicial && minimo.saldoFinal.valor < 0;
 
@@ -390,21 +413,28 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
             customInput={TextField}
             variant="standard"
             size="small"
-            value={saldoInput ?? ""}
+            value={saldoInput == null ? "" : Math.abs(saldoInput)}
             onValueChange={(v) => {
-              setSaldoInput(v.floatValue);
+              setSaldoInput(saldoAssinado(v.floatValue, saldoNegativo));
               if (saldoStatus === "erro") setSaldoStatus(null);
             }}
-            onBlur={salvarSaldo}
+            onBlur={() => void salvarSaldo()}
             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              // The minus and plus keys choose the sign (the field only holds the amount)
+              if (e.key === "-" || e.key === "+") {
+                e.preventDefault();
+                const negativo = e.key === "-";
+                setSaldoNegativo(negativo);
+                setSaldoInput(saldoAssinado(saldoInput, negativo));
+              }
             }}
             prefix="R$ "
             thousandSeparator="."
             decimalSeparator=","
             decimalScale={2}
             fixedDecimalScale
-            allowNegative
+            allowNegative={false}
             placeholder="R$ 0,00"
             helperText={saldoHelper}
             error={saldoStatus === "erro"}
@@ -412,10 +442,38 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
             fullWidth
             sx={{ mt: 0.5 }}
             slotProps={{
-              input: { endAdornment: saldoAdornment ? <InputAdornment position="end">{saldoAdornment}</InputAdornment> : undefined },
-              htmlInput: { "aria-label": `Saldo inicial de ${nomeMes}`, style: { fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: "1.1rem" } },
+              input: {
+                startAdornment: saldoNegativo ? (
+                  <InputAdornment position="start" sx={{ mr: 0.25 }}>
+                    <Typography component="span" aria-hidden sx={{ fontWeight: 700, fontSize: "1.1rem", color: "error.main" }}>
+                      −
+                    </Typography>
+                  </InputAdornment>
+                ) : undefined,
+                endAdornment: saldoAdornment ? <InputAdornment position="end">{saldoAdornment}</InputAdornment> : undefined,
+              },
+              htmlInput: {
+                "aria-label": `Saldo inicial de ${nomeMes}`,
+                style: { fontVariantNumeric: "tabular-nums", fontWeight: 700, fontSize: "1.1rem", color: saldoNegativo ? "#d32f2f" : undefined },
+              },
             }}
           />
+          <ToggleButtonGroup
+            exclusive
+            fullWidth
+            size="small"
+            value={saldoNegativo ? "N" : "P"}
+            onChange={(_, v: "P" | "N" | null) => v && escolherSinal(v === "N")}
+            aria-label="Saldo inicial positivo ou negativo"
+            sx={{ mt: 1, "& .MuiToggleButton-root": { py: 0.25, textTransform: "none", fontSize: "0.75rem" } }}
+          >
+            <ToggleButton value="P" color="success">
+              Positivo
+            </ToggleButton>
+            <ToggleButton value="N" color="error">
+              Negativo
+            </ToggleButton>
+          </ToggleButtonGroup>
         </Paper>
 
         <Paper elevation={0} sx={CARD_SX}>
@@ -458,7 +516,7 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
           })}
         >
           {tituloQuadro("Saldo final (com previsões)")}
-          {valorQuadro(brl(totais.saldoFinal), finalNegativo ? "error.main" : "text.primary")}
+          {valorQuadro(brl(totais.saldoFinal), totais.saldoFinal < 0 ? "error.main" : "text.primary")}
           {semSaldoInicial ? (
             <Tooltip arrow title="Quanto precisa haver no caixa no início do mês para cobrir boletos, financiamentos e saídas previstas.">
               <span>{notaQuadro(<>Necessidade de caixa: <b>{brl(minimo.saldoFinal.caixaNecessario)}</b></>)}</span>
@@ -484,7 +542,6 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({ anoSelecionado, mesSeleciona
         dados={dados}
         hoje={hoje}
         carregando={carregando}
-        semSaldoInicial={semSaldoInicial}
         onSalvarBoleto={salvarBoleto}
         onAbrirParcelas={(data) => setParcelasDe({ data })}
         onAbrirPrevisoes={setPrevisoesDia}
@@ -559,11 +616,10 @@ const TabelaDias: React.FC<{
   dados: CaixaMes;
   hoje: string;
   carregando: boolean;
-  semSaldoInicial: boolean;
   onSalvarBoleto: (data: string, valor: number | null) => Promise<void>;
   onAbrirParcelas: (data: string) => void;
   onAbrirPrevisoes: (data: string) => void;
-}> = ({ dados, hoje, carregando, semSaldoInicial, onSalvarBoleto, onAbrirParcelas, onAbrirPrevisoes }) => {
+}> = ({ dados, hoje, carregando, onSalvarBoleto, onAbrirParcelas, onAbrirPrevisoes }) => {
   // Boleto inputs by date: Enter / ↓ / ↑ move between days like a spreadsheet
   const inputs = useRef(new Map<string, HTMLInputElement>());
   const mover = (data: string, delta: 1 | -1) => {
@@ -574,8 +630,8 @@ const TabelaDias: React.FC<{
     else inputs.current.get(data)?.blur();
   };
 
-  // Without the saldo inicial the balances start at zero: negatives are not an alarm yet
-  const corSaldo = (v: number, mudo: boolean) => (v < 0 && !semSaldoInicial ? "error.main" : mudo ? "text.disabled" : "text.primary");
+  // A negative balance is always red, also before the saldo inicial of the month is informed
+  const corSaldo = (v: number, mudo: boolean) => (v < 0 ? "error.main" : mudo ? "text.disabled" : "text.primary");
   const rodape = (cor = "text.primary") => ({ fontWeight: 700, color: cor, fontSize: "0.875rem", bgcolor: "grey.50", ...NUMERO_SX });
   // The Data column stays visible while the table scrolls sideways on small screens (min width 820px)
   const colunaFixa = { position: "sticky", left: 0 } as const;
@@ -701,7 +757,7 @@ const TabelaDias: React.FC<{
 
                   <TableCell
                     align="right"
-                    sx={{ ...NUMERO_SX, fontWeight: 400, color: d.saldo < 0 && !semSaldoInicial ? "error.light" : mudo ? "text.disabled" : "text.secondary" }}
+                    sx={{ ...NUMERO_SX, fontWeight: 400, color: d.saldo < 0 ? "error.light" : mudo ? "text.disabled" : "text.secondary" }}
                   >
                     {brl(d.saldo)}
                   </TableCell>
@@ -744,14 +800,14 @@ const TabelaDias: React.FC<{
               <TableCell sx={{ ...rodape(), ...colunaFixa, zIndex: 1 }}>Total do mês</TableCell>
               <TableCell align="right" sx={rodape()}>{brl(dados.totais.boletos)}</TableCell>
               <TableCell align="right" sx={rodape()}>{brl(dados.totais.financiamento)}</TableCell>
-              <TableCell align="right" sx={rodape(dados.totais.saldo < 0 && !semSaldoInicial ? "error.main" : undefined)}>
+              <TableCell align="right" sx={rodape(dados.totais.saldo < 0 ? "error.main" : undefined)}>
                 {brl(dados.totais.saldo)}
                 {notaFimDoMes}
               </TableCell>
               <TableCell align="right" sx={rodape()}>
                 {dados.totais.previsao ? formatSinal(dados.totais.previsao) : brl(0)}
               </TableCell>
-              <TableCell align="right" sx={rodape(dados.totais.saldoFinal < 0 && !semSaldoInicial ? "error.main" : undefined)}>
+              <TableCell align="right" sx={rodape(dados.totais.saldoFinal < 0 ? "error.main" : undefined)}>
                 {brl(dados.totais.saldoFinal)}
                 {notaFimDoMes}
               </TableCell>

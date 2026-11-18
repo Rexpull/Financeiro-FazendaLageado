@@ -63,6 +63,17 @@ export function textoValorEditavel(valor: number | null | undefined): string {
 	return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * Saldo inicial with its sign: the field holds the amount and the "Positivo / Negativo" choice holds the sign
+ * (a balance can start the month negative, and not every phone keyboard has a minus key).
+ * Empty stays empty; zero has no sign.
+ */
+export function saldoAssinado(digitado: number | null | undefined, negativo: boolean): number | undefined {
+	if (digitado == null || !Number.isFinite(digitado)) return undefined;
+	const abs = Math.abs(digitado);
+	return negativo && abs > 0 ? -abs : abs;
+}
+
 /** Same amount in cents (avoids saving when only the formatting changed). */
 export const mesmoValor = (a: number | null | undefined, b: number | null | undefined) =>
 	Math.round((a ?? 0) * 100) === Math.round((b ?? 0) * 100);
