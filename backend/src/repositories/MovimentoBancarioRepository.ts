@@ -7,7 +7,7 @@ import { parcelasComRenegociacoes } from '../utils/saldoDevedor';
 import { ParcelaFinanciamentoRepository } from './ParcelaFinanciamentoRepository';
 import { MovimentoCentroCustosRepository } from './MovimentoCentroCustosRepository';
 import { MemoriaConciliacaoRepository, classificacaoDaMemoria, direcao } from './MemoriaConciliacaoRepository';
-import { chaveMemoria } from '../utils/memoriaConciliacao';
+import { chaveMemoria, escolherMemoria } from '../utils/memoriaConciliacao';
 import { classificacaoDe, type ItemClassificacao } from '../utils/regraTipoPlanoCentro';
 import { cruzarPlanosCentros } from '../utils/cruzamentoPlanoCentro';
 import { erroTipoPlanoCentroNoBanco } from './TipoPlanoCentroRepository';
@@ -605,22 +605,24 @@ export class MovimentoBancarioRepository {
 		erros: number;
 		detalhesErros: string[];
 		classificadosPorMemoria: number;
+		/** of those, how many were found by a similar name (not the identical text): to be checked on the screen */
+		classificadosPorNomeParecido: number;
 	}> {
 		const movimentosProcessados: MovimentoBancario[] = [];
 		let novos = 0;
 		let classificadosPorMemoria = 0;
-		// Memórias de conciliação of each conta of the batch, loaded once (key: C|D + chave)
+		let classificadosPorNomeParecido = 0;
+		// Memórias de conciliação of each conta of the batch, loaded once
 		await this.memoriaRepo.ensureSchema();
-		const memoriasPorConta = new Map<number, Map<string, MemoriaConciliacao>>();
-		const memoriaPara = async (m: MovimentoBancario): Promise<MemoriaConciliacao | null> => {
+		const memoriasPorConta = new Map<number, MemoriaConciliacao[]>();
+		// The identical text first, then a similar name (utils/memoriaConciliacao.escolherMemoria)
+		const memoriaPara = async (m: MovimentoBancario): Promise<{ memoria: MemoriaConciliacao; porNome: boolean } | null> => {
 			const conta = Number(m.idContaCorrente);
 			const chave = chaveMemoria(m.historico);
 			if (!conta || !chave) return null;
-			if (!memoriasPorConta.has(conta)) {
-				const lista = await this.memoriaRepo.listarPorConta(conta);
-				memoriasPorConta.set(conta, new Map(lista.map((x) => [`${x.tipoMovimento}|${x.chave}`, x])));
-			}
-			return memoriasPorConta.get(conta)!.get(`${direcao(m)}|${chave}`) ?? null;
+			if (!memoriasPorConta.has(conta)) memoriasPorConta.set(conta, await this.memoriaRepo.listarPorConta(conta));
+			const sentido = direcao(m);
+			return escolherMemoria(memoriasPorConta.get(conta)!.filter((x) => x.tipoMovimento === sentido), chave);
 		};
 		let existentes = 0;
 		let erros = 0;
@@ -747,7 +749,8 @@ export class MovimentoBancarioRepository {
 				}
 
 				// Criar novo movimento — already classified when the conta remembers this text (never a financing line)
-				let memoria = mov.modalidadeMovimento === 'financiamento' || Number(mov.idFinanciamento) > 0 ? null : await memoriaPara(mov);
+				const escolha = mov.modalidadeMovimento === 'financiamento' || Number(mov.idFinanciamento) > 0 ? null : await memoriaPara(mov);
+				let memoria = escolha?.memoria ?? null;
 				let classificado = memoria ? { ...mov, ...classificacaoDaMemoria(memoria, mov) } : mov;
 				// A memory saved before the plano × centro type rule may break it: the line then comes in unclassified
 				if (memoria && (classificado.modalidadeMovimento ?? 'padrao') === 'padrao' && direcao(mov) === 'D') {
@@ -761,6 +764,7 @@ export class MovimentoBancarioRepository {
 				if (memoria) {
 					await this.memoriaRepo.registrarUso(idMov, memoria.id);
 					classificadosPorMemoria++;
+					if (escolha?.porNome) classificadosPorNomeParecido++;
 				}
 				console.log(`✅ Novo movimento criado: ID ${idMov}`);
 
@@ -782,7 +786,7 @@ export class MovimentoBancarioRepository {
 		}
 
 		console.log(`🎉 Lote processado: ${novos} novos, ${existentes} existentes, ${erros} erros`);
-		return { movimentos: movimentosProcessados, novos, existentes, erros, detalhesErros, classificadosPorMemoria };
+		return { movimentos: movimentosProcessados, novos, existentes, erros, detalhesErros, classificadosPorMemoria, classificadosPorNomeParecido };
 	}
 
 	/** Drops rateio lines without a valid centro (MovimentoCentroCustos.idCentroCustos is NOT NULL). */
@@ -1855,11 +1859,35 @@ export class MovimentoBancarioRepository {
 		const resultadoList = await this.resultadoRepo.getByMovimento(id);
 		const centroCustosList = await this.movimentoCentroCustosRepo.buscarPorMovimento(id);
 
-		return {
+		const movimento: MovimentoBancario = {
 			...this.mapRowToMovimento(result as Record<string, unknown>),
 			resultadoList,
 			centroCustosList,
 		};
+		await this.marcarMemoriaPorNomeParecido([movimento]);
+		return movimento;
+	}
+
+	/**
+	 * Sets `memoriaPorNomeParecido` on the lines a memory classified by a similar name (the text the memory
+	 * keeps is not the text of the line): the screen asks the user to check them. Nothing is stored for it.
+	 */
+	private async marcarMemoriaPorNomeParecido(movimentos: MovimentoBancario[]): Promise<void> {
+		const ids = [...new Set(movimentos.map((m) => Number(m.idMemoriaConciliacao)).filter((id) => id > 0))];
+		if (!ids.length) return;
+		const chaves = new Map<number, string>();
+		for (let i = 0; i < ids.length; i += 90) {
+			const lote = ids.slice(i, i + 90);
+			const { results } = await this.db
+				.prepare(`SELECT id, chave FROM memoriaConciliacao WHERE id IN (${lote.map(() => '?').join(',')})`)
+				.bind(...lote)
+				.all<{ id: number; chave: string }>();
+			for (const r of results ?? []) chaves.set(Number(r.id), r.chave);
+		}
+		for (const m of movimentos) {
+			const chave = chaves.get(Number(m.idMemoriaConciliacao));
+			if (chave !== undefined) m.memoriaPorNomeParecido = chaveMemoria(m.historico) !== chave;
+		}
 	}
 
 	async getDetalhesFinanciamento(credorKey: string, mes: number, ano: number): Promise<FinanciamentoDetalhadoDTO[]> {
@@ -2368,6 +2396,7 @@ export class MovimentoBancarioRepository {
 				}),
 			);
 
+			await this.marcarMemoriaPorNomeParecido(movimentos);
 			console.log(`✅ Repository: Retornando ${movimentos.length} movimentos da página ${filters.page}`);
 
 			return {

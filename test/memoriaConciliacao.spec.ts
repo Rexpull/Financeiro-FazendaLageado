@@ -241,4 +241,82 @@ describe('memória de conciliação', () => {
 		expect((await SELF.fetch(`${BASE}/api/memoriaConciliacao/${idMem}`, { method: 'DELETE' })).status).toBe(404);
 		expect((await get(`/api/memoriaConciliacao`)).status).toBe(400);
 	});
+
+	describe('nome parecido (asked by the client on 18/11/2026)', () => {
+		const LAFOR = 'LAFOR COMERCIO DE COMBUSTIVEIS';
+		const ERCAL = 'ERCAL EMPRESAS REUNIDAS DE CALCARIO LT';
+		type Importado = Omit<Awaited<ReturnType<typeof importar>>, 'movimentos'> & {
+			classificadosPorNomeParecido: number;
+			movimentos: Array<Mov & { memoriaPorNomeParecido?: boolean }>;
+		};
+		const importarComNome = async (movimentos: unknown[]) => (await importar(movimentos)) as Importado;
+
+		/** Imports a line with this histórico and remembers it with plano 300 and the centre given. */
+		async function lembrar(dia: string, valor: number, historico: string, idCentroCustos = 21) {
+			const r = await importar([linha(dia, valor, historico)]);
+			await put(r.movimentos[0].id, { idPlanoContas: 300, idCentroCustos, lembrarClassificacao: true });
+			return r.movimentos[0].id;
+		}
+
+		it('"X" remembered classifies "X LTDA", marked as found by a similar name', async () => {
+			await lembrar('11-09', -1918, LAFOR);
+			const r = await importarComNome([linha('11-17', -4078, `${LAFOR} LTDA`)]);
+			expect(r).toMatchObject({ novos: 1, classificadosPorMemoria: 1, classificadosPorNomeParecido: 1 });
+			expect(r.movimentos[0]).toMatchObject({ idPlanoContas: 300, idCentroCustos: 21, memoriaPorNomeParecido: true });
+			expect(r.movimentos[0].idMemoriaConciliacao).toBeGreaterThan(0);
+		});
+
+		it('the payment operation before the name does not matter (BB files before and after 10/11/2026)', async () => {
+			await lembrar('11-11', -5085.3, ERCAL);
+			const r = await importarComNome([
+				linha('11-20', -5300, `Pagamento de Boleto - ${ERCAL}`),
+				linha('11-21', -900, `Pix - Enviado - 21/11 10:00 ${ERCAL}`),
+			]);
+			expect(r).toMatchObject({ novos: 2, classificadosPorMemoria: 2, classificadosPorNomeParecido: 2 });
+			// and the other way round: remembered with the operation, the plain name comes classified
+			await lembrar('11-12', -700, 'Pagamento de Boleto - CARAMURU ALIMENTOS S A', 23);
+			const inverso = await importarComNome([linha('11-22', -800, 'CARAMURU ALIMENTOS SA')]);
+			expect(inverso.movimentos[0]).toMatchObject({ idCentroCustos: 23, memoriaPorNomeParecido: true });
+		});
+
+		it('the identical text wins and is not "nome parecido"; then the closest text, then the most recent memory of the name', async () => {
+			await lembrar('11-09', -1918, LAFOR, 21);
+			// arrives classified by the similar name (centre 21) and is remembered again with its own centre
+			await lembrar('11-10', -3082.5, `${LAFOR} LTDA`, 22);
+			const r = await importarComNome([linha('11-18', -100, LAFOR), linha('11-18', -200, `${LAFOR} LTDA`)]);
+			expect(r).toMatchObject({ classificadosPorMemoria: 2, classificadosPorNomeParecido: 0 });
+			expect(r.movimentos.map((m) => m.idCentroCustos)).toEqual([21, 22]);
+			expect(r.movimentos.map((m) => m.memoriaPorNomeParecido)).toEqual([false, false]);
+
+			// with the operation in front, each one goes to the memory of its own company text
+			const comOperacao = await importarComNome([linha('11-19', -300, `Pagamento de Boleto - ${LAFOR}`), linha('11-19', -400, `Pagamento de Boleto - ${LAFOR} LTDA`)]);
+			expect(comOperacao.movimentos.map((m) => [m.idCentroCustos, m.memoriaPorNomeParecido])).toEqual([[21, true], [22, true]]);
+			// a third company text: the most recent memory of that name
+			const terceiro = await importarComNome([linha('11-20', -500, `${LAFOR} EIRELI`)]);
+			expect(terceiro.movimentos[0]).toMatchObject({ idCentroCustos: 22, memoriaPorNomeParecido: true });
+		});
+
+		it('the list carries the mark, and reclassifying the line by hand removes the memória tag', async () => {
+			await lembrar('11-09', -1918, LAFOR);
+			const r = await importarComNome([linha('11-17', -4078, `${LAFOR} LTDA`), linha('11-17', -50, LAFOR)]);
+			const lista = await get(`/api/movBancario/paginado?page=1&limit=50&contaId=${CONTA}&dataInicio=2026-11-17&dataFim=2026-11-17`);
+			expect(lista.status).toBe(200);
+			const marca = new Map<number, boolean | undefined>(lista.body.movimentos.map((m: Mov & { memoriaPorNomeParecido?: boolean }) => [m.id, m.memoriaPorNomeParecido]));
+			expect(marca.get(r.movimentos[0].id)).toBe(true);
+			expect(marca.get(r.movimentos[1].id)).toBe(false);
+			expect((await put(r.movimentos[0].id, { idCentroCustos: 22 })).idMemoriaConciliacao).toBeNull();
+		});
+
+		it('another name, another conta and the other direction are not matched', async () => {
+			await lembrar('11-09', -1918, LAFOR);
+			const r = await importarComNome([
+				linha('11-17', -10, 'LAFOR TRANSPORTES LTDA'),
+				linha('11-17', -15, 'POSTO LAFOR COMERCIO DE COMBUSTIVEIS'),
+				linha('11-17', -20, `${LAFOR} LTDA`, OUTRA_CONTA),
+				linha('11-17', 30, `${LAFOR} LTDA`),
+			]);
+			expect(r).toMatchObject({ novos: 4, classificadosPorMemoria: 0, classificadosPorNomeParecido: 0 });
+			expect(r.movimentos.every((m) => m.idMemoriaConciliacao === null && m.memoriaPorNomeParecido === undefined)).toBe(true);
+		});
+	});
 });

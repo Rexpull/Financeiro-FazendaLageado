@@ -48,6 +48,9 @@ export type MovimentoMock = {
 	idPlanoContas?: number | null;
 	idCentroCustos?: number | null;
 	modalidadeMovimento?: string;
+	/** line classified by a memória on import, and whether it was found by a similar name */
+	idMemoriaConciliacao?: number | null;
+	memoriaPorNomeParecido?: boolean;
 	resultadoList?: Array<{ idPlanoContas: number; valor: number }>;
 	centroCustosList?: Array<{ idCentroCustos: number; valor: number }>;
 };

@@ -31,6 +31,8 @@ export interface MovimentoBancario {
     limparConciliacao?: boolean;
     /** Line classified by a "memória de conciliação" on import (shows the "memória" tag); null after a manual change */
     idMemoriaConciliacao?: number | null;
+    /** Response only: the memory was found by a similar name, not by the identical text (the screen asks to check) */
+    memoriaPorNomeParecido?: boolean;
     /** PUT only: true = remember this classification for the next imports of the conta; false = forget it */
     lembrarClassificacao?: boolean;
     /** PUT response only: what happened to the memory (saved, forgotten, or refused with the reason) */

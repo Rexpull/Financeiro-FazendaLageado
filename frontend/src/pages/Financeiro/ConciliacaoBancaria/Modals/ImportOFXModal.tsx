@@ -183,7 +183,8 @@ const ImportOFXModal: React.FC<ImportOFXProps> = ({ isOpen, onClose, handleImpor
 				toast.success(
 					`Importação concluída! ${resultado.novos} novos, ${resultado.existentes} existentes.` +
 						(resultado.classificadosPorMemoria > 0
-							? ` ${resultado.classificadosPorMemoria} já ${resultado.classificadosPorMemoria === 1 ? 'veio classificado' : 'vieram classificados'} pela memória da conta.`
+							? ` ${resultado.classificadosPorMemoria} já ${resultado.classificadosPorMemoria === 1 ? 'veio classificado' : 'vieram classificados'} pela memória da conta` +
+								(resultado.classificadosPorNomeParecido > 0 ? ` (${resultado.classificadosPorNomeParecido} por nome parecido: confira).` : '.')
 							: '')
 				);
 			}

@@ -142,3 +142,25 @@ test.describe('Caixa: saldo inicial positivo ou negativo', () => {
 		await expect(campo(page)).toHaveValue('R$ 1.970.000,00');
 	});
 });
+
+test.describe('Caixa: seletor do saldo inicial em tela pequena', () => {
+	test.use({ viewport: { width: 390, height: 800 } });
+
+	test('o seletor Positivo / Negativo aparece logo abaixo do campo também no celular', async ({ page }) => {
+		const api = await instalarCaixa(page, null);
+		await abrirCaixa(page);
+		await sinal(page, 'Negativo').scrollIntoViewIfNeeded();
+		await expect(sinal(page, 'Positivo')).toBeInViewport();
+		await expect(sinal(page, 'Negativo')).toBeInViewport();
+		const caixaCampo = (await campo(page).boundingBox())!;
+		const caixaSeletor = (await sinal(page, 'Negativo').boundingBox())!;
+		expect(caixaSeletor.y).toBeGreaterThan(caixaCampo.y);
+		expect(caixaSeletor.y - caixaCampo.y).toBeLessThan(120);
+		await sinal(page, 'Negativo').click();
+		await campo(page).click();
+		await page.keyboard.type('1500');
+		await page.keyboard.press('Enter');
+		await expect.poll(() => api.puts.length).toBe(1);
+		expect(api.puts[0].valor).toBe(-1500);
+	});
+});

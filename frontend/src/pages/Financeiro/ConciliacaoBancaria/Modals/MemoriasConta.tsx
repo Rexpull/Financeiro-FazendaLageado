@@ -160,8 +160,9 @@ const MemoriasConta: React.FC<Props> = ({ isOpen, onClose, conta, planos, centro
 						<>
 							<div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
 								<p className="text-sm text-gray-500 flex-1">
-									Quando há rateio, cada plano e cada centro aparece com o seu percentual. Para mudar uma memória, reclassifique um lançamento
-									com "Lembrar" marcado: a memória é substituída.
+									Quando há rateio, cada plano e cada centro aparece com o seu percentual. A memória vale também para o mesmo nome escrito de
+									outro jeito (com ou sem LTDA, com ou sem "Pagamento de Boleto -" na frente): esses lançamentos chegam marcados como "nome
+									parecido" para conferir. Para mudar uma memória, reclassifique um lançamento com "Lembrar" marcado: a memória é substituída.
 								</p>
 								{memorias.length > 5 && (
 									<input

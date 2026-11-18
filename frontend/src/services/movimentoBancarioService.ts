@@ -309,10 +309,11 @@ export const salvarMovimentosOFX = async (
 	idContaCorrente: number,
 	setCurrentIndex?: (i: number) => void,
 	setNovosExistentes?: (novos: number, existentes: number) => void
-): Promise<{ movimentos: MovimentoBancario[], novos: number, existentes: number, classificadosPorMemoria: number }> => {
+): Promise<{ movimentos: MovimentoBancario[], novos: number, existentes: number, classificadosPorMemoria: number, classificadosPorNomeParecido: number }> => {
 	const movimentosFinal: MovimentoBancario[] = [];
 	let novos = 0;
 	let classificadosPorMemoria = 0;
+	let classificadosPorNomeParecido = 0;
 	let encontrados = 0;
 	const BATCH_SIZE = 10; // Processa 10 movimentos por vez
 	// Every batch carries the identificadores of the whole file: a line equal to another one (same day,
@@ -387,6 +388,7 @@ export const salvarMovimentosOFX = async (
 				erros?: number;
 				detalhesErros?: unknown[];
 				classificadosPorMemoria?: number;
+				classificadosPorNomeParecido?: number;
 			};
 			console.log(`✅ Lote processado:`, batchResult);
 
@@ -401,6 +403,7 @@ export const salvarMovimentosOFX = async (
 				novos += batchResult.novos || 0;
 				encontrados += batchResult.existentes || 0;
 				classificadosPorMemoria += batchResult.classificadosPorMemoria || 0;
+				classificadosPorNomeParecido += batchResult.classificadosPorNomeParecido || 0;
 			}
 
 			// Atualizar progresso
@@ -422,7 +425,7 @@ export const salvarMovimentosOFX = async (
 	}
 
 	console.log(`🎉 Processamento concluído: ${novos} novos, ${encontrados} existentes`);
-	return { movimentos: movimentosFinal, novos, existentes: encontrados, classificadosPorMemoria };
+	return { movimentos: movimentosFinal, novos, existentes: encontrados, classificadosPorMemoria, classificadosPorNomeParecido };
 };
 
 export const buscarMovimentoBancarioById = async (id: number): Promise<MovimentoBancario> => {

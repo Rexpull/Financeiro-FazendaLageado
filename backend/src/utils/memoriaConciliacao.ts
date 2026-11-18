@@ -22,6 +22,67 @@ export function chaveMemoria(historico: string | null | undefined): string {
 	return /[A-Z]/.test(s) ? s : '';
 }
 
+/**
+ * "Nome parecido" (asked by the client on 18/11/2026): the same supplier comes written in more than one way
+ * in the same conta — "LAFOR COMERCIO DE COMBUSTIVEIS" / "... LTDA", or with the operation before the name
+ * ("Pagamento de Boleto - ERCAL ..." until 05/11/2026, plain "ERCAL ..." in the BB files since 10/11/2026).
+ * The name is the key without the payment operation in front and without the company type at the end.
+ */
+const OPERACAO_ANTES_DO_NOME = new RegExp(
+	'^(?:' +
+		[
+			'(?:PAGAMENTO|PAGTO|PGTO|LIQUIDACAO)(?: DE)? (?:BOLETO|TITULO)(?: OUTROS BANCOS)?',
+			'PIX(?: -)? (?:ENVIADO|RECEBIDO)',
+			'TRANSFERENCIA (?:ENVIADA|RECEBIDA)',
+		].join('|') +
+		')(?: - | )',
+);
+const TIPO_DE_EMPRESA_NO_FIM = /(?: (?:LTDA|ME|EPP|EIRELI|MEI|SA|S A))+$/;
+
+/** The key without the payment operation in front (the company type, if any, is kept). */
+export function chaveSemOperacao(chave: string | null | undefined): string {
+	let texto = String(chave ?? '').trim();
+	const semOperacao = texto.replace(OPERACAO_ANTES_DO_NOME, '').trim();
+	if (semOperacao) texto = semOperacao;
+	// "BRASILPREV - BRASILPREV SEGUROS": the bank repeats the name as the operation
+	const corte = texto.indexOf(' - ');
+	if (corte > 0 && texto.slice(corte + 3).startsWith(texto.slice(0, corte))) texto = texto.slice(corte + 3);
+	return texto;
+}
+
+export function nomeMemoria(chave: string | null | undefined): string {
+	const texto = chaveSemOperacao(chave);
+	return texto.replace(TIPO_DE_EMPRESA_NO_FIM, '').trim() || texto;
+}
+
+/** Shorter than this, a name is too generic to be matched by similarity ("ONR", "TED"). */
+export const NOME_MEMORIA_MINIMO = 8;
+
+type MemoriaEscolhivel = { id: number; chave: string; atualizadoEm?: string | null };
+
+/**
+ * Memory for a line among the memories of its conta and direction, from the closest to the loosest:
+ * 1. the identical text;
+ * 2. the same text apart from the payment operation in front ("Pagamento de Boleto - X LTDA" ↔ "X LTDA");
+ * 3. the same name, also ignoring the company type ("X" ↔ "X LTDA").
+ * Inside 2 and 3 the most recently saved memory wins (the client's latest decision for that supplier).
+ * `porNome` = found by 2 or 3, not by the identical text: the screen marks the line to be checked.
+ */
+export function escolherMemoria<T extends MemoriaEscolhivel>(memorias: T[], chave: string): { memoria: T; porNome: boolean } | null {
+	if (!chave) return null;
+	const identica = memorias.find((m) => m.chave === chave);
+	if (identica) return { memoria: identica, porNome: false };
+	const nome = nomeMemoria(chave);
+	if (nome.length < NOME_MEMORIA_MINIMO) return null;
+	const maisRecente = (lista: T[]) =>
+		lista.sort((a, b) => String(b.atualizadoEm ?? '').localeCompare(String(a.atualizadoEm ?? '')) || b.id - a.id)[0];
+	const semOperacao = chaveSemOperacao(chave);
+	const mesmoTexto = memorias.filter((m) => chaveSemOperacao(m.chave) === semOperacao);
+	if (mesmoTexto.length) return { memoria: maisRecente(mesmoTexto), porNome: true };
+	const mesmoNome = memorias.filter((m) => nomeMemoria(m.chave) === nome);
+	return mesmoNome.length ? { memoria: maisRecente(mesmoNome), porNome: true } : null;
+}
+
 export type Fatia = { id: number; pct: number };
 
 /** R$ split → percentages (2 decimals), the last one closing 100%. */
